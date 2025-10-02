@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YouTube: MusicBrainz Importer
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      2.5.3
+// @version      2.6.0
 // @description  Imports YouTube videos to MusicBrainz as a new standalone recording
 // @tag          ai-created
 // @author       nikki, RustyNova, chaban
@@ -10,8 +10,12 @@
 // @match        *://musicbrainz.org/recording/create*
 // @connect      googleapis.com
 // @connect      musicbrainz.org
+// @connect      listenbrainz.org
 // @icon         https://www.google.com/s2/favicons?sz=256&domain=youtube.com
 // @grant        GM.xmlHttpRequest
+// @grant        GM.getValue
+// @grant        GM.setValue
+// @grant        GM.registerMenuCommand
 // @run-at       document-end
 // @noframes
 // ==/UserScript==
@@ -44,6 +48,20 @@
                 errorApiRateLimit: '{apiName} Rate Limit / Server Error',
                 errorApiNetwork: '{apiName} Network Error',
                 errorProcessing: 'Processing Error',
+                // Playlist specific strings
+                createPlaylist: 'Create LB Playlist',
+                syncPlaylist: 'Sync LB Playlist',
+                onLB: 'On LB (Playlist) ✓',
+                createPlaylistTitle: 'Create a new ListenBrainz playlist from this video\'s tracklist.',
+                syncPlaylistTitle: 'This playlist is marked as [INCOMPLETE] on ListenBrainz. Click to sync with the current tracklist.',
+                linkedToPlaylistTitle: 'This video is linked to a ListenBrainz playlist: {title}',
+                playlistInProgress: 'Processing...',
+                tokenMissing: 'Set LB Token!',
+                tokenMissingTitle: 'Click to set your ListenBrainz token',
+                tokenMissing: 'Set LB Token!',
+                tokenMissingTitle: 'Click to set your ListenBrainz token',
+                viewReport: 'View Report',
+                viewReportTitle: 'View list of unmatched/unparsed tracks from the video description.',
             },
             de: {
                 loading: 'Wird geladen...',
@@ -59,6 +77,18 @@
                 errorApiRateLimit: '{apiName} Ratenlimit / Serverfehler',
                 errorApiNetwork: '{apiName} Netzwerkfehler',
                 errorProcessing: 'Verarbeitungsfehler',
+                // Playlist specific strings
+                createPlaylist: 'LB-Playlist erstellen',
+                syncPlaylist: 'LB-Playlist synchronisieren',
+                onLB: 'Auf LB (Playlist) ✓',
+                createPlaylistTitle: 'Eine neue ListenBrainz-Playlist aus der Trackliste dieses Videos erstellen.',
+                syncPlaylistTitle: 'Diese Playlist ist auf ListenBrainz als [INCOMPLETE] markiert. Klicken, um mit der aktuellen Trackliste zu synchronisieren.',
+                linkedToPlaylistTitle: 'Dieses Video ist mit einer ListenBrainz-Playlist verknüpft: {title}',
+                playlistInProgress: 'Verarbeite...',
+                tokenMissing: 'LB-Token setzen!',
+                tokenMissingTitle: 'Klicken, um Ihr ListenBrainz-Token festzulegen',
+                viewReport: 'Bericht anzeigen',
+                viewReportTitle: 'Liste der nicht zugeordneten und nicht verarbeiteten Titel aus der Videobeschreibung anzeigen.',
             }
         },
         getString: function (key, substitutions) {
@@ -80,6 +110,8 @@
         SHORT_APP_NAME: 'UserJS.YoutubeImport',
         GOOGLE_API_KEY: 'AIzaSyC5syukuFyCSoRvMr42Geu_d_1c_cRYouU',
         MUSICBRAINZ_API_ROOT: 'https://musicbrainz.org/ws/2/',
+        LISTENBRAINZ_API_ROOT: 'https://api.listenbrainz.org/1/',
+        TOKEN_STORAGE_KEY: 'listenbrainz_user_token',
         YOUTUBE_API_ROOT: 'https://www.googleapis.com/youtube/v3/',
         YOUTUBE_API_VIDEO_PARTS: 'snippet,id,contentDetails',
 
@@ -102,6 +134,8 @@
             BUTTON_ERROR: 'mb-error',
             BUTTON_INFO: 'mb-info',
             BUTTON_UPDATE: 'mb-update', // Class for the update button
+            PLAYLIST_BUTTON: 'playlist-button',
+            PLAYLIST_BUTTON_SYNC: 'lb-sync',
         },
 
         MUSICBRAINZ_FREE_STREAMING_LINK_TYPE_ID: '268',
@@ -109,6 +143,39 @@
     };
 
     const USER_AGENT = `${Config.SHORT_APP_NAME}/${GM_info.script.version} ( ${GM_info.script.namespace} )`;
+
+    /**
+     * Manages the ListenBrainz user token.
+     */
+    const TokenManager = {
+        _token: null,
+        async init() {
+            this._token = await GM.getValue(Config.TOKEN_STORAGE_KEY, null);
+            GM.registerMenuCommand('Set ListenBrainz Token', () => this.getToken(true));
+        },
+        getTokenValue() {
+            return this._token;
+        },
+        async getToken(forcePrompt = false) {
+            if (!this._token || forcePrompt) {
+                const success = await this.setToken();
+                if (!success) {
+                    return null;
+                }
+            }
+            return this._token;
+        },
+        async setToken() {
+            const token = prompt('Please enter your ListenBrainz User Token:', this._token || '');
+            if (token && token.trim()) {
+                this._token = token.trim();
+                await GM.setValue(Config.TOKEN_STORAGE_KEY, this._token);
+                alert('ListenBrainz token saved!');
+                return true;
+            }
+            return false; 
+        }
+    };
 
     /**
      * General utility functions.
@@ -120,7 +187,7 @@
          * @param {number} timeout - The maximum time (in milliseconds) to wait for the element.
          * @returns {Promise<Element>} A promise that resolves with the element once found, or rejects on timeout.
          */
-        waitForElement: function (selector, timeout = 7000) {
+        waitForElement: function (selector, timeout = 15000) {
             return new Promise((resolve, reject) => {
                 const element = document.querySelector(selector);
                 if (element) {
@@ -236,6 +303,133 @@
             const totalSeconds = (days * 86400) + (hours * 3600) + (minutes * 60) + seconds;
 
             return totalSeconds * 1000;
+        },
+        /**
+         * Parses a block of text for track information using multiple regex patterns.
+         * @param {string} text The raw text (e.g., YouTube description).
+         * @returns {{parsedTracks: Array<Object>, unparsedLines: Array<string>}}
+         */
+        parseTracklist: function(text) {
+            if (!text) {
+                return { parsedTracks: [], unparsedLines: [] };
+            }
+            const tracklistPatterns = [
+                { // Format: StartTime - EndTime Title - Artist
+                    regex: /^((?:\d+:)?\d+:\d+)\s*[-–—]\s*(?:\d+:)?\d+\s+(.+?)\s*[-–—]\s*(.+)$/,
+                    map: (match) => ({ timestampStr: match[1], title: match[2], artist: match[3] })
+                },
+                { // Format: Timestamp - Artist - Title
+                    regex: /^((?:\d+:)?\d+:\d+)\s*[-–—]\s*(.+?)\s*[-–—]\s*(.+)$/,
+                    map: (match) => ({ timestampStr: match[1], artist: match[2], title: match[3] })
+                },
+                { // Format: Timestamp [Artist] - Title or Timestamp Artist - Title
+                    regex: /^((?:\d+:)?\d+:\d+)\s+(?:\[(.+?)\]|(.+?))\s*[-–—]\s*(.+)$/,
+                    map: (match) => ({ timestampStr: match[1], artist: match[2] || match[3], title: match[4] })
+                },
+                { // Format: Artist - Title (Timestamp)
+                    regex: /^(.+?)\s*[-–—]\s*(.+?)\s+\(?((\d+:)?\d+:\d+)\)?$/,
+                    map: (match) => ({ artist: match[1], title: match[2], timestampStr: match[3] })
+                }
+            ];
+
+            const lines = text.split('\n').map(line => line.trim()).filter(Boolean);
+            const parsedTracks = [];
+            const unparsedLines = [];
+
+            for (const line of lines) {
+                let matched = false;
+                for (const pattern of tracklistPatterns) {
+                    const match = line.match(pattern.regex);
+                    if (match) {
+                        const { timestampStr, artist, title } = pattern.map(match);
+                        const timeParts = timestampStr.split(':').map(Number);
+                        let timestampSeconds = 0;
+                        if (timeParts.length === 2) { // MM:SS
+                            timestampSeconds = timeParts[0] * 60 + timeParts[1];
+                        } else if (timeParts.length === 3) { // HH:MM:SS
+                            timestampSeconds = timeParts[0] * 3600 + timeParts[1] * 60 + timeParts[2];
+                        }
+
+                        parsedTracks.push({
+                            artist: artist.trim(),
+                            title: title.trim(),
+                            timestamp: timestampStr.trim(),
+                            timestampSeconds,
+                            originalLine: line
+                        });
+
+                        matched = true;
+                        break; // Pattern matched, move to the next line
+                    }
+                }
+                if (!matched) {
+                    unparsedLines.push(line);
+                }
+            }
+            return { parsedTracks, unparsedLines };
+        },
+
+        /**
+         * Finds the Longest Common Subsequence (LCS) of two arrays.
+         * @param {Array<any>} arr1
+         * @param {Array<any>} arr2
+         * @returns {Array<any>}
+         */
+        findLCS: function(arr1, arr2) {
+            const m = arr1.length;
+            const n = arr2.length;
+            const dp = Array(m + 1).fill(0).map(() => Array(n + 1).fill(0));
+
+            for (let i = 1; i <= m; i++) {
+                for (let j = 1; j <= n; j++) {
+                    if (arr1[i - 1] === arr2[j - 1]) {
+                        dp[i][j] = 1 + dp[i - 1][j - 1];
+                    } else {
+                        dp[i][j] = Math.max(dp[i - 1][j], dp[i][j - 1]);
+                    }
+                }
+            }
+
+            // Backtrack from dp[m][n] to reconstruct the LCS
+            const lcs = [];
+            let i = m, j = n;
+            while (i > 0 && j > 0) {
+                if (arr1[i - 1] === arr2[j - 1]) {
+                    lcs.unshift(arr1[i - 1]);
+                    i--; j--;
+                } else if (dp[i - 1][j] > dp[i][j - 1]) {
+                    i--;
+                } else {
+                    j--;
+                }
+            }
+            return lcs;
+        },
+
+        /**
+         * Groups a sorted list of deletion indices into consecutive chunks for batching.
+         * @param {number[]} indices - A list of indices to delete, sorted in descending order.
+         * @returns {Array<{index: number, count: number}>} An array of chunks to delete.
+         */
+        groupDeletions: function(indices) {
+            if (indices.length === 0) {
+                return [];
+            }
+
+            const groups = [];
+            let currentGroup = { index: indices[0], count: 1 };
+
+            for (let i = 1; i < indices.length; i++) {
+                if (indices[i] === currentGroup.index - 1) {
+                    currentGroup.index = indices[i];
+                    currentGroup.count++;
+                } else {
+                    groups.push(currentGroup);
+                    currentGroup = { index: indices[i], count: 1 };
+                }
+            }
+            groups.push(currentGroup);
+            return groups;
         }
     };
 
@@ -246,7 +440,7 @@
         _videoDataCache: new Map(),
 
         /**
-         * Fetches minimalist video data from the YouTube Data API.
+         * Fetches video data from the YouTube Data API.
          * @param {string} videoId - The YouTube video ID.
          * @returns {Promise<Object|null>} A promise that resolves with the video data, or null if not found/error.
          */
@@ -272,19 +466,8 @@
                 const parsedFullResponse = JSON.parse(response.responseText);
                 if (parsedFullResponse.items && parsedFullResponse.items.length > 0) {
                     const videoData = parsedFullResponse.items[0];
-                    const minimalStructuredData = {
-                        id: videoData.id,
-                        snippet: {
-                            title: videoData.snippet.title,
-                            channelTitle: videoData.snippet.channelTitle,
-                            channelId: videoData.snippet.channelId,
-                        },
-                        contentDetails: {
-                            duration: videoData.contentDetails.duration
-                        }
-                    };
-                    this._videoDataCache.set(videoId, minimalStructuredData);
-                    return minimalStructuredData;
+                    this._videoDataCache.set(videoId, videoData);
+                    return videoData;
                 } else {
                     console.log(`[${GM.info.script.name}] YouTube API returned no items for video ID: ${videoId}.`);
                     this._videoDataCache.set(videoId, false);
@@ -460,6 +643,154 @@
     };
 
     /**
+     * Handles all interactions with the ListenBrainz API.
+     */
+    const rateLimitState = {
+        isBlocked: false,
+        resetTime: 0,
+    };
+
+    const ListenBrainzAPI = {
+        _searchCache: new Map(),
+        /**
+         * Generic helper for making requests to the ListenBrainz API.
+         * @param {string} endpoint - The API endpoint path.
+         * @param {Object} options - Configuration for the request.
+         * @param {string} options.token - The user's ListenBrainz token.
+         * @param {string} [options.method='GET'] - The HTTP method.
+         * @param {Object|null} [options.body=null] - The JSON body for POST requests.
+         * @returns {Promise<Object>} The parsed JSON response.
+         */
+        async apiRequest(endpoint, { token, method = 'GET', body = null }) {
+            if (rateLimitState.isBlocked && Date.now() < rateLimitState.resetTime) {
+                const secondsRemaining = Math.ceil((rateLimitState.resetTime - Date.now()) / 1000);
+                const errorMessage = `Rate limited. Wait ${secondsRemaining}s.`;
+                console.error(`[${GM.info.script.name}] ${errorMessage}`);
+                throw new Error(errorMessage);
+            }
+            rateLimitState.isBlocked = false;
+
+            const url = Config.LISTENBRAINZ_API_ROOT + endpoint;
+            const headers = new Headers();
+            if (token) headers.append('Authorization', `Token ${token}`);
+            if (body) headers.append('Content-Type', 'application/json');
+
+            try {
+                const response = await Utils.gmXmlHttpRequest({
+                    method,
+                    url,
+                    headers: Object.fromEntries(headers.entries()),
+                    data: body ? JSON.stringify(body) : null,
+                }, 'ListenBrainz API');
+
+                const remaining = response.responseHeaders.match(/x-ratelimit-remaining:\s*(\d+)/i);
+                const resetIn = response.responseHeaders.match(/x-ratelimit-reset-in:\s*(\d+)/i);
+
+                if (remaining && resetIn && parseInt(remaining[1], 10) === 0) {
+                    const resetInMs = parseInt(resetIn[1], 10) * 1000;
+                    rateLimitState.isBlocked = true;
+                    rateLimitState.resetTime = Date.now() + resetInMs;
+                }
+
+                if (response.status === 429) {
+                    const retryAfter = response.responseHeaders.match(/retry-after:\s*(\d+)/i) || resetIn;
+                    const retryAfterMs = parseInt(retryAfter ? retryAfter[1] : '10', 10) * 1000;
+                    rateLimitState.isBlocked = true;
+                    rateLimitState.resetTime = Date.now() + retryAfterMs;
+                    throw new Error(`Rate limit exceeded. Wait ${retryAfterMs/1000}s.`);
+                }
+
+                return response.responseText ? JSON.parse(response.responseText) : {};
+            } catch (error) {
+                console.error(`[${GM.info.script.name}] ListenBrainz API Error:`, error);
+                throw error;
+            }
+        },
+
+        async searchPlaylists(query) {
+            if (this._searchCache.has(query)) {
+                return this._searchCache.get(query);
+            }
+            const token = await TokenManager.getToken();
+            if (!token) throw new Error("ListenBrainz token not set.");
+
+            const endpoint = `playlist/search?query=${encodeURIComponent(query)}&count=100`;
+            const data = await this.apiRequest(endpoint, { token });
+            this._searchCache.set(query, data);
+            return data;
+        },
+
+        async lookupTrack(artist, title) {
+            const endpoint = `metadata/lookup/?artist_name=${encodeURIComponent(artist)}&recording_name=${encodeURIComponent(title)}&metadata=false&inc=artist`;
+            const data = await this.apiRequest(endpoint, {});
+            return data.recording_mbid ? { title, creator: artist, identifier: `https://musicbrainz.org/recording/${data.recording_mbid}` } : null;
+        },
+
+        async createPlaylist(token, title, annotation, tracks, isPublic) {
+            const jspf = { playlist: { title, track: tracks, annotation, extension: { "https://musicbrainz.org/doc/jspf#playlist": { public: isPublic } } } };
+            return this.apiRequest('playlist/create', { method: 'POST', token, body: jspf });
+        },
+
+        async fetchPlaylist(token, mbid) {
+            const data = await this.apiRequest(`playlist/${mbid}`, { token });
+            return data.playlist;
+        },
+
+        async addMetadataToPlaylist(token, mbid, existingPlaylist, description) {
+            const jspf = {
+                playlist: {
+                    title: existingPlaylist.title,
+                    annotation: existingPlaylist.annotation || '',
+                    extension: {
+                        "https://musicbrainz.org/doc/jspf#playlist": {
+                            public: existingPlaylist.extension["https://musicbrainz.org/doc/jspf#playlist"].public,
+                            additional_metadata: { "youtube_description": description }
+                        }
+                    }
+                }
+            };
+            return this.apiRequest(`playlist/edit/${mbid}`, { method: 'POST', token, body: jspf });
+        },
+
+        async deletePlaylistItems(token, mbid, index, count) {
+            if (count === 0) return;
+            return this.apiRequest(`playlist/${mbid}/item/delete`, { method: 'POST', token, body: { index, count } });
+        },
+
+        async addPlaylistItemAtOffset(token, mbid, offset, tracks) {
+            const jspf = { playlist: { track: tracks } };
+            return this.apiRequest(`playlist/${mbid}/item/add/${offset}`, { method: 'POST', token, body: jspf });
+        },
+
+        /**
+         * Edits a playlist's core metadata, including title, annotation, visibility, and description.
+         * This function replaces the previous addMetadataToPlaylist.
+         * @param {string} token - The user's ListenBrainz token.
+         * @param {string} mbid - The MBID of the playlist to edit.
+         * @param {Object} details - The metadata to update.
+         * @param {string} details.title - The new title.
+         * @param {string} details.annotation - The new annotation.
+         * @param {boolean} details.isPublic - The public status.
+         * @param {string} details.description - The full description to store in additional_metadata.
+         */
+        async editPlaylistMetadata(token, mbid, { title, annotation, isPublic, description }) {
+            const jspf = {
+                playlist: {
+                    title,
+                    annotation: annotation || '',
+                    extension: {
+                        "https://musicbrainz.org/doc/jspf#playlist": {
+                            public: isPublic,
+                            additional_metadata: { "youtube_description": description }
+                        }
+                    }
+                }
+            };
+            return this.apiRequest(`playlist/edit/${mbid}`, { method: 'POST', token, body: jspf });
+        },
+    };
+
+    /**
      * Scans the DOM for relevant elements and extracts information.
      */
     const DOMScanner = {
@@ -478,7 +809,7 @@
          */
         getButtonAnchorElement: async function () {
             try {
-                const dock = await Utils.waitForElement(Config.SELECTORS.BUTTON_DOCK, 5000);
+                const dock = await Utils.waitForElement(Config.SELECTORS.BUTTON_DOCK);
                 console.log(`[${GM.info.script.name}] Found button dock:`, dock);
                 return dock;
             } catch (e) {
@@ -491,7 +822,7 @@
     /**
      * Manages the creation, display, and state of the MusicBrainz import button.
      */
-    const ButtonManager = {
+    const RecordingButtonManager = {
         _form: null,
         _submitButton: null,
         _textElement: null,
@@ -720,6 +1051,363 @@
     };
 
     /**
+     * Manages the UI for the ListenBrainz playlist button.
+     */
+    const PlaylistButtonManager = {
+        _containerDiv: null,
+        _currentButton: null,
+
+        init: function () {
+            this._containerDiv = document.createElement("div");
+            this._containerDiv.setAttribute("class", `holder ${Config.CLASS_NAMES.CONTAINER}`);
+            this._containerDiv.style.display = 'none';
+        },
+
+        appendToDock: function (dockElement) {
+            if (document.body.contains(this._containerDiv)) {
+                return;
+            }
+            if (dockElement) {
+                dockElement.appendChild(this._containerDiv);
+            }
+        },
+
+        _createButton(text, title, className, onClick) {
+            const button = document.createElement("button");
+            button.type = "button";
+            button.title = title;
+            button.className = `${Config.CLASS_NAMES.BUTTON} ${Config.CLASS_NAMES.PLAYLIST_BUTTON} ${className || ''}`;
+
+            const span = document.createElement('span');
+            span.innerText = text;
+            button.appendChild(span);
+
+            if (onClick) {
+                button.addEventListener('click', onClick);
+            }
+            return button;
+        },
+
+        _replaceButton(newButton) {
+            this._containerDiv.innerHTML = '';
+            this._currentButton = newButton;
+            this._containerDiv.appendChild(this._currentButton);
+            this._containerDiv.style.display = 'flex';
+        },
+
+        hide: function() {
+            this._containerDiv.style.display = 'none';
+        },
+
+        resetState: function () {
+            this._containerDiv.innerHTML = '';
+            const loadingButton = this._createButton(L10n.getString('loading'), '', '', null);
+            loadingButton.disabled = true;
+            this._replaceButton(loadingButton);
+        },
+
+        setStateTokenNeeded: function(onSuccessCallback) {
+            const button = this._createButton(
+                L10n.getString('tokenMissing'),
+                L10n.getString('tokenMissingTitle'),
+                Config.CLASS_NAMES.BUTTON_ERROR,
+                async () => {
+                    const token = await TokenManager.getToken(true);
+                    if (token) {
+                        onSuccessCallback();
+                    }
+                }
+            );
+            this._replaceButton(button);
+        },
+
+        setStateCreate: function (onClick) {
+            const button = this._createButton(L10n.getString('createPlaylist'), L10n.getString('createPlaylistTitle'), '', onClick);
+            this._replaceButton(button);
+        },
+
+        setStateSync: function (title, mbid, onClick) {
+            const link = document.createElement('a');
+            link.href = `//listenbrainz.org/playlist/${mbid}`;
+            link.title = L10n.getString('linkedToPlaylistTitle', { title });
+            link.target = '_blank';
+            link.style.textDecoration = 'none';
+            const buttonExists = this._createButton(L10n.getString('onLB'), L10n.getString('linkedToPlaylistTitle', { title }), Config.CLASS_NAMES.BUTTON_ADDED, null);
+            link.appendChild(buttonExists);
+
+            const syncButton = this._createButton(L10n.getString('syncPlaylist'), L10n.getString('syncPlaylistTitle'), Config.CLASS_NAMES.PLAYLIST_BUTTON_SYNC, onClick);
+
+            this._containerDiv.innerHTML = '';
+            this._containerDiv.appendChild(link);
+            this._containerDiv.appendChild(syncButton);
+            this._containerDiv.style.display = 'flex';
+        },
+
+        setStateExists: function (title, targetUrl) {
+            const link = document.createElement('a');
+            const uuidRegex = /^[a-f\d]{8}-[a-f\d]{4}-[a-f\d]{4}-[a-f\d]{4}-[a-f\d]{12}$/i;
+            if (uuidRegex.test(targetUrl)) {
+                link.href = `//listenbrainz.org/playlist/${targetUrl}`;
+            } else {
+                link.href = targetUrl.startsWith('http') ? targetUrl : `//${targetUrl}`;
+            }
+
+            link.title = L10n.getString('linkedToPlaylistTitle', { title });
+            link.target = '_blank';
+            link.style.textDecoration = 'none';
+
+            const text = title === 'On LB (Multi)' ? 'On LB (Multi) ✓' : L10n.getString('onLB');
+            const button = this._createButton(text, link.title, Config.CLASS_NAMES.BUTTON_ADDED, null);
+            link.appendChild(button);
+            this._replaceButton(link);
+        },
+
+        setStateReport: function(title, mbid, openReportCallback) {
+            const link = document.createElement('a');
+            link.href = `//listenbrainz.org/playlist/${mbid}`;
+            link.title = L10n.getString('linkedToPlaylistTitle', { title });
+            link.target = '_blank';
+            link.style.textDecoration = 'none';
+            const buttonExists = this._createButton(L10n.getString('onLB'), L10n.getString('linkedToPlaylistTitle', { title }), Config.CLASS_NAMES.BUTTON_ADDED, null);
+            link.appendChild(buttonExists);
+
+            const reportButton = this._createButton(L10n.getString('viewReport'), L10n.getString('viewReportTitle'), 'lb-report-button', openReportCallback);
+
+            this._containerDiv.innerHTML = '';
+            this._containerDiv.appendChild(link);
+            this._containerDiv.appendChild(reportButton);
+            this._containerDiv.style.display = 'flex';
+        },
+
+        setStateInProgress: function(message) {
+            const button = this._createButton(message, '', '', null);
+            button.disabled = true;
+            this._replaceButton(button);
+        },
+
+        displayError: function(message) {
+            const button = this._createButton(message, '', Config.CLASS_NAMES.BUTTON_ERROR, null);
+            button.disabled = true;
+            this._replaceButton(button);
+        }
+    };
+
+    /**
+     * High-level logic for creating and syncing ListenBrainz playlists.
+     */
+    const PlaylistLogic = {
+        _generateReportHTML: function(notFoundTracks, unparsedLines, videoTitle) {
+            let html = `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><title>Playlist Import Report: ${videoTitle}</title>
+            <style>body{font-family:sans-serif;padding:1em 2em;background-color:#f9f9f9;} h1,h2{border-bottom:1px solid #ccc;padding-bottom:5px;} ul{list-style:none;padding-left:0;} li{margin-bottom:0.8em;padding:0.5em;background-color:white;border:1px solid #ddd;border-radius:4px;} a{text-decoration:none;color:#007bff;font-weight:bold;margin-left:1em;}</style>
+            </head><body><h1>Playlist Import Report</h1><h2>${videoTitle}</h2>`;
+
+            if (notFoundTracks.length > 0) {
+                html += '<h2>Unmatched Tracks</h2><p>These lines were parsed as tracks but could not be found on MusicBrainz.</p><ul>';
+                notFoundTracks.forEach(track => {
+                    const mbQuery = `artist:"${track.artist}" AND recording:"${track.title}"`;
+                    const mbSearchUrl = `https://musicbrainz.org/search?query=${encodeURIComponent(mbQuery)}&type=recording&method=advanced`;
+                    const googleQuery = `"${track.artist}" "${track.title}"`;
+                    const googleSearchUrl = `https://www.google.com/search?q=${encodeURIComponent(googleQuery)}&nfpr=1`;
+                    html += `<li>${track.originalLine} <a href="${mbSearchUrl}" target="_blank">[Search MB]</a> <a href="${googleSearchUrl}" target="_blank">[Search Google]</a></li>`;
+                });
+                html += '</ul>';
+            }
+
+            if (unparsedLines.length > 0) {
+                html += '<h2>Unparsed Lines</h2><p>These lines from the description did not match any track format.</p><ul>';
+                unparsedLines.forEach(line => {
+                    const searchUrl = `https://www.google.com/search?q=${encodeURIComponent(line)}`;
+                    html += `<li>${line} <a href="${searchUrl}" target="_blank">[Search Google]</a></li>`;
+                });
+                html += '</ul>';
+            }
+
+            html += '</body></html>';
+            return html;
+        },
+        async _processTracklist(description, progressCallback) {
+            const { parsedTracks, unparsedLines } = Utils.parseTracklist(description);
+            parsedTracks.sort((a, b) => a.timestampSeconds - b.timestampSeconds);
+
+            const foundTracks = [];
+            const notFoundTracks = [];
+            let i = 0;
+            for (const track of parsedTracks) {
+                if (progressCallback) progressCallback(i, parsedTracks.length);
+                try {
+                    const result = await ListenBrainzAPI.lookupTrack(track.artist, track.title);
+                    if (result) {
+                        foundTracks.push(result);
+                    } else {
+                        notFoundTracks.push(track);
+                    }
+                } catch (error) {
+                    console.error("Error looking up track:", track, error);
+                    notFoundTracks.push(track);
+                }
+                i++;
+            }
+            return { foundTracks, notFoundTracks, unparsedLines };
+        },
+
+        async createPlaylist(ytData, canonicalYtUrl) {
+            const token = await TokenManager.getToken();
+            if (!token) {
+                PlaylistButtonManager.setStateTokenNeeded(() => this.createPlaylist(ytData, canonicalYtUrl));
+                return;
+            }
+
+            PlaylistButtonManager.setStateInProgress('Processing...');
+            try {
+                const { foundTracks, notFoundTracks, unparsedLines } = await this._processTracklist(ytData.snippet.description, (current, total) => {
+                    PlaylistButtonManager.setStateInProgress(`Looking up: ${current}/${total}`);
+                });
+
+                if (foundTracks.length === 0) {
+                    PlaylistButtonManager.displayError('No tracks found');
+                    return;
+                }
+
+                let playlistTitle = ytData.snippet.title;
+                if (notFoundTracks.length > 0) {
+                    playlistTitle = `[INCOMPLETE] ${playlistTitle}`;
+                }
+
+                PlaylistButtonManager.setStateInProgress('Creating...');
+                const createResponse = await ListenBrainzAPI.createPlaylist(token, playlistTitle, canonicalYtUrl, foundTracks, true);
+                const newMbid = createResponse.playlist_mbid;
+
+                PlaylistButtonManager.setStateInProgress('Storing metadata...');
+                await ListenBrainzAPI.editPlaylistMetadata(token, newMbid, {
+                    title: playlistTitle,
+                    annotation: canonicalYtUrl,
+                    isPublic: true,
+                    description: ytData.snippet.description
+                });
+
+                if (notFoundTracks.length > 0 || unparsedLines.length > 0) {
+                    const reportHtml = this._generateReportHTML(notFoundTracks, unparsedLines, ytData.snippet.title);
+                    const openReport = () => {
+                        const blob = new Blob([reportHtml], { type: 'text/html' });
+                        const url = URL.createObjectURL(blob);
+                        const reportWindow = window.open(url);
+                        if (reportWindow) {
+                            reportWindow.addEventListener('unload', () => {
+                                URL.revokeObjectURL(url);
+                            });
+                        } else {
+                            alert('Popup blocked! Please allow popups for this site to view the report.');
+                        }
+                    };
+                    PlaylistButtonManager.setStateReport(playlistTitle, newMbid, openReport);
+                } else {
+                    PlaylistButtonManager.setStateExists(playlistTitle, newMbid);
+                }
+
+            } catch (error) {
+                PlaylistButtonManager.displayError('Creation Failed');
+                console.error("Error creating playlist:", error);
+            }
+        },
+
+        async syncPlaylist(ytData, canonicalYtUrl, playlistMbid) {
+            const token = await TokenManager.getToken();
+            if (!token) {
+                PlaylistButtonManager.setStateTokenNeeded(() => this.syncPlaylist(ytData, canonicalYtUrl, playlistMbid));
+                return;
+            }
+
+            PlaylistButtonManager.setStateInProgress('Syncing...');
+            try {
+                // Step 1: Fetch existing playlist and process new tracklist
+                PlaylistButtonManager.setStateInProgress('Fetching data...');
+                const existingPlaylist = await ListenBrainzAPI.fetchPlaylist(token, playlistMbid);
+                const oldTracks = existingPlaylist.track || [];
+                const oldMbids = oldTracks.map(t => t.identifier[0].split('/').pop());
+
+                const { foundTracks: newTracks, notFoundTracks, unparsedLines } = await this._processTracklist(ytData.snippet.description, (current, total) => {
+                    PlaylistButtonManager.setStateInProgress(`Looking up: ${current}/${total}`);
+                });
+                const newMbids = newTracks.map(t => t.identifier.split('/').pop());
+
+                // Steps 2 & 3: Calculate and perform deletions and additions
+                PlaylistButtonManager.setStateInProgress('Updating tracks...');
+                const lcsMbids = Utils.findLCS(oldMbids, newMbids);
+                const lcsMbidsSet = new Set(lcsMbids);
+
+                const indicesToDelete = oldMbids.map((mbid, index) => lcsMbidsSet.has(mbid) ? -1 : index).filter(index => index !== -1);
+                indicesToDelete.sort((a, b) => b - a);
+
+                const deleteGroups = Utils.groupDeletions(indicesToDelete);
+                for (const group of deleteGroups) {
+                    await ListenBrainzAPI.deletePlaylistItems(token, playlistMbid, group.index, group.count);
+                }
+
+                const currentServerMbids = oldMbids.filter(mbid => lcsMbidsSet.has(mbid));
+                let serverIndex = 0;
+                for (let i = 0; i < newMbids.length; i++) {
+                    const newMbid = newMbids[i];
+                    if (serverIndex < currentServerMbids.length && currentServerMbids[serverIndex] === newMbid) {
+                        serverIndex++;
+                    } else {
+                        const chunkToAdd = [];
+                        let lookaheadIndex = i;
+                        while (lookaheadIndex < newMbids.length && (serverIndex >= currentServerMbids.length || currentServerMbids[serverIndex] !== newMbids[lookaheadIndex])) {
+                            const trackToAdd = newTracks.find(t => t.identifier.endsWith(newMbids[lookaheadIndex]));
+                            chunkToAdd.push(trackToAdd);
+                            lookaheadIndex++;
+                        }
+                        if (chunkToAdd.length > 0) {
+                            await ListenBrainzAPI.addPlaylistItemAtOffset(token, playlistMbid, i, chunkToAdd);
+                            i = lookaheadIndex - 1;
+                        }
+                    }
+                }
+
+                // Step 4: Update Playlist Metadata on the server
+                PlaylistButtonManager.setStateInProgress('Updating title...');
+                let finalTitle = existingPlaylist.title;
+                if (notFoundTracks.length === 0) {
+                    finalTitle = existingPlaylist.title.replace(/\[INCOMPLETE\]\s*/, '');
+                } else if (!existingPlaylist.title.startsWith('[INCOMPLETE]')) {
+                    finalTitle = `[INCOMPLETE] ${existingPlaylist.title}`;
+                }
+
+                const isPublic = existingPlaylist.extension["https://musicbrainz.org/doc/jspf#playlist"].public;
+                await ListenBrainzAPI.editPlaylistMetadata(token, playlistMbid, {
+                    title: finalTitle,
+                    annotation: existingPlaylist.annotation,
+                    isPublic: isPublic,
+                    description: ytData.snippet.description
+                });
+
+                if (notFoundTracks.length > 0 || unparsedLines.length > 0) {
+                    const reportHtml = this._generateReportHTML(notFoundTracks, unparsedLines, ytData.snippet.title);
+                    const openReport = () => {
+                        const blob = new Blob([reportHtml], { type: 'text/html' });
+                        const url = URL.createObjectURL(blob);
+                        const reportWindow = window.open(url);
+                        if (reportWindow) {
+                            reportWindow.addEventListener('unload', () => {
+                                URL.revokeObjectURL(url);
+                            });
+                        } else {
+                            alert('Popup blocked! Please allow popups for this site to view the report.');
+                        }
+                    };
+                    PlaylistButtonManager.setStateReport(finalTitle, playlistMbid, openReport);
+                } else {
+                    PlaylistButtonManager.setStateExists(finalTitle, playlistMbid);
+                }
+
+            } catch (error) {
+                PlaylistButtonManager.displayError('Sync Failed');
+                console.error("Error syncing playlist:", error);
+            }
+        },
+    };
+
+    /**
      * Main application logic for the userscript.
      */
     const YouTubeMusicBrainzImporter = {
@@ -735,7 +1423,9 @@
          */
         init: function () {
             this._injectCSS();
-            ButtonManager.init();
+            TokenManager.init(); // Initialize token manager
+            RecordingButtonManager.init();
+            PlaylistButtonManager.init(); // Initialize playlist button manager
             this._setupObservers();
             this._setupUrlChangeListeners();
             this._previousUrl = window.location.href;
@@ -822,6 +1512,29 @@
                     .${Config.CLASS_NAMES.BUTTON}.${Config.CLASS_NAMES.BUTTON_INFO} {
                         background-color: #3ea6ff;
                         color: white;
+                    }
+                    .${Config.CLASS_NAMES.PLAYLIST_BUTTON} {
+                        background-color: #eb743b;
+                        color: white;
+                    }
+                    .${Config.CLASS_NAMES.PLAYLIST_BUTTON}:hover {
+                        background-color: #d16631;
+                    }
+                    .${Config.CLASS_NAMES.PLAYLIST_BUTTON}.${Config.CLASS_NAMES.PLAYLIST_BUTTON_SYNC} {
+                        background-color: #007bff;
+                    }
+                    .${Config.CLASS_NAMES.PLAYLIST_BUTTON}.${Config.CLASS_NAMES.PLAYLIST_BUTTON_SYNC}:hover {
+                        background-color: #0069d9;
+                    }
+                    .${Config.CLASS_NAMES.PLAYLIST_BUTTON}.${Config.CLASS_NAMES.PLAYLIST_BUTTON_SYNC}:hover {
+                        background-color: #0069d9;
+                    }
+                    .lb-report-button {
+                        background-color: #ffc107 !important;
+                        color: black !important;
+                    }
+                    .lb-report-button:hover {
+                        background-color: #e0a800 !important;
                     }
                 `;
                 head.appendChild(style);
@@ -927,9 +1640,9 @@
                 return;
             }
 
-            ButtonManager.resetState();
+            RecordingButtonManager.resetState();
             if (!videoId) {
-                ButtonManager._containerDiv.style.display = 'none';
+                RecordingButtonManager._containerDiv.style.display = 'none';
                 this._processingVideoId = null;
                 this._currentProcessingPromise = null;
                 console.log(`[${GM.info.script.name}] Not a YouTube video page. Hiding button.`);
@@ -971,28 +1684,48 @@
          * @returns {Promise<void>} A promise that resolves when the update is complete.
          */
         _performUpdate: async function (videoId, prefetchedYtData = null, prefetchedMbResults = null) {
+            const dockElement = await DOMScanner.getButtonAnchorElement();
+            RecordingButtonManager.appendToDock(dockElement);
+            PlaylistButtonManager.appendToDock(dockElement);
+
             let ytData = prefetchedYtData;
+            if (!ytData) {
+                try {
+                    ytData = await YouTubeAPI.fetchVideoData(videoId);
+                } catch (error) {
+                    const apiName = error.apiName || 'API';
+                    const errorMessage = error.status === 503 ?
+                        L10n.getString('errorApiRateLimit', { apiName }) :
+                        L10n.getString('errorApiNetwork', { apiName });
+                    RecordingButtonManager.displayError(errorMessage);
+                    PlaylistButtonManager.displayError(errorMessage);
+                    return;
+                }
+            }
+
+            if (!ytData) {
+                RecordingButtonManager.displayInfo(L10n.getString('errorVideoNotFound'));
+                PlaylistButtonManager.hide();
+                return;
+            }
+
+            const canonicalYtUrl = new URL(`https://www.youtube.com/watch?v=${videoId}`).toString();
+            const youtubeChannelUrl = ytData.snippet.channelId ? new URL(`https://www.youtube.com/channel/${ytData.snippet.channelId}`).toString() : null;
+
+            // ===== Run Recording Importer Logic and Playlist Logic in Parallel =====
+            const recordingPromise = this._handleRecordingImport(ytData, canonicalYtUrl, youtubeChannelUrl, prefetchedMbResults);
+            const playlistPromise = this._handlePlaylistLogic(ytData, canonicalYtUrl);
+
+            await Promise.all([recordingPromise, playlistPromise]);
+        },
+
+        _handleRecordingImport: async function (ytData, canonicalYtUrl, youtubeChannelUrl, prefetchedMbResults) {
+            RecordingButtonManager.resetState();
             let mbResults = prefetchedMbResults;
 
             try {
-                const dockElement = await DOMScanner.getButtonAnchorElement();
-                ButtonManager.appendToDock(dockElement);
-
-                if (!ytData) {
-                    ytData = await YouTubeAPI.fetchVideoData(videoId);
-                }
-                if (!ytData) {
-                    ButtonManager.displayInfo(L10n.getString('errorVideoNotFound'));
-                    return;
-                }
-
-                const canonicalYtUrl = new URL(`https://www.youtube.com/watch?v=${videoId}`).toString();
-                const youtubeChannelUrl = ytData.snippet.channelId ? new URL(`https://www.youtube.com/channel/${ytData.snippet.channelId}`).toString() : null;
-
                 const urlsToQuery = [canonicalYtUrl];
-                if (youtubeChannelUrl) {
-                    urlsToQuery.push(youtubeChannelUrl);
-                }
+                if (youtubeChannelUrl) urlsToQuery.push(youtubeChannelUrl);
 
                 if (!mbResults) {
                     mbResults = await MusicBrainzAPI.lookupUrls(urlsToQuery);
@@ -1009,35 +1742,70 @@
                     );
 
                     if (allRelevantRecordingRelations.length > 0) {
-                        console.log(`[${GM.info.script.name}] Video already linked on MusicBrainz.`);
-                        ButtonManager.displayExistingButton(allRelevantRecordingRelations, mbVideoUrlEntity.id, ytData);
+                        RecordingButtonManager.displayExistingButton(allRelevantRecordingRelations, mbVideoUrlEntity.id, ytData);
                     } else {
-                        console.log(`[${GM.info.script.name}] URL entity found, but no relevant recording relations. Proceeding to add button.`);
-                        ButtonManager.prepareAddButton(ytData, canonicalYtUrl, artistMbid, videoId);
+                        RecordingButtonManager.prepareAddButton(ytData, canonicalYtUrl, artistMbid, ytData.id);
                     }
                 } else {
-                    console.log(`[${GM.info.script.name}] YouTube URL not found as a URL entity on MusicBrainz. Preparing add button.`);
-                    ButtonManager.prepareAddButton(ytData, canonicalYtUrl, artistMbid, videoId);
+                    RecordingButtonManager.prepareAddButton(ytData, canonicalYtUrl, artistMbid, ytData.id);
                 }
             } catch (error) {
-                console.error(`[${GM.info.script.name}] Unhandled error during update for video ID: ${videoId}:`, error);
-
+                console.error(`[${GM.info.script.name}] Error in recording import logic:`, error);
                 const apiName = error.apiName || 'API';
+                const errorMessage = error.status === 503 ? L10n.getString('errorApiRateLimit', { apiName }) : L10n.getString('errorProcessing');
+                RecordingButtonManager.displayError(errorMessage);
+            }
+        },
 
-                if (error.status === 503) {
-                    ButtonManager.displayError(L10n.getString('errorApiRateLimit', {
-                        apiName
-                    }));
-                } else if (error.status === 0) {
-                    ButtonManager.displayError(L10n.getString('errorApiNetwork', {
-                        apiName
-                    }));
+        _handlePlaylistLogic: async function (ytData, canonicalYtUrl) {
+            PlaylistButtonManager.resetState();
+
+            const { parsedTracks } = Utils.parseTracklist(ytData.snippet.description);
+            if (parsedTracks.length === 0) {
+                PlaylistButtonManager.hide();
+                return;
+            }
+
+            if (!TokenManager.getTokenValue()) {
+                // Pass a function that re-runs this logic after token is set
+                PlaylistButtonManager.setStateTokenNeeded(() => this._handlePlaylistLogic(ytData, canonicalYtUrl));
+                return;
+            }
+
+            try {
+                const searchResults = await ListenBrainzAPI.searchPlaylists(canonicalYtUrl);
+                const perfectMatches = (searchResults.playlists || []).filter(p => p.playlist.annotation && p.playlist.annotation.includes(canonicalYtUrl));
+
+                if (perfectMatches.length === 1) {
+                    const playlist = perfectMatches[0].playlist;
+                    const playlistMbid = playlist.identifier.split('/').pop();
+                    const isINCOMPLETE = playlist.title.startsWith('[INCOMPLETE]');
+
+                    if (isINCOMPLETE) {
+                        PlaylistButtonManager.setStateSync(playlist.title, playlistMbid, () => {
+                            PlaylistLogic.syncPlaylist(ytData, canonicalYtUrl, playlistMbid);
+                        });
+                    } else {
+                        PlaylistButtonManager.setStateExists(playlist.title, playlistMbid);
+                    }
+                } else if (perfectMatches.length > 1) {
+                    // Handle multiple matches case if necessary, for now link to search
+                    const searchUrl = `https://listenbrainz.org/search/?search_type=playlist&search_term=${encodeURIComponent(canonicalYtUrl)}`;
+                    PlaylistButtonManager.setStateExists('On LB (Multi)', searchUrl);
                 } else {
-                    ButtonManager.displayError(L10n.getString('errorProcessing'));
+                    PlaylistButtonManager.setStateCreate(() => {
+                        PlaylistLogic.createPlaylist(ytData, canonicalYtUrl);
+                    });
                 }
+            } catch (error) {
+                console.error(`[${GM.info.script.name}] Error in playlist logic:`, error);
+                const apiName = error.apiName || 'API';
+                const errorMessage = error.status === 503 ? L10n.getString('errorApiRateLimit', { apiName }) : L10n.getString('errorProcessing');
+                PlaylistButtonManager.displayError(errorMessage);
             }
         },
     };
+
 
     /**
      * Helper function to set the checked state of a checkbox by simulating a click.
