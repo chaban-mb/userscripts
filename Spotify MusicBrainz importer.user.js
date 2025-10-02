@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Spotify: MusicBrainz importer
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      1.1.0
+// @version      1.2.0
 // @tag          ai-created
 // @description  Adds buttons for MusicBrainz, ListenBrainz, Harmony, ISRC Hunt and SAMBL to Spotify.
 // @author       chaban, garylaski, RustyNova
@@ -9,12 +9,46 @@
 // @icon         https://open.spotify.com/favicon.ico
 // @match        *://*.spotify.com/*
 // @connect      musicbrainz.org
+// @connect      listenbrainz.org
 // @grant        GM.xmlHttpRequest
 // @grant        GM.addStyle
+// @grant        GM.getValue
+// @grant        GM.setValue
+// @grant        GM.registerMenuCommand
 // ==/UserScript==
 
 (function () {
     'use strict';
+
+    const TokenManager = {
+        _token: null,
+        async init() {
+            this._token = await GM.getValue('listenbrainz_user_token', null);
+            GM.registerMenuCommand('Set ListenBrainz Token', this.setToken.bind(this));
+        },
+        getTokenValue() {
+            return this._token;
+        },
+        async getToken(forcePrompt = false) {
+            if (!this._token || forcePrompt) {
+                const success = await this.setToken();
+                if (!success) {
+                    return null;
+                }
+            }
+            return this._token;
+        },
+        async setToken() {
+            const token = prompt('Please enter your ListenBrainz User Token:', this._token || '');
+            if (token && token.trim()) {
+                this._token = token.trim();
+                await GM.setValue('listenbrainz_user_token', this._token);
+                alert('ListenBrainz token saved!');
+                return true;
+            }
+            return false;
+        }
+    };
 
     class main {
         static SCRIPT_NAME = GM.info.script.name;
@@ -39,9 +73,10 @@
             MUSICBRAINZ_API_BASE: 'https://musicbrainz.org/ws/2/url',
             MUSICBRAINZ_BASE: 'https://musicbrainz.org',
             HARMONY_BASE: 'https://harmony.pulsewidth.org.uk/release',
-            LISTENBRAINZ_BASE: 'https://listenbrainz.org',
             SAMBL_BASE: 'https://sambl.lioncat6.com',
             ISRCHUNT_BASE: 'https://isrchunt.com',
+            LISTENBRAINZ_API_BASE: 'https://api.listenbrainz.org/1',
+            LISTENBRAINZ_BASE: 'https://listenbrainz.org',
         };
 
         static BUTTON_CONFIG = {
@@ -131,6 +166,52 @@
                     spotifyPlaylist: normalizedUrl,
                 }),
             },
+            LISTENBRAINZ_IMPORT_PLAYLIST: {
+                id: 'lb-playlist-import-button', text: 'ListenBrainz Playlist', className: 'import-button-listenbrainz', color: '#5555c4',
+                pages: ['playlist'],
+                getText: ({ lbPlaylistResult, tokenExists }) => {
+                    if (!tokenExists) return 'Set LB Token';
+                    if (lbPlaylistResult.count === 1) return 'Open in ListenBrainz';
+                    if (lbPlaylistResult.count > 1) return 'Find in ListenBrainz';
+                    return 'Import to ListenBrainz';
+                },
+                getUrl: ({ normalizedUrl, lbPlaylistResult }) => {
+                    if (lbPlaylistResult.count === 1) {
+                        return new URL(lbPlaylistResult.playlists[0].playlist.identifier);
+                    }
+                    if (lbPlaylistResult.count > 1) {
+                        const { title } = main.getReleaseInfo();
+                        return main.constructUrl(`${main.URLS.LISTENBRAINZ_BASE}/search`, {
+                            search_term: title,
+                            search_type: 'playlist'
+                        });
+                    }
+                    return null;
+                },
+                onClick: async function (context) {
+                    const { lbPlaylistResult, button, tokenExists } = context;
+                    if (!tokenExists) {
+                        const token = await TokenManager.getToken(true);
+                        if (token) document.getElementById('mb-script-button-container')?.dispatchEvent(new Event('mb-button-update'));
+                        return;
+                    }
+
+                    if (lbPlaylistResult.count === 0) {
+                        main.setButtonLoading(button, true);
+                        try {
+                            const importSuccessful = await this.#importSpotifyPlaylist(context);
+                            if (importSuccessful) {
+                                document.getElementById('mb-script-button-container')?.dispatchEvent(new Event('mb-button-update'));
+                            }
+                        } catch (error) {
+                            console.error('Spotify import failed:', error);
+                            main.setButtonText(button, 'Import Failed');
+                            button.classList.add('import-button-error');
+                            main.setButtonLoading(button, false);
+                        }
+                    }
+                },
+            },
         };
 
         #urlCache = new Map();
@@ -138,8 +219,10 @@
         #observer = null;
         #debounceTimer = null;
         #buttonContainer = null;
+        #runId = 0;
 
         constructor() {
+            TokenManager.init();
             this.#addStyles();
             this.#currentUrl = location.href;
             this.#initializeObserver();
@@ -158,55 +241,83 @@
         }
 
         async #run() {
-            console.debug(`${main.SCRIPT_NAME}: Running on ${this.#currentUrl}`);
+            const runId = ++this.#runId;
+            const urlForThisRun = location.href;
+            console.debug(`${main.SCRIPT_NAME}: Starting run #${runId} for ${urlForThisRun}`);
             this.#cleanup();
 
-            const pageInfo = main.extractInfoFromUrl(location.href);
+            const pageInfo = main.extractInfoFromUrl(urlForThisRun);
             const supportedPages = [...new Set(Object.values(main.BUTTON_CONFIG).flatMap(config => config.pages))];
 
             if (!supportedPages.includes(pageInfo.type)) {
-                console.debug(`${main.SCRIPT_NAME}: Not a supported page (${pageInfo.type}). Aborting.`);
                 return;
             }
 
             try {
                 const actionBar = await main.waitForElement(main.SELECTORS.ACTION_BAR, 5000);
                 this.#createButtonContainer(actionBar);
-                const normalizedUrl = main.normalizeUrl(location.href);
 
+                this.#setupButtonsInLoadingState(pageInfo);
+
+                const normalizedUrl = main.normalizeUrl(urlForThisRun);
                 const needsMbInfo = Object.values(main.BUTTON_CONFIG).some(config =>
                     config.pages.includes(pageInfo.type) && (config.requiresMbInfo || config.id === 'mb-import-lookup-button')
                 );
 
-                const mbInfo = needsMbInfo ? await this.#fetchMusicBrainzInfo(location.href, pageInfo) : null;
+                const mbInfoPromise = needsMbInfo ? this.#fetchMusicBrainzInfo(urlForThisRun, pageInfo) : Promise.resolve(null);
+                const lbPlaylistPromise = pageInfo.type === 'playlist' ? this.#findListenBrainzPlaylist(normalizedUrl) : Promise.resolve({ count: 0 });
 
-                if (location.href !== this.#currentUrl) {
-                    console.debug(`${main.SCRIPT_NAME}: URL changed during async operation. Aborting update.`);
+                const [mbInfo, lbPlaylistResult] = await Promise.all([mbInfoPromise, lbPlaylistPromise]);
+
+                if (this.#runId !== runId) {
+                    console.debug(`${main.SCRIPT_NAME}: Aborting obsolete run #${runId} for ${urlForThisRun}.`);
                     return;
                 }
 
-                this.#setupButtons({ pageInfo, mbInfo, normalizedUrl });
+                const tokenExists = !!TokenManager.getTokenValue();
+                this.#updateButtonsWithData({ pageInfo, mbInfo, normalizedUrl, lbPlaylistResult, tokenExists });
 
             } catch (error) {
-                console.error(`${main.SCRIPT_NAME}: Failed to initialize buttons.`, error);
+                if (this.#runId !== runId) {
+                    console.debug(`${main.SCRIPT_NAME}: Suppressing error from obsolete run #${runId}.`);
+                    return;
+                }
+                console.error(`${main.SCRIPT_NAME}: Failed to initialize buttons for run #${runId}.`, error);
             }
         }
 
-
-        #setupButtons(context) {
+        #setupButtonsInLoadingState(pageInfo) {
             for (const config of Object.values(main.BUTTON_CONFIG)) {
-                this.#setupButtonFromConfig(config, context);
+                if (config.pages.includes(pageInfo.type)) {
+                    const button = this.#createOrUpdateButton(config);
+                    const needsLoading = config.requiresMbInfo || config.id === 'mb-import-lookup-button' || config.id === 'lb-playlist-import-button';
+                    if (needsLoading) {
+                        main.setButtonLoading(button, true);
+                    }
+                }
+            }
+        }
+
+        #updateButtonsWithData(context) {
+            for (const config of Object.values(main.BUTTON_CONFIG)) {
+                if (config.pages.includes(context.pageInfo.type)) {
+                    this.#setupButtonFromConfig(config, context);
+                }
             }
         }
 
         #setupButtonFromConfig(config, context) {
             const { pageInfo, mbInfo } = context;
-
-            if (!config.pages.includes(pageInfo.type)) return;
-            if (config.requiresMbInfo && !mbInfo) return;
-
-            const button = this.#createOrUpdateButton(config);
+            const button = document.getElementById(config.id);
             if (!button) return;
+
+            if (config.requiresMbInfo && !mbInfo) {
+                button.classList.add('disabled');
+                main.setButtonLoading(button, false);
+                return;
+            };
+
+            context.button = button;
 
             if (config.getText) {
                 main.setButtonText(button, config.getText(context));
@@ -218,19 +329,24 @@
             if (url) {
                 button.href = url.toString();
                 button.classList.remove('disabled');
-
+            } else if (config.onClick) {
+                const newButton = button.cloneNode(true);
+                button.parentNode.replaceChild(newButton, button);
+                newButton.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    config.onClick.call(this, { ...context, button: newButton });
+                });
+                newButton.classList.remove('disabled');
             } else {
                 button.classList.add('disabled');
-                if (config.id === 'mb-import-lookup-button') {
-                    main.setButtonText(button, 'Info N/A');
-                }
             }
         }
-
 
         #createButtonContainer(actionBar) {
             this.#buttonContainer = document.createElement('div');
             this.#buttonContainer.id = 'mb-script-button-container';
+            this.#buttonContainer.addEventListener('mb-button-update', () => this.#run());
+
             const sortButton = actionBar.querySelector(main.SELECTORS.SORT_BUTTON);
             if (sortButton) {
                 sortButton.parentElement.before(this.#buttonContainer);
@@ -266,6 +382,96 @@
             return button;
         }
 
+        async #findListenBrainzPlaylist(spotifyUrl) {
+            const cacheKey = `lb-playlist-search-${spotifyUrl}`;
+            if (this.#urlCache.has(cacheKey)) {
+                return this.#urlCache.get(cacheKey);
+            }
+
+            const result = { count: 0, playlists: [] };
+            try {
+                const playlistId = spotifyUrl.split('/').pop();
+                const searchUrl = main.constructUrl(`${main.URLS.LISTENBRAINZ_API_BASE}/playlist/search`, {
+                    query: playlistId,
+                });
+
+                const res = await main.gmXmlHttpRequest({ url: searchUrl.toString(), method: 'GET', responseType: 'json' });
+
+                if (res.status === 200 && res.response?.playlists?.length > 0) {
+                    const perfectMatches = res.response.playlists.filter(p => p.playlist.annotation === spotifyUrl);
+                    result.count = perfectMatches.length;
+                    result.playlists = perfectMatches;
+                }
+            } catch (error) {
+                console.error(`${main.SCRIPT_NAME}: ListenBrainz playlist search failed for ${spotifyUrl}`, error);
+            }
+
+            this.#urlCache.set(cacheKey, result);
+            return result;
+        }
+
+        async #importSpotifyPlaylist({ pageInfo, normalizedUrl, button }) {
+            const token = await TokenManager.getToken();
+            if (!token) {
+                main.setButtonLoading(button, false);
+                return null;
+            }
+
+            main.setButtonText(button, 'Importing...');
+            const importUrl = main.constructUrl(`${main.URLS.LISTENBRAINZ_API_BASE}/playlist/spotify/${pageInfo.id}/tracks`, {});
+            const importRes = await main.gmXmlHttpRequest({
+                method: 'GET', url: importUrl.toString(),
+                headers: { 'Authorization': `Token ${token}` },
+                responseType: 'json'
+            });
+
+            if (importRes.status !== 200) throw new Error(`Import failed: ${importRes.status}`);
+
+            const importedPlaylist = importRes.response.playlist;
+            const newMbid = importRes.response.identifier;
+
+            main.setButtonText(button, 'Annotating...');
+            const editUrl = main.constructUrl(`${main.URLS.LISTENBRAINZ_API_BASE}/playlist/edit/${newMbid}`, {});
+
+            const jspfPayload = {
+                playlist: {
+                    title: importedPlaylist.title,
+                    annotation: normalizedUrl,
+                    extension: {
+                        'https://musicbrainz.org/doc/jspf#playlist': {
+                            public: importedPlaylist.extension?.['https://musicbrainz.org/doc/jspf#playlist']?.public ?? true
+                        }
+                    }
+                }
+            };
+
+            const editRes = await main.gmXmlHttpRequest({
+                method: 'POST', url: editUrl.toString(),
+                headers: { 'Authorization': `Token ${token}`, 'Content-Type': 'application/json' },
+                data: JSON.stringify(jspfPayload),
+                responseType: 'json'
+            });
+
+            if (editRes.status !== 200) throw new Error(`Annotation failed: ${editRes.status}`);
+
+            const { title } = main.getReleaseInfo();
+            const fakeResult = {
+                count: 1,
+                playlists: [{
+                    playlist: {
+                        identifier: `${main.URLS.LISTENBRAINZ_BASE}/playlist/${newMbid}`,
+                        annotation: normalizedUrl,
+                        title: title,
+                    }
+                }]
+            };
+            const cacheKey = `lb-playlist-search-${normalizedUrl}`;
+            this.#urlCache.set(cacheKey, fakeResult);
+
+            console.log(`${main.SCRIPT_NAME}: Successfully imported and annotated playlist ${newMbid}. Cache updated.`);
+            return newMbid;
+        }
+
         #cleanup() {
             document.getElementById('mb-script-button-container')?.remove();
             this.#buttonContainer = null;
@@ -288,8 +494,10 @@
                     border: 2px solid rgba(255, 255, 255, 0.5); border-top-color: white;
                     border-radius: 50%; animation: spin 0.8s linear infinite;
                 }
+                .import-button-error { background-color: #cc0000 !important; }
                 @keyframes spin { to { transform: translate(-50%, -50%) rotate(360deg); } }
             `;
+
             const dynamicStyles = main.generateDynamicStyles();
             GM.addStyle(staticStyles + dynamicStyles);
         }
