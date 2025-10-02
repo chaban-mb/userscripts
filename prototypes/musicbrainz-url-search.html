@@ -1,0 +1,896 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MusicBrainz URL Search</title>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            margin: 20px;
+            background-color: #f4f4f4;
+            color: #333;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-height: 90vh;
+        }
+        h1 {
+            color: #2c3e50;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+        .search-container {
+            background-color: #fff;
+            padding: 20px;
+            border-radius: 12px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+            margin-bottom: 20px;
+            width: 90%; /* Responsive width */
+            max-width: 1200px; /* Increased max-width */
+            box-sizing: border-box;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+        input[type="text"], input[type="number"] {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            box-sizing: border-box;
+            font-size: 16px;
+        }
+        button {
+            padding: 12px 20px;
+            background-color: #3498db;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 16px;
+            transition: background-color 0.3s ease, transform 0.2s ease;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            width: 100%;
+        }
+        button:hover {
+            background-color: #2980b9;
+            transform: translateY(-2px);
+        }
+        button:active {
+            transform: translateY(0);
+        }
+        .results-container {
+            background-color: #fff;
+            padding: 20px;
+            border-radius: 12px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+            width: 90%; /* Responsive width */
+            max-width: 1200px; /* Increased max-width */
+            box-sizing: border-box;
+        }
+        h2 {
+            color: #2c3e50;
+            margin-top: 0;
+            margin-bottom: 5px;
+            text-align: center;
+        }
+        #resultCount, #createdTimestamp {
+            text-align: center;
+            font-size: 0.9em;
+            color: #666;
+            margin-bottom: 5px;
+            display: block;
+        }
+        #createdTimestamp {
+            margin-bottom: 15px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 15px;
+            table-layout: auto; /* Allow columns to size based on content */
+        }
+
+        th, td {
+            border: 1px solid #ddd;
+            padding: 10px;
+            text-align: left;
+            word-break: break-word; /* Default word break for general content */
+        }
+
+        th {
+            background-color: #f2f2f2;
+            font-weight: 600;
+            color: #555;
+        }
+
+        /* Specific styling for the URL MBID column to prevent breaking */
+        td:nth-child(1) {
+            white-space: nowrap; /* Prevent text from wrapping */
+            overflow: hidden; /* Hide overflow content */
+            text-overflow: ellipsis; /* Show ellipsis for hidden content */
+            max-width: 150px; /* Optional: give it a max-width if needed, but auto should handle it */
+        }
+
+        th.clickable-header-active {
+            cursor: pointer;
+            color: #3498db;
+            transition: color 0.2s ease;
+        }
+        th.clickable-header-active:hover {
+            color: #2980b9;
+        }
+        th.clickable-header-disabled {
+            cursor: not-allowed;
+            opacity: 0.7;
+        }
+
+        .sort-arrow {
+            margin-left: 5px;
+            font-size: 0.8em;
+            vertical-align: middle;
+        }
+
+
+        tbody tr:nth-child(odd) {
+            background-color: #f9f9f9;
+        }
+
+        tbody tr:hover {
+            background-color: #e9e9e9;
+        }
+
+        .error-message {
+            color: #e74c3c;
+            margin-top: 10px;
+            font-weight: bold;
+            text-align: center;
+        }
+        .loading-message-row td, .no-results-message-row td {
+            text-align: center;
+            font-style: italic;
+            color: #7f8c8d;
+        }
+        #loadMoreButton {
+            display: none;
+            margin-top: 20px;
+            width: 100%;
+        }
+        #loadMoreButton:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+
+        .progress-bar-container {
+            width: 100%;
+            background-color: #e0e0e0;
+            border-radius: 5px;
+            height: 10px;
+            margin-top: 10px;
+            overflow: hidden;
+            display: none;
+        }
+
+        .progress-bar-fill {
+            height: 100%;
+            width: 0%;
+            background-color: #2ecc71;
+            border-radius: 5px;
+            transition: width 0.3s ease-in-out;
+        }
+
+        .entity-type-stats {
+            text-align: center;
+            font-size: 0.85em;
+            color: #555;
+            margin-top: 10px;
+            margin-bottom: 15px;
+            padding: 10px;
+            background-color: #f9f9f9;
+            border-radius: 8px;
+            box-shadow: inset 0 1px 3px rgba(0,0,0,0.05);
+        }
+
+        @media (max-width: 768px) {
+            .search-container, .results-container {
+                width: 95%;
+                padding: 15px;
+            }
+            input[type="text"], button {
+                font-size: 15px;
+                padding: 10px;
+            }
+            th, td {
+                font-size: 14px;
+                padding: 8px;
+            }
+        }
+    </style>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
+</head>
+<body>
+    <h1>MusicBrainz URL Search</h1>
+
+    <div class="search-container">
+        <label for="urlInput" class="sr-only">Enter URL:</label>
+        <input type="text" id="urlInput" placeholder="e.g., *wikipedia.org* or youtube.com/*">
+
+        <label for="entityTypeInput" style="font-size: 0.9em; margin-top: 10px;">Filter by Entity Type (e.g., "artist OR group"):</label>
+        <input type="text" id="entityTypeInput" placeholder="e.g., artist OR group">
+
+        <label for="relationTypeInput" style="font-size: 0.9em; margin-top: 10px;">Filter by Relation Type (e.g., "official homepage" OR "social media"):</label>
+        <input type="text" id="relationTypeInput" placeholder="e.g., wikipedia AND wikidata">
+
+        <label for="targetIdInput" style="font-size: 0.9em; margin-top: 10px;">Filter by Target MBID (e.g., artist MBID, release MBID):</label>
+        <input type="text" id="targetIdInput" placeholder="e.g., 5b11f4ce-a62d-471e-81fc-a69a8278c7da">
+
+        <label for="autoPaginationLimit" style="font-size: 0.9em; margin-top: 10px;">Max. auto. Results (0 for all):</label>
+        <input type="number" id="autoPaginationLimit" value="100" min="0" step="100">
+
+        <button id="searchButton">Search</button>
+        <div class="progress-bar-container" id="progressBarContainer">
+            <div class="progress-bar-fill" id="progressBarFill"></div>
+        </div>
+        <div id="errorMessage" class="error-message"></div>
+    </div>
+
+    <div class="results-container">
+        <h2>Results</h2>
+        <span id="resultCount"></span>
+        <span id="createdTimestamp"></span>
+        <div id="entityTypeStats" class="entity-type-stats"></div>
+        <div id="resultsContent">
+            <table id="results-table">
+                <thead>
+                    <tr>
+                        <th id="urlMbidHeader">URL MBID</th>
+                        <th id="entityTypeHeader" class="clickable-header-active">Entity Type <span class="sort-arrow"></span></th>
+                        <th id="entityNameHeader" class="clickable-header-active">Entity Name <span class="sort-arrow"></span></th>
+                        <th id="relationTypeHeader" class="clickable-header-active">Relation Type <span class="sort-arrow"></span></th>
+                        <th id="editLinkHeader">Edit Link</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr class="no-results-message-row"><td colspan="5">No results yet.</td></tr>
+                </tbody>
+            </table>
+        </div>
+        <button id="loadMoreButton">Load More</button>
+    </div>
+
+    <script>
+        class MusicBrainzSearchApp {
+            API_LIMIT = 100;
+            REQUEST_DELAY = 1000;
+            USER_AGENT = 'MusicBrainzURLSearchApp/1.0( https://musicbrainz.org/user/chaban )';
+
+            constructor() {
+                this.urlInput = document.getElementById('urlInput');
+                this.entityTypeInput = document.getElementById('entityTypeInput');
+                this.relationTypeInput = document.getElementById('relationTypeInput');
+                this.targetIdInput = document.getElementById('targetIdInput');
+                this.autoPaginationLimitInput = document.getElementById('autoPaginationLimit');
+                this.searchButton = document.getElementById('searchButton');
+                this.resultsTableBody = document.querySelector('#results-table tbody');
+                this.errorMessage = document.getElementById('errorMessage');
+                this.loadMoreButton = document.getElementById('loadMoreButton');
+                this.urlMbidHeader = document.getElementById('urlMbidHeader');
+                this.entityTypeHeader = document.getElementById('entityTypeHeader');
+                this.entityNameHeader = document.getElementById('entityNameHeader');
+                this.relationTypeHeader = document.getElementById('relationTypeHeader');
+                this.editLinkHeader = document.getElementById('editLinkHeader');
+                this.progressBarContainer = document.getElementById('progressBarContainer');
+                this.progressBarFill = document.getElementById('progressBarFill');
+                this.resultCountSpan = document.getElementById('resultCount');
+                this.createdTimestampSpan = document.getElementById('createdTimestamp');
+                this.entityTypeStatsDiv = document.getElementById('entityTypeStats');
+
+                this.currentOffset = 0;
+                this.totalResultsCount = 0;
+                this.dynamicMaxAutoFetchLimit = 100;
+                this.fetchedMbids = new Set();
+                this.lastRequestTime = 0;
+                this.completedRequests = 0;
+                this.totalExpectedAutoRequests = 0;
+                this.entityTypeCounts = {};
+                this.countedEntitiesForStats = new Set();
+
+                this.currentSortColumn = null;
+                this.currentSortDirection = {};
+                this.originalTableRows = [];
+
+                this._initializeUI();
+                this._attachEventListeners();
+            }
+
+            _initializeUI() {
+                this.loadMoreButton.style.display = 'none';
+                this.progressBarContainer.style.display = 'none';
+                this._toggleHeaderClickability(false);
+                this.resultsTableBody.innerHTML = '<tr class="no-results-message-row"><td colspan="5">No results yet.</td></tr>';
+                this.originalTableRows = [];
+                this.entityTypeStatsDiv.innerHTML = '';
+                this._clearSortIndicators();
+            }
+
+            _attachEventListeners() {
+                this.searchButton.addEventListener('click', this.performSearch.bind(this));
+                this.urlInput.addEventListener('keypress', this._handleEnterKey.bind(this));
+                this.entityTypeInput.addEventListener('keypress', this._handleEnterKey.bind(this));
+                this.relationTypeInput.addEventListener('keypress', this._handleEnterKey.bind(this));
+                this.targetIdInput.addEventListener('keypress', this._handleEnterKey.bind(this));
+                this.autoPaginationLimitInput.addEventListener('keypress', this._handleEnterKey.bind(this));
+                this.loadMoreButton.addEventListener('click', this.fetchAndDisplayResults.bind(this));
+
+                this.urlMbidHeader.addEventListener('click', () => this._copyColumnValuesToClipboard(0));
+                this.entityTypeHeader.addEventListener('click', () => this._sortTable(1));
+                this.entityNameHeader.addEventListener('click', () => this._sortTable(2));
+                this.relationTypeHeader.addEventListener('click', () => this._sortTable(3));
+                this.editLinkHeader.addEventListener('click', () => this._copyColumnValuesToClipboard(4));
+            }
+
+            _handleEnterKey(event) {
+                if (event.key === 'Enter') {
+                    this.performSearch();
+                }
+            }
+
+            async _delayRequest() {
+                const now = Date.now();
+                const timeSinceLastRequest = now - this.lastRequestTime;
+
+                if (timeSinceLastRequest < this.REQUEST_DELAY) {
+                    const timeToWait = this.REQUEST_DELAY - timeSinceLastRequest;
+                    console.log(`Waiting ${timeToWait}ms for rate limit...`);
+                    await new Promise(resolve => setTimeout(resolve, timeToWait));
+                }
+                this.lastRequestTime = Date.now();
+            }
+
+            _updateProgressBar() {
+                if (this.totalExpectedAutoRequests > 1) {
+                    const progress = (this.completedRequests / this.totalExpectedAutoRequests) * 100;
+                    this.progressBarFill.style.width = `${progress}%`;
+                    this.progressBarContainer.style.display = 'block';
+                } else {
+                    this.progressBarContainer.style.display = 'none';
+                }
+            }
+
+            _toggleHeaderClickability(enable) {
+                [this.urlMbidHeader, this.editLinkHeader].forEach(header => {
+                    if (enable) {
+                        header.classList.add('clickable-header-active');
+                        header.classList.remove('clickable-header-disabled');
+                        header.title = 'Click to copy all values in this column';
+                    } else {
+                        header.classList.remove('clickable-header-active');
+                        header.classList.add('clickable-header-disabled');
+                        header.title = 'Wait for loading to complete before copying.';
+                    }
+                });
+
+                [this.entityTypeHeader, this.entityNameHeader, this.relationTypeHeader].forEach(header => {
+                    header.classList.add('clickable-header-active');
+                    header.classList.remove('clickable-header-disabled');
+                    header.title = 'Click to sort by this column';
+                });
+            }
+
+            _clearSortIndicators() {
+                document.querySelectorAll('.sort-arrow').forEach(arrow => {
+                    arrow.textContent = '';
+                });
+            }
+
+            _sortTable(columnIndex, forceResort = false) {
+                const rows = this.originalTableRows;
+                if (rows.length === 0) {
+                    return;
+                }
+
+                let direction;
+                if (!forceResort) {
+                    if (this.currentSortColumn !== columnIndex) {
+                        direction = 'asc';
+                        this.currentSortDirection = {};
+                    } else {
+                        switch (this.currentSortDirection[columnIndex]) {
+                            case 'asc':
+                                direction = 'desc';
+                                break;
+                            case 'desc':
+                                direction = 'none';
+                                break;
+                            case 'none':
+                            default:
+                                direction = 'asc';
+                                break;
+                        }
+                    }
+                    this.currentSortColumn = columnIndex;
+                    this.currentSortDirection[columnIndex] = direction;
+                } else {
+                    direction = this.currentSortDirection[columnIndex];
+                    if (!direction || direction === 'none') {
+                        return;
+                    }
+                }
+
+                this._clearSortIndicators();
+
+                const currentHeader = this.resultsTableBody.closest('table').querySelector(`th:nth-child(${columnIndex + 1}) .sort-arrow`);
+                if (currentHeader) {
+                    currentHeader.textContent = (this.currentSortDirection[columnIndex] === 'asc') ? '▲' :
+                                                (this.currentSortDirection[columnIndex] === 'desc') ? '▼' : '';
+                }
+
+                let sortedRows;
+                if (this.currentSortDirection[columnIndex] === 'none') {
+                    sortedRows = [...this.originalTableRows];
+                } else {
+                    sortedRows = [...this.originalTableRows].sort((rowA, rowB) => {
+                        const cellA = rowA.children[columnIndex].textContent.trim().toLowerCase();
+                        const cellB = rowB.children[columnIndex].textContent.trim().toLowerCase();
+
+                        let comparison = 0;
+                        if (cellA > cellB) {
+                            comparison = 1;
+                        } else if (cellA < cellB) {
+                            comparison = -1;
+                        }
+
+                        return this.currentSortDirection[columnIndex] === 'asc' ? comparison : -comparison;
+                    });
+                }
+
+                this.resultsTableBody.innerHTML = '';
+                const fragment = document.createDocumentFragment();
+                sortedRows.forEach(row => fragment.appendChild(row));
+                this.resultsTableBody.appendChild(fragment);
+            }
+
+            _copyColumnValuesToClipboard(columnIndex) {
+                if (this.urlMbidHeader.classList.contains('clickable-header-disabled')) {
+                    this.errorMessage.textContent = 'Please wait for loading to complete before copying.';
+                    this.errorMessage.style.color = '#e74c3c';
+                    setTimeout(() => {
+                        this.errorMessage.textContent = '';
+                    }, 3000);
+                    return;
+                }
+
+                const columnCells = this.resultsTableBody.querySelectorAll(`tr > td:nth-child(${columnIndex + 1})`);
+                if (columnCells.length === 0) {
+                    this.errorMessage.textContent = 'No values found to copy.';
+                    this.errorMessage.style.color = '#e74c3c';
+                    setTimeout(() => {
+                        this.errorMessage.textContent = '';
+                    }, 3000);
+                    return;
+                }
+
+                const uniqueValues = new Set();
+                Array.from(columnCells).forEach(cell => {
+                    const link = cell.querySelector('a');
+                    uniqueValues.add(link ? link.href : cell.textContent.trim());
+                });
+
+                const valuesToCopy = Array.from(uniqueValues).join('\n');
+
+                try {
+                    const tempTextArea = document.createElement('textarea');
+                    tempTextArea.value = valuesToCopy;
+                    tempTextArea.style.position = 'fixed';
+                    tempTextArea.style.left = '-9999px';
+                    document.body.appendChild(tempTextArea);
+                    tempTextArea.select();
+                    document.execCommand('copy');
+                    document.body.removeChild(tempTextArea);
+
+                    this.errorMessage.textContent = `All ${uniqueValues.size} unique values copied to clipboard!`;
+                    this.errorMessage.style.color = 'green';
+                    setTimeout(() => {
+                        this.errorMessage.textContent = '';
+                        this.errorMessage.style.color = '#e74c3c';
+                    }, 3000);
+                } catch (err) {
+                    console.error('Error copying to clipboard:', err);
+                    this.errorMessage.textContent = 'Error copying to clipboard.';
+                    this.errorMessage.style.color = '#e74c3c';
+                    setTimeout(() => {
+                        this.errorMessage.textContent = '';
+                    }, 3000);
+                }
+            }
+
+            _buildApiUrl(limit, offset) {
+                const url = this.urlInput.value.trim();
+                const entityType = this.entityTypeInput.value.trim();
+                const relationType = this.relationTypeInput.value.trim();
+                const targetId = this.targetIdInput.value.trim();
+
+                let query = `url:${encodeURIComponent(url)}`;
+                // Allow Lucene syntax for entityType
+                if (entityType) {
+                    query += ` AND targettype:(${encodeURIComponent(entityType)})`;
+                }
+                if (relationType) {
+                    query += ` AND relationtype:(${encodeURIComponent(relationType)})`;
+                }
+                if (targetId) {
+                    query += ` AND targetid:${encodeURIComponent(targetId)}`;
+                }
+                return `https://musicbrainz.org/ws/2/url/?query=${query}&fmt=json&limit=${limit}&offset=${offset}`;
+            }
+
+            async performSearch() {
+                const url = this.urlInput.value.trim();
+                this.errorMessage.textContent = '';
+                this.loadMoreButton.style.display = 'none';
+                this.loadMoreButton.disabled = false;
+
+                this.currentOffset = 0;
+                this.totalResultsCount = 0;
+                this.fetchedMbids.clear();
+                this.resultsTableBody.innerHTML = '';
+                this.originalTableRows = [];
+                this.resultCountSpan.textContent = '';
+                this.createdTimestampSpan.textContent = '';
+                this.entityTypeCounts = {};
+                this.countedEntitiesForStats.clear();
+                this.entityTypeStatsDiv.innerHTML = '';
+                this._toggleHeaderClickability(false);
+                this._clearSortIndicators();
+
+                this.completedRequests = 0;
+                this.totalExpectedAutoRequests = 0;
+                this.progressBarContainer.style.display = 'none';
+                this.progressBarFill.style.width = '0%';
+
+                const userDefinedLimit = parseInt(this.autoPaginationLimitInput.value, 10);
+                this.dynamicMaxAutoFetchLimit = (isNaN(userDefinedLimit) || userDefinedLimit <= 0) ? Infinity : userDefinedLimit;
+
+
+                if (!url) {
+                    this.errorMessage.textContent = 'Please enter a URL.';
+                    this.resultsTableBody.innerHTML = '<tr class="no-results-message-row"><td colspan="5">Please enter a URL.</td></tr>';
+                    return;
+                }
+
+                this.resultsTableBody.innerHTML = '<tr class="loading-message-row"><td colspan="5">Searching...</td></tr>';
+
+                try {
+                    await this._delayRequest();
+
+                    const initialRequestLimit = (this.dynamicMaxAutoFetchLimit === Infinity || this.dynamicMaxAutoFetchLimit >= this.API_LIMIT)
+                                                ? this.API_LIMIT
+                                                : this.dynamicMaxAutoFetchLimit;
+
+                    const initialApiUrl = this._buildApiUrl(initialRequestLimit, this.currentOffset);
+                    console.log('Sending initial request to:', initialApiUrl);
+
+                    const response = await fetch(initialApiUrl, {
+                        headers: {
+                            'User-Agent': this.USER_AGENT
+                        }
+                    });
+
+                    if (!response.ok) {
+                        throw new Error(`HTTP Error! Status: ${response.status}`);
+                    }
+
+                    const data = await response.json();
+
+                    this.totalResultsCount = data.count;
+                    this.resultCountSpan.textContent = `Total Results: ${this.totalResultsCount}`;
+                    if (data.created) {
+                        this.createdTimestampSpan.textContent = `Data created: ${new Date(data.created).toLocaleString()}`;
+                    }
+                    this.resultsTableBody.innerHTML = '';
+
+                    this.totalExpectedAutoRequests = Math.ceil(Math.min(this.totalResultsCount, this.dynamicMaxAutoFetchLimit) / initialRequestLimit);
+                    if (this.totalResultsCount > 0 && this.totalExpectedAutoRequests === 0) {
+                        this.totalExpectedAutoRequests = 1;
+                    }
+                    if (this.dynamicMaxAutoFetchLimit === Infinity && this.totalResultsCount > 0) {
+                        this.totalExpectedAutoRequests = Math.ceil(this.totalResultsCount / this.API_LIMIT);
+                    }
+
+                    this._updateProgressBar();
+
+                    if (data.urls && data.urls.length > 0) {
+                        await this._processAndDisplayResults(data.urls);
+
+                        this.completedRequests++;
+                        this._updateProgressBar();
+
+                        this.currentOffset += data.urls.length;
+
+                        while (this.fetchedMbids.size < this.dynamicMaxAutoFetchLimit && this.currentOffset < this.totalResultsCount) {
+                            await this.fetchAndDisplayResults();
+                        }
+
+                        this._toggleHeaderClickability(true);
+                        this.progressBarContainer.style.display = 'none';
+
+                        if (this.fetchedMbids.size < this.totalResultsCount) {
+                            this.loadMoreButton.style.display = 'block';
+                            this.loadMoreButton.disabled = false;
+                            this.loadMoreButton.textContent = 'Load More';
+                        } else {
+                            this.loadMoreButton.style.display = 'none';
+                        }
+
+                    } else {
+                        this.resultsTableBody.innerHTML = '<tr class="no-results-message-row"><td colspan="5">No URL entities found for this URL and filter.</td></tr>';
+                        this._toggleHeaderClickability(false);
+                        this.progressBarContainer.style.display = 'none';
+                    }
+
+                } catch (error) {
+                    console.error('Error fetching data:', error);
+                    this.resultsTableBody.innerHTML = '<tr class="no-results-message-row"><td colspan="5">Error fetching data: ' + error.message + '.</td></tr>';
+                    this.errorMessage.textContent = `Error fetching data: ${error.message}. This may mean the URL or filter is invalid, or no matching entities exist.`;
+                    this._toggleHeaderClickability(false);
+                    this.progressBarContainer.style.display = 'none';
+                }
+            }
+
+            async fetchAndDisplayResults() {
+                this.loadMoreButton.disabled = true;
+                this.loadMoreButton.textContent = 'Loading more results...';
+                this._toggleHeaderClickability(false);
+
+                try {
+                    await this._delayRequest();
+
+                    const url = this.urlInput.value.trim();
+                    const entityType = this.entityTypeInput.value.trim();
+                    const relationType = this.relationTypeInput.value.trim();
+                    const targetId = this.targetIdInput.value.trim();
+
+                    let query = `url:${encodeURIComponent(url)}`;
+                    if (entityType) {
+                        query += ` AND targettype:(${encodeURIComponent(entityType)})`; // Applied Lucene syntax handling
+                    }
+                    if (relationType) {
+                        query += ` AND relationtype:(${encodeURIComponent(relationType)})`;
+                    }
+                    if (targetId) {
+                        query += ` AND targetid:${encodeURIComponent(targetId)}`;
+                    }
+
+                    const currentRequestLimit = (this.dynamicMaxAutoFetchLimit === Infinity || this.dynamicMaxAutoFetchLimit >= this.API_LIMIT)
+                                                ? this.API_LIMIT
+                                                : this.dynamicMaxAutoFetchLimit;
+
+                    const apiUrl = this._buildApiUrl(currentRequestLimit, this.currentOffset);
+                    console.log('Sending pagination request to:', apiUrl);
+
+                    const response = await fetch(apiUrl, {
+                        headers: {
+                            'User-Agent': this.USER_AGENT
+                        }
+                    });
+
+                    if (!response.ok) {
+                        throw new Error(`HTTP Error! Status: ${response.status}`);
+                    }
+
+                    const data = await response.json();
+
+                    await this._processAndDisplayResults(data.urls);
+
+                    this.currentOffset += data.urls.length;
+
+                    if (this.fetchedMbids.size <= this.dynamicMaxAutoFetchLimit || this.completedRequests < this.totalExpectedAutoRequests) {
+                        this.completedRequests++;
+                        this._updateProgressBar();
+                    } else if (this.totalExpectedAutoRequests > 0) {
+                        this.completedRequests = this.totalExpectedAutoRequests;
+                        this._updateProgressBar();
+                    }
+
+                    if (this.fetchedMbids.size >= this.totalResultsCount) {
+                        this._toggleHeaderClickability(true);
+                        this.loadMoreButton.style.display = 'none';
+                        this.progressBarContainer.style.display = 'none';
+                    } else {
+                        this._toggleHeaderClickability(true);
+                        this.loadMoreButton.style.display = 'block';
+                        this.loadMoreButton.disabled = false;
+                        this.loadMoreButton.textContent = 'Load More';
+                    }
+
+                } catch (error) {
+                    console.error('Error fetching more data:', error);
+                    this.errorMessage.textContent = `Error loading more data: ${error.message}.`;
+                    this.loadMoreButton.style.display = 'none';
+                    this._toggleHeaderClickability(true);
+                    this.progressBarContainer.style.display = 'none';
+                }
+            }
+
+            _getEntityType(relation) {
+                const entityTypes = ['artist', 'release', 'release-group', 'recording', 'work', 'label', 'area', 'event', 'instrument', 'place', 'series'];
+                for (const type of entityTypes) {
+                    if (relation[type]) {
+                        return type;
+                    }
+                }
+                return 'N/A';
+            }
+
+            _getEntityName(relation) {
+                if (!relation) return 'N/A';
+
+                const entityTypeMap = {
+                    'artist': 'name',
+                    'release': 'title',
+                    'release-group': 'title',
+                    'recording': 'title',
+                    'work': 'title',
+                    'label': 'name',
+                    'area': 'name',
+                    'event': 'name',
+                    'instrument': 'name',
+                    'place': 'name',
+                    'series': 'name'
+                };
+                for (const type in entityTypeMap) {
+                    if (relation[type] && relation[type][entityTypeMap[type]]) {
+                        let name = relation[type][entityTypeMap[type]];
+                        if (relation[type].disambiguation) {
+                            name += ` (${relation[type].disambiguation})`;
+                        }
+                        return name;
+                    }
+                }
+                return 'N/A';
+            }
+
+            _getEntityId(relation) {
+                const entityTypes = ['artist', 'release', 'release-group', 'recording', 'work', 'label', 'area', 'event', 'instrument', 'place', 'series'];
+                for (const type of entityTypes) {
+                    if (relation[type] && relation[type].id) {
+                        return relation[type].id;
+                    }
+                }
+                return null;
+            }
+
+            _getRelationType(relation) {
+                return relation.type || 'N/A';
+            }
+
+            _displayEntityTypeStats() {
+                let statsHtml = '<strong>Entity Type Counts:</strong><br>';
+                const sortedTypes = Object.keys(this.entityTypeCounts).sort();
+
+                if (sortedTypes.length === 0) {
+                    this.entityTypeStatsDiv.innerHTML = 'No entity type stats available.';
+                    return;
+                }
+
+                sortedTypes.forEach(type => {
+                    statsHtml += `${type}: ${this.entityTypeCounts[type]}<br>`;
+                });
+                this.entityTypeStatsDiv.innerHTML = statsHtml;
+            }
+
+            async _processAndDisplayResults(urls) {
+                if (!urls || urls.length === 0) {
+                    return;
+                }
+
+                for (const urlEntity of urls) {
+                    if (!this.fetchedMbids.has(urlEntity.id)) {
+                        this.fetchedMbids.add(urlEntity.id);
+
+                        if (urlEntity['relation-list'] && urlEntity['relation-list'].length > 0) {
+                            for (const relationListItem of urlEntity['relation-list']) {
+                                if (relationListItem.relations && relationListItem.relations.length > 0) {
+                                    for (const relation of relationListItem.relations) {
+                                        const tr = document.createElement('tr');
+
+                                        const mbidTd = document.createElement('td');
+                                        mbidTd.innerHTML = `<a href="https://musicbrainz.org/url/${urlEntity.id}" target="_blank" rel="noopener noreferrer">${urlEntity.id}</a>`;
+                                        tr.appendChild(mbidTd);
+
+                                        const entityType = this._getEntityType(relation);
+                                        const entityTypeTd = document.createElement('td');
+                                        entityTypeTd.textContent = entityType;
+                                        tr.appendChild(entityTypeTd);
+
+                                        const entityName = this._getEntityName(relation);
+                                        const entityNameTd = document.createElement('td');
+                                        entityNameTd.textContent = entityName;
+                                        tr.appendChild(entityNameTd);
+
+                                        const relationType = this._getRelationType(relation);
+                                        const relationTypeTd = document.createElement('td');
+                                        relationTypeTd.textContent = relationType;
+                                        tr.appendChild(relationTypeTd);
+
+                                        const editLinkTd = document.createElement('td');
+                                        editLinkTd.innerHTML = `<a href="https://musicbrainz.org/url/${urlEntity.id}/edit" target="_blank" rel="noopener noreferrer">Edit</a>`;
+                                        tr.appendChild(editLinkTd);
+
+                                        this.originalTableRows.push(tr);
+
+                                        const entityId = this._getEntityId(relation);
+                                        if (entityId) {
+                                            const uniqueEntityKey = `${entityType}-${entityId}`;
+                                            if (!this.countedEntitiesForStats.has(uniqueEntityKey)) {
+                                                this.entityTypeCounts[entityType] = (this.entityTypeCounts[entityType] || 0) + 1;
+                                                this.countedEntitiesForStats.add(uniqueEntityKey);
+                                            }
+                                        } else {
+                                            const uniqueEntityKey = `${entityType}-${urlEntity.id}-${relationType}-no-target`;
+                                            if (!this.countedEntitiesForStats.has(uniqueEntityKey)) {
+                                                this.entityTypeCounts[entityType] = (this.entityTypeCounts[entityType] || 0) + 1;
+                                                this.countedEntitiesForStats.add(uniqueEntityKey);
+                                            }
+                                        }
+                                    }
+                                } else {
+                                    const tr = document.createElement('tr');
+                                    const mbidTd = document.createElement('td');
+                                    mbidTd.innerHTML = `<a href="https://musicbrainz.org/url/${urlEntity.id}" target="_blank" rel="noopener noreferrer">${urlEntity.id}</a>`;
+                                    tr.appendChild(mbidTd);
+                                    const entityTypeTd = document.createElement('td'); entityTypeTd.textContent = 'N/A'; tr.appendChild(entityTypeTd);
+                                    const entityNameTd = document.createElement('td'); entityNameTd.textContent = 'N/A'; tr.appendChild(entityNameTd);
+                                    const relationTypeTd = document.createElement('td'); relationTypeTd.textContent = 'N/A'; tr.appendChild(relationTypeTd);
+                                    const editLinkTd = document.createElement('td');
+                                    editLinkTd.innerHTML = `<a href="https://musicbrainz.org/url/${urlEntity.id}/edit" target="_blank" rel="noopener noreferrer">Edit</a>`;
+                                    tr.appendChild(editLinkTd);
+                                    this.originalTableRows.push(tr);
+                                    const uniqueEntityKey = `N/A-${urlEntity.id}-no-relations`;
+                                    if (!this.countedEntitiesForStats.has(uniqueEntityKey)) {
+                                        this.entityTypeCounts['N/A'] = (this.entityTypeCounts['N/A'] || 0) + 1;
+                                        this.countedEntitiesForStats.add(uniqueEntityKey);
+                                    }
+                                }
+                            }
+                        } else {
+                            const tr = document.createElement('tr');
+                            const mbidTd = document.createElement('td');
+                            mbidTd.innerHTML = `<a href="https://musicbrainz.org/url/${urlEntity.id}" target="_blank" rel="noopener noreferrer">${urlEntity.id}</a>`;
+                            tr.appendChild(mbidTd);
+                            const entityTypeTd = document.createElement('td'); entityTypeTd.textContent = 'N/A'; tr.appendChild(entityTypeTd);
+                            const entityNameTd = document.createElement('td'); entityNameTd.textContent = 'N/A'; tr.appendChild(entityNameTd);
+                            const relationTypeTd = document.createElement('td'); relationTypeTd.textContent = 'N/A'; tr.appendChild(relationTypeTd);
+                            const editLinkTd = document.createElement('td');
+                            editLinkTd.innerHTML = `<a href="https://musicbrainz.org/url/${urlEntity.id}/edit" target="_blank" rel="noopener noreferrer">Edit</a>`;
+                            tr.appendChild(editLinkTd);
+                            this.originalTableRows.push(tr);
+                            const uniqueEntityKey = `N/A-${urlEntity.id}-no-relation-list`;
+                            if (!this.countedEntitiesForStats.has(uniqueEntityKey)) {
+                                this.entityTypeCounts['N/A'] = (this.entityTypeCounts['N/A'] || 0) + 1;
+                                this.countedEntitiesForStats.add(uniqueEntityKey);
+                            }
+                        }
+                    }
+                }
+
+                if (this.currentSortColumn !== null && this.currentSortDirection[this.currentSortColumn] !== 'none') {
+                    this._sortTable(this.currentSortColumn, true);
+                } else {
+                    this.resultsTableBody.innerHTML = '';
+                    const fragment = document.createDocumentFragment();
+                    this.originalTableRows.forEach(row => fragment.appendChild(row));
+                    this.resultsTableBody.appendChild(fragment);
+                }
+
+                this._displayEntityTypeStats();
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            new MusicBrainzSearchApp();
+        });
+    </script>
+</body>
+</html>
