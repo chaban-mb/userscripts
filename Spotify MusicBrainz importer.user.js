@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Spotify: MusicBrainz importer
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      1.2.0
+// @version      1.2.1
 // @tag          ai-created
 // @description  Adds buttons for MusicBrainz, ListenBrainz, Harmony, ISRC Hunt and SAMBL to Spotify.
 // @author       chaban, garylaski, RustyNova
@@ -260,22 +260,26 @@
                 this.#setupButtonsInLoadingState(pageInfo);
 
                 const normalizedUrl = main.normalizeUrl(urlForThisRun);
-                const needsMbInfo = Object.values(main.BUTTON_CONFIG).some(config =>
-                    config.pages.includes(pageInfo.type) && (config.requiresMbInfo || config.id === 'mb-import-lookup-button')
-                );
+                const tokenExists = !!TokenManager.getTokenValue();
+                const initialContext = { pageInfo, normalizedUrl, tokenExists, runId };
 
-                const mbInfoPromise = needsMbInfo ? this.#fetchMusicBrainzInfo(urlForThisRun, pageInfo) : Promise.resolve(null);
-                const lbPlaylistPromise = pageInfo.type === 'playlist' ? this.#findListenBrainzPlaylist(normalizedUrl) : Promise.resolve({ count: 0 });
+                this.#updateButtonsWithData(initialContext);
 
-                const [mbInfo, lbPlaylistResult] = await Promise.all([mbInfoPromise, lbPlaylistPromise]);
+                const needsMbInfo = Object.values(main.BUTTON_CONFIG).some(config => config.pages.includes(pageInfo.type) && config.requiresMbInfo);
 
-                if (this.#runId !== runId) {
-                    console.debug(`${main.SCRIPT_NAME}: Aborting obsolete run #${runId} for ${urlForThisRun}.`);
-                    return;
+                if (needsMbInfo) {
+                    this.#fetchMusicBrainzInfo(urlForThisRun, pageInfo).then(mbInfo => {
+                        if (this.#runId !== runId) return;
+                        this.#updateButtonsWithData({ ...initialContext, mbInfo });
+                    });
                 }
 
-                const tokenExists = !!TokenManager.getTokenValue();
-                this.#updateButtonsWithData({ pageInfo, mbInfo, normalizedUrl, lbPlaylistResult, tokenExists });
+                if (pageInfo.type === 'playlist') {
+                    this.#findListenBrainzPlaylist(normalizedUrl).then(lbPlaylistResult => {
+                        if (this.#runId !== runId) return;
+                        this.#updateButtonsWithData({ ...initialContext, lbPlaylistResult });
+                    });
+                }
 
             } catch (error) {
                 if (this.#runId !== runId) {
@@ -300,7 +304,11 @@
 
         #updateButtonsWithData(context) {
             for (const config of Object.values(main.BUTTON_CONFIG)) {
-                if (config.pages.includes(context.pageInfo.type)) {
+                const canSetUp =
+                      (!config.requiresMbInfo || context.mbInfo !== undefined) &&
+                      (config.id !== 'lb-playlist-import-button' || context.lbPlaylistResult !== undefined);
+
+                if (config.pages.includes(context.pageInfo.type) && canSetUp) {
                     this.#setupButtonFromConfig(config, context);
                 }
             }
