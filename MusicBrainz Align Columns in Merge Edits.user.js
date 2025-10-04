@@ -40,14 +40,14 @@
         characterData: true,
     };
 
-    function time(name, func) {
-        const startTime = performance.now();
-        if (DEBUG) console.time(`[${SCRIPT_NAME}] ${name}`);
-        func();
-        const endTime = performance.now();
-        if (DEBUG) console.timeEnd(`[${SCRIPT_NAME}] ${name}`);
-        return endTime - startTime;
-    }
+    function time(name, func) {
+        const startTime = performance.now();
+        if (DEBUG) console.time(`[${SCRIPT_NAME}] ${name}`);
+        func();
+        const endTime = performance.now();
+        if (DEBUG) console.timeEnd(`[${SCRIPT_NAME}] ${name}`);
+        return endTime - startTime;
+    }
 
     function debounce(func, wait) {
         let timeout;
@@ -133,34 +133,34 @@
             this.#subscribeToConfigChanges();
         }
 
-        runAlignment() {
-            if (this.#tables.some(table => !document.body.contains(table))) {
-                this.disconnect();
-                return 0;
-            }
+        runAlignment() {
+            if (this.#tables.some(table => !document.body.contains(table))) {
+                this.disconnect();
+                return 0;
+            }
 
-            if (DEBUG) console.log(`%c[${SCRIPT_NAME}] Running alignment for ${this.#uniqueId}...`, 'font-weight: bold; color: royalblue;');
-            this.#observer.disconnect();
+            if (DEBUG) console.log(`%c[${SCRIPT_NAME}] Running alignment for ${this.#uniqueId}...`, 'font-weight: bold; color: royalblue;');
+            this.#observer.disconnect();
 
-            let duration = 0;
-            try {
-                duration = time(`Alignment for ${this.#uniqueId}`, () => {
-                    this.#resetStyles();
-                    const headerMaps = this.#getHeaderMaps();
-                    if (headerMaps.some(h => h.length === 0)) return;
+            let duration = 0;
+            try {
+                duration = time(`Alignment for ${this.#uniqueId}`, () => {
+                    this.#resetStyles();
+                    const headerMaps = this.#getHeaderMaps();
+                    if (headerMaps.some(h => h.length === 0)) return;
 
-                    const collapsedColumns = this.#findCollapsedColumns(headerMaps);
-                    const columnWidths = this.#calculateColumnWidths(headerMaps, collapsedColumns);
-                    if (DEBUG) console.log(`[${SCRIPT_NAME}] Calculated column widths for ${this.#uniqueId}:`, columnWidths);
-                    this.#applyColumnStyles(columnWidths, headerMaps, collapsedColumns);
-                });
-            } catch (error) {
-                console.error(`[${SCRIPT_NAME}] Error during alignment for ${this.#uniqueId}:`, error);
-            } finally {
-                this.#reconnectObserver();
-            }
-            return duration;
-        }
+                    const collapsedColumns = this.#findCollapsedColumns(headerMaps);
+                    const columnWidths = this.#calculateColumnWidths(headerMaps, collapsedColumns);
+                    if (DEBUG) console.log(`[${SCRIPT_NAME}] Calculated column widths for ${this.#uniqueId}:`, columnWidths);
+                    this.#applyColumnStyles(columnWidths, headerMaps, collapsedColumns);
+                });
+            } catch (error) {
+                console.error(`[${SCRIPT_NAME}] Error during alignment for ${this.#uniqueId}:`, error);
+            } finally {
+                this.#reconnectObserver();
+            }
+            return duration;
+        }
 
         #calculateColumnWidths(headerMaps, collapsedColumns) {
             const columnWidths = new Map();
@@ -329,31 +329,31 @@
         await config.load();
         if (DEBUG) console.log(`[${SCRIPT_NAME}] Initial configuration loaded:`, config.getAll());
 
-        const dirtyAligners = new Set();
-        const runDirtyAlignments = debounce(() => {
-            if (dirtyAligners.size === 0) return;
-            const taskCount = dirtyAligners.size;
-            if (DEBUG) console.log(`%c[${SCRIPT_NAME}] Scheduler dispatching ${taskCount} alignment tasks...`, 'font-weight: bold; color: darkgreen;');
+        const dirtyAligners = new Set();
+        const runDirtyAlignments = debounce(() => {
+            if (dirtyAligners.size === 0) return;
+            const taskCount = dirtyAligners.size;
+            if (DEBUG) console.log(`%c[${SCRIPT_NAME}] Scheduler dispatching ${taskCount} alignment tasks...`, 'font-weight: bold; color: darkgreen;');
 
-            let completedTasks = 0;
-            let totalCpuTime = 0;
+            let completedTasks = 0;
+            let totalCpuTime = 0;
 
-            dirtyAligners.forEach(aligner => {
-                setTimeout(() => {
-                    const executionTime = aligner.runAlignment();
-                    if (typeof executionTime === 'number') {
-                        totalCpuTime += executionTime;
-                    }
-                    completedTasks++;
+            dirtyAligners.forEach(aligner => {
+                setTimeout(() => {
+                    const executionTime = aligner.runAlignment();
+                    if (typeof executionTime === 'number') {
+                        totalCpuTime += executionTime;
+                    }
+                    completedTasks++;
 
-                    if (completedTasks === taskCount) {
-                        if (DEBUG) console.log(`%c[${SCRIPT_NAME}] Batch of ${taskCount} tasks finished. Total CPU time: ${totalCpuTime.toFixed(2)} ms`, 'font-weight: bold; color: darkgreen;');
-                    }
-                }, 0);
-            });
+                    if (completedTasks === taskCount) {
+                        if (DEBUG) console.log(`%c[${SCRIPT_NAME}] Batch of ${taskCount} tasks finished. Total CPU time: ${totalCpuTime.toFixed(2)} ms`, 'font-weight: bold; color: darkgreen;');
+                    }
+                }, 0);
+            });
 
-            dirtyAligners.clear();
-        }, 250);
+            dirtyAligners.clear();
+        }, 250);
 
 
         const scheduleAlignment = (aligner) => {
