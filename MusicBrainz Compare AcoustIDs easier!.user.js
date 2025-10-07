@@ -1,5 +1,5 @@
 // ==UserScript==
-// @name          Musicbrainz: Compare AcoustIDs easier!
+// @name          MusicBrainz: Compare AcoustIDs easier!
 // @namespace     https://musicbrainz.org/user/chaban
 // @version       1.0.0
 // @tag           ai-created
