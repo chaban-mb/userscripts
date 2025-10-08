@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        Beatport: MusicBrainz Importer
 // @namespace   https://musicbrainz.org/user/chaban
-// @version     2.3.3
+// @version     2.4.0
 // @description Adds MusicBrainz status icons to Beatport releases and allows importing them with Harmony
 // @tag         ai-created
 // @author      RustyNova, chaban
@@ -11,6 +11,7 @@
 // @icon        https://www.google.com/s2/favicons?sz=64&domain=beatport.com
 // @grant       GM.xmlHttpRequest
 // @run-at      document-idle
+// @require     lib/MusicBrainzAPI.js
 // ==/UserScript==
 
 (function() {
@@ -20,11 +21,9 @@
    * Configuration object to centralize all constants.
    */
   const Config = {
-    SHORT_APP_NAME: 'UserJS.BeatportMusicBrainzImporter',
+    USER_AGENT: 'UserJS.BeatportMusicBrainzImporter',
     HARMONY_BASE_URL: 'https://harmony.pulsewidth.org.uk/release',
-    MUSICBRAINZ_API_BASE_URL: 'https://musicbrainz.org/ws/2/url',
     MUSICBRAINZ_BASE_URL: 'https://musicbrainz.org/',
-
     HARMONY_ICON_URL: 'https://harmony.pulsewidth.org.uk/favicon.svg',
     MUSICBRAINZ_ICON_URL: 'https://raw.githubusercontent.com/metabrainz/musicbrainz-server/master/root/static/images/entity/release.svg',
 
@@ -59,10 +58,6 @@
       BUTTON_HARMONY: 'button_harmony',
     },
 
-    MB_API_BATCH_SIZE: 100,
-    MB_API_MAX_RETRIES: 5,
-    MB_API_TIMEOUT_MS: 10000,
-
     OBSERVER_CONFIG: {
       root: document,
       options: {
@@ -71,15 +66,6 @@
       }
     },
   };
-
-  /**
-   * Utility function to pause execution for a given number of milliseconds.
-   * @param {number} ms - The number of milliseconds to sleep.
-   * @returns {Promise<void>} A promise that resolves after the specified delay.
-   */
-  function sleep(ms) {
-    return new Promise(resolve => setTimeout(resolve, ms));
-  }
 
   /**
    * General utility functions.
@@ -359,8 +345,11 @@
       button.textContent = "Import with Harmony";
       button.className = `${Config.CLASS_NAMES.BUTTON_HARMONY}`;
       button.title = "Import with Harmony"
+      button.onclick = function() {
+        BeatportMusicBrainzImporter._mbApi.clearCache();
+        window.open(getHarmonyImportUrl(releaseUrl), '_blank').focus();
+      };
 
-      button.onclick = this._createOpenWindowHandler(getHarmonyImportUrl(releaseUrl));
       container.appendChild(button);
     },
 
@@ -454,153 +443,6 @@
     }
   };
 
-
-  /**
-   * Handles all interactions with the MusicBrainz API, including caching and retries.
-   */
-  const MusicBrainzAPI = {
-    _urlCache: new Map(),
-
-    /**
-     * Queries MusicBrainz for multiple URLs in batches using the 'resource' parameter.
-     * @param {string[]} urlsToQuery - An array of URLs to query.
-     * @returns {Promise<Map<string, Array|null|undefined>>} A promise that resolves to a Map where keys are URLs
-     * and values are either [targetType, mbid], null (not found), or undefined (API failed).
-     */
-    lookupUrls: async function(urlsToQuery) {
-      const resultsMap = new Map();
-      const uniqueUrlsToQuery = [...new Set(urlsToQuery)];
-
-      const uncachedUrls = uniqueUrlsToQuery.filter(url => {
-        const cached = this._urlCache.get(url);
-        if (cached !== undefined) {
-          resultsMap.set(url, cached);
-          return false;
-        }
-        return true;
-      });
-
-      if (uncachedUrls.length === 0) {
-        return resultsMap;
-      }
-
-      for (let i = 0; i < uncachedUrls.length; i += Config.MB_API_BATCH_SIZE) {
-        const batch = uncachedUrls.slice(i, i + Config.MB_API_BATCH_SIZE);
-
-        const apiUrl = new URL(Config.MUSICBRAINZ_API_BASE_URL);
-        batch.forEach(url => {
-          const parsedUrl = new URL(url);
-          const normalizedPathname = Utils._getBasePathname(parsedUrl.pathname);
-          const normalizedUrl = `${parsedUrl.origin}${normalizedPathname}${parsedUrl.search}`;
-          apiUrl.searchParams.append('resource', normalizedUrl);
-        });
-        apiUrl.searchParams.set('inc', 'release-rels');
-        apiUrl.searchParams.set('fmt', 'json');
-
-        let tries = 0;
-        let success = false;
-        while (!success && tries < Config.MB_API_MAX_RETRIES) {
-          await sleep(1000 * tries);
-
-          try {
-            const response = await GM.xmlHttpRequest({
-              url: apiUrl.toString(),
-              method: "GET",
-              responseType: "json",
-              headers: {
-                'Accept': "application/json",
-                'Origin': location.origin,
-                'User-Agent': `${Config.SHORT_APP_NAME}/${GM_info.script.version} ( ${GM_info.script.namespace} )`,
-              },
-              anonymous: true,
-              timeout: Config.MB_API_TIMEOUT_MS
-            });
-
-            if (response.status === 200 && response.response) {
-                let urlEntities;
-                if (batch.length === 1) {
-                    urlEntities = [response.response];
-                } else if (Array.isArray(response.response.urls)) {
-                    urlEntities = response.response.urls;
-                } else {
-                    batch.forEach(url => this._urlCache.set(url, null));
-                    success = true;
-                    continue;
-                }
-
-                this._processApiResponse(batch, urlEntities, resultsMap);
-                success = true;
-
-            } else if (response.status === 404) {
-              batch.forEach(url => this._urlCache.set(url, null));
-              success = true;
-            } else if (response.status === 503) {
-              tries++;
-            } else {
-              tries++;
-            }
-          } catch (e) {
-            tries++;
-          }
-        }
-
-        if (!success) {
-          batch.forEach(url => {
-            this._urlCache.set(url, undefined);
-            resultsMap.delete(url);
-          });
-        }
-      }
-      return resultsMap;
-    } ,
-
-    /**
-     * Internal helper to process successful API responses and update cache/results.
-     * @param {string[]} originalUrlsInBatch - The original batch of URLs sent in the request.
-     * @param {Array<Object>} urlEntities - The 'urls' array from the MusicBrainz API response (or single object wrapped in array).
-     * @param {Map<string, Array|null|undefined>} resultsMap - The map to store current results.
-     */
-    _processApiResponse: function(originalUrlsInBatch, urlEntities, resultsMap) {
-
-      originalUrlsInBatch.forEach(originalUrl => {
-        const urlEntity = urlEntities.find(ue => {
-          const parsedOriginalUrl = new URL(originalUrl);
-          const normalizedOriginalPathname = Utils._getBasePathname(parsedOriginalUrl.pathname);
-          const normalizedOriginalUrl = `${parsedOriginalUrl.origin}${normalizedOriginalPathname}${parsedOriginalUrl.search}`;
-
-          const parsedEntityResource = new URL(ue.resource);
-          const normalizedEntityResourcePathname = Utils._getBasePathname(parsedEntityResource.pathname);
-          const normalizedEntityResource = `${parsedEntityResource.origin}${normalizedEntityResourcePathname}${parsedEntityResource.search}`;
-
-          return normalizedOriginalUrl === normalizedEntityResource;
-        });
-
-        if (urlEntity) {
-          if (urlEntity.relations && urlEntity.relations.length > 0) {
-            // Find the first relation that targets a 'release'
-            const releaseRelation = urlEntity.relations.find(rel => rel['target-type'] === 'release');
-
-            if (releaseRelation && releaseRelation.release && releaseRelation.release.id) {
-                const targetType = releaseRelation['target-type'];
-                const mbid = releaseRelation.release.id;
-                this._urlCache.set(originalUrl, [targetType, mbid]);
-                resultsMap.set(originalUrl, [targetType, mbid]);
-            } else {
-                this._urlCache.set(originalUrl, null);
-                resultsMap.set(originalUrl, null);
-            }
-          } else {
-            this._urlCache.set(originalUrl, null);
-            resultsMap.set(originalUrl, null);
-          }
-        } else {
-          this._urlCache.set(originalUrl, null);
-          resultsMap.set(originalUrl, null);
-        }
-      });
-    }
-  };
-
   /**
    * Scans the DOM for release rows and extracts relevant information.
    */
@@ -661,13 +503,17 @@
     _scheduleUpdate: false,
     _observerTimeoutId: null,
     _previousUrl: '',
-    _observerInstance: null, // General DOM MutationObserver instance
-    _nprogressObserver: null, // NProgress specific MutationObserver instance
+    _observerInstance: null,
+    _nprogressObserver: null,
+    _mbApi: null,
 
     /**
      * Initializes the application: injects CSS and sets up the MutationObserver.
      */
     init: function() {
+      this._mbApi = new MusicBrainzAPI({
+          user_agent: `${Config.USER_AGENT}/${GM_info.script.version} ( ${GM_info.script.namespace} )`
+      });
       this._injectCSS();
       this._setupObservers();
       this._previousUrl = window.location.href;
@@ -811,7 +657,6 @@
           // Only trigger if URL actually changed to avoid redundant calls if state is pushed without URL change
           if (window.location.href !== self._previousUrl) {
               self._previousUrl = window.location.href;
-              MusicBrainzAPI._urlCache.clear();
               self._waitForNProgressToFinish().then(() => self.runUpdate());
           }
       };
@@ -821,7 +666,6 @@
           // Only trigger if URL actually changed
           if (window.location.href !== self._previousUrl) {
               self._previousUrl = window.location.href;
-              MusicBrainzAPI._urlCache.clear();
               self._waitForNProgressToFinish().then(() => self.runUpdate());
           }
       };
@@ -829,7 +673,6 @@
       window.addEventListener('popstate', () => {
           // popstate always means URL changed (back/forward)
           self._previousUrl = window.location.href;
-          MusicBrainzAPI._urlCache.clear();
           self._waitForNProgressToFinish().then(() => self.runUpdate());
       });
 
@@ -879,8 +722,21 @@
 
       if (isDetailPage) {
         const currentUrl = window.location.href;
-        const mbResultsMap = await MusicBrainzAPI.lookupUrls([currentUrl]);
-        const mbStatus = mbResultsMap.get(currentUrl);
+        let mbStatus = null;
+        try {
+            const urlData = await this._mbApi.lookupUrl(currentUrl, ['release-rels']);
+            if (urlData) {
+                const releaseRelation = urlData.relations?.find(rel => rel['target-type'] === 'release' && rel.release);
+                if (releaseRelation) {
+                    mbStatus = [releaseRelation['target-type'], releaseRelation.release.id];
+                }
+            }
+        } catch (error) {
+            // A 404 Not Found is an expected outcome, so we don't log it as an error.
+            if (!error.message.includes('HTTP Error 404')) {
+                console.error(`Failed to lookup Beatport URL: ${currentUrl}`, error);
+            }
+        }
         await ButtonManager.processReleasePageButtons(mbStatus);
         this._runningUpdate = false;
         return;
@@ -895,21 +751,48 @@
       }
 
       const urls = releasesToProcess.map(r => r.url);
-      const mbResultsMap = await MusicBrainzAPI.lookupUrls(urls);
+      const urlNormalizationMap = new Map(urls.map(url => {
+          const parsedUrl = new URL(url);
+          const normalizedPathname = Utils._getBasePathname(parsedUrl.pathname);
+          return [url, `${parsedUrl.origin}${normalizedPathname}${parsedUrl.search}`];
+      }));
+      const normalizedUrls = [...urlNormalizationMap.values()];
 
-      for (const {
-          url,
-          element
-        } of releasesToProcess) {
-        const status = mbResultsMap.get(url);
-        if (status !== undefined) {
-          await IconManager.updateReleaseRow(element, url, status);
+      const mbResultsMap = new Map();
+        try {
+            const mbResults = await this._mbApi.lookupUrl(normalizedUrls, ['release-rels']);
+            for (const originalUrl of urls) {
+                const normalizedUrl = urlNormalizationMap.get(originalUrl);
+                const urlData = mbResults[normalizedUrl];
+
+                if (urlData && urlData.relations) {
+                    const releaseRelation = urlData.relations.find(rel => rel['target-type'] === 'release' && rel.release);
+                    if (releaseRelation) {
+                        mbResultsMap.set(originalUrl, [releaseRelation['target-type'], releaseRelation.release.id]);
+                    } else {
+                        mbResultsMap.set(originalUrl, null);
+                    }
+                } else {
+                    mbResultsMap.set(originalUrl, null);
+                }
+            }
+        } catch (error) {
+            if (!error.message.includes('HTTP Error 404')) {
+                console.error('Failed to lookup Beatport URLs', error);
+            }
+            urls.forEach(url => mbResultsMap.set(url, undefined));
         }
-      }
-      this._runningUpdate = false;
+
+
+        for (const { url, element } of releasesToProcess) {
+            const status = mbResultsMap.get(url);
+            if (status !== undefined) {
+                await IconManager.updateReleaseRow(element, url, status);
+            }
+        }
+        this._runningUpdate = false;
     }
   };
 
-  BeatportMusicBrainzImporter.init();
-
+    BeatportMusicBrainzImporter.init();
 })();
