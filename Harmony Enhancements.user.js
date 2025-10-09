@@ -1561,107 +1561,78 @@
         },
 
         normalizeETI: () => {
-            const { tracklistTitleCells, releaseTitleNode } = AppState.dom;
+            const { trackRowsByNumber } = AppState.dom;
             const releaseData = getReleaseDataFromJSON();
             if (!releaseData?.media || releaseData.info?.sourceMap?.title !== 'Spotify') {
                 return;
             }
 
-            const providers = releaseData.info?.providers || [];
-            const providerCount = providers.length;
+            const PROVIDER_PRIORITY = ['deezer', 'itunes'];
             const regexp = /(?<title>.+?)(?:\s+?[\u2010\u2012\u2013\u2014~/-])(?![^(]*\)) (?<eti>.*)/;
             let modifications = [];
 
-            const getCorrectedTitle = (originalTitle) => {
+            const getPreferredTitleFromAltValues = (trackCell) => {
+                const altValuesList = trackCell.querySelector('ul.alt-values');
+                if (!altValuesList) return null;
+
+                for (const provider of PROVIDER_PRIORITY) {
+                    for (const li of altValuesList.children) {
+                        if (li.querySelector(`span.${provider}`)) {
+                            const preferredTitle = li.firstChild?.textContent?.trim();
+                            if (preferredTitle) {
+                                return preferredTitle;
+                            }
+                        }
+                    }
+                }
+                return null;
+            };
+
+            const getReformattedTitle = (originalTitle) => {
                 if (!originalTitle) return null;
                 const match = originalTitle.match(regexp);
                 if (!match) return null;
 
                 const { title, eti } = match.groups;
                 const etiTrimmed = eti.trim();
-                if (!etiTrimmed) return null;
-
-                const newTitle = `${title.trim()} (${etiTrimmed})`;
-                return { original: originalTitle, new: newTitle };
+                return etiTrimmed ? `${title.trim()} (${etiTrimmed})` : null;
             };
 
-            const findTextNode = (element, text) => {
-                for (const node of element.childNodes) {
-                    if (node.nodeType === Node.TEXT_NODE && node.textContent.includes(text)) {
-                        return node;
-                    }
-                    if (node.nodeType === Node.ELEMENT_NODE) {
-                        const found = findTextNode(node, text);
-                        if (found) return found;
+            const applyTitleChange = (track, newTitle, trackCell) => {
+                const originalTitle = track.title;
+                if (newTitle === originalTitle) return;
+
+                track.title = newTitle;
+                modifications.push(`Track ${track.number}: "${originalTitle}" -> "${newTitle}"`);
+
+                const entityLinksSpan = trackCell?.querySelector('.entity-links');
+                if (entityLinksSpan) {
+                    const textNode = Array.from(entityLinksSpan.childNodes)
+                        .find(node => node.nodeType === Node.TEXT_NODE && node.textContent.trim() === originalTitle);
+                    if (textNode) {
+                        UI_UTILS.updateElementText(textNode, newTitle, originalTitle, 'Original title:');
                     }
                 }
-                return null;
             };
 
-            const updateTitleUI = (element, originalTitle, newTitle) => {
-                if (!element) return;
-                UI_UTILS.updateElementText(element, newTitle, originalTitle, 'Original title:');
-            };
-
-            // --- First Pass: Determine which titles are normalizable ---
-            const normalizableTitles = new Set();
-            if (providerCount > 1) {
-                releaseData.media.forEach(medium => {
-                    medium.tracklist?.forEach(track => {
-                        const trackCell = Array.from(tracklistTitleCells)
-                            .find(cell => cell.textContent.includes(track.title));
-                        if (trackCell && trackCell.querySelector('ul.alt-values')) {
-                            normalizableTitles.add(track.title);
-                        }
-                    });
-                });
-            } else if (providerCount === 1 && providers[0].internalName === 'spotify') {
-                const techTerms = AppState.settings[SETTINGS_CONFIG.techTerms.key];
-                const techTermsRegex = new RegExp(`\\b(${techTerms.join('|')})\\b`, 'i');
-                const allTitles = new Set([
-                    releaseData.title,
-                    ...releaseData.media.flatMap(m => m.tracklist?.map(t => t.title) || [])
-                ].filter(Boolean));
-
-                allTitles.forEach(title => {
-                    const match = title.match(regexp);
-                    if (match) {
-                        const { eti } = match.groups;
-                        const etiTrimmed = eti.trim();
-                        if (etiTrimmed) {
-                            if (techTermsRegex.test(etiTrimmed)) {
-                                normalizableTitles.add(title);
-                            }
-                        }
-                    }
-                });
-            }
-
-            // --- Second Pass: Apply corrections to normalizable titles ---
-            // Correct the release title
-            const releaseTitleCorrection = getCorrectedTitle(releaseData.title);
-            if (releaseTitleCorrection && normalizableTitles.has(releaseTitleCorrection.original)) {
-                AppState.data.release.title = releaseTitleCorrection.new;
-                modifications.push(`Release title: "${releaseTitleCorrection.original}" -> "${releaseTitleCorrection.new}"`);
-                updateTitleUI(releaseTitleNode, releaseTitleCorrection.original, releaseTitleCorrection.new);
-            }
-
-            // Correct each track title
-            releaseData.media.forEach(medium => {
+            // --- Main Processing Loop ---
+            releaseData.media.forEach((medium, mediumIndex) => {
                 medium.tracklist?.forEach(track => {
-                    const trackTitleCorrection = getCorrectedTitle(track.title);
-                    if (trackTitleCorrection && normalizableTitles.has(trackTitleCorrection.original)) {
-                        track.title = trackTitleCorrection.new;
-                        modifications.push(`Track ${track.number}: "${trackTitleCorrection.original}" -> "${trackTitleCorrection.new}"`);
+                    const compositeKey = `${mediumIndex}-${track.number}`;
+                    const trackRow = trackRowsByNumber.get(compositeKey);
+                    if (!trackRow) return;
 
-                        const trackCell = Array.from(tracklistTitleCells)
-                            .find(cell => cell.textContent.includes(trackTitleCorrection.original));
-                        if (trackCell) {
-                            const titleTextNode = findTextNode(trackCell, trackTitleCorrection.original);
-                            if (titleTextNode) {
-                                updateTitleUI(titleTextNode, trackTitleCorrection.original, trackTitleCorrection.new);
-                            }
-                        }
+                    const trackCell = trackRow.cells[1];
+                    if (!trackCell) return;
+
+                    let newTitle = getPreferredTitleFromAltValues(trackCell);
+
+                    if (!newTitle) {
+                        newTitle = getReformattedTitle(track.title);
+                    }
+
+                    if (newTitle) {
+                        applyTitleChange(track, newTitle, trackCell);
                     }
                 });
             });
@@ -1932,9 +1903,8 @@
                 AppState.dom.freshStateScript = document.querySelector('script[id^="__FRSH_STATE_"]');
                 AppState.dom.releaseContainer = document.querySelector('div.release');
                 AppState.dom.releaseTitleNode = document.querySelector('h2.release-title');
-                AppState.dom.tracklistTitleCells = document.querySelectorAll('table.tracklist td:nth-child(2)');
                 AppState.dom.releaseArtistNode = AppState.dom.releaseContainer?.querySelector('.release-artist');
-                AppState.dom.artistCreditSpan = AppState.dom.releaseArtistNode?.querySelector('.artist-credit')
+                AppState.dom.artistCreditSpan = AppState.dom.releaseArtistNode?.querySelector('.artist-credit');
                 AppState.dom.permalinkHeader = document.querySelector('h2.center');
                 AppState.dom.permaLink = document.querySelector('p.center > a');
                 AppState.dom.regionInput = document.querySelector('#region-input');
@@ -1946,6 +1916,18 @@
                     count: span.querySelectorAll('a').length,
                     html: span.outerHTML,
                 }));
+                AppState.dom.trackRowsByNumber = new Map();
+                const tracklistTables = document.querySelectorAll('table.tracklist');
+                tracklistTables.forEach((table, mediumIndex) => {
+                    table.querySelectorAll('tbody tr').forEach(row => {
+                        const numberCell = row.querySelector('td.numeric');
+                        const trackNumber = numberCell ? parseInt(numberCell.textContent.trim(), 10) : null;
+                        if (trackNumber !== null) {
+                            const compositeKey = `${mediumIndex}-${trackNumber}`;
+                            AppState.dom.trackRowsByNumber.set(compositeKey, row);
+                        }
+                    });
+                });
                 break;
             case path.startsWith('/release/actions'):
                 AppState.dom.actionsHeader = Array.from(document.querySelectorAll('h2')).find(h => h.textContent.includes('Release Actions'));
