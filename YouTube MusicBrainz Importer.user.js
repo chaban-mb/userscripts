@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YouTube: MusicBrainz Importer
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      2.6.0
+// @version      2.7.0
 // @description  Imports YouTube videos to MusicBrainz as a new standalone recording
 // @tag          ai-created
 // @author       nikki, RustyNova, chaban
@@ -18,6 +18,7 @@
 // @grant        GM.registerMenuCommand
 // @run-at       document-end
 // @noframes
+// @require      lib/MusicBrainzAPI.js
 // ==/UserScript==
 
 //**************************************************************************//
@@ -173,7 +174,7 @@
                 alert('ListenBrainz token saved!');
                 return true;
             }
-            return false; 
+            return false;
         }
     };
 
@@ -479,167 +480,6 @@
                 throw error;
             }
         },
-    };
-
-    /**
-     * Handles all interactions with the MusicBrainz API.
-     */
-    const MusicBrainzAPI = {
-        _urlCache: new Map(),
-        _requestQueue: [],
-        _isProcessingQueue: false,
-        _lastRequestTime: 0,
-
-        /**
-         * Throttles GM.xmlHttpRequest calls to respect MusicBrainz API rate limits.
-         * @param {Object} options - Request options.
-         * @returns {Promise<Object>} A promise that resolves with the response object.
-         */
-        _throttledGmXmlHttpRequest: function (options) {
-            return new Promise((resolve, reject) => {
-                const request = {
-                    options,
-                    resolve,
-                    reject
-                };
-                this._requestQueue.push(request);
-                this._processQueue();
-            });
-        },
-
-        /**
-         * Processes the request queue, respecting the rate limit.
-         */
-        _processQueue: function () {
-            if (this._isProcessingQueue || this._requestQueue.length === 0) {
-                return;
-            }
-
-            this._isProcessingQueue = true;
-            const now = Date.now();
-
-            const timeSinceLastRequest = now - this._lastRequestTime;
-            const delay = Math.max(0, Config.INITIAL_RETRY_DELAY_MS - timeSinceLastRequest);
-
-            setTimeout(async () => {
-                const request = this._requestQueue.shift();
-                if (request) {
-                    try {
-                        const response = await Utils.gmXmlHttpRequest(request.options, 'MusicBrainz API');
-                        request.resolve(response);
-                    } catch (error) {
-                        request.reject(error);
-                    } finally {
-                        this._lastRequestTime = Date.now();
-                        this._isProcessingQueue = false;
-                        this._processQueue();
-                    }
-                } else {
-                    this._isProcessingQueue = false;
-                }
-            }, delay);
-        },
-
-        /**
-         * Looks up multiple URLs on MusicBrainz to find existing relations.
-         * @param {string[]} canonicalUrls - An array of canonical URLs to look up.
-         * @returns {Promise<Map<string, Object|null>>} A promise that resolves with a Map where keys are URLs and values are MusicBrainz URL entity data (including relations), or null if not found/error.
-         */
-        lookupUrls: async function (canonicalUrls) {
-            const resultsMap = new Map();
-            const urlsToFetch = [];
-
-            for (const url of canonicalUrls) {
-                if (this._urlCache.has(url)) {
-                    const cachedData = this._urlCache.get(url);
-                    if (cachedData !== false && cachedData !== null) {
-                        console.log(`[${GM.info.script.name}] MusicBrainz URL entity found in cache for ${url}.`);
-                    } else {
-                        console.log(`[${GM.info.script.name}] MusicBrainz URL not found in cache for ${url}.`);
-                    }
-                    resultsMap.set(url, cachedData !== false ? cachedData : null);
-                } else {
-                    urlsToFetch.push(url);
-                }
-            }
-
-            if (urlsToFetch.length === 0) {
-                return resultsMap;
-            }
-
-            const url = new URL('url', Config.MUSICBRAINZ_API_ROOT);
-            urlsToFetch.forEach(resUrl => url.searchParams.append('resource', resUrl));
-            url.searchParams.append('inc', 'recording-rels+artist-rels');
-            url.searchParams.append('fmt', 'json');
-
-            console.log(`[${GM.info.script.name}] :`, url.toString());
-            try {
-                const response = await this._throttledGmXmlHttpRequest({
-                    method: 'GET',
-                    url: url.toString(),
-                    headers: {
-                        "User-Agent": USER_AGENT,
-                    },
-                    anonymous: true,
-                });
-
-                const data = JSON.parse(response.responseText);
-
-                if (urlsToFetch.length === 1) {
-                    if (data && data.resource === urlsToFetch[0]) {
-                        this._urlCache.set(urlsToFetch[0], data);
-                        resultsMap.set(urlsToFetch[0], data);
-                    } else {
-                        this._urlCache.set(urlsToFetch[0], false);
-                        resultsMap.set(urlsToFetch[0], null);
-                    }
-                } else {
-                    if (data.urls && data.urls.length > 0) {
-                        for (const urlEntity of data.urls) {
-                            const originalUrl = urlsToFetch.find(u => u === urlEntity.resource);
-                            if (originalUrl) {
-                                this._urlCache.set(originalUrl, urlEntity);
-                                resultsMap.set(originalUrl, urlEntity);
-                            }
-                        }
-                    }
-                }
-
-                for (const url of urlsToFetch) {
-                    if (!resultsMap.has(url)) {
-                        this._urlCache.set(url, false);
-                        resultsMap.set(url, null);
-                    }
-                }
-                return resultsMap;
-
-            } catch (error) {
-                if (error.status === 404 && urlsToFetch.length === 1) {
-                    console.info(`[${GM.info.script.name}] MusicBrainz URL not found (404) for single URL: ${urlsToFetch[0]}. This is expected and handled.`);
-                    this._urlCache.set(urlsToFetch[0], false);
-                    resultsMap.set(urlsToFetch[0], null);
-                    return resultsMap;
-                } else {
-                    console.error(`[${GM.info.script.name}] Error looking up MusicBrainz URLs:`, error);
-                    throw error;
-                }
-            }
-        },
-
-        /**
-         * Extracts the Artist MBID from a MusicBrainz URL entity if it contains artist relations.
-         * @param {Object|null} channelUrlEntity - The MusicBrainz URL entity object for a channel.
-         * @returns {string|null} The Artist MBID if found, otherwise null.
-         */
-        _extractArtistMbid: function (channelUrlEntity) {
-            if (!channelUrlEntity || !channelUrlEntity.relations) return null;
-            for (const relation of channelUrlEntity.relations) {
-                if (relation['target-type'] === 'artist' && relation.artist && relation.artist.id) {
-                    return relation.artist.id;
-                }
-            }
-            return null;
-        }
     };
 
     /**
@@ -958,11 +798,11 @@
 
             this._submitButton.onclick = () => {
                 console.log(`[${GM.info.script.name}] Import button clicked. Clearing cache for video ID: ${videoId}`);
-                MusicBrainzAPI._urlCache.delete(canonicalYtUrl);
+                YouTubeMusicBrainzImporter._mbApi.invalidateCacheForUrl(canonicalYtUrl);
 
                 if (youtubeVideoData.snippet.channelId) {
                     const youtubeChannelUrl = new URL(`https://www.youtube.com/channel/${youtubeVideoData.snippet.channelId}`).toString();
-                    MusicBrainzAPI._urlCache.delete(youtubeChannelUrl);
+                    YouTubeMusicBrainzImporter._mbApi.invalidateCacheForUrl(youtubeChannelUrl);
                 }
             };
         },
@@ -1417,11 +1257,56 @@
         _navigationTimeoutId: null,
         _prefetchedDataPromise: null,
         _prefetchedVideoId: null,
+        _mbApi: null,
+        _urlCache: new Map(),
+
+        lookupMbUrls: async function (canonicalUrls) {
+            const resultsMap = new Map();
+            const urlsToFetch = [];
+
+            for (const url of canonicalUrls) {
+                if (this._urlCache.has(url)) {
+                    resultsMap.set(url, this._urlCache.get(url));
+                } else {
+                    urlsToFetch.push(url);
+                }
+            }
+
+            if (urlsToFetch.length === 0) {
+                return resultsMap;
+            }
+
+            try {
+                const data = await this._mbApi.lookupUrl(urlsToFetch, ['recording-rels', 'artist-rels']);
+
+                urlsToFetch.forEach(url => {
+                    const urlData = data[url] || null;
+                    this._urlCache.set(url, urlData);
+                    resultsMap.set(url, urlData);
+                });
+           } catch (error) {
+               if (error.name === 'PermanentError') {
+                   console.log(`[${GM.info.script.name}] A URL was not found in MusicBrainz (404), which is expected.`);
+               } else {
+                   console.error(`[${GM.info.script.name}] An unexpected error occurred looking up MusicBrainz URLs:`, error);
+               }
+               urlsToFetch.forEach(url => resultsMap.set(url, null));
+           }
+            return resultsMap;
+        },
+
+        _extractArtistMbid: function (channelUrlEntity) {
+            if (!channelUrlEntity?.relations) return null;
+            const artistRelation = channelUrlEntity.relations.find(rel => rel['target-type'] === 'artist' && rel.artist);
+            return artistRelation?.artist.id || null;
+        },
+
 
         /**
          * Initializes the application: injects CSS and sets up observers.
          */
         init: function () {
+            this._mbApi = new MusicBrainzAPI({ user_agent: USER_AGENT });
             this._injectCSS();
             TokenManager.init(); // Initialize token manager
             RecordingButtonManager.init();
@@ -1618,7 +1503,7 @@
                 if (youtubeChannelUrl) {
                     urlsToQuery.push(youtubeChannelUrl);
                 }
-                const mbResultsPromise = MusicBrainzAPI.lookupUrls(urlsToQuery);
+                const mbResultsPromise = this.lookupMbUrls(urlsToQuery);
 
                 const [finalYtData, finalMbResults] = await Promise.all([Promise.resolve(ytData), mbResultsPromise]);
                 console.log(`[${GM.info.script.name}] Pre-fetching completed for video ID: ${videoId}.`);
@@ -1728,11 +1613,11 @@
                 if (youtubeChannelUrl) urlsToQuery.push(youtubeChannelUrl);
 
                 if (!mbResults) {
-                    mbResults = await MusicBrainzAPI.lookupUrls(urlsToQuery);
+                    mbResults = await this.lookupMbUrls(urlsToQuery);
                 }
 
                 const mbVideoUrlEntity = mbResults.get(canonicalYtUrl);
-                const artistMbid = youtubeChannelUrl ? MusicBrainzAPI._extractArtistMbid(mbResults.get(youtubeChannelUrl)) : null;
+                const artistMbid = youtubeChannelUrl ? this._extractArtistMbid(mbResults.get(youtubeChannelUrl)) : null;
 
                 if (mbVideoUrlEntity) {
                     const allRelevantRecordingRelations = (mbVideoUrlEntity.relations || []).filter(
