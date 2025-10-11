@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         MusicBrainz: Guess Case Improver
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      0.2.0
+// @version      0.3.0
 // @tag          ai-created
-// @description  Improves the native guess case with multi-word parsing and adds duplicate artist removal after using "Guess feat. artists".
+// @description  Improves the native "Guess Case" for release, recording and track titles with advanced artist and ETI parsing. Also removes duplicate artists after using "Guess feat. artists" on tracklists.
 // @author       chaban
 // @license      MIT
 // @match        https://*.musicbrainz.org/recording/create*
@@ -41,7 +41,7 @@
     const etiPhrasesToLowercase = [
         'official lyric video', 'official music video', 'backing track',
         'kinetic lyric video', 'animated', 'animation', 'official video',
-        'official visualizer',
+        'official visualizer', 'slowed' , 'super slowed', 'speed up', 'sped up'
     ];
 
     const JOIN_PHRASE_PATTERN = /\s*(?:featuring|feat|ft|vs)\.?\s*|\s*(?:[,，、&・×/])\s*|\s+and\s+/gi;
@@ -82,7 +82,6 @@
             return Array.from(this.#bubble.querySelectorAll('tbody > tr:has(div.autocomplete2)'));
         }
     }
-
 
     // ====================================================================================
     // --- Core Logic & Helper Functions
@@ -130,7 +129,7 @@
         // Priority 3: Fallback to seeded data in the stash
         try {
             const namesData = window?.__MB__?.$c?.stash?.artist_credit?.names ??
-                            window?.__MB__?.$c?.stash?.source_entity?.artistCredit?.names;
+                              window?.__MB__?.$c?.stash?.source_entity?.artistCredit?.names;
 
             if (namesData?.length > 0) {
                 const names = namesData.map(part => part.name?.trim().toLowerCase()).filter(Boolean);
@@ -146,7 +145,6 @@
         warn('Could not determine current artists from any source.');
         return [];
     }
-
 
     function parseArtistNamesFromString(artistString) {
         if (!artistString) return [];
@@ -275,27 +273,6 @@
         }
     }
 
-    function enhanceGuessCase(button) {
-        if (button.dataset.enhanced) return;
-        log('Found "Guess Case" button to enhance.', button);
-        const input = findAssociatedInput(button);
-        if (!input) return;
-
-        const runFullProcess = () => setReactValue(input, applyAdvancedRules(input.value, button));
-
-        button.addEventListener('click', () => setTimeout(runFullProcess, 0), true);
-        button.addEventListener('mouseenter', (event) => {
-            if (event.buttons !== 0) return;
-            setTimeout(() => {
-                if (input.classList.contains('preview')) {
-                    input.value = applyAdvancedRules(input.value, button);
-                }
-            }, 0);
-        }, true);
-
-        button.dataset.enhanced = 'true';
-    }
-
     function enhanceTrackGuessFeat(button) {
         if (button.dataset.enhanced) return;
         log('Found track "Guess Feat." button to enhance.', button);
@@ -332,29 +309,104 @@
         button.dataset.enhanced = 'true';
     }
 
+    function enhanceReactGuessCase(button) {
+        if (button.dataset.enhanced) return;
+        log('Found React-based "Guess Case" button to enhance.', button);
+
+        const input = findAssociatedInput(button);
+        if (!input) {
+            warn('Could not find associated input for guess case button.', button);
+            return;
+        }
+
+        button.addEventListener('click', () => {
+            log('"Guess Case" click detected. Allowing native script to run first.');
+            // A click finalizes the action, so we must clear the preview state
+            // immediately to prevent the subsequent mouseleave event from
+            // reverting the change.
+            originalValueForPreview = null;
+
+            setTimeout(() => {
+                const nativeValue = input.value;
+                log(`Value after native guess case is: "${nativeValue}". Applying advanced rules.`);
+                const enhancedValue = applyAdvancedRules(nativeValue, button);
+                if (enhancedValue !== nativeValue) {
+                    log(`Enhanced value is: "${enhancedValue}".`);
+                    setReactValue(input, enhancedValue);
+                }
+            }, 0);
+        });
+
+        // --- Preview Logic ---
+        let originalValueForPreview = null;
+
+        button.addEventListener('mouseenter', (event) => {
+            if (event.buttons !== 0) return;
+            originalValueForPreview = input.value;
+
+            setTimeout(() => {
+                const nativePreviewValue = input.value;
+                const enhancedPreviewValue = applyAdvancedRules(nativePreviewValue, button);
+
+                if (enhancedPreviewValue !== originalValueForPreview) {
+                    // There is a change, so we must show a preview.
+                    input.classList.add('preview');
+                    input.value = enhancedPreviewValue;
+                } else {
+                    // There is NO net change. Ensure no preview is shown.
+                    // The native script might have added the class, so we must remove it.
+                    input.classList.remove('preview');
+                    // Ensure the value is reset, in case the native preview changed it.
+                    input.value = originalValueForPreview;
+
+                }
+            }, 0);
+        });
+
+        button.addEventListener('mouseleave', () => {
+            input.classList.remove('preview');
+            // If originalValueForPreview is set, it means we have an active preview state.
+            if (originalValueForPreview !== null) {
+                // Always restore the original value and clean up the preview state.
+                log('Hiding preview and restoring original value.');
+                input.value = originalValueForPreview;
+                input.classList.remove('preview');
+                originalValueForPreview = null;
+
+            }
+        });
+
+        button.dataset.enhanced = 'true';
+    }
+
     // ====================================================================================
     // --- Initialization
     // ====================================================================================
 
-    function enhanceAllButtons(node) {
-        if (!node.querySelectorAll) return;
-        node.querySelectorAll('button.guesscase-title').forEach(enhanceGuessCase);
-        node.querySelectorAll('tr.track button.guessfeat').forEach(enhanceTrackGuessFeat);
-        node.querySelectorAll('button[data-click="guessMediumFeatArtists"]').forEach(enhanceMediumGuessFeat);
+    function enhanceLegacyGuessCase() {
+        const releaseEditor = window.MB?._releaseEditor;
+        if (!releaseEditor || releaseEditor.guessCaseTrackName.isEnhanced) return;
+        log('Found release editor, enhancing legacy (track name) guess case.');
+
+        const originalGuessCaseTrackName = releaseEditor.guessCaseTrackName;
+        releaseEditor.guessCaseTrackName = function(track, event) {
+            originalGuessCaseTrackName.call(this, track, event);
+            switch (event.type) {
+                case 'mouseenter':
+                    track.previewName(applyAdvancedRules(track.previewName.peek(), event.target));
+                    break;
+                case 'click':
+                    track.name(applyAdvancedRules(track.name.peek(), event.target));
+                    break;
+            }
+        };
+        releaseEditor.guessCaseTrackName.isEnhanced = true;
     }
 
-    log('Setting up MutationObserver.');
-    const observer = new MutationObserver((mutations) => {
-        mutations.forEach(mutation => {
-            mutation.addedNodes.forEach(node => {
-                if (node.nodeType === Node.ELEMENT_NODE) {
-                    enhanceAllButtons(node);
-                }
-            });
-        });
+    const observer = new MutationObserver(() => {
+        if (window.MB?._releaseEditor) enhanceLegacyGuessCase();
+        document.querySelectorAll('.guesscase-title:not([data-enhanced])').forEach(button => !button.closest('table.tracklist') && enhanceReactGuessCase(button));
+        document.querySelectorAll('button.guessfeat:not([data-enhanced])').forEach(button => (button.closest('tr.track') ? enhanceTrackGuessFeat(button) : (button.closest('fieldset.advanced-medium') && enhanceMediumGuessFeat(button))));
     });
     observer.observe(document.body, { childList: true, subtree: true });
-
-    enhanceAllButtons(document);
-
 })();
