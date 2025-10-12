@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Spotify: MusicBrainz importer
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      1.2.1
+// @version      1.3.0
 // @tag          ai-created
 // @description  Adds buttons for MusicBrainz, ListenBrainz, Harmony, ISRC Hunt and SAMBL to Spotify.
 // @author       chaban, garylaski, RustyNova
@@ -15,6 +15,7 @@
 // @grant        GM.getValue
 // @grant        GM.setValue
 // @grant        GM.registerMenuCommand
+// @require      lib/MusicBrainzAPI.js
 // ==/UserScript==
 
 (function () {
@@ -70,7 +71,6 @@
             ],
         };
         static URLS = {
-            MUSICBRAINZ_API_BASE: 'https://musicbrainz.org/ws/2/url',
             MUSICBRAINZ_BASE: 'https://musicbrainz.org',
             HARMONY_BASE: 'https://harmony.pulsewidth.org.uk/release',
             SAMBL_BASE: 'https://sambl.lioncat6.com',
@@ -220,9 +220,11 @@
         #debounceTimer = null;
         #buttonContainer = null;
         #runId = 0;
+        #mbApi = null;
 
         constructor() {
             TokenManager.init();
+            this.#mbApi = new MusicBrainzAPI({ user_agent: `${main.SCRIPT_NAME}/${GM.info.script.version} ( ${GM.info.script.namespace} )` });
             this.#addStyles();
             this.#currentUrl = location.href;
             this.#initializeObserver();
@@ -511,10 +513,13 @@
         }
 
         async #fetchMusicBrainzInfo(url, pageInfo) {
+            console.debug(`%c[${main.SCRIPT_NAME}] #fetchMusicBrainzInfo`, 'color: blue; font-weight: bold;', { url, pageInfo });
             const normalizedUrl = main.normalizeUrl(url);
             if (this.#urlCache.has(normalizedUrl)) {
+                console.debug(`[${main.SCRIPT_NAME}] Cache HIT for ${normalizedUrl}`);
                 return this.#urlCache.get(normalizedUrl);
             }
+            console.debug(`[${main.SCRIPT_NAME}] Cache MISS for ${normalizedUrl}`);
 
             const incMap = {
                 album: 'release-rels',
@@ -523,21 +528,59 @@
             };
             const inc = incMap[pageInfo.type];
 
+            const spotifyToMbType = {
+                album: 'release',
+                artist: 'artist',
+                track: 'recording',
+            };
+            const expectedMbType = spotifyToMbType[pageInfo.type];
+            console.debug(`[${main.SCRIPT_NAME}] Expected MB Type: ${expectedMbType}`);
+
             try {
-                const res = await main.gmXmlHttpRequest({
-                    url: main.constructUrl(main.URLS.MUSICBRAINZ_API_BASE, { limit: 1, fmt: 'json', inc, resource: normalizedUrl }),
-                    method: 'GET',
-                    responseType: 'json',
-                });
-                if (res.status !== 200 || !res.response?.relations?.length) {
-                    this.#urlCache.set(normalizedUrl, null); return null;
+                // The API module returns a single object for a single URL lookup
+                const urlData = await this.#mbApi.lookupUrl(normalizedUrl, [inc]);
+                console.debug(`[${main.SCRIPT_NAME}] API Response:`, urlData);
+
+                if (!urlData || !Array.isArray(urlData.relations) || urlData.relations.length === 0) {
+                    console.debug(`[${main.SCRIPT_NAME}] No relations found in API response.`);
+                    this.#urlCache.set(normalizedUrl, null);
+                    return null;
                 }
-                const relation = res.response.relations[0];
-                const result = { targetType: relation['target-type'], mbid: relation[relation['target-type']].id };
+
+                // Find the specific relation that matches our expected entity type
+                const relation = urlData.relations.find(rel =>
+                    rel['target-type'] === expectedMbType && rel[expectedMbType]
+                );
+                console.debug(`[${main.SCRIPT_NAME}] Found matching relation:`, relation);
+
+                if (!relation) {
+                    console.debug(`[${main.SCRIPT_NAME}] No relation found for expected type '${expectedMbType}'.`);
+                    this.#urlCache.set(normalizedUrl, null);
+                    return null;
+                }
+
+                const mbid = relation[expectedMbType].id;
+                if (!mbid) {
+                     console.warn(`[${main.SCRIPT_NAME}] Relation found, but MBID is missing.`);
+                     this.#urlCache.set(normalizedUrl, null);
+                     return null;
+                }
+
+                const result = {
+                    targetType: expectedMbType,
+                    mbid: mbid
+                };
+                console.debug(`[${main.SCRIPT_NAME}] Successfully parsed result:`, result);
                 this.#urlCache.set(normalizedUrl, result);
                 return result;
+
             } catch (error) {
-                console.error(`${main.SCRIPT_NAME}: MB API request failed for ${normalizedUrl}`, error);
+                // The API module might throw a PermanentError for 404s, which is expected.
+                if (!error.message || !error.message.includes('404')) {
+                    console.error(`${main.SCRIPT_NAME}: MB API request failed for ${normalizedUrl}`, error);
+                } else {
+                    console.debug(`[${main.SCRIPT_NAME}] API returned 404 (Not Found) for ${normalizedUrl}, as expected for an unlinked entity.`);
+                }
                 this.#urlCache.set(normalizedUrl, null);
                 return null;
             }
