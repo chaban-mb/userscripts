@@ -1,7 +1,7 @@
 // ==UserScript==
-// @name         MusicBrainz: Artwork Uploader Thumbnails Accelerator
+// @name         [DEPRECATED] MusicBrainz: Artwork Uploader Thumbnails Accelerator
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      1.0.4
+// @version      1.0.5
 // @tag          ai-created
 // @description  Replaces data URI thumbnails on the artwork uploader with object URLs for better performance.
 // @author       chaban
@@ -16,37 +16,12 @@
 (function() {
     'use strict';
 
-    const originalReadAsDataURL = FileReader.prototype.readAsDataURL;
+    const SCRIPT_NAME = GM.info.script.name;
+    const MESSAGE =
+        `MusicBrainz: Artwork Uploader Thumbnails Accelerator is now DEPRECATED.\n\n` +
+        `This script is no longer needed as the optimization is now built into MusicBrainz.\n\n` +
+        `Please uninstall the script from your userscript manager.`;
 
-    FileReader.prototype.readAsDataURL = function(file) {
-        const fileReaderInstance = this;
-
-        const originalOnload = fileReaderInstance.onload;
-        const originalOnloadend = fileReaderInstance.onloadend;
-
-        fileReaderInstance.onload = (event) => {
-            const objectURL = URL.createObjectURL(file);
-
-            Object.defineProperty(fileReaderInstance, 'result', {
-                value: objectURL,
-                writable: false,
-                configurable: true,
-            });
-
-            if (originalOnload) {
-                originalOnload.call(fileReaderInstance, event);
-            }
-        };
-
-        setTimeout(() => {
-            fileReaderInstance.dispatchEvent(new ProgressEvent('load'));
-            const loadEndEvent = new ProgressEvent('loadend');
-            fileReaderInstance.dispatchEvent(loadEndEvent);
-
-            if (originalOnloadend) {
-                originalOnloadend.call(fileReaderInstance, loadEndEvent);
-            }
-        }, 0);
-
-    };
+    console.info(`[${SCRIPT_NAME}]: Script is deprecated and no longer required. Please uninstall.`);
+    window.alert(MESSAGE);
 })();
