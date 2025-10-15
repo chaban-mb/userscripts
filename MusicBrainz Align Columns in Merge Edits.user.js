@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MusicBrainz: Align Columns in Merge Edits
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      2.4.0
+// @version      2.4.1
 // @tag          ai-created
 // @description  Aligns columns in merge edit tables for easier comparison.
 // @author       chaban
@@ -11,6 +11,7 @@
 // @match        *://*.musicbrainz.org/*/*/edits
 // @match        *://*.musicbrainz.org/*/*/open_edits
 // @match        *://*.musicbrainz.org/user/*/edits*
+// @icon         https://musicbrainz.org/static/images/favicons/android-chrome-512x512.png
 // @grant        GM.getValue
 // @grant        GM.setValue
 // @grant        GM.registerMenuCommand
