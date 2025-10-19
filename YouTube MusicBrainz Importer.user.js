@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YouTube: MusicBrainz Importer
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      2.7.0
+// @version      2.7.1
 // @description  Imports YouTube videos to MusicBrainz as a new standalone recording
 // @tag          ai-created
 // @author       nikki, RustyNova, chaban
@@ -897,6 +897,13 @@
         _containerDiv: null,
         _currentButton: null,
 
+        _clearContainer: function() {
+            const element = this._containerDiv;
+            while (element && element.firstChild) {
+                element.removeChild(element.firstChild);
+            }
+        },
+
         init: function () {
             this._containerDiv = document.createElement("div");
             this._containerDiv.setAttribute("class", `holder ${Config.CLASS_NAMES.CONTAINER}`);
@@ -929,7 +936,7 @@
         },
 
         _replaceButton(newButton) {
-            this._containerDiv.innerHTML = '';
+            this._clearContainer();
             this._currentButton = newButton;
             this._containerDiv.appendChild(this._currentButton);
             this._containerDiv.style.display = 'flex';
@@ -940,7 +947,7 @@
         },
 
         resetState: function () {
-            this._containerDiv.innerHTML = '';
+            this._clearContainer();
             const loadingButton = this._createButton(L10n.getString('loading'), '', '', null);
             loadingButton.disabled = true;
             this._replaceButton(loadingButton);
@@ -977,7 +984,7 @@
 
             const syncButton = this._createButton(L10n.getString('syncPlaylist'), L10n.getString('syncPlaylistTitle'), Config.CLASS_NAMES.PLAYLIST_BUTTON_SYNC, onClick);
 
-            this._containerDiv.innerHTML = '';
+            this._clearContainer();
             this._containerDiv.appendChild(link);
             this._containerDiv.appendChild(syncButton);
             this._containerDiv.style.display = 'flex';
@@ -1013,7 +1020,7 @@
 
             const reportButton = this._createButton(L10n.getString('viewReport'), L10n.getString('viewReportTitle'), 'lb-report-button', openReportCallback);
 
-            this._containerDiv.innerHTML = '';
+            this._clearContainer();
             this._containerDiv.appendChild(link);
             this._containerDiv.appendChild(reportButton);
             this._containerDiv.style.display = 'flex';
