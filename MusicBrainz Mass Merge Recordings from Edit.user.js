@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         mb. MASS MERGE FROM EDIT
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      2025.10.23.9
+// @version      2025.10.23.10
 // @tag          ai-created
 // @description  Batch merge recordings from an "Edit medium" page.
 // @author       chaban
@@ -17,7 +17,7 @@
     // 1. === Constants and State ===
     const SCRIPT_NAME = GM.info.script.name;
     const SCRIPT_ID = 'mmfe-' + GM.info.script.version.replace(/\./g, '-');
-    const STORAGE_KEY = SCRIPT_ID + '_edit_note';
+    // Removed STORAGE_KEY as edit note is no longer saved
     const MBS = `${location.protocol}//${location.host}`;
     const MBSminimumDelay = 1000;
     const retryDelay = 2000;
@@ -31,7 +31,7 @@
     var cCancel = "#cfc";
 
     // State variables
-    var mergeStatus = null, editNote = null, from = null, to = null, swap = null, queueAll = null, queuetrack = null; // Initialize as null
+    var mergeStatus = null, from = null, to = null, queueAll = null, queuetrack = null; // Removed editNote, swap
     var currentButt = null;
     var mergeQueue = [];
     var retry = { count: 0, checking: false, message: '' };
@@ -94,36 +94,17 @@
 
         panel.appendChild(createTag('h2', { s: { color: 'maroon', margin: '0' } }, SCRIPT_NAME));
 
-        // Assign to global variable
         mergeStatus = panel.appendChild(createInput('text', 'mergeStatus', '', 'Parsing edit page...'));
         mergeStatus.style.width = '100%';
         mergeStatus.disabled = true;
 
-        panel.appendChild(createTag('p', { s: { marginBottom: '0px' } }, 'Merge edit notes:'));
-        // Assign to global variable
-        editNote = panel.appendChild(createInput('textarea', 'merge.edit_note'));
-        editNote.style.width = '100%';
-        editNote.rows = 5;
-        editNote.addEventListener('input', function() {
-            this.style.removeProperty('background-color');
-            this.removeAttribute('title');
-        });
-
-        const saveButt = createInput('button', '', 'Save edit note');
-        saveButt.title = 'Save edit note text to local storage for next time';
-        saveButt.addEventListener('click', saveEditNote);
-        const loadButt = createInput('button', '', 'Load edit note');
-        loadButt.title = 'Reload edit note text from local storage';
-        loadButt.addEventListener('click', loadEditNote);
-        panel.appendChild(createTag('p', {}, [saveButt, ' ', loadButt]));
-        loadEditNote(); // Auto-load
+        // --- REMOVED Edit Note Elements ---
 
         // Assign to global variables
         from = panel.appendChild(createInput('hidden', 'from', ''));
         to = panel.appendChild(createInput('hidden', 'to', ''));
-        swap = panel.appendChild(createInput('hidden', 'swap', ''));
+        // --- REMOVED Swap Input ---
 
-        // Assign to global variable
         queueAll = createInput('button', '', 'Merge all');
         queueAll.disabled = true;
         queueAll.style.backgroundColor = cMerge;
@@ -148,7 +129,6 @@
         });
         panel.appendChild(createTag('p', {}, [queueAll, ' ', emptyQueueButt]));
 
-        // Assign to global variable
         queuetrack = panel.appendChild(createTag('div', {
             s: { textAlign: 'center', backgroundColor: cInfo, display: 'none' }
         }, '\u00A0'));
@@ -249,38 +229,20 @@
 
                         readyPairs++;
                         const form = createTag('form', { a: { class: SCRIPT_ID + '-form' }, s: { display: 'inline' } });
-                        const isOldRowTheTarget = parseInt(oldRowID, 10) < parseInt(newRowID, 10);
 
-                        const fromID = isOldRowTheTarget ? newRowID : oldRowID;
-                        const toID = isOldRowTheTarget ? oldRowID : newRowID;
-                        const fromMBID = isOldRowTheTarget ? p.newMBID : p.oldMBID;
-                        const toMBID = isOldRowTheTarget ? p.oldMBID : p.newMBID;
+                        // --- ALWAYS Target NEW Recording ---
+                        const fromID = oldRowID; // Source is always the 'old' one
+                        const toID = newRowID;   // Target is always the 'new' one
+                        const fromMBID = p.oldMBID;
+                        const toMBID = p.newMBID;
+                        // --- END Change ---
 
                         const fromInput = form.appendChild(createInput('hidden', 'merge-from', String(fromID)));
                         fromInput.dataset.mbid = fromMBID;
                         const toInput = form.appendChild(createInput('hidden', 'merge-to', String(toID)));
                         toInput.dataset.mbid = toMBID;
 
-                        const dirButt = createInput('button', 'direction', isOldRowTheTarget ? '▶' : '◀');
-                        dirButt.type = 'button';
-                        dirButt.style.cssText = 'padding: 0 1em .5em 1em; margin: 0 4px;';
-                        dirButt.style.backgroundColor = (dirButt.value === '◀') ? cInfo : cOK;
-                        dirButt.title = 'Change merge direction. Arrow points to target.';
-
-                        dirButt.addEventListener('click', function(e) {
-                            const oldFrom = fromInput.value;
-                            const oldTo = toInput.value;
-                            const oldFromMBID = fromInput.dataset.mbid;
-                            const oldToMBID = toInput.dataset.mbid;
-
-                            fromInput.value = oldTo;
-                            toInput.value = oldFrom;
-                            fromInput.dataset.mbid = oldToMBID;
-                            toInput.dataset.mbid = oldFromMBID;
-
-                            this.value = (this.value === '▶') ? '◀' : '▶';
-                            this.style.backgroundColor = (this.value === '◀') ? cInfo : cOK;
-                        });
+                        // --- REMOVED Direction Button ---
 
                         const mergeButt = createInput('button', '', 'Merge');
                         mergeButt.type = 'button';
@@ -288,7 +250,7 @@
                         mergeButt.style.backgroundColor = cMerge;
                         mergeButt.addEventListener('click', handleMergeClick);
 
-                        form.appendChild(dirButt);
+                        // --- REMOVED dirButt append ---
                         form.appendChild(mergeButt);
                         removeChildren(p.cell);
                         p.cell.appendChild(form);
@@ -323,7 +285,7 @@
         event.preventDefault();
         const butt = event.target;
         const form = butt.closest('form');
-        const dirButt = form.querySelector('button[name="direction"]');
+        // --- REMOVED dirButt variable ---
 
         butt.style.backgroundColor = cInfo;
 
@@ -340,7 +302,8 @@
                 mmfe_mergeRecsStep();
             } else if (retry.checking || retry.count > 0 || mergeQueue.indexOf(butt) < 0) {
                 butt.value = 'Unqueue';
-                enableInputs([butt, dirButt]);
+                // --- REMOVED dirButt disable ---
+                enableInputs(butt);
                 mergeQueue.push(butt);
             }
         } else if (butt.value == 'Unqueue') {
@@ -348,6 +311,7 @@
             if (queuedItem > -1) {
                 mergeQueue.splice(queuedItem, 1);
                 butt.value = 'Merge';
+                 butt.style.backgroundColor = cMerge; // Reset color on unqueue
             }
         } else if (butt.getAttribute('ref') === '0') {
             mmfe_infoMerge('Cancelling merge…', true, true);
@@ -363,35 +327,7 @@
      * @param {number} [_step=0] - The current step (0 or 1).
      */
     function mmfe_mergeRecsStep(_step) {
-         // --- FIX: Add null checks for UI elements ---
-        if (!editNote) {
-            console.error(`[${SCRIPT_NAME}] editNote element not found!`);
-            return;
-        }
-        // --- END FIX ---
-
-        if (!MBJS.isValidEditNote(editNote.value)) {
-            if (!editNote.nextSibling || !editNote.nextSibling.matches('p.error.' + SCRIPT_ID)) {
-                addAfter(createTag('p', { a: { class: 'error ' + SCRIPT_ID } }, MBJS.getText('invalid_edit_note')), editNote);
-            }
-            editNote.style.setProperty('background-color', cNG);
-            mmfe_infoMerge('Invalid edit note.', false, true);
-             if (currentButt) { // --- FIX: Add null check ---
-                currentButt.value = 'Merge';
-                currentButt.style.backgroundColor = cMerge;
-                enableInputs(currentButt);
-            }
-            from.value = '';
-            to.value = '';
-            currentButt = null;
-            return;
-        }
-
-        editNote.style.removeProperty('background-color');
-        const errorP = editNote.nextSibling;
-        if (errorP && errorP.matches('p.error.' + SCRIPT_ID)) {
-            removeNode(errorP);
-        }
+        // --- REMOVED Edit Note Check ---
 
         const step = _step || 0;
         const statuses = ['adding recs. to merge', 'applying merge edit'];
@@ -402,23 +338,19 @@
             `merge.merging.0=${to.value}&merge.target=${to.value}&merge.merging.1=${from.value}`
         ];
 
-        // --- FIX: Add null check for mergeStatus ---
         if (mergeStatus) {
             disableInputs([mergeStatus]);
         }
-        // --- END FIX ---
 
         if (step == 1) {
-            const directionButton = currentButt ? currentButt.closest('form').querySelector('button[name="direction"]') : null;
-            disableInputs([editNote, currentButt, directionButton].filter(el => el)); // Filter out nulls before disabling
+            // --- REMOVED directionButton disable ---
+            disableInputs([currentButt].filter(el => el)); // Disable only current merge button
 
             params[step] += '&merge.edit_note=';
-            let paramsup = editNote.value.trim();
-            if (paramsup) paramsup += '\n —\n';
-
-            paramsup += `Merging recordings based on /edit/${location.pathname.split('/')[2]}\n`;
-            paramsup += `Source: ${MBS}/recording/${from.getAttribute('ref')}\n`;
-            paramsup += `Target: ${MBS}/recording/${to.getAttribute('ref')}\n`;
+            // --- USE Current Edit URL as Edit Note ---
+            let paramsup = `Merging recordings based on edit: ${location.href}\n`;
+            paramsup += `(Source: ${MBS}/recording/${from.getAttribute('ref')} \n Target: ${MBS}/recording/${to.getAttribute('ref')})\n`;
+             // --- END Change ---
             paramsup += ` —\n${SCRIPT_NAME} (${GM.info.script.version})`;
             if (retry.count > 0) {
                 paramsup += ` — '''retry'''${(retry.count > 1 ? ' #' + retry.count : '')} (${protectEditNoteText(retry.message)})`;
@@ -428,16 +360,14 @@
         }
 
         mmfe_infoMerge(`#${from.value} to #${to.value} ${statuses[step]}…`, null, false);
-        // --- FIX: Add null check for currentButt ---
         if (currentButt) {
             currentButt.setAttribute('value', `${buttStatuses[step]} ${step + 1}/2`);
             currentButt.setAttribute('ref', String(step));
         } else {
              console.error(`[${SCRIPT_NAME}] currentButt is null in step ${step}. Merge cannot proceed.`);
              mmfe_infoMerge(`Error: Merge button reference lost in step ${step}.`, false, true);
-             return; // Stop the process if button reference is lost
+             return;
         }
-        // --- END FIX ---
 
 
         GM_xmlhttpRequest({
@@ -447,7 +377,7 @@
             data: params[step],
             timeout: 30000,
             onload: (response) => {
-                if (to.value === '') {
+                if (to.value === '') { // Should not happen if button ref lost earlier, but good check
                     mmfe_nextButt(false);
                     return;
                 }
@@ -538,20 +468,17 @@
      * @param {boolean|number} successOrEditID - false for cancel, true for success, number for edit ID.
      */
     function mmfe_nextButt(successOrEditID) {
-        // --- FIX: Add null check ---
         if (!currentButt) {
             console.warn(`[${SCRIPT_NAME}] mmfe_nextButt called but currentButt is null. Success: ${successOrEditID}`);
-            // Attempt to recover state if possible, otherwise just log and exit cleanly
             retry.count = 0;
             if (mergeStatus) enableInputs([mergeStatus]);
-            if (editNote) enableInputs([editNote]);
+            // Removed editNote enable
             const nextButtFromQueue = mergeQueue.shift();
              if (nextButtFromQueue) {
-                enableAndClick(nextButtFromQueue); // Try processing next item
+                enableAndClick(nextButtFromQueue);
             }
             return;
         }
-        // --- END FIX ---
 
 
         if (successOrEditID !== false) {
@@ -575,15 +502,14 @@
         } else {
             mmfe_infoMerge('Merge cancelled', true, true);
             currentButt.value = 'Merge';
+            currentButt.style.backgroundColor = cMerge; // Reset color on cancel
             enableInputs(currentButt);
         }
 
         retry.count = 0;
-        currentButt = null; // Set to null *after* potential re-enabling
-        // --- FIX: Add null checks ---
+        currentButt = null;
         if (mergeStatus) enableInputs([mergeStatus]);
-        if (editNote) enableInputs([editNote]);
-        // --- END FIX ---
+        // Removed editNote enable
         const nextButtFromQueue = mergeQueue.shift();
         if (nextButtFromQueue) {
             enableAndClick(nextButtFromQueue);
@@ -601,12 +527,21 @@
         if (currentButt) {
             errormsg = `Retry in ${Math.ceil(retryDelay / 1000)}s (${errormsg}).`;
             setTimeout(() => {
-                // Check if currentButt still exists before clicking
                 if(currentButt) enableAndClick(currentButt);
                 else console.warn(`[${SCRIPT_NAME}] Tried to retry, but currentButt was null.`);
             }, retryDelay);
+        } else {
+             // If currentButt is already null when retrying, clear state
+            console.warn(`[${SCRIPT_NAME}] Trying to retry but currentButt is null.`);
+            mmfe_infoMerge(errormsg, false, true); // Reset from/to
+            currentButt = null; // Ensure it's null
+            // Check queue again in case something was added while currentButt was null
+             const nextButtFromQueue = mergeQueue.shift();
+             if (nextButtFromQueue) {
+                 enableAndClick(nextButtFromQueue);
+             }
         }
-        mmfe_infoMerge(errormsg, false, true); // Reset from/to here
+        mmfe_infoMerge(errormsg, false, true); // Reset from/to here if currentButt exists
     }
 
 
@@ -616,7 +551,6 @@
      * Updates the merge status bar.
      */
     function mmfe_infoMerge(msg, goodNews, reset) {
-        // --- FIX: Add null check ---
         if (mergeStatus) {
             mergeStatus.value = msg;
             if (goodNews != null) {
@@ -627,7 +561,6 @@
         } else {
              console.warn(`[${SCRIPT_NAME}] Tried to update mergeStatus, but it was null. Message: ${msg}`);
         }
-        // --- END FIX ---
 
         if (reset) {
             if (from) from.value = '';
@@ -639,60 +572,30 @@
      * Updates the queue counter display.
      */
     function mmfe_queueTrack() {
-        // --- FIX: Add null check ---
         if (queuetrack) {
             queuetrack.textContent = `${mergeQueue.length} queued merge${(mergeQueue.length > 1 ? 's' : '')}`;
             queuetrack.style.display = (mergeQueue.length > 0) ? 'block' : 'none';
         }
-        // --- END FIX ---
     }
 
     /**
      * Re-enables and clicks a button.
      */
     function enableAndClick(butt) {
-        // --- FIX: Add null check ---
         if (!butt) {
              console.error(`[${SCRIPT_NAME}] enableAndClick called with null button.`);
              return;
         }
-        // --- END FIX ---
         enableInputs(butt);
         butt.value = 'Merge';
+        butt.style.backgroundColor = cMerge; // Reset color
         butt.click();
     }
 
 
     // 7. === Helper Functions (self-contained) ===
-    // These are copied from the original script and its libraries
-    // to make this userscript standalone.
 
-    var MBJS = {
-        lang: document.querySelector('html[lang]')?.getAttribute('lang') || 'en',
-        texts: {
-            invalid_edit_note: {
-                de: "Deine Bearbeitungsbemerkung scheint keinen tatsächlichen Inhalt zu haben. Bitte gib einen Bemerkung ab, die den anderen Bearbeitern helfen wird!",
-                en: "Your edit note seems to have no actual content. Please provide a note that will be helpful to your fellow editors!",
-                fr: "Votre note de modification semble n’avoir aucun contenu. Veuillez ajouter une note qui soit utile à vos pairs éditeurs !",
-                it: "La tua nota di modifica sembra non avere nessun contenuto reale. Sei pregato di fornire una nota che sia di aiuto agli altri editor!",
-                nl: "Je bewerkingsnotitie lijkt geen echte inhoud te hebben. Voeg een notitie toe waar je collegaredacteurs wat aan hebben!",
-            },
-        },
-        isValidEditNote: function(EDIT_NOTE) {
-             // --- FIX: Add null check ---
-             if (typeof EDIT_NOTE !== 'string') return false;
-            // --- END FIX ---
-            return !EDIT_NOTE.trim().match(/^[\p{White_Space}\p{Punctuation}]*\p{ASCII}{0,1}[\p{White_Space}\p{Punctuation}]*$/u);
-        },
-        getText: function(TEXT_ID) {
-            if (MBJS.texts[TEXT_ID] && MBJS.texts[TEXT_ID][MBJS.lang]) {
-                return MBJS.texts[TEXT_ID][MBJS.lang];
-            } else if (MBJS.texts[TEXT_ID]) {
-                return MBJS.texts[TEXT_ID].en;
-            }
-            return '';
-        }
-    };
+    // --- REMOVED MBJS Object ---
 
     /**
      * createTag (from SUPER.js)
@@ -721,11 +624,9 @@
         if (children) {
             var _children = Array.isArray(children) ? children : [children];
             for (var c = 0; c < _children.length; c++) {
-                // --- FIX: Ensure child is not null/undefined before appending ---
                  if (_children[c] !== null && typeof _children[c] !== 'undefined') {
                     t.appendChild((typeof _children[c]).match(/number|string/) ? document.createTextNode(_children[c]) : _children[c]);
                 }
-                // --- END FIX ---
             }
             t.normalize();
         }
@@ -788,26 +689,22 @@
      * removeNode (from SUPER.js)
      */
     function removeNode(node) {
-        // --- FIX: Add null check ---
         if (node && node.parentNode) {
             return node.parentNode.removeChild(node);
         } else {
             console.warn(`[${SCRIPT_NAME}] removeNode failed: Node or parentNode invalid.`, node);
             return null;
         }
-        // --- END FIX ---
     }
 
     /**
      * removeChildren (from SUPER.js)
      */
     function removeChildren(parent) {
-         // --- FIX: Add null check ---
         if (!parent) {
              console.warn(`[${SCRIPT_NAME}] removeChildren called with null parent.`);
              return;
         }
-        // --- END FIX ---
         while (parent.hasChildNodes()) {
             parent.removeChild(parent.firstChild);
         }
@@ -817,37 +714,31 @@
      * disableInputs (from SUPER.js)
      */
     function disableInputs(inputs, setAsDisabled) {
-        if (!inputs) { // --- FIX: Add null check for the whole input list/element ---
+        if (!inputs) {
             console.warn(`[${SCRIPT_NAME}] disableInputs called with null/undefined input.`);
             return;
-        } // --- END FIX ---
+        }
 
         if (Array.isArray(inputs) || inputs instanceof NodeList) {
             for (var i = 0; i < inputs.length; i++) {
-                 // --- FIX: Add null check for individual items ---
                  if (inputs[i]) {
                     disableInputs(inputs[i], setAsDisabled);
                 } else {
                      console.warn(`[${SCRIPT_NAME}] disableInputs found null item in array/NodeList at index ${i}.`);
                  }
-                 // --- END FIX ---
             }
         } else if (typeof setAsDisabled == "undefined" || setAsDisabled == true) {
-            // --- FIX: Check if setAttribute exists before calling ---
             if (typeof inputs.setAttribute === 'function') {
                 inputs.setAttribute("disabled", "disabled");
             } else {
                  console.warn(`[${SCRIPT_NAME}] disableInputs: Input element lacks setAttribute method.`, inputs);
             }
-            // --- END FIX ---
         } else {
-             // --- FIX: Check if removeAttribute exists before calling ---
              if (typeof inputs.removeAttribute === 'function') {
                  inputs.removeAttribute("disabled");
              } else {
                  console.warn(`[${SCRIPT_NAME}] disableInputs: Input element lacks removeAttribute method.`, inputs);
              }
-             // --- END FIX ---
         }
     }
 
@@ -862,9 +753,7 @@
      * protectEditNoteText (from mb_MASS-MERGE-RECORDINGS.user.js)
      */
     function protectEditNoteText(text) {
-         // --- FIX: Add null/type check ---
          if (typeof text !== 'string') return '';
-         // --- END FIX ---
         return text.replace(/'/g, "'");
     }
 
@@ -886,61 +775,16 @@
      * stop (from SUPER.js)
      */
     function stop(event) {
-         // --- FIX: Add null check ---
         if (!event) {
              console.warn(`[${SCRIPT_NAME}] stop called with null event.`);
              return false;
         }
-         // --- END FIX ---
         event.cancelBubble = true;
         if (event.stopPropagation) event.stopPropagation();
         event.preventDefault();
         return false;
     }
 
-    /**
-     * saveEditNote (modified from mb_MASS-MERGE-RECORDINGS.user.js)
-     */
-    function saveEditNote(event) {
-        // --- FIX: Add null check ---
-        if (!editNote) {
-             console.error(`[${SCRIPT_NAME}] saveEditNote failed: editNote element not found.`);
-             return stop(event); // Still stop default event behavior if possible
-        }
-        // --- END FIX ---
-        if (localStorage) {
-            localStorage.setItem(STORAGE_KEY, editNote.value);
-            editNote.style.setProperty("background-color", cOK);
-            editNote.setAttribute("title", "Saved to local storage");
-        } else {
-            editNote.style.setProperty("background-color", cInfo);
-            editNote.setAttribute("title", "Could not save to local storage");
-        }
-        return stop(event);
-    }
-
-    /**
-     * loadEditNote (modified from mb_MASS-MERGE-RECORDINGS.user.js)
-     */
-    function loadEditNote(event) {
-         // --- FIX: Add null check ---
-         if (!editNote) {
-             console.warn(`[${SCRIPT_NAME}] loadEditNote called but editNote element not found yet.`);
-            if(event) return stop(event); // Still stop default event behavior if possible
-            return;
-         }
-         // --- END FIX ---
-        if (localStorage) {
-            var savedEditNote = localStorage.getItem(STORAGE_KEY);
-            if (savedEditNote) {
-                editNote.value = savedEditNote;
-                editNote.style.setProperty("background-color", cOK);
-                editNote.setAttribute("title", "Reloaded from local storage");
-            }
-        }
-        if (event) {
-            return stop(event);
-        }
-    }
+    // --- REMOVED saveEditNote and loadEditNote ---
 
 })();
