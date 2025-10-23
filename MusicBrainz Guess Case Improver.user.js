@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MusicBrainz: Guess Case Improver
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      0.3.0
+// @version      0.4.0
 // @tag          ai-created
 // @description  Improves the native "Guess Case" for release, recording and track titles with advanced artist and ETI parsing. Also removes duplicate artists after using "Guess feat. artists" on tracklists.
 // @author       chaban
@@ -33,6 +33,10 @@
     };
 
     log('Script loaded and running.');
+
+    // We use a WeakMap to store the "pristine" (original) value of an input,
+    // side-stepping any event race conditions with native preview handlers.
+    const pristineValues = new WeakMap();
 
     // ====================================================================================
     // --- ✨ USER CONFIGURATION ✨ ---
@@ -82,6 +86,7 @@
             return Array.from(this.#bubble.querySelectorAll('tbody > tr:has(div.autocomplete2)'));
         }
     }
+
 
     // ====================================================================================
     // --- Core Logic & Helper Functions
@@ -145,6 +150,7 @@
         warn('Could not determine current artists from any source.');
         return [];
     }
+
 
     function parseArtistNamesFromString(artistString) {
         if (!artistString) return [];
@@ -319,65 +325,83 @@
             return;
         }
 
-        button.addEventListener('click', () => {
-            log('"Guess Case" click detected. Allowing native script to run first.');
-            // A click finalizes the action, so we must clear the preview state
-            // immediately to prevent the subsequent mouseleave event from
-            // reverting the change.
-            originalValueForPreview = null;
+        // --- Pristine Value Management ---
+        // We set the initial value and update it on focus or input.
+        // This is our reliable "original value" source.
+        if (!pristineValues.has(input)) {
+            pristineValues.set(input, input.value);
+            log(`Set initial pristine value for ${input.name || input.id}: "${input.value}"`);
+        }
 
-            setTimeout(() => {
-                const nativeValue = input.value;
-                log(`Value after native guess case is: "${nativeValue}". Applying advanced rules.`);
-                const enhancedValue = applyAdvancedRules(nativeValue, button);
-                if (enhancedValue !== nativeValue) {
-                    log(`Enhanced value is: "${enhancedValue}".`);
-                    setReactValue(input, enhancedValue);
-                }
-            }, 0);
-        });
+        const updatePristineValue = () => {
+            pristineValues.set(input, input.value);
+            log(`Updated pristine value for ${input.name || input.id}: "${input.value}"`);
+        };
 
-        // --- Preview Logic ---
-        let originalValueForPreview = null;
+        input.addEventListener('focus', updatePristineValue);
+        input.addEventListener('input', updatePristineValue);
 
-        button.addEventListener('mouseenter', (event) => {
+        // --- Event Handlers ---
+        let activePreview = false;
+
+        const handleMouseEnter = (event) => {
             if (event.buttons !== 0) return;
-            originalValueForPreview = input.value;
 
+            // Get the *true* original value from our map
+            const originalValue = pristineValues.get(input);
+            activePreview = true;
+            log(`Pristine value from map: "${originalValue}"`);
+
+            // Run *after* the native preview handler
             setTimeout(() => {
-                const nativePreviewValue = input.value;
+                if (!activePreview) return; // Mouse already left
+
+                const nativePreviewValue = input.value; // Value *after* native handler ran
                 const enhancedPreviewValue = applyAdvancedRules(nativePreviewValue, button);
 
-                if (enhancedPreviewValue !== originalValueForPreview) {
-                    // There is a change, so we must show a preview.
+                if (enhancedPreviewValue !== originalValue) {
                     input.classList.add('preview');
                     input.value = enhancedPreviewValue;
                 } else {
-                    // There is NO net change. Ensure no preview is shown.
-                    // The native script might have added the class, so we must remove it.
                     input.classList.remove('preview');
-                    // Ensure the value is reset, in case the native preview changed it.
-                    input.value = originalValueForPreview;
-
+                    input.value = originalValue; // Restore, just in case native changed it
                 }
             }, 0);
-        });
+        };
 
-        button.addEventListener('mouseleave', () => {
-            input.classList.remove('preview');
-            // If originalValueForPreview is set, it means we have an active preview state.
-            if (originalValueForPreview !== null) {
-                // Always restore the original value and clean up the preview state.
+        const handleMouseLeave = () => {
+            if (activePreview) {
                 log('Hiding preview and restoring original value.');
-                input.value = originalValueForPreview;
+                const originalValue = pristineValues.get(input);
+                setReactValue(input, originalValue); // Use dispatch to notify React/Knockout
                 input.classList.remove('preview');
-                originalValueForPreview = null;
-
+                activePreview = false;
             }
-        });
+        };
+
+        const handleClick = () => {
+            log('"Guess Case" click detected.');
+            activePreview = false; // Disarm mouseleave
+
+            setTimeout(() => {
+                const nativeValue = input.value;
+                const enhancedValue = applyAdvancedRules(nativeValue, button);
+                log(`Native: "${nativeValue}", Enhanced: "${enhancedValue}"`);
+
+                setReactValue(input, enhancedValue); // Set the final value
+
+                // This is now the new "original" value
+                pristineValues.set(input, enhancedValue);
+            }, 0);
+        };
+
+        button.addEventListener('click', handleClick);
+        button.addEventListener('mouseenter', handleMouseEnter);
+        button.addEventListener('mouseleave', handleMouseLeave);
 
         button.dataset.enhanced = 'true';
     }
+
 
     // ====================================================================================
     // --- Initialization
@@ -405,8 +429,21 @@
 
     const observer = new MutationObserver(() => {
         if (window.MB?._releaseEditor) enhanceLegacyGuessCase();
-        document.querySelectorAll('.guesscase-title:not([data-enhanced])').forEach(button => !button.closest('table.tracklist') && enhanceReactGuessCase(button));
+
+        // We must be very specific. The 'legacy' enhancer handles track titles.
+        // The 'react' enhancer handles all *other* titles (release, standalone recording).
+        // We can distinguish them by their `title` attribute.
+        document.querySelectorAll('.guesscase-title:not([data-enhanced])').forEach(button => {
+            if (button.title === 'Guess case') { // e.g., Release Title, Recording Title
+                enhanceReactGuessCase(button);
+            }
+            // Buttons with `title="Guess case track"` are left alone,
+            // as they are handled by `enhanceLegacyGuessCase`.
+        });
+
         document.querySelectorAll('button.guessfeat:not([data-enhanced])').forEach(button => (button.closest('tr.track') ? enhanceTrackGuessFeat(button) : (button.closest('fieldset.advanced-medium') && enhanceMediumGuessFeat(button))));
     });
+
     observer.observe(document.body, { childList: true, subtree: true });
+
 })();
