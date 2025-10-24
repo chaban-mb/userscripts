@@ -1,5 +1,5 @@
 // ==UserScript==
-// @name         mb. MASS MERGE FROM EDIT
+// @name         MusicBrainz: Mass Merge Recordings from Edit
 // @namespace    https://musicbrainz.org/user/chaban
 // @version      2025.10.24
 // @tag          ai-created
