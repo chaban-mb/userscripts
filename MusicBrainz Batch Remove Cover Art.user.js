@@ -1,13 +1,13 @@
 // ==UserScript==
 // @name         MusicBrainz: Batch Remove Cover Art
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      0.5.4
+// @version      0.5.5
 // @description  Allows batch removing cover art from MusicBrainz releases.
 // @tag          ai-created
 // @author       chaban, jesus2099
 // @license      GPL-3.0-or-later; http://www.gnu.org/licenses/gpl-3.0.txt
 // @match        *://*.musicbrainz.org/release/*/cover-art
-// @connect      musicbrainz.org
+// @connect      self
 // @grant        GM.xmlHttpRequest
 // @grant        GM.addStyle
 // @icon         https://musicbrainz.org/static/images/favicons/android-chrome-512x512.png

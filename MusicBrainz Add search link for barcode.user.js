@@ -2,7 +2,7 @@
 // @name        MusicBrainz: Add search link for barcode
 // @namespace   https://musicbrainz.org/user/chaban
 // @description Searches for existing releases in "Add release" edits by barcode, highlights and adds a search link on match
-// @version     3.2.0
+// @version     3.2.1
 // @tag         ai-created
 // @author      chaban
 // @license     MIT
@@ -11,7 +11,7 @@
 // @match       *://*.musicbrainz.org/*/*/edits
 // @match       *://*.musicbrainz.org/*/*/open_edits
 // @match       *://*.musicbrainz.org/user/*/edits*
-// @connect     musicbrainz.org
+// @connect     self
 // @icon        https://musicbrainz.org/static/images/favicons/android-chrome-512x512.png
 // @grant       GM_xmlhttpRequest
 // @require     lib/MusicBrainzAPI.js
