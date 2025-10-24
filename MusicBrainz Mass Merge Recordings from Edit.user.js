@@ -4,8 +4,8 @@
 // @version      2025.10.24
 // @tag          ai-created
 // @description  Batch merge recordings from an "Edit medium" page.
-// @author       chaban
-// @license      MIT
+// @author       chaban, jesus2099
+// @license      GPL-3.0-or-later; http://www.gnu.org/licenses/gpl-3.0.txt
 // @match        *://*.musicbrainz.org/edit/*
 // @match        *://*.musicbrainz.eu/edit/*
 // @connect      self
