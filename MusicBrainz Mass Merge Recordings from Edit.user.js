@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MusicBrainz: Mass Merge Recordings from Edit
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      1.0.0
+// @version      1.0.1
 // @tag          ai-created
 // @description  Batch merge recordings from an "Edit medium" page.
 // @author       chaban, jesus2099
@@ -335,7 +335,6 @@
 
             params[step] += '&merge.edit_note=';
             let paramsup = `Merging recordings based on edit: ${location.href}\n`;
-            paramsup += `(Source: ${MBS}/recording/${from.getAttribute('ref')} \n Target: ${MBS}/recording/${to.getAttribute('ref')})\n`;
             paramsup += ` —\n${SCRIPT_NAME} (${GM.info.script.version})`;
             if (retry.count > 0) {
                 paramsup += ` — '''retry'''${(retry.count > 1 ? ' #' + retry.count : '')} (${protectEditNoteText(retry.message)})`;
