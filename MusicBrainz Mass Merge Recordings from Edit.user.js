@@ -1,13 +1,15 @@
 // ==UserScript==
 // @name         mb. MASS MERGE FROM EDIT
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      2025.10.23.10
+// @version      2025.10.24
 // @tag          ai-created
 // @description  Batch merge recordings from an "Edit medium" page.
 // @author       chaban
 // @license      MIT
 // @match        *://*.musicbrainz.org/edit/*
-// @connect      musicbrainz.org
+// @match        *://*.musicbrainz.eu/edit/*
+// @connect      self
+// @icon         https://musicbrainz.org/static/images/favicons/android-chrome-512x512.png
 // @grant        GM_xmlhttpRequest
 // ==/UserScript==
 
@@ -17,7 +19,6 @@
     // 1. === Constants and State ===
     const SCRIPT_NAME = GM.info.script.name;
     const SCRIPT_ID = 'mmfe-' + GM.info.script.version.replace(/\./g, '-');
-    // Removed STORAGE_KEY as edit note is no longer saved
     const MBS = `${location.protocol}//${location.host}`;
     const MBSminimumDelay = 1000;
     const retryDelay = 2000;
@@ -98,12 +99,9 @@
         mergeStatus.style.width = '100%';
         mergeStatus.disabled = true;
 
-        // --- REMOVED Edit Note Elements ---
-
         // Assign to global variables
         from = panel.appendChild(createInput('hidden', 'from', ''));
         to = panel.appendChild(createInput('hidden', 'to', ''));
-        // --- REMOVED Swap Input ---
 
         queueAll = createInput('button', '', 'Merge all');
         queueAll.disabled = true;
@@ -230,19 +228,15 @@
                         readyPairs++;
                         const form = createTag('form', { a: { class: SCRIPT_ID + '-form' }, s: { display: 'inline' } });
 
-                        // --- ALWAYS Target NEW Recording ---
                         const fromID = oldRowID; // Source is always the 'old' one
-                        const toID = newRowID;   // Target is always the 'new' one
+                        const toID = newRowID; // Target is always the 'new' one
                         const fromMBID = p.oldMBID;
                         const toMBID = p.newMBID;
-                        // --- END Change ---
 
                         const fromInput = form.appendChild(createInput('hidden', 'merge-from', String(fromID)));
                         fromInput.dataset.mbid = fromMBID;
                         const toInput = form.appendChild(createInput('hidden', 'merge-to', String(toID)));
                         toInput.dataset.mbid = toMBID;
-
-                        // --- REMOVED Direction Button ---
 
                         const mergeButt = createInput('button', '', 'Merge');
                         mergeButt.type = 'button';
@@ -250,7 +244,6 @@
                         mergeButt.style.backgroundColor = cMerge;
                         mergeButt.addEventListener('click', handleMergeClick);
 
-                        // --- REMOVED dirButt append ---
                         form.appendChild(mergeButt);
                         removeChildren(p.cell);
                         p.cell.appendChild(form);
@@ -285,8 +278,6 @@
         event.preventDefault();
         const butt = event.target;
         const form = butt.closest('form');
-        // --- REMOVED dirButt variable ---
-
         butt.style.backgroundColor = cInfo;
 
         if (butt.value == 'Merge') {
@@ -302,7 +293,6 @@
                 mmfe_mergeRecsStep();
             } else if (retry.checking || retry.count > 0 || mergeQueue.indexOf(butt) < 0) {
                 butt.value = 'Unqueue';
-                // --- REMOVED dirButt disable ---
                 enableInputs(butt);
                 mergeQueue.push(butt);
             }
@@ -327,8 +317,6 @@
      * @param {number} [_step=0] - The current step (0 or 1).
      */
     function mmfe_mergeRecsStep(_step) {
-        // --- REMOVED Edit Note Check ---
-
         const step = _step || 0;
         const statuses = ['adding recs. to merge', 'applying merge edit'];
         const buttStatuses = ['Stacking…', 'Merging…'];
@@ -343,14 +331,11 @@
         }
 
         if (step == 1) {
-            // --- REMOVED directionButton disable ---
             disableInputs([currentButt].filter(el => el)); // Disable only current merge button
 
             params[step] += '&merge.edit_note=';
-            // --- USE Current Edit URL as Edit Note ---
             let paramsup = `Merging recordings based on edit: ${location.href}\n`;
             paramsup += `(Source: ${MBS}/recording/${from.getAttribute('ref')} \n Target: ${MBS}/recording/${to.getAttribute('ref')})\n`;
-             // --- END Change ---
             paramsup += ` —\n${SCRIPT_NAME} (${GM.info.script.version})`;
             if (retry.count > 0) {
                 paramsup += ` — '''retry'''${(retry.count > 1 ? ' #' + retry.count : '')} (${protectEditNoteText(retry.message)})`;
@@ -472,7 +457,6 @@
             console.warn(`[${SCRIPT_NAME}] mmfe_nextButt called but currentButt is null. Success: ${successOrEditID}`);
             retry.count = 0;
             if (mergeStatus) enableInputs([mergeStatus]);
-            // Removed editNote enable
             const nextButtFromQueue = mergeQueue.shift();
              if (nextButtFromQueue) {
                 enableAndClick(nextButtFromQueue);
@@ -509,7 +493,6 @@
         retry.count = 0;
         currentButt = null;
         if (mergeStatus) enableInputs([mergeStatus]);
-        // Removed editNote enable
         const nextButtFromQueue = mergeQueue.shift();
         if (nextButtFromQueue) {
             enableAndClick(nextButtFromQueue);
@@ -594,8 +577,6 @@
 
 
     // 7. === Helper Functions (self-contained) ===
-
-    // --- REMOVED MBJS Object ---
 
     /**
      * createTag (from SUPER.js)
@@ -770,21 +751,5 @@
             return lastTick;
         }
     }
-
-    /**
-     * stop (from SUPER.js)
-     */
-    function stop(event) {
-        if (!event) {
-             console.warn(`[${SCRIPT_NAME}] stop called with null event.`);
-             return false;
-        }
-        event.cancelBubble = true;
-        if (event.stopPropagation) event.stopPropagation();
-        event.preventDefault();
-        return false;
-    }
-
-    // --- REMOVED saveEditNote and loadEditNote ---
 
 })();
