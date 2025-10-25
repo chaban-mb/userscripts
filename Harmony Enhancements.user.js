@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Harmony: Enhancements
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      1.15.0
+// @version      1.15.1
 // @tag          ai-created
 // @description  Adds some convenience features, various UI and behavior settings, as well as an improved language detection to Harmony.
 // @author       chaban
@@ -145,16 +145,6 @@
             runAt: 'load',
             paths: [/^\/release(?!\/actions)/],
         },
-        setNoLabel: {
-            key: 'enhancements.label.setNoLabel',
-            label: 'Set label to [no label] for self-releases',
-            description: 'If a release appears to be self-released (label name is the same as the artist name), automatically set the label to the special purpose label "[no label]".',
-            defaultValue: false,
-            section: 'Release Data',
-            type: 'checkbox',
-            runAt: 'load',
-            paths: [/^\/release(?!\/actions)/],
-        },
         mapLabelMbids: {
             key: 'enhancements.label.mapMbids',
             label: 'Map label names to MBIDs',
@@ -162,6 +152,16 @@
             defaultValue: [],
             section: 'Release Data',
             type: 'textarea',
+            runAt: 'load',
+            paths: [/^\/release(?!\/actions)/],
+        },
+        setNoLabel: {
+            key: 'enhancements.label.setNoLabel',
+            label: 'Set label to [no label] for self-releases',
+            description: 'If a release appears to be self-released (label name is the same as the artist name), automatically set the label to the special purpose label "[no label]".',
+            defaultValue: false,
+            section: 'Release Data',
+            type: 'checkbox',
             runAt: 'load',
             paths: [/^\/release(?!\/actions)/],
         },
