@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Harmony: Enhancements
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      1.14.3
+// @version      1.15.0
 // @tag          ai-created
 // @description  Adds some convenience features, various UI and behavior settings, as well as an improved language detection to Harmony.
 // @author       chaban
@@ -152,6 +152,16 @@
             defaultValue: false,
             section: 'Release Data',
             type: 'checkbox',
+            runAt: 'load',
+            paths: [/^\/release(?!\/actions)/],
+        },
+        mapLabelMbids: {
+            key: 'enhancements.label.mapMbids',
+            label: 'Map label names to MBIDs',
+            description: 'Automatically assigns a Label MBID based on a list of mappings if Harmony couldn\'t find one. Uses case-sensitive matching.<br>Format: <code>Exact Label Name=Label MBID</code> or <code>Exact Label Name=Label URL</code> (one per line).',
+            defaultValue: [],
+            section: 'Release Data',
+            type: 'textarea',
             runAt: 'load',
             paths: [/^\/release(?!\/actions)/],
         },
@@ -1696,7 +1706,103 @@
 
                 const { mainLabelList } = AppState.dom;
                 const labelRow = UI_UTILS.findReleaseInfoRow('Labels');
-                UI_UTILS.updateElementText(mainLabelList, NO_LABEL.name, originalLabel.name, 'Original label:');
+                    UI_UTILS.updateElementText(mainLabelList, NO_LABEL.name, originalLabel.name, 'Original label:');
+            }
+        },
+
+        mapLabelMbids: () => {
+            const releaseData = getReleaseDataFromJSON();
+            if (!releaseData?.labels?.length || releaseData.labels[0].mbid) {
+                return;
+            }
+
+            const mappingLines = AppState.settings[SETTINGS_CONFIG.mapLabelMbids.key];
+            if (!Array.isArray(mappingLines) || mappingLines.length === 0) {
+                return;
+            }
+
+            const labelMap = new Map();
+            const uuidRegex = /[a-f\d]{8}-[a-f\d]{4}-[a-f\d]{4}-[a-f\d]{4}-[a-f\d]{12}/i;
+            mappingLines.forEach(line => {
+                const parts = line.split('=');
+                if (parts.length === 2) {
+                    const name = parts[0].trim();
+                    const value = parts[1].trim();
+                    let mbid = null;
+
+                    if (value.includes('musicbrainz.org/label/')) {
+                        const match = value.match(uuidRegex);
+                        if (match) {
+                            mbid = match[0];
+                        }
+                    } else if (uuidRegex.test(value)) {
+                        mbid = value;
+                    }
+
+                    if (name && mbid) {
+                        labelMap.set(name, mbid);
+                    }
+                }
+            });
+
+            if (labelMap.size === 0) {
+                return;
+            }
+
+            const currentLabel = releaseData.labels[0];
+            const currentLabelName = currentLabel.name;
+
+            const matchedMbid = labelMap.get(currentLabelName);
+
+            if (matchedMbid) {
+                AppState.data.release.labels[0].mbid = matchedMbid;
+
+                const { mainLabelList } = AppState.dom;
+                if (mainLabelList) {
+                    const addedSpan = UI_UTILS.createIndicatorSpan('added', matchedMbid, {
+                        type: 'added',
+                        tooltip: `MBID ${matchedMbid} added via user mapping.`,
+                    });
+
+                    let textNodeToReplace = null;
+                    const treeWalker = document.createTreeWalker(mainLabelList, NodeFilter.SHOW_TEXT);
+                    while (treeWalker.nextNode()) {
+                        if (treeWalker.currentNode.nodeValue.trim() === currentLabelName) {
+                            textNodeToReplace = treeWalker.currentNode;
+                            break;
+                        }
+                    }
+
+                    if (textNodeToReplace) {
+                        const mbIconSpan = document.createElement('span');
+                        mbIconSpan.className = 'musicbrainz';
+                        mbIconSpan.title = 'MusicBrainz';
+                        mbIconSpan.innerHTML = `<svg class="icon" width="18" height="18" stroke-width="1.5"><use xlink:href="/icon-sprite.svg#brand-metabrainz"></use></svg>`;
+
+                        const mbLink = document.createElement('a');
+                        mbLink.href = `https://musicbrainz.org/label/${matchedMbid}`;
+                        mbLink.appendChild(mbIconSpan);
+                        mbLink.appendChild(document.createTextNode(currentLabelName));
+
+                        textNodeToReplace.parentNode.replaceChild(mbLink, textNodeToReplace);
+
+                        mainLabelList.querySelectorAll('a[href*="musicbrainz.org/label/"], span.musicbrainz').forEach(el => {
+                            if (el !== mbLink && el !== mbIconSpan && !mbLink.contains(el)) {
+                                el.remove();
+                            }
+                        });
+
+                        if (!mainLabelList.nextElementSibling || !mainLabelList.nextElementSibling.classList.contains('he-added-label')) {
+                            mainLabelList.parentNode.insertBefore(addedSpan, mainLabelList.nextSibling);
+                        }
+                    } else {
+                        if (!mainLabelList.nextElementSibling || !mainLabelList.nextElementSibling.classList.contains('he-added-label')) {
+                            mainLabelList.parentNode.insertBefore(addedSpan, mainLabelList.nextSibling);
+                        }
+                    }
+                }
+                const messageContent = `Mapped label "${currentLabelName}" to MBID: ${matchedMbid}`;
+                createAndInsertMessage('he-label-map-success-', messageContent, 'debug');
             }
         },
 
@@ -2148,13 +2254,13 @@
 
             if ((config.runAt ?? 'load') === 'load' && AppState.settings[config.key] && config.paths && enhancements[funcName]) {
                 if (config.paths.some(p => p.test(AppState.path))) {
-                    if (AppState.debug) {
-                        log(`Running standard module: ${funcName}...`);
-                        console.time(`[${SCRIPT_NAME}] ${funcName} execution time`);
-                    }
+                if (AppState.debug) {
+                    log(`Running standard module: ${funcName}...`);
+                    console.time(`[${SCRIPT_NAME}] ${funcName} execution time`);
+                }
                     enhancements[funcName]();
-                    if (AppState.debug) {
-                        console.timeEnd(`[${SCRIPT_NAME}] ${funcName} execution time`);
+                if (AppState.debug) {
+                    console.timeEnd(`[${SCRIPT_NAME}] ${funcName} execution time`);
                     }
                 }
             }
