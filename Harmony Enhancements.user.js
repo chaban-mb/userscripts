@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Harmony: Enhancements
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      1.15.1
+// @version      1.15.2
 // @tag          ai-created
 // @description  Adds some convenience features, various UI and behavior settings, as well as an improved language detection to Harmony.
 // @author       chaban
@@ -288,10 +288,12 @@
             cleanupPrefix: 'comment',
             generator: (value, set) => set('comment', value),
         },
+        /*
         'annotation': {
             cleanupPrefix: 'annotation',
             generator: (value, set) => set('annotation', value),
-        },
+        }, 
+        */
         'gtin': {
             cleanupPrefix: 'barcode',
             generator: (value, set) => set('barcode', value),
