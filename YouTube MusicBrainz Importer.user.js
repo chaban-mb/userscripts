@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YouTube: MusicBrainz Importer
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      2.7.1
+// @version      2.7.2
 // @description  Imports YouTube videos to MusicBrainz as a new standalone recording
 // @tag          ai-created
 // @author       nikki, RustyNova, chaban
@@ -315,9 +315,9 @@
                 return { parsedTracks: [], unparsedLines: [] };
             }
             const tracklistPatterns = [
-                { // Format: StartTime - EndTime Title - Artist
+                { // Format: StartTime - EndTime Artist - Title
                     regex: /^((?:\d+:)?\d+:\d+)\s*[-–—]\s*(?:\d+:)?\d+\s+(.+?)\s*[-–—]\s*(.+)$/,
-                    map: (match) => ({ timestampStr: match[1], title: match[2], artist: match[3] })
+                    map: (match) => ({ timestampStr: match[1], artist: match[2], title: match[3] })
                 },
                 { // Format: Timestamp - Artist - Title
                     regex: /^((?:\d+:)?\d+:\d+)\s*[-–—]\s*(.+?)\s*[-–—]\s*(.+)$/,
@@ -1072,29 +1072,129 @@
             html += '</body></html>';
             return html;
         },
+
         async _processTracklist(description, progressCallback) {
             const { parsedTracks, unparsedLines } = Utils.parseTracklist(description);
+            if (parsedTracks.length === 0) {
+                return { foundTracks: [], notFoundTracks: [], unparsedLines };
+            }
+
             parsedTracks.sort((a, b) => a.timestampSeconds - b.timestampSeconds);
 
-            const foundTracks = [];
-            const notFoundTracks = [];
+            // --- Heuristic ---
+            const uniqueArtists = new Set(parsedTracks.map(t => t.artist)).size;
+            const uniqueTitles = new Set(parsedTracks.map(t => t.title)).size;
+            const parserIsLikelySwapped = (uniqueArtists > 0 && uniqueTitles > 0 && parsedTracks.length > 3)
+                                          ? (uniqueArtists > uniqueTitles)
+                                          : false;
+
+            if (parserIsLikelySwapped) {
+                console.log(`[${GM.info.script.name}] Tracklist heuristic: uniqueArtists=${uniqueArtists}, uniqueTitles=${uniqueTitles}. Parser output likely swapped. Prioritizing swapped lookup.`);
+            } else {
+                 console.log(`[${GM.info.script.name}] Tracklist heuristic: uniqueArtists=${uniqueArtists}, uniqueTitles=${uniqueTitles}. Parser output seems correct. Prioritizing parser order lookup.`);
+            }
+            // --- End of heuristic ---
+
+            let foundTracks = [];
+            let potentiallyNotFound = []; // Tracks not found in the first pass
+
+            // --- First Pass: Use the heuristic's best guess ---
             let i = 0;
             for (const track of parsedTracks) {
-                if (progressCallback) progressCallback(i, parsedTracks.length);
+                if (progressCallback) progressCallback(i, parsedTracks.length, 'Pass 1'); // Indicate pass 1
+
+                const artistGuess1 = parserIsLikelySwapped ? track.title.trim() : track.artist.trim();
+                const titleGuess1 = parserIsLikelySwapped ? track.artist.trim() : track.title.trim();
+
                 try {
-                    const result = await ListenBrainzAPI.lookupTrack(track.artist, track.title);
+                    const result = await ListenBrainzAPI.lookupTrack(artistGuess1, titleGuess1);
                     if (result) {
                         foundTracks.push(result);
                     } else {
-                        notFoundTracks.push(track);
+                         // Add original track object with the heuristic's guess applied for potential second pass/reporting
+                        potentiallyNotFound.push({
+                            artist: artistGuess1,
+                            title: titleGuess1,
+                            timestamp: track.timestamp,
+                            timestampSeconds: track.timestampSeconds,
+                            originalLine: track.originalLine,
+                            // Store the alternative guess for the second pass
+                            altArtist: parserIsLikelySwapped ? track.artist.trim() : track.title.trim(),
+                            altTitle: parserIsLikelySwapped ? track.title.trim() : track.artist.trim()
+                        });
                     }
                 } catch (error) {
-                    console.error("Error looking up track:", track, error);
-                    notFoundTracks.push(track);
+                    console.error(`[${GM.info.script.name}] Error during Pass 1 lookup for track: "${artistGuess1} - ${titleGuess1}" (Original line: ${track.originalLine})`, error);
+                     // Add to potentiallyNotFound on error too, using heuristic guess for report
+                     potentiallyNotFound.push({
+                            artist: artistGuess1,
+                            title: titleGuess1,
+                            timestamp: track.timestamp,
+                            timestampSeconds: track.timestampSeconds,
+                            originalLine: track.originalLine,
+                            altArtist: parserIsLikelySwapped ? track.artist.trim() : track.title.trim(),
+                            altTitle: parserIsLikelySwapped ? track.title.trim() : track.artist.trim()
+                        });
                 }
                 i++;
             }
-            return { foundTracks, notFoundTracks, unparsedLines };
+
+            // --- Second Pass (Conditional): Try swapped order only if the first pass found nothing ---
+            let finalNotFoundTracks = potentiallyNotFound; // Assume all potential misses are final unless found in pass 2
+
+            if (foundTracks.length === 0 && potentiallyNotFound.length > 0) {
+                console.log(`[${GM.info.script.name}] First pass found no tracks. Starting second pass with swapped order.`);
+                foundTracks = []; // Reset foundTracks for the second pass results
+                finalNotFoundTracks = []; // Reset finalNotFoundTracks for the second pass results
+                let j = 0;
+
+                for (const trackInfo of potentiallyNotFound) {
+                     if (progressCallback) progressCallback(j, potentiallyNotFound.length, 'Pass 2'); // Indicate pass 2
+
+                    try {
+                        // Use the alternative guess stored earlier
+                        const result = await ListenBrainzAPI.lookupTrack(trackInfo.altArtist, trackInfo.altTitle);
+                        if (result) {
+                            foundTracks.push(result);
+                        } else {
+                            // Track still not found, add its *heuristic guess* to final report list
+                            console.log(`[${GM.info.script.name}] Track still not found on Pass 2: "${trackInfo.artist} - ${trackInfo.title}" (Original line: ${trackInfo.originalLine})`);
+                             finalNotFoundTracks.push({
+                                artist: trackInfo.artist, // Report using heuristic guess
+                                title: trackInfo.title,   // Report using heuristic guess
+                                timestamp: trackInfo.timestamp,
+                                timestampSeconds: trackInfo.timestampSeconds,
+                                originalLine: trackInfo.originalLine
+                            });
+                        }
+                    } catch (error) {
+                        console.error(`[${GM.info.script.name}] Error during Pass 2 lookup for track: "${trackInfo.altArtist} - ${trackInfo.altTitle}" (Original line: ${trackInfo.originalLine})`, error);
+                        // Add heuristic guess to report on error
+                         finalNotFoundTracks.push({
+                                artist: trackInfo.artist,
+                                title: trackInfo.title,
+                                timestamp: trackInfo.timestamp,
+                                timestampSeconds: trackInfo.timestampSeconds,
+                                originalLine: trackInfo.originalLine
+                            });
+                    }
+                    j++;
+                }
+            } else if (potentiallyNotFound.length > 0){
+                 // First pass found *some* tracks, so don't run second pass.
+                 // Convert potentiallyNotFound (which includes altArtist/altTitle)
+                 // back to the simple structure needed for the report.
+                 finalNotFoundTracks = potentiallyNotFound.map(trackInfo => ({
+                    artist: trackInfo.artist, // Report using heuristic guess
+                    title: trackInfo.title,   // Report using heuristic guess
+                    timestamp: trackInfo.timestamp,
+                    timestampSeconds: trackInfo.timestampSeconds,
+                    originalLine: trackInfo.originalLine
+                }));
+                 console.log(`[${GM.info.script.name}] First pass found ${foundTracks.length} tracks. Skipping second pass.`);
+            }
+
+            return { foundTracks, notFoundTracks: finalNotFoundTracks, unparsedLines };
         },
 
         async createPlaylist(ytData, canonicalYtUrl) {
