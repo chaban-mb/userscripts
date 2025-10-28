@@ -1614,37 +1614,42 @@
 
             // --- First Pass: Determine which titles are normalizable ---
             const normalizableTitles = new Set();
-            if (providerCount > 1) {
-                releaseData.media.forEach(medium => {
-                    medium.tracklist?.forEach(track => {
-                        const trackCell = Array.from(tracklistTitleCells)
-                            .find(cell => cell.textContent.includes(track.title));
-                        if (trackCell && trackCell.querySelector('ul.alt-values')) {
-                            normalizableTitles.add(track.title);
-                        }
-                    });
-                });
-            } else if (providerCount === 1 && providers[0].internalName === 'spotify') {
-                const techTerms = AppState.settings[SETTINGS_CONFIG.techTerms.key];
-                const techTermsRegex = new RegExp(`\\b(${techTerms.join('|')})\\b`, 'i');
-                const allTitles = new Set([
-                    releaseData.title,
-                    ...releaseData.media.flatMap(m => m.tracklist?.map(t => t.title) || [])
-                ].filter(Boolean));
+            const techTerms = AppState.settings[SETTINGS_CONFIG.techTerms.key];
+            const techTermsRegex = new RegExp(`\\b(${techTerms.join('|')})\\b`, 'i');
 
-                allTitles.forEach(title => {
-                    const match = title.match(regexp);
-                    if (match) {
-                        const { eti } = match.groups;
-                        const etiTrimmed = eti.trim();
-                        if (etiTrimmed) {
-                            if (techTermsRegex.test(etiTrimmed)) {
-                                normalizableTitles.add(title);
-                            }
-                        }
+            // Consolidate all titles and their potential UI nodes
+            const titlesToScan = [
+                { title: releaseData.title, node: releaseTitleNode },
+                ...releaseData.media.flatMap(m => m.tracklist?.map(t => ({
+                    title: t.title,
+                    node: Array.from(tracklistTitleCells).find(cell => cell.textContent.includes(t.title)),
+                })) || [])
+            ].filter(item => item.title); // Ensure title exists
+
+            // De-duplicate by title string, keeping the first node found
+            const uniqueTitlesToScan = Array.from(new Map(titlesToScan.map(item => [item.title, item])).values());
+
+            uniqueTitlesToScan.forEach(item => {
+                const { title, node } = item;
+                const match = title.match(regexp);
+                if (!match) return; // Doesn't have hyphenated ETI
+
+                // Condition A: ETI contains a known "tech term" (always safe)
+                const { eti } = match.groups;
+                const etiTrimmed = eti.trim();
+                if (etiTrimmed && techTermsRegex.test(etiTrimmed)) {
+                    normalizableTitles.add(title);
+                    return; // Added, no need to check condition B
+                }
+
+                // Condition B: Multi-provider release AND a UI discrepancy is shown
+                // (This is the original safeguard against false positives)
+                if (providerCount > 1) {
+                    if (node && node.querySelector('ul.alt-values')) {
+                        normalizableTitles.add(title);
                     }
-                });
-            }
+                }
+            });
 
             // --- Second Pass: Apply corrections to normalizable titles ---
             // Correct the release title
