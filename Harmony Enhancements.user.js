@@ -411,7 +411,7 @@
         settings: {},
         dom: {},
         data: {
-            release: null,
+            release: undefined,
         },
         lang: {
             code: null,
@@ -464,12 +464,13 @@
     }
 
     function getReleaseDataFromJSON() {
-        if (AppState.data.release) return AppState.data.release;
+        if (AppState.data.release !== undefined) { return AppState.data.release; }
+        AppState.data.release = null;
 
         const { freshStateScript } = AppState.dom;
         if (!freshStateScript?.textContent) {
             warn('Could not find Fresh state JSON script tag.');
-            return null;
+            return AppState.data.release;
         }
         try {
             const data = JSON.parse(freshStateScript.textContent);
@@ -483,7 +484,7 @@
 
             if (!releaseObj) {
                 warn('Could not find release data within Fresh state JSON.');
-                return null;
+                return AppState.data.release;
             }
 
             if (trackArrays.length > 0 && Array.isArray(releaseObj.media)) {
@@ -510,7 +511,7 @@
             return AppState.data.release;
         } catch (e) {
             error('Failed to parse Fresh state JSON.', e);
-            return null;
+            return AppState.data.release;
         }
     }
 
@@ -609,10 +610,7 @@
          * @returns {HTMLTableRowElement | null}
          */
         findReleaseInfoRow: (labelText) => {
-            const { releaseInfoTable } = AppState.dom;
-            if (!releaseInfoTable) return null;
-            return Array.from(releaseInfoTable.querySelectorAll('th'))
-                .find(th => th.textContent.trim() === labelText)?.parentElement || null;
+            return AppState.dom.releaseInfoRowsByHeader?.get(labelText) || null;
         },
 
         /**
@@ -825,7 +823,7 @@
     // --- SETTINGS PAGE ---
 
     function initSettingsPage() {
-        const main = document.querySelector('main');
+        const main = AppState.dom.settingsMain;
         if (!main || main.querySelector('.he-settings-container')) return;
 
         const sections = Object.values(SETTINGS_CONFIG)
@@ -1119,13 +1117,12 @@
                 releaseArtistNode.firstChild.textContent = releaseArtistNode.firstChild.textContent.replace(/^by\s+/, '');
             }
         },
+
         toggleReleaseInfo: () => {
-            const { releaseInfoRows } = AppState.dom;
-            if (!releaseInfoRows) return;
             const terms = ['Availability', 'Sources', 'External links'];
-            releaseInfoRows.forEach(row => {
-                const header = row.querySelector('th');
-                if (header && terms.includes(header.innerText.trim())) {
+            terms.forEach(term => {
+                const row = UI_UTILS.findReleaseInfoRow(term);
+                if (row) {
                     row.style.display = 'none';
                 }
             });
@@ -2028,38 +2025,51 @@
 
     // --- INITIALIZATION AND ROUTING ---
 
-    function initDOMCache() {
-        const { path } = AppState;
+    /** Caches DOM elements common to lookup pages. */
+    function cacheMainDOM() {
+        AppState.dom.lookupBtn = document.querySelector('input[type="submit"][value="Lookup"]');
+    }
 
-        if (['/', '/release'].includes(path)) {
-            AppState.dom.lookupBtn = document.querySelector('input[type="submit"][value="Lookup"]');
+    /** Caches DOM elements for the release lookup page. */
+    function cacheReleaseLookupPageDOM() {
+        cacheMainDOM();
+        AppState.dom.freshStateScript = document.querySelector('script[id^="__FRSH_STATE_"]');
+        AppState.dom.releaseContainer = document.querySelector('div.release');
+        AppState.dom.releaseTitleNode = document.querySelector('h2.release-title');
+        AppState.dom.tracklistTitleCells = document.querySelectorAll('table.tracklist td:nth-child(2)');
+        AppState.dom.releaseArtistNode = AppState.dom.releaseContainer?.querySelector('.release-artist');
+        AppState.dom.artistCreditSpan = AppState.dom.releaseArtistNode?.querySelector('.artist-credit');
+        AppState.dom.permalinkHeader = document.querySelector('h2.center');
+        AppState.dom.permaLink = document.querySelector('p.center > a');
+        AppState.dom.regionInput = document.querySelector('#region-input');
+        AppState.dom.releaseInfoTable = document.querySelector('.release-info tbody');
+        AppState.dom.releaseInfoRowsByHeader = new Map();
+        if (AppState.dom.releaseInfoTable) {
+            AppState.dom.releaseInfoTable.querySelectorAll('th').forEach(th => {
+                const headerText = th.textContent.trim();
+                if (headerText) {
+                    AppState.dom.releaseInfoRowsByHeader.set(headerText, th.parentElement);
+                }
+            });
         }
 
-        switch (true) {
-            case path.startsWith('/release') && !path.startsWith('/release/actions'):
-                AppState.dom.freshStateScript = document.querySelector('script[id^="__FRSH_STATE_"]');
-                AppState.dom.releaseContainer = document.querySelector('div.release');
-                AppState.dom.releaseTitleNode = document.querySelector('h2.release-title');
-                AppState.dom.tracklistTitleCells = document.querySelectorAll('table.tracklist td:nth-child(2)');
-                AppState.dom.releaseArtistNode = AppState.dom.releaseContainer?.querySelector('.release-artist');
-                AppState.dom.artistCreditSpan = AppState.dom.releaseArtistNode?.querySelector('.artist-credit')
-                AppState.dom.permalinkHeader = document.querySelector('h2.center');
-                AppState.dom.permaLink = document.querySelector('p.center > a');
-                AppState.dom.regionInput = document.querySelector('#region-input');
-                AppState.dom.releaseInfoRows = document.querySelectorAll('.release-info > tbody > tr');
-                AppState.dom.releaseInfoTable = document.querySelector('.release-info tbody');
-                AppState.dom.mainLabelList = document.querySelector('ul.release-labels li span.entity-links');
-                AppState.dom.scrapedArtistLinks = Array.from(document.querySelectorAll('.entity-links')).map(span => ({
-                    name: span.textContent.trim(),
-                    count: span.querySelectorAll('a').length,
-                    html: span.outerHTML,
-                }));
-                break;
-            case path.startsWith('/release/actions'):
-                AppState.dom.actionsHeader = Array.from(document.querySelectorAll('h2')).find(h => h.textContent.includes('Release Actions'));
-                AppState.dom.releaseArtistNode = document.querySelector('.release-artist');
-                break;
-        }
+        AppState.dom.mainLabelList = document.querySelector('ul.release-labels li span.entity-links');
+        AppState.dom.scrapedArtistLinks = Array.from(document.querySelectorAll('.entity-links')).map(span => ({
+            name: span.textContent.trim(),
+            count: span.querySelectorAll('a').length,
+            html: span.outerHTML,
+        }));
+    }
+
+    /** Caches DOM elements for the release actions page. */
+    function cacheReleaseActionsPageDOM() {
+        AppState.dom.actionsHeader = Array.from(document.querySelectorAll('h2')).find(h => h.textContent.includes('Release Actions'));
+        AppState.dom.releaseArtistNode = document.querySelector('.release-artist');
+    }
+
+    /** Caches DOM elements for the settings page. */
+    function cacheSettingsPageDOM() {
+        AppState.dom.settingsMain = document.querySelector('main');
     }
 
     function applyGlobalStyles() {
@@ -2219,11 +2229,18 @@
         await migrateLanguageSettings();
         await DebugModule.init();
 
-        initDOMCache();
+        const { path } = AppState;
         applyGlobalStyles();
-        getReleaseDataFromJSON();
 
-        if (AppState.path.startsWith('/settings')) {
+        if (path === '/') {
+            cacheMainDOM();
+        } else if (path.startsWith('/release') && !path.startsWith('/release/actions')) {
+            cacheReleaseLookupPageDOM();
+            getReleaseDataFromJSON();
+        } else if (path.startsWith('/release/actions')) {
+            cacheReleaseActionsPageDOM();
+        } else if (path.startsWith('/settings')) {
+            cacheSettingsPageDOM();
             initSettingsPage();
             return;
         }
