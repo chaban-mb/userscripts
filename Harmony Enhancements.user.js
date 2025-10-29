@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Harmony: Enhancements
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      1.15.2
+// @version      1.16.0
 // @tag          ai-created
 // @description  Adds some convenience features, various UI and behavior settings, as well as an improved language detection to Harmony.
 // @author       chaban
@@ -977,6 +977,7 @@
                     input.rows = 5;
                     input.value = Array.isArray(AppState.settings[config.key]) ? AppState.settings[config.key].join('\n') : '';
                     input.className = 'he-textarea';
+                    input.spellcheck = false;
                     wrap.append(textContainer, input);
                     break;
                 }
