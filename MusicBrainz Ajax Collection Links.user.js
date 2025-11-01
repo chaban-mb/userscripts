@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MusicBrainz: Ajax Collection Links
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      1.0.2
+// @version      1.0.3
 // @tag          ai-created
 // @description  Enhances entity sidebar collection links (Add/Remove from Collection) to use AJAX, preventing page reloads and toggling the link text on success.
 // @author       chaban
@@ -28,6 +28,8 @@
     'use strict';
 
     const SCRIPT_NAME = GM.info.script.name;
+    let activeRequests = 0;
+    let isUnloading = false;
 
     /**
      * Finds all anchor tags in the "Collections" sidebar section that link to add/remove actions.
@@ -108,6 +110,37 @@
     }
 
     /**
+     * Updates the "Found in X user collections" counter in the sidebar.
+     * @param {string} action - The action that was *performed* ('add' or 'remove').
+     */
+    function updateCollectionCounter(action) {
+        const counterElement = document.querySelector('#sidebar a[href$="/collections"] bdi');
+        if (!counterElement) {
+            return;
+        }
+
+        const text = counterElement.textContent;
+        const regex = /Found in (\d+) user collection(s?)/;
+        const match = text.match(regex);
+
+        if (!match) {
+            console.error(`[${SCRIPT_NAME}] Could not parse collection counter text: ${text}`);
+            return;
+        }
+
+        let count = parseInt(match[1], 10);
+
+        if (action === 'add') {
+            count++;
+        } else {
+            count = Math.max(0, count - 1);
+        }
+
+        const pluralS = (count === 1) ? '' : 's';
+        counterElement.textContent = `Found in ${count} user collection${pluralS}`;
+    }
+
+    /**
      * Attaches the event listener to a single collection link.
      * @param {HTMLAnchorElement} link - The link element.
      */
@@ -133,19 +166,24 @@
                 link.dataset.isProcessing = 'true';
                 link.style.cursor = 'wait';
                 link.textContent = 'Processing...';
+                activeRequests++;
 
                 const apiUrl = new URL(originalHref);
                 const success = await sendCollectionRequest(apiUrl);
 
                 if (success) {
+                    updateCollectionCounter(urlData.action);
                     updateLink(link, urlData, originalText);
                 } else {
                     link.textContent = originalText;
-                    alert(`[${SCRIPT_NAME}] Failed to perform collection action. See console for details.`);
+                    if (!isUnloading) {
+                        alert(`[${SCRIPT_NAME}] Failed to perform collection action. See console for details.`);
+                    }
                 }
             } finally {
                 link.style.cursor = 'pointer';
                 link.dataset.isProcessing = 'false';
+                activeRequests--;
             }
         });
     }
@@ -158,6 +196,18 @@
         if (links.length > 0) {
             links.forEach(attachLinkHandler);
         }
+
+        window.addEventListener('beforeunload', (event) => {
+            if (activeRequests > 0) {
+                event.preventDefault();
+            }
+        });
+
+        window.addEventListener('unload', () => {
+            if (activeRequests > 0) {
+                isUnloading = true;
+            }
+        });
     }
 
     initialize();
