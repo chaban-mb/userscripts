@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        Beatport: MusicBrainz Importer
 // @namespace   https://musicbrainz.org/user/chaban
-// @version     2.4.1
+// @version     2.5.0
 // @description Adds MusicBrainz status icons to Beatport releases and allows importing them with Harmony
 // @tag         ai-created
 // @author      RustyNova, chaban
@@ -268,6 +268,9 @@
       iconLink.target = "_blank";
       iconLink.title = "Import with Harmony"
       container.appendChild(iconLink);
+      iconLink.onclick = function() {
+          BeatportMusicBrainzImporter._mbApi.clearCache();
+      };
     },
 
     /**
@@ -346,7 +349,7 @@
       button.className = `${Config.CLASS_NAMES.BUTTON_HARMONY}`;
       button.title = "Import with Harmony"
       button.onclick = function() {
-        BeatportMusicBrainzImporter._mbApi.clearCache();
+        BeatportMusicBrainzImporter._mbApi.invalidateCacheForUrl(releaseUrl);
         window.open(getHarmonyImportUrl(releaseUrl), '_blank').focus();
       };
 
@@ -389,7 +392,7 @@
      * Processes the current release page to add import/search buttons.
      * @param {Array|null|undefined} mbStatus - The MusicBrainz status for the current URL.
      */
-    processReleasePageButtons: async function(mbStatus) {
+    processReleasePageButtons: async function(mbStatus, releaseUrl) {
       const anchor = await Utils.waitForElement(Config.SELECTORS.RELEASE_CONTROLS_CONTAINER);
       if (!anchor) {
         return;
@@ -408,9 +411,7 @@
           anchor.appendChild(container);
       }
 
-      const currentUrl = window.location.href;
-
-      this.addHarmonyImportButton(container, currentUrl);
+        this.addHarmonyImportButton(container, releaseUrl);
 
       if (mbStatus !== null && mbStatus !== undefined) {
         this.addOpenMusicBrainzButton(container, mbStatus[0], mbStatus[1]);
@@ -719,78 +720,67 @@
       }
 
       const isDetailPage = DOMScanner.isReleaseDetailPage();
+      let itemsToProcess = [];
 
+      // 1. --- Gather Raw Items ---
       if (isDetailPage) {
-        const currentUrl = window.location.href;
-        let mbStatus = null;
-        try {
-            const urlData = await this._mbApi.lookupUrl(currentUrl, ['release-rels']);
-            if (urlData) {
-                const releaseRelation = urlData.relations?.find(rel => rel['target-type'] === 'release' && rel.release);
-                if (releaseRelation) {
-                    mbStatus = [releaseRelation['target-type'], releaseRelation.release.id];
-                }
-            }
-        } catch (error) {
-            // A 404 Not Found is an expected outcome, so we don't log it as an error.
-            if (!error.message.includes('HTTP Error 404')) {
-                console.error(`Failed to lookup Beatport URL: ${currentUrl}`, error);
-            }
+        itemsToProcess.push({
+          url: window.location.href,
+          element: null
+        });
+      } else {
+        itemsToProcess = DOMScanner.getReleasesToProcess();
+        if (itemsToProcess.length === 0) {
+          this._runningUpdate = false;
+          return;
         }
-        await ButtonManager.processReleasePageButtons(mbStatus);
-        this._runningUpdate = false;
-        return;
       }
 
-      // Only proceed with list page status icons if it's NOT a detail page
-      const releasesToProcess = DOMScanner.getReleasesToProcess();
+      // 2. --- Normalize All Items ---
+      const urlsToProcess = itemsToProcess.map(({ url, element }) => {
+        const parsedUrl = new URL(url);
+        const normalizedPathname = Utils._getBasePathname(parsedUrl.pathname);
+        const normalizedUrl = `${parsedUrl.origin}${normalizedPathname}${parsedUrl.search}`;
+        return {
+          normalizedUrl: normalizedUrl,
+          element: element
+        };
+      });
+      // 3. --- Unify API Lookup ---
+      const normalizedUrls = [...new Set(urlsToProcess.map(u => u.normalizedUrl))];
+      const mbStatusMap = new Map();
+      try {
+        const mbResults = await this._mbApi.lookupUrl(normalizedUrls, ['release-rels']);
+        for (const normalizedUrl of normalizedUrls) {
+          const urlData = mbResults.get(normalizedUrl);
+          let status = null; // Default to 'not found'
 
-      if (releasesToProcess.length === 0) {
-        this._runningUpdate = false;
-        return;
+          if (urlData && urlData.relations) {
+            const releaseRelation = urlData.relations.find(rel => rel['target-type'] === 'release' && rel.release);
+            if (releaseRelation) {
+              status = [releaseRelation['target-type'], releaseRelation.release.id];
+            }
+          }
+          mbStatusMap.set(normalizedUrl, status);
+        }
+
+      } catch (error) {
+        if (!error.message.includes('HTTP Error 404')) {
+          console.error('Failed to lookup Beatport URLs', error);
+        }
+        // On API error, set all URLs to null status (will show Harmony/search icon)
+        normalizedUrls.forEach(url => mbStatusMap.set(url, null));
       }
-
-      const urls = releasesToProcess.map(r => r.url);
-      const urlNormalizationMap = new Map(urls.map(url => {
-          const parsedUrl = new URL(url);
-          const normalizedPathname = Utils._getBasePathname(parsedUrl.pathname);
-          return [url, `${parsedUrl.origin}${normalizedPathname}${parsedUrl.search}`];
-      }));
-      const normalizedUrls = [...urlNormalizationMap.values()];
-
-      const mbResultsMap = new Map();
-        try {
-            const mbResults = await this._mbApi.lookupUrl(normalizedUrls, ['release-rels']);
-            for (const originalUrl of urls) {
-                const normalizedUrl = urlNormalizationMap.get(originalUrl);
-                const urlData = mbResults.get(normalizedUrl);
-
-                if (urlData && urlData.relations) {
-                    const releaseRelation = urlData.relations.find(rel => rel['target-type'] === 'release' && rel.release);
-                    if (releaseRelation) {
-                        mbResultsMap.set(originalUrl, [releaseRelation['target-type'], releaseRelation.release.id]);
-                    } else {
-                        mbResultsMap.set(originalUrl, null);
-                    }
-                } else {
-                    mbResultsMap.set(originalUrl, null);
-                }
-            }
-        } catch (error) {
-            if (!error.message.includes('HTTP Error 404')) {
-                console.error('Failed to lookup Beatport URLs', error);
-            }
-            urls.forEach(url => mbResultsMap.set(url, undefined));
+      // 4. --- Diverge for UI Update ---
+      for (const { normalizedUrl, element } of urlsToProcess) {
+        const status = mbStatusMap.get(normalizedUrl);
+        if (isDetailPage) {
+          await ButtonManager.processReleasePageButtons(status, normalizedUrl);
+        } else {
+          await IconManager.updateReleaseRow(element, normalizedUrl, status);
         }
-
-
-        for (const { url, element } of releasesToProcess) {
-            const status = mbResultsMap.get(url);
-            if (status !== undefined) {
-                await IconManager.updateReleaseRow(element, url, status);
-            }
-        }
-        this._runningUpdate = false;
+      }
+      this._runningUpdate = false;
     }
   };
 
