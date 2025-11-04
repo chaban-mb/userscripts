@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        Beatport: MusicBrainz Importer
 // @namespace   https://musicbrainz.org/user/chaban
-// @version     2.4.0
+// @version     2.4.1
 // @description Adds MusicBrainz status icons to Beatport releases and allows importing them with Harmony
 // @tag         ai-created
 // @author      RustyNova, chaban
@@ -763,7 +763,7 @@
             const mbResults = await this._mbApi.lookupUrl(normalizedUrls, ['release-rels']);
             for (const originalUrl of urls) {
                 const normalizedUrl = urlNormalizationMap.get(originalUrl);
-                const urlData = mbResults[normalizedUrl];
+                const urlData = mbResults.get(normalizedUrl);
 
                 if (urlData && urlData.relations) {
                     const releaseRelation = urlData.relations.find(rel => rel['target-type'] === 'release' && rel.release);

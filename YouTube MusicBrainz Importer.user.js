@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YouTube: MusicBrainz Importer
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      2.7.2
+// @version      2.7.3
 // @description  Imports YouTube videos to MusicBrainz as a new standalone recording
 // @tag          ai-created
 // @author       nikki, RustyNova, chaban
@@ -1365,41 +1365,22 @@
         _prefetchedDataPromise: null,
         _prefetchedVideoId: null,
         _mbApi: null,
-        _urlCache: new Map(),
 
         lookupMbUrls: async function (canonicalUrls) {
-            const resultsMap = new Map();
-            const urlsToFetch = [];
-
-            for (const url of canonicalUrls) {
-                if (this._urlCache.has(url)) {
-                    resultsMap.set(url, this._urlCache.get(url));
+            try {
+                return await this._mbApi.lookupUrl(canonicalUrls, ['recording-rels', 'artist-rels']);
+            } catch (error) {
+                if (error.name === 'PermanentError') {
+                    console.log(`[${GM.info.script.name}] A URL was not found in MusicBrainz (404), which is expected.`);
                 } else {
-                    urlsToFetch.push(url);
+                    console.error(`[${GM.info.script.name}] An unexpected error occurred looking up MusicBrainz URLs:`, error);
                 }
-            }
-
-            if (urlsToFetch.length === 0) {
+                // On error, return a map with null values for all requested URLs
+                const resultsMap = new Map();
+                const urls = Array.isArray(canonicalUrls) ? canonicalUrls : [canonicalUrls];
+                urls.forEach(url => resultsMap.set(url, null));
                 return resultsMap;
             }
-
-            try {
-                const data = await this._mbApi.lookupUrl(urlsToFetch, ['recording-rels', 'artist-rels']);
-
-                urlsToFetch.forEach(url => {
-                    const urlData = data[url] || null;
-                    this._urlCache.set(url, urlData);
-                    resultsMap.set(url, urlData);
-                });
-           } catch (error) {
-               if (error.name === 'PermanentError') {
-                   console.log(`[${GM.info.script.name}] A URL was not found in MusicBrainz (404), which is expected.`);
-               } else {
-                   console.error(`[${GM.info.script.name}] An unexpected error occurred looking up MusicBrainz URLs:`, error);
-               }
-               urlsToFetch.forEach(url => resultsMap.set(url, null));
-           }
-            return resultsMap;
         },
 
         _extractArtistMbid: function (channelUrlEntity) {
