@@ -1,13 +1,13 @@
 // ==UserScript==
 // @name         MusicBrainz: Editor Subscription Manager
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      0.1.0
+// @version      0.1.1
 // @tag          ai-created
 // @description  Manages editor subscriptions by checking for spammers and inactivity, and allowing batch unsubscription.
 // @author       chaban
 // @license      MIT
-// @match        *://musicbrainz.org/user/*/subscriptions/editor*
-// @match        *://musicbrainz.eu/user/*/subscriptions/editor*
+// @match        *://*.musicbrainz.org/user/*/subscriptions/editor*
+// @match        *://*.musicbrainz.eu/user/*/subscriptions/editor*
 // @connect      self
 // @grant        GM_xmlhttpRequest
 // @grant        GM_addStyle
