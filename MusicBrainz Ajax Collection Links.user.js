@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MusicBrainz: Ajax Collection Links
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      1.0.3
+// @version      1.1.0
 // @tag          ai-created
 // @description  Enhances entity sidebar collection links (Add/Remove from Collection) to use AJAX, preventing page reloads and toggling the link text on success.
 // @author       chaban
@@ -28,18 +28,10 @@
     'use strict';
 
     const SCRIPT_NAME = GM.info.script.name;
+    const COLLECTION_LINK_SELECTOR =
+        'a[href*="/collection/"][href*="/collection_collaborator/"]';
     let activeRequests = 0;
     let isUnloading = false;
-
-    /**
-     * Finds all anchor tags in the "Collections" sidebar section that link to add/remove actions.
-     * @returns {NodeListOf<HTMLAnchorElement>}
-     */
-    function findCollectionLinks() {
-        return document.querySelectorAll(
-            '#sidebar a[href*="/collection/"][href*="/collection_collaborator/"]'
-        );
-    }
 
     /**
      * Extracts parameters from a collection URL for processing.
@@ -141,60 +133,65 @@
     }
 
     /**
-     * Attaches the event listener to a single collection link.
-     * @param {HTMLAnchorElement} link - The link element.
+     * Handles clicks on the sidebar using event delegation.
+     * @param {Event} event - The click event.
      */
-    function attachLinkHandler(link) {
-        link.addEventListener('click', async (event) => {
-            event.preventDefault();
+    async function handleSidebarClick(event) {
+        const link = event.target.closest(COLLECTION_LINK_SELECTOR);
 
-            if (link.dataset.isProcessing === 'true') {
-                return;
-            }
+        if (!link) {
+            return;
+        }
 
-            const originalHref = link.href;
-            const originalText = link.textContent;
-            const urlData = parseUrl(originalHref);
+        event.preventDefault();
 
-            if (!urlData) {
-                // If parsing fails, fall back to default navigation to avoid breaking functionality.
-                window.location.href = originalHref;
-                return;
-            }
+        if (link.dataset.isProcessing === 'true') {
+            return;
+        }
 
-            try {
-                link.dataset.isProcessing = 'true';
-                link.style.cursor = 'wait';
-                link.textContent = 'Processing...';
-                activeRequests++;
+        const originalHref = link.href;
+        const originalText = link.textContent;
+        const urlData = parseUrl(originalHref);
 
-                const apiUrl = new URL(originalHref);
-                const success = await sendCollectionRequest(apiUrl);
+        if (!urlData) {
+            // If parsing fails, fall back to default navigation to avoid breaking functionality.
+            window.location.href = originalHref;
+            return;
+        }
 
-                if (success) {
-                    updateCollectionCounter(urlData.action);
-                    updateLink(link, urlData, originalText);
-                } else {
-                    link.textContent = originalText;
-                    if (!isUnloading) {
-                        alert(`[${SCRIPT_NAME}] Failed to perform collection action. See console for details.`);
-                    }
+        try {
+            link.dataset.isProcessing = 'true';
+            link.style.cursor = 'wait';
+            link.textContent = 'Processing...';
+            activeRequests++;
+
+            const apiUrl = new URL(originalHref);
+            const success = await sendCollectionRequest(apiUrl);
+
+            if (success) {
+                updateCollectionCounter(urlData.action);
+                updateLink(link, urlData, originalText);
+            } else {
+                link.textContent = originalText;
+                if (!isUnloading) {
+                    alert(`[${SCRIPT_NAME}] Failed to perform collection action. See console for details.`);
                 }
-            } finally {
-                link.style.cursor = 'pointer';
-                link.dataset.isProcessing = 'false';
-                activeRequests--;
             }
-        });
+        } finally {
+            link.style.cursor = 'pointer';
+            link.dataset.isProcessing = 'false';
+            activeRequests--;
+        }
     }
 
     /**
      * Bootstrap function to initialize the script.
      */
     function initialize() {
-        const links = findCollectionLinks();
-        if (links.length > 0) {
-            links.forEach(attachLinkHandler);
+        const sidebar = document.getElementById('sidebar');
+
+        if (sidebar) {
+            sidebar.addEventListener('click', handleSidebarClick);
         }
 
         window.addEventListener('beforeunload', (event) => {
