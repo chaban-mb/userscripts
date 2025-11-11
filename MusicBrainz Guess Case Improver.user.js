@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MusicBrainz: Guess Case Improver
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      0.4.0
+// @version      0.4.1
 // @tag          ai-created
 // @description  Improves the native "Guess Case" for release, recording and track titles with advanced artist and ETI parsing. Also removes duplicate artists after using "Guess feat. artists" on tracklists.
 // @author       chaban
@@ -48,7 +48,7 @@
         'official visualizer', 'slowed' , 'super slowed', 'speed up', 'sped up'
     ];
 
-    const JOIN_PHRASE_PATTERN = /\s*(?:featuring|feat|ft|vs)\.?\s*|\s*(?:[,，、&・×/])\s*|\s+and\s+/gi;
+    const JOIN_PHRASE_PATTERN = /\s*\b(?:featuring|feat|ft|vs)\.?\b\s*|\s*(?:[,，、&・×/])\s*|\s+and\s+/gi;
 
     log('User configuration loaded.');
 
