@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MusicBrainz: Import from Discogs CSV
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      0.1
+// @version      0.2
 // @tag          ai-created
 // @description  Imports releases to a MusicBrainz collection based on a Discogs CSV export by matching Discogs IDs to MusicBrainz Releases.
 // @author       chaban
@@ -260,10 +260,27 @@
 
     // Initialize
     window.addEventListener('load', () => {
-        // Only start if we are on a collection page (ID present in URL)
-        if (window.location.href.match(/collection\/([a-f0-9-]{36})/)) {
-           new ImporterController();
+        // 1. Check URL pattern
+        if (!window.location.href.match(/collection\/([a-f0-9-]{36})/)) {
+            return;
         }
+
+        // 2. Validate Collection Type
+        // We allow "Release collection" and its subtypes ("Owned music", "Wishlist")
+        const typeElement = document.querySelector('dl.properties dd.type');
+        const allowedTypes = ['Release collection', 'Owned music', 'Wishlist'];
+
+        if (typeElement) {
+            const typeText = typeElement.textContent.trim();
+            const isAllowed = allowedTypes.some(allowed => typeText.includes(allowed));
+
+            if (!isAllowed) {
+                console.log(`Discogs Importer: Skipping collection type '${typeText}'.`);
+                return;
+            }
+        }
+
+        new ImporterController();
     });
 
 })();
