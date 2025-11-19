@@ -1,12 +1,13 @@
 // ==UserScript==
 // @name         MusicBrainz: Import from Discogs CSV
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      0.2
+// @version      0.2.1
 // @tag          ai-created
 // @description  Imports releases to a MusicBrainz collection based on a Discogs CSV export by matching Discogs IDs to MusicBrainz Releases.
 // @author       chaban
 // @license      MIT
 // @match        https://*.musicbrainz.org/collection/*
+// @exclude      https://*.musicbrainz.org/collection/*/*
 // @grant        GM_xmlhttpRequest
 // @connect      self
 // @require      https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js
