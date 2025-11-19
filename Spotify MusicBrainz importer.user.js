@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Spotify: MusicBrainz importer
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      1.3.0
+// @version      1.4.0
 // @tag          ai-created
 // @description  Adds buttons for MusicBrainz, ListenBrainz, Harmony, ISRC Hunt and SAMBL to Spotify.
 // @author       chaban, garylaski, RustyNova
@@ -83,6 +83,7 @@
             HARMONY: {
                 id: 'mb-import-harmony-button', text: 'Import with Harmony', className: 'import-button-harmony', color: '#c45555',
                 pages: ['album', 'track'],
+                invalidateCache: true,
                 getUrl: ({ pageInfo, normalizedUrl }) => {
                     let finalReleaseUrl = null;
 
@@ -307,8 +308,8 @@
         #updateButtonsWithData(context) {
             for (const config of Object.values(main.BUTTON_CONFIG)) {
                 const canSetUp =
-                      (!config.requiresMbInfo || context.mbInfo !== undefined) &&
-                      (config.id !== 'lb-playlist-import-button' || context.lbPlaylistResult !== undefined);
+                    (!config.requiresMbInfo || context.mbInfo !== undefined) &&
+                    (config.id !== 'lb-playlist-import-button' || context.lbPlaylistResult !== undefined);
 
                 if (config.pages.includes(context.pageInfo.type) && canSetUp) {
                     this.#setupButtonFromConfig(config, context);
@@ -339,6 +340,11 @@
             if (url) {
                 button.href = url.toString();
                 button.classList.remove('disabled');
+                if (config.invalidateCache) {
+                    button.addEventListener('click', () => {
+                        this.#mbApi.invalidateCacheForUrl(context.normalizedUrl);
+                    });
+                }
             } else if (config.onClick) {
                 const newButton = button.cloneNode(true);
                 button.parentNode.replaceChild(newButton, button);
@@ -515,11 +521,6 @@
         async #fetchMusicBrainzInfo(url, pageInfo) {
             console.debug(`%c[${main.SCRIPT_NAME}] #fetchMusicBrainzInfo`, 'color: blue; font-weight: bold;', { url, pageInfo });
             const normalizedUrl = main.normalizeUrl(url);
-            if (this.#urlCache.has(normalizedUrl)) {
-                console.debug(`[${main.SCRIPT_NAME}] Cache HIT for ${normalizedUrl}`);
-                return this.#urlCache.get(normalizedUrl);
-            }
-            console.debug(`[${main.SCRIPT_NAME}] Cache MISS for ${normalizedUrl}`);
 
             const incMap = {
                 album: 'release-rels',
@@ -543,7 +544,6 @@
 
                 if (!urlData || !Array.isArray(urlData.relations) || urlData.relations.length === 0) {
                     console.debug(`[${main.SCRIPT_NAME}] No relations found in API response.`);
-                    this.#urlCache.set(normalizedUrl, null);
                     return null;
                 }
 
@@ -555,15 +555,13 @@
 
                 if (!relation) {
                     console.debug(`[${main.SCRIPT_NAME}] No relation found for expected type '${expectedMbType}'.`);
-                    this.#urlCache.set(normalizedUrl, null);
                     return null;
                 }
 
                 const mbid = relation[expectedMbType].id;
                 if (!mbid) {
-                     console.warn(`[${main.SCRIPT_NAME}] Relation found, but MBID is missing.`);
-                     this.#urlCache.set(normalizedUrl, null);
-                     return null;
+                    console.warn(`[${main.SCRIPT_NAME}] Relation found, but MBID is missing.`);
+                    return null;
                 }
 
                 const result = {
@@ -571,7 +569,6 @@
                     mbid: mbid
                 };
                 console.debug(`[${main.SCRIPT_NAME}] Successfully parsed result:`, result);
-                this.#urlCache.set(normalizedUrl, result);
                 return result;
 
             } catch (error) {
@@ -581,7 +578,6 @@
                 } else {
                     console.debug(`[${main.SCRIPT_NAME}] API returned 404 (Not Found) for ${normalizedUrl}, as expected for an unlinked entity.`);
                 }
-                this.#urlCache.set(normalizedUrl, null);
                 return null;
             }
         }
