@@ -1,13 +1,15 @@
 // ==UserScript==
 // @name         MusicBrainz: Import from Discogs CSV
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      0.2.1
+// @version      0.2.2
 // @tag          ai-created
 // @description  Imports releases to a MusicBrainz collection based on a Discogs CSV export by matching Discogs IDs to MusicBrainz Releases.
 // @author       chaban
 // @license      MIT
 // @match        https://*.musicbrainz.org/collection/*
 // @exclude      https://*.musicbrainz.org/collection/*/*
+// @match        https://*.musicbrainz.eu/collection/*
+// @exclude      https://*.musicbrainz.eu/collection/*/*
 // @grant        GM_xmlhttpRequest
 // @connect      self
 // @require      https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js
@@ -15,7 +17,7 @@
 
 /* global Papa */
 
-(function() {
+(function () {
     'use strict';
 
     // --- CONFIGURATION & CONSTANTS ---
@@ -252,7 +254,7 @@
                     await this.api.addReleasesToCollection(this.collectionId, foundMBIDs);
                     this.ui.log("Success! Reloading page...", "success");
                     setTimeout(() => window.location.reload(), 2000);
-                } catch(e) {
+                } catch (e) {
                     this.ui.log("Error saving to collection.", "error");
                 }
             }
