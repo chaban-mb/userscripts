@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Click buttons across tabs
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      4.5.0
+// @version      4.5.1
 // @tag          ai-created
 // @description  Clicks specified buttons across tabs using the Broadcast Channel API and closes tabs after successful submission.
 // @author       chaban
@@ -174,6 +174,7 @@
     const DISABLE_AUTO_CLOSE_SETTING = 'mb_button_clicker_disableAutoClose';
     const MAGICISRC_ENABLE_AUTO_RELOAD = 'magicisrc_enableAutoReload';
     const DEBUG_LOGGING_SETTING = 'debug_logging_enabled';
+    const DEFAULT_MB_SUBMITS_PER_SECOND = 5
 
     let registeredMenuCommandIDs = [];
     let debugLogChannel;
@@ -399,7 +400,7 @@
                         alert('Please enter a valid positive number (you can use decimals like 0.5 for a 2-second delay).');
                     }
                 },
-                defaultValue: 10,
+                defaultValue: DEFAULT_MB_SUBMITS_PER_SECOND,
             },
             {
                 key: MUSICBRAINZ_DISABLE_RATE_LIMITER_SETTING,
@@ -443,7 +444,7 @@
             return;
         }
 
-        const submitsPerSecond = await GM.getValue(MUSICBRAINZ_SUBMITS_PER_SECOND_SETTING, 10);
+        const submitsPerSecond = await GM.getValue(MUSICBRAINZ_SUBMITS_PER_SECOND_SETTING, DEFAULT_MB_SUBMITS_PER_SECOND);
         const requiredInterval = 1000 / submitsPerSecond;
 
         debugLog(`Requesting MB submission lock...`);
