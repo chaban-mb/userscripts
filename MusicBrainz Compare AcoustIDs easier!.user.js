@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name          MusicBrainz: Compare AcoustIDs easier!
 // @namespace     https://musicbrainz.org/user/chaban
-// @version       1.0.0
+// @version       1.1.0
 // @tag           ai-created
 // @description   Displays AcoustID fingerprints in more places at MusicBrainz.
 // @author        otringal, chaban
@@ -247,9 +247,65 @@
     }
   }
 
+  /** Applies colors to existing AcoustID links. */
+  function colorizeMergePageLinks() {
+    const links = document.querySelectorAll('.tbl .acoustids a[href*="/track/"]');
+    if (links.length === 0) return;
+
+    const counts = {};
+    links.forEach((link) => {
+      const parts = link.href.split('/');
+      const id = parts[parts.length - 1];
+      counts[id] = (counts[id] || 0) + 1;
+    });
+
+    const colorMap = {};
+    for (const id in counts) {
+      if (counts[id] > 1) {
+        colorMap[id] = getRandomColor();
+      }
+    }
+
+    links.forEach((link) => {
+      const parts = link.href.split('/');
+      const id = parts[parts.length - 1];
+      if (colorMap[id]) {
+        link.style.backgroundColor = colorMap[id];
+      }
+    });
+  }
+
+  /** Observes the table for React updates and triggers highlighting. */
+  function setupMergePageObserver() {
+    colorizeMergePageLinks();
+
+    const targetNode = document.querySelector('#content') || document.body;
+
+    let timeout;
+    const observer = new MutationObserver((mutations) => {
+      const shouldUpdate = mutations.some(mutation =>
+        mutation.addedNodes.length > 0 &&
+        (mutation.target.classList.contains('acoustids') ||
+         mutation.target.closest('.acoustids') ||
+         mutation.target.closest('.tbl'))
+      );
+
+      if (shouldUpdate) {
+        clearTimeout(timeout);
+        timeout = setTimeout(() => {
+             colorizeMergePageLinks();
+        }, 200);
+      }
+    });
+
+    observer.observe(targetNode, {
+      childList: true,
+      subtree: true
+    });
+  }
+
   // -- UI EVENT HANDLING --
 
-  /** Sets up a single delegated event listener for all show/hide buttons. */
   function setupShowHideListener() {
     if (document.body.dataset.showhideListenerAttached) return;
     document.body.dataset.showhideListenerAttached = 'true';
@@ -283,10 +339,14 @@
 
   // -- MAIN ROUTER --
 
-  /** Determines which script functions to run based on the page URL. */
   function main() {
     const path = window.location.href;
-    if (
+    console.log('[AcoustID Script] Main executing. Path:', path);
+
+    if (path.includes('/recording/merge')) {
+       // React-based page: Needs Observer
+       setupMergePageObserver();
+    } else if (
       enableMiniIcons &&
       (path.includes('/recordings') || path.includes('/release/'))
     ) {
