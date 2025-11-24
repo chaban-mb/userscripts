@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name          MusicBrainz: Compare AcoustIDs easier!
 // @namespace     https://musicbrainz.org/user/chaban
-// @version       1.1.0
+// @version       1.1.1
 // @tag           ai-created
 // @description   Displays AcoustID fingerprints in more places at MusicBrainz.
 // @author        otringal, chaban
@@ -16,8 +16,8 @@
 // @match         *://*.musicbrainz.org/search/*
 // @match         *://*.musicbrainz.org/user/*/edits*
 // @match         *://*.musicbrainz.org/user/*/votes*
-// @exclude-match *://*.musicbrainz.org/release/*/edit*
-// @exclude-match *://*.musicbrainz.org/release/*/edit-relationships*
+// @exclude       *musicbrainz.org/release/*/edit*
+// @exclude       *musicbrainz.org/release/*/edit-relationships*
 // @icon          https://acoustid.org/static/acoustid-wave-12.png
 // @connect       api.acoustid.org
 // @grant         none
