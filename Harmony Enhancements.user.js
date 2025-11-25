@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Harmony: Enhancements
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      1.16.0
+// @version      1.17.0
 // @tag          ai-created
 // @description  Adds some convenience features, various UI and behavior settings, as well as an improved language detection to Harmony.
 // @author       chaban
@@ -24,6 +24,7 @@
         name: '[no label]',
         mbid: '157afde4-4bf5-4039-8ad2-5a15acc85176',
     };
+    const MBID_REGEX = /[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}/i;
 
     // --- CONFIGURATION ---
     // The top-level keys of this object MUST match the function names in the `enhancements` object.
@@ -154,6 +155,14 @@
             type: 'textarea',
             runAt: 'load',
             paths: [/^\/release(?!\/actions)/],
+            tidy: (rawValue) => {
+                const lines = Array.isArray(rawValue) ? rawValue : rawValue.split('\n');
+                const cleanMap = getCleanMappings(lines, 'label');
+                return Array.from(cleanMap.entries())
+                    .sort((a, b) => a[0].localeCompare(b[0]))
+                    .map(([name, url]) => `${name}=${url}`)
+                    .join('\n');
+            }
         },
         setNoLabel: {
             key: 'enhancements.label.setNoLabel',
@@ -513,6 +522,41 @@
             error('Failed to parse Fresh state JSON.', e);
             return AppState.data.release;
         }
+    }
+
+    /**
+     * Extracts an MBID and returns a canonical MusicBrainz URL for the specific entity type.
+     * @param {string} input - The string containing a UUID or URL.
+     * @param {string} [entityType='mbid'] - The entity type (e.g., 'label', 'artist', 'release-group').
+     */
+    function normalizeMbLink(input, entityType = 'mbid') {
+        if (!input || typeof input !== 'string') return null;
+        const match = input.match(MBID_REGEX);
+        return match ? `https://musicbrainz.org/${entityType}/${match[0].toLowerCase()}` : null;
+    }
+
+    /**
+     * STRICT helper for Consumers (Runtime).
+     * Processes raw lines and returns a Map of valid, clean mappings.
+     * Ignores drafts/invalid lines.
+     */
+    function getCleanMappings(lines, entityType = 'mbid') {
+        const mapping = new Map();
+        if (!Array.isArray(lines)) return mapping;
+
+        lines.forEach(line => {
+            if (typeof line !== 'string') return;
+            const parts = line.split('=');
+            if (parts.length < 2) return;
+
+            const key = parts[0].trim();
+            const cleanUrl = normalizeMbLink(parts.slice(1).join('='), entityType);
+
+            if (key && cleanUrl) {
+                mapping.set(key, cleanUrl);
+            }
+        });
+        return mapping;
     }
 
     const DebugModule = {
@@ -973,12 +1017,29 @@
                     break;
                     case 'textarea':
                     wrap.classList.add('he-setting-row-column');
+                    const areaContainer = document.createElement('div');
                     input = document.createElement('textarea');
                     input.rows = 5;
                     input.value = Array.isArray(AppState.settings[config.key]) ? AppState.settings[config.key].join('\n') : '';
                     input.className = 'he-textarea';
                     input.spellcheck = false;
-                    wrap.append(textContainer, input);
+                    areaContainer.appendChild(input);
+                    if (config.tidy) {
+                        const tidyBtn = document.createElement('button');
+                        tidyBtn.textContent = 'Tidy & Sort';
+                        tidyBtn.className = 'he-tidy-button';
+                        tidyBtn.title = 'Sorts alphabetically and removes duplicates/invalid lines.';
+                        tidyBtn.onclick = (e) => {
+                            e.preventDefault();
+                            const currentVal = input.value;
+                            const cleanedVal = config.tidy(currentVal);
+                            input.value = cleanedVal;
+                            input.dispatchEvent(new Event('change'));
+                            showTooltip('List tidied and saved!', 'success', e);
+                        };
+                        lbl.after(tidyBtn);
+                    }
+                    wrap.append(textContainer, areaContainer);
                     break;
                 }
 
@@ -1756,62 +1817,31 @@
                 return;
             }
 
-            const mappingLines = AppState.settings[SETTINGS_CONFIG.mapLabelMbids.key];
-            if (!Array.isArray(mappingLines) || mappingLines.length === 0) {
-                return;
-            }
+            const rawLines = AppState.settings[SETTINGS_CONFIG.mapLabelMbids.key];
+            const labelMap = getCleanMappings(rawLines, 'label');
 
-            const labelMap = new Map();
-            const uuidRegex = /[a-f\d]{8}-[a-f\d]{4}-[a-f\d]{4}-[a-f\d]{4}-[a-f\d]{12}/i;
-            mappingLines.forEach(line => {
-                const parts = line.split('=');
-                if (parts.length === 2) {
-                    const name = parts[0].trim();
-                    const value = parts[1].trim();
-                    let mbid = null;
+            if (labelMap.size === 0) return;
 
-                    if (value.includes('musicbrainz.org/label/')) {
-                        const match = value.match(uuidRegex);
-                        if (match) {
-                            mbid = match[0];
-                        }
-                    } else if (uuidRegex.test(value)) {
-                        mbid = value;
-                    }
+            const currentLabelName = releaseData.labels[0].name.trim();
+            const matchedUrl = labelMap.get(currentLabelName);
 
-                    if (name && mbid) {
-                        labelMap.set(name, mbid);
-                    }
-                }
-            });
-
-            if (labelMap.size === 0) {
-                return;
-            }
-
-            const currentLabel = releaseData.labels[0];
-            const currentLabelName = currentLabel.name;
-
-            const matchedMbid = labelMap.get(currentLabelName);
-
-            if (matchedMbid) {
-                AppState.data.release.labels[0].mbid = matchedMbid;
+            if (matchedUrl) {
+                const mbid = matchedUrl.split('/').pop();
+                AppState.data.release.labels[0].mbid = mbid;
 
                 const { mainLabelList } = AppState.dom;
                 if (mainLabelList) {
-                    UI_UTILS.updateLabelLink(mainLabelList, currentLabelName, matchedMbid);
-
-                    const addedSpan = UI_UTILS.createIndicatorSpan('added', matchedMbid, {
+                    UI_UTILS.updateLabelLink(mainLabelList, currentLabelName, mbid);
+                    const addedSpan = UI_UTILS.createIndicatorSpan('added', mbid, {
                         type: 'added',
-                        tooltip: `MBID ${matchedMbid} added via user mapping.`,
+                        tooltip: `MBID ${mbid} added via user mapping.`,
                     });
-
-                    if (!mainLabelList.nextElementSibling || !mainLabelList.nextElementSibling.classList.contains('he-added-label')) {
+                    if (!mainLabelList.nextElementSibling?.classList.contains('he-added-label')) {
                         mainLabelList.parentNode.insertBefore(addedSpan, mainLabelList.nextSibling);
                     }
                 }
-                const messageContent = `Mapped label "${currentLabelName}" to MBID: ${matchedMbid}`;
-                createAndInsertMessage('he-label-map-success-', messageContent, 'debug');
+                const messageContent = `Mapped label "${currentLabelName}" to MBID: ${mbid}`;
+                createAndInsertMessage('he-label-map-success', messageContent, 'debug');
             }
         },
 
@@ -2100,12 +2130,15 @@
                 color: #4CAF50;
                 border-bottom: 1px dotted #4CAF50;
             }
-            .he-reset-button {
+            .he-reset-button, .he-tidy-button {
                 padding: 4px 8px;
                 font-size: 12px;
                 border-radius: 4px;
                 border: 1px solid #ccc;
                 cursor: pointer;
+            }
+            .he-tidy-button {
+                float: right;
             }
             .he-tooltip {
                 position: fixed;
