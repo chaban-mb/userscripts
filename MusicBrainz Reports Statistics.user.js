@@ -279,10 +279,10 @@
         let color = 'grey';
         if (change > 0) {
             arrow = '▲';
-            color = 'green';
+            color = 'red';
         } else if (change < 0) {
             arrow = '▼';
-            color = 'red';
+            color = 'green';
         }
 
         const changeText = `${arrow} ${change > 0 ? '+' : ''}${change}`;
