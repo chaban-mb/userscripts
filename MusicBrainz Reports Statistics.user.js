@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        MusicBrainz: Reports Statistics
 // @namespace   https://musicbrainz.org/user/chaban
-// @version     2.0.3
+// @version     2.0.4
 // @description Indicates report changes since the last visit and hides reports without items.
 // @tag         ai-created
 // @author      chaban
@@ -279,10 +279,10 @@
         let color = 'grey';
         if (change > 0) {
             arrow = '▲';
-            color = 'green';
+            color = 'red';
         } else if (change < 0) {
             arrow = '▼';
-            color = 'red';
+            color = 'green';
         }
 
         const changeText = `${arrow} ${change > 0 ? '+' : ''}${change}`;
