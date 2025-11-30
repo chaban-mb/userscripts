@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YouTube: MusicBrainz Importer
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      2.7.4
+// @version      2.7.5
 // @description  Imports YouTube videos to MusicBrainz as a new standalone recording
 // @tag          ai-created
 // @author       nikki, RustyNova, chaban
@@ -1746,7 +1746,7 @@
             }
 
             try {
-                const searchResults = await ListenBrainzAPI.searchPlaylists(canonicalYtUrl);
+                const searchResults = await ListenBrainzAPI.searchPlaylists(ytData.id);
                 const perfectMatches = (searchResults.playlists || []).filter(p => p.playlist.annotation && p.playlist.annotation.includes(canonicalYtUrl));
 
                 if (perfectMatches.length === 1) {
