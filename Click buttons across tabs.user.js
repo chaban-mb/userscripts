@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Click buttons across tabs
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      4.5.1
+// @version      4.5.0
 // @tag          ai-created
 // @description  Clicks specified buttons across tabs using the Broadcast Channel API and closes tabs after successful submission.
 // @author       chaban
@@ -43,15 +43,15 @@
 
     /** @type {SiteConfig[]} */
     const siteConfigurations = [
-        // Rule to close tab after a manual merge submission.
+        // Rule for closing tab after manual merge or edit submission.
         {
             hostnames: ['musicbrainz.org'],
-            paths: ['/merge'],
+            paths: ['/merge', '/edit'],
             buttonSelector: 'button.submit.positive[type="submit"]',
             shouldCloseAfterSuccess: true,
             referrerPatterns: {
                 hostnames: ['musicbrainz.org'],
-                paths: ['/merge'],
+                paths: ['/merge', '/edit'],
             },
         },
         // Rules for clicking buttons
@@ -174,7 +174,7 @@
     const DISABLE_AUTO_CLOSE_SETTING = 'mb_button_clicker_disableAutoClose';
     const MAGICISRC_ENABLE_AUTO_RELOAD = 'magicisrc_enableAutoReload';
     const DEBUG_LOGGING_SETTING = 'debug_logging_enabled';
-    const DEFAULT_MB_SUBMITS_PER_SECOND = 5
+    const DEFAULT_MB_SUBMITS_PER_SECOND = 5;
 
     let registeredMenuCommandIDs = [];
     let debugLogChannel;
@@ -433,28 +433,88 @@
     }
 
     /**
-     * @summary Executes a callback after ensuring the configured rate limit is not exceeded.
-     * @param {Function} callback The function to execute.
+     * @summary Robust rate limiter. Handles Efficiency Mode (Windows), Race Conditions (Sync Storage),
+     * and Massive Queues (Smart Retry).
      */
     async function rateLimitedMBSubmit(callback) {
         const limiterDisabled = await GM.getValue(MUSICBRAINZ_DISABLE_RATE_LIMITER_SETTING, false);
         if (limiterDisabled) {
-            debugLog('MusicBrainz rate limiter is disabled. Submitting immediately.', 'orange');
             await callback();
             return;
         }
 
         const submitsPerSecond = await GM.getValue(MUSICBRAINZ_SUBMITS_PER_SECOND_SETTING, DEFAULT_MB_SUBMITS_PER_SECOND);
-        const requiredInterval = 1000 / submitsPerSecond;
+        const delayMs = 1000 / submitsPerSecond;
 
-        debugLog(`Requesting MB submission lock...`);
-        navigator.locks.request(MB_SUBMIT_COORDINATION_LOCK_KEY, async () => {
-            debugLog(`Acquired MB submission lock.`, 'green');
+        // How long we wait in line before checking if the system is broken.
+        // 15 seconds is a good balance between responsiveness and patience.
+        const WAIT_TIMEOUT_MS = 15000;
+
+        // This is the function we run when we finally get the lock
+        const executeSafeClick = async () => {
+            debugLog(`Acquired lock.`, 'green');
+
+            const now = Date.now();
+            const lastSubmit = parseInt(localStorage.getItem(MB_LAST_SUBMIT_TIMESTAMP_KEY) || '0', 10);
+            const timeSinceLast = now - lastSubmit;
+
+            let waitTime = 0;
+            if (timeSinceLast < delayMs) {
+                waitTime = delayMs - timeSinceLast;
+            }
+
+            if (waitTime > 0) {
+                await new Promise(resolve => setTimeout(resolve, waitTime));
+            }
+
             debugLog(`Executing submission.`, 'darkgreen');
-            await callback();
-            debugLog(`Holding lock for ${requiredInterval.toFixed(0)}ms to respect rate limit...`, 'orange');
-            await new Promise(resolve => setTimeout(resolve, requiredInterval));
-        });
+
+            try {
+                await callback();
+            } catch (e) {
+                debugLog(`Submission failed/crashed: ${e}`, 'red');
+            } finally {
+                localStorage.setItem(MB_LAST_SUBMIT_TIMESTAMP_KEY, Date.now().toString());
+            }
+        };
+
+        try {
+            // Try to join the line with a timeout
+            await navigator.locks.request(
+                MB_SUBMIT_COORDINATION_LOCK_KEY,
+                { signal: AbortSignal.timeout(WAIT_TIMEOUT_MS) },
+                executeSafeClick
+            );
+        } catch (err) {
+            if (err.name === 'AbortError' || err.name === 'TimeoutError') {
+                // --- SMART RETRY LOGIC ---
+
+                // 1. Check if the queue is actually moving
+                const lastSubmit = parseInt(localStorage.getItem(MB_LAST_SUBMIT_TIMESTAMP_KEY) || '0', 10);
+                const timeSinceActivity = Date.now() - lastSubmit;
+
+                // If someone clicked in the last 5 seconds (or 2x delay), the system is ALIVE.
+                // We just timed out because the line is long.
+                const threshold = Math.max(5000, delayMs * 2);
+
+                if (timeSinceActivity < threshold) {
+                    debugLog(`Timeout, but queue is moving (last click ${timeSinceActivity}ms ago). Re-queuing...`, 'orange');
+                    // Recursive call: Go back to the end of the line and try again.
+                    return rateLimitedMBSubmit(callback);
+                }
+
+                // 2. If no one clicked recently, the leader is a Zombie. STEAL.
+                debugLog(`Queue stuck (no clicks for ${timeSinceActivity}ms). Stealing lock.`, 'red');
+                await navigator.locks.request(
+                    MB_SUBMIT_COORDINATION_LOCK_KEY,
+                    { steal: true },
+                    executeSafeClick
+                );
+
+            } else {
+                console.error("Lock Error:", err);
+            }
+        }
     }
 
     /**
