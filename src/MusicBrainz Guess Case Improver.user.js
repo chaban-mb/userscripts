@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MusicBrainz: Guess Case Improver
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      0.4.2
+// @version      0.5.0-dev
 // @tag          ai-created
 // @description  Improves the native "Guess Case" for release, recording and track titles with advanced artist and ETI parsing. Also removes duplicate artists after using "Guess feat. artists" on tracklists.
 // @author       chaban
@@ -47,7 +47,8 @@
     const etiPhrasesToLowercase = [
         'official lyric video', 'official music video', 'backing track',
         'kinetic lyric video', 'animated', 'animation', 'official video',
-        'official visualizer', 'slowed' , 'super slowed', 'speed up', 'sped up'
+        'official visualizer', 'slowed' , 'super slowed', 'speed up', 'sped up',
+        'super speed up', 'extra slowed'
     ];
 
     const JOIN_PHRASE_PATTERN = /\s*\b(?:featuring|feat|ft|vs)\.?\b\s*|\s*(?:[,，、&・×/])\s*|\s+and\s+/gi;
@@ -191,6 +192,7 @@
     // ====================================================================================
 
     function applyAdvancedRules(text, button) {
+        log('--- applyAdvancedRules START ---');
         let newText = text;
         const keepUpperCase = getBooleanCookie('guesscase_keepuppercase');
 
@@ -199,29 +201,48 @@
         if (etiMatch) {
             trailingEti = etiMatch[1];
             newText = newText.substring(0, newText.lastIndexOf(trailingEti)).trim();
+            log(`Found ETI: "${trailingEti}"`);
+            log(`Text after ETI removal: "${newText}"`);
+        } else {
+            log('No ETI found.');
         }
 
         const separator = ' - ';
         const normalizedForSeparatorSearch = newText.replace(/\s*[-–]\s*/g, separator);
         const parts = normalizedForSeparatorSearch.split(separator);
+        log(`Split text into parts:`, parts);
 
         if (parts.length > 1) {
             const artistsInEditor = getCurrentArtistNames(button);
+            log(`Artists from editor:`, artistsInEditor);
             let artistPartIndex = -1;
             for (let i = 0; i < parts.length; i++) {
-                const artistsInPart = parseArtistNamesFromString(parts[i]);
-                if (artistsInPart.length > 0 && artistsInEditor.length > 0 && artistsInPart.every(a => artistsInEditor.includes(a))) {
+                const currentPart = parts[i];
+                const artistsInPart = parseArtistNamesFromString(currentPart);
+                log(`Checking part ${i} ("${currentPart}") -> artists:`, artistsInPart);
+
+                const hasArtists = artistsInPart.length > 0 && artistsInEditor.length > 0;
+                const allArtistsMatch = hasArtists && artistsInPart.every(a => artistsInEditor.includes(a));
+
+                log(`Part ${i} match? ${allArtistsMatch}`);
+
+                if (allArtistsMatch) {
                     artistPartIndex = i;
+                    log(`Part ${i} is a match. Breaking loop.`);
                     break;
                 }
             }
             if (artistPartIndex !== -1) {
                 newText = parts.filter((_, index) => index !== artistPartIndex).join(separator);
+                log(`Removed artist part. New text: "${newText}"`);
+            } else {
+                log('No artist part was found in title.');
             }
         }
 
         if (trailingEti) {
             newText += ` ${trailingEti}`;
+            log(`Re-added ETI. Final text before ETI processing: "${newText}"`);
         }
 
         newText = newText.replace(/\[/g, '(').replace(/\]/g, ')');
@@ -237,6 +258,7 @@
             return `(${processedEti})`;
         });
 
+        log('--- applyAdvancedRules END ---');
         return newText.trim();
     }
 
