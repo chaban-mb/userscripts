@@ -1,13 +1,13 @@
 // ==UserScript==
 // @name         MusicBrainz: Editor Subscription Manager
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      0.1.1
+// @version      0.2.0
 // @tag          ai-created
-// @description  Manages editor subscriptions by checking for spammers and inactivity, and allowing batch unsubscription.
+// @description  Manages subscriptions, tracks name changes and detects deleted users.
 // @author       chaban
 // @license      MIT
-// @match        *://*.musicbrainz.org/user/*/subscriptions/editor*
-// @match        *://*.musicbrainz.eu/user/*/subscriptions/editor*
+// @match        *://*.musicbrainz.org/user/*
+// @match        *://*.musicbrainz.eu/user/*
 // @connect      self
 // @grant        GM_xmlhttpRequest
 // @grant        GM_addStyle
@@ -16,969 +16,781 @@
 (function () {
     'use strict';
 
+    // #region Configuration & Constants
     const SCRIPT_NAME = GM.info.script.name;
+    const SCRIPT_KEY = 'UserJS.MusicBrainz.EditorSubscriptionManager';
+    const CACHE_KEY = `${SCRIPT_KEY}.Cache`;
+    const SETTINGS_KEY = `${SCRIPT_KEY}.Settings`;
+
+    const CACHE_TTL_DAYS = 7;
     const CONCURRENCY_LIMIT = 5;
     const EDITORS_PER_PAGE = 100;
     const SPAMMER_TEXT = 'This user was blocked and their profile is hidden';
 
-    /**
-     * @typedef {object} EditorInfo
-     * @property {string} id - The editor's MusicBrainz ID.
-     * @property {string} name - The editor's username.
-     * @property {string} profileUrl - The absolute URL to the editor's profile page.
-     * @property {boolean | null} isSpammer - True if the editor is flagged as a spammer, false if not, null if check failed.
-     * @property {string | null} lastEditDate - ISO 8601 string of the last closed edit, or null if no closed edits found.
-     * @property {string | null} restrictions - Text content of any account restrictions (e.g., "Editing disabled").
-     * @property {string | null} memberSince - ISO 8601 string of the registration date.
-     * @property {string | null} userType - Text content of the user's type (e.g., "Auto-editor, Account admin").
-     * @property {string | null} error - An error message if processing this editor failed.
-     */
+    const COLUMNS = [
+        {
+            id: 'select',
+            header: '<input type="checkbox" id="esm-select-all">',
+            className: 'col-cb',
+            render: (e) => `<input type="checkbox" class="esm-select-row" data-id="${e.id}">`,
+            sortable: false
+        },
+        {
+            id: 'name',
+            header: 'Name',
+            getValue: (e) => e.name.toLowerCase(),
+            render: (e) => {
+                let html = `<a href="${e.profileUrl}" target="_blank"><b>${e.name}</b></a>`;
+                if (e.previousNames?.length) {
+                    html += `<br><span class="esm-aka" title="Known aliases">aka: ${e.previousNames.join(', ')}</span>`;
+                }
+                return html;
+            }
+        },
+        {
+            id: 'userType',
+            header: 'Type',
+            getValue: (e) => e.userType || '',
+            render: (e) => e.userType || ''
+        },
+        {
+            id: 'accepted',
+            header: 'Acc.',
+            className: 'esm-num',
+            getValue: (e) => e.acceptedEdits || 0,
+            render: (e) => (e.acceptedEdits || 0).toLocaleString()
+        },
+        {
+            id: 'rejected',
+            header: 'Rej.',
+            className: 'esm-num',
+            getValue: (e) => e.rejectedEdits || 0,
+            render: (e) => {
+                const val = e.rejectedEdits || 0;
+                return val > 0 ? `<span class="esm-warn">${val.toLocaleString()}</span>` : val;
+            }
+        },
+        {
+            id: 'rate',
+            header: '% Rej.',
+            className: 'esm-num',
+            getValue: (e) => e.rejectionRate || 0,
+            render: (e) => {
+                const val = e.rejectionRate || 0;
+                const cls = val > 10 ? 'esm-bad-stat' : '';
+                return `<span class="${cls}">${val.toFixed(1)}%</span>`;
+            }
+        },
+        {
+            id: 'lastEdit',
+            header: 'Last Edit',
+            getValue: (e) => e.lastEditDate || '',
+            render: (e) => e.lastEditDate ? new Date(e.lastEditDate).toLocaleDateString() : 'N/A'
+        },
+        {
+            id: 'since',
+            header: 'Registered',
+            getValue: (e) => e.memberSince || '',
+            render: (e) => e.memberSince ? new Date(e.memberSince).toLocaleDateString() : 'N/A'
+        },
+        {
+            id: 'cache',
+            header: 'Cache',
+            getValue: (e) => e.lastUpdated || 0,
+            render: (e) => {
+                if (!e.lastUpdated) return '';
+                const age = (Date.now() - e.lastUpdated) / 86400000;
+                return `<span class="${age > CACHE_TTL_DAYS ? 'esm-stale' : 'esm-fresh'}">${age < 0.1 ? 'Fresh' : age.toFixed(1) + 'd'}</span>`;
+            }
+        },
+        {
+            id: 'status',
+            header: 'Status',
+            getValue: (e) => {
+                if (e.isDeleted) return 1;
+                if (e.isLost) return 2;
+                if (e.isSpammer) return 3;
+                if (e.error) return 4;
+                if (!e.isSubscribed) return 5;
+                return 6;
+            },
+            render: (e) => {
+                if (e.isDeleted) return '<b style="color:darkred">DELETED</b>';
+                if (e.isLost) return '<b style="color:orange">LOST SUB</b>';
+                if (!e.isSubscribed) return '<span style="color:#666">Visited Only</span>';
+                if (e.isSpammer) return '<b style="color:red">SPAMMER</b>';
+                if (e.error) return `ERR: ${e.error}`;
+                return '<span style="color:green">Active</span>';
+            }
+        }
+    ];
 
-    /**
-     * In-memory store for all processed editor data.
-     * @type {EditorInfo[]}
-     */
     let allEditorData = [];
+    const sortState = { key: 'status', asc: true };
+    // #endregion
 
-    /**
-     * Stores the current sort state for the report table.
-     * @type {{key: keyof EditorInfo, asc: boolean}}
-     */
-    const sortState = {
-        key: 'name',
-        asc: true,
-    };
+    // #region Logging
+    function log(msg, ...args) {
+        console.log(`[${SCRIPT_NAME}] ${msg}`, ...args);
+    }
+    function error(msg, ...args) {
+        console.error(`[${SCRIPT_NAME}] ${msg}`, ...args);
+    }
+    // #endregion
 
-    // #region Utility Functions
-
-    /**
-     * Fetches a URL via GM_xmlhttpRequest and returns a parsed HTML Document.
-     * @param {string} url - The URL to fetch.
-     * @returns {Promise<Document>} A promise that resolves with the parsed HTML document.
-     */
-    function fetchDOM(url) {
+    // #region Network & Parsing Utilities
+    async function request(method, url) {
         return new Promise((resolve, reject) => {
             GM_xmlhttpRequest({
-                method: 'GET',
-                url: url,
-                onload: (response) => {
-                    if (response.status >= 200 && response.status < 300) {
-                        const doc = new DOMParser().parseFromString(
-                            response.responseText,
-                            'text/html'
-                        );
-                        resolve(doc);
-                    } else {
-                        reject(
-                            new Error(
-                                `Failed to fetch ${url}: ${response.status}`
-                            )
-                        );
-                    }
+                method, url,
+                onload: (res) => {
+                    if (res.status === 404) resolve({ status: 404, doc: null, finalUrl: res.finalUrl });
+                    else if (res.status >= 200 && res.status < 400) {
+                        const doc = method === 'GET' && res.responseText ? new DOMParser().parseFromString(res.responseText, 'text/html') : null;
+                        resolve({ status: res.status, doc, finalUrl: res.finalUrl });
+                    } else reject(new Error(`HTTP ${res.status}`));
                 },
-                onerror: (error) => {
-                    reject(new Error(`Failed to fetch ${url}: ${error.error}`));
-                },
+                onerror: () => reject(new Error('Network error'))
             });
         });
     }
 
-    /**
-     * Performs a batched POST request to unsubscribe from a list of editors.
-     * Updates the UI dynamically on success without reloading the page.
-     * @param {string[]} ids - Array of editor IDs to unsubscribe.
-     * @returns {Promise<void>}
-     */
-    async function unsubscribe(ids) {
-        if (!ids || ids.length === 0) {
-            alert('No editors selected for unsubscription.');
-            return;
-        }
+    function requestGet(url) {
+        return new Promise((resolve, reject) => {
+            GM_xmlhttpRequest({
+                method: 'GET', url,
+                onload: (res) => (res.status >= 200 && res.status < 400) ? resolve() : reject(new Error(`HTTP ${res.status}`)),
+                onerror: () => reject(new Error('Network error'))
+            });
+        });
+    }
 
-        updateProgress(
-            `Starting unsubscription for ${ids.length} editor(s)...`
-        );
-        const BATCH_SIZE = 100;
-        let unsubscribedCount = 0;
+    function parseStatNumber(text) {
+        return text ? parseInt(text.replace(/,/g, '').match(/^(-?\d+)/)?.[1] || 0, 10) : 0;
+    }
 
-        for (let i = 0; i < ids.length; i += BATCH_SIZE) {
-            const chunk = ids.slice(i, i + BATCH_SIZE);
-            const postData = chunk
-                .map((id) => `id=${encodeURIComponent(id)}`)
-                .join('&');
+    function scrapeStats(doc) {
+        const stats = { edits: {}, votes: {}, added: {}, secondary: {} };
+        doc.querySelectorAll('table.statistics').forEach(table => {
+            const header = table.querySelector('thead th')?.textContent || '';
+            const type = header.includes('Edits') ? 'edits' : header.includes('Added') ? 'added' : header.includes('Tags') ? 'secondary' : null;
 
-            updateProgress(
-                `Unsubscribing batch ${i / BATCH_SIZE + 1}/${Math.ceil(
-                    ids.length / BATCH_SIZE
-                )}...`
-            );
-
-            try {
-                await new Promise((resolve, reject) => {
-                    GM_xmlhttpRequest({
-                        method: 'POST',
-                        url: `${location.origin}/account/subscriptions/editor/remove`,
-                        headers: {
-                            'Content-Type':
-                                'application/x-www-form-urlencoded',
-                        },
-                        data: postData,
-                        onload: (response) => {
-                            if (
-                                response.status >= 200 &&
-                                response.status < 400
-                            ) {
-                                unsubscribedCount += chunk.length;
-                                resolve(response);
-                            } else {
-                                reject(
-                                    new Error(
-                                        `Failed to unsubscribe: ${response.status}`
-                                    )
-                                );
-                            }
-                        },
-                        onerror: (error) => reject(error.error),
-                    });
+            if (type) {
+                table.querySelectorAll('tbody tr').forEach(row => {
+                    const k = row.querySelector('th')?.textContent.trim();
+                    const v = row.querySelector('td')?.textContent;
+                    if(k && v) stats[type][k] = parseStatNumber(v);
                 });
-            } catch (error) {
-                console.error(`[${SCRIPT_NAME}] Batch unsubscribe failed:`, error);
-                alert(
-                    `An error occurred during unsubscription. ${error.message}. Check console for details.`
-                );
-                showProgress(false);
-                return;
-            }
-        }
-
-        // --- UI Update Logic (No Reload) ---
-        allEditorData = allEditorData.filter(
-            (editor) => !ids.includes(editor.id)
-        );
-        renderReportTable();
-        updateReportStats();
-        showProgress(false);
-        alert(
-            `Successfully unsubscribed from ${unsubscribedCount} editor(s). The report has been updated.`
-        );
-    }
-
-    /**
-     * Shows or hides the floating progress bar.
-     * @param {boolean} show - True to show, false to hide.
-     * @param {string} [text=''] - The text to display in the progress bar.
-     */
-    function showProgress(show, text = '') {
-        const progressEl =
-            document.getElementById('esm-progress-ui') || createProgressUI();
-        if (show) {
-            progressEl.style.display = 'block';
-            updateProgress(text);
-        } else {
-            progressEl.style.display = 'none';
-        }
-    }
-
-    /**
-     * Updates the text content of the progress bar.
-     * @param {string} text - The text to display.
-     */
-    function updateProgress(text) {
-        const progressEl = document.getElementById('esm-progress-text');
-        if (progressEl) {
-            progressEl.textContent = text;
-        }
-    }
-
-    /**
-     * Enables or disables the main 'Manage' buttons.
-     * @param {boolean} disabled - True to disable, false to enable.
-     */
-    function setButtonsDisabled(disabled) {
-        const testBtn = document.getElementById('esm-test-button');
-        const fullBtn = document.getElementById('esm-full-button');
-        if (testBtn) testBtn.disabled = disabled;
-        if (fullBtn) fullBtn.disabled = disabled;
-    }
-
-    // #endregion
-
-    // #region Data Fetching and Processing
-
-    /**
-     * Scrapes the total number of editor subscriptions from the page.
-     * @returns {number} The total count of subscribed editors.
-     */
-    function getTotalEditorCount() {
-        const listItems = document.querySelectorAll('#page > p + ul > li');
-        const editorLi = [...listItems].find((li) =>
-            li.textContent.includes(' editors')
-        );
-        if (editorLi) {
-            return parseInt(editorLi.textContent.replace(/,/g, ''), 10) || 0;
-        }
-        return 0;
-    }
-
-    /**
-     * Parses a subscription page DOM for basic editor info.
-     * @param {Document} doc - The HTML document of a subscription page.
-     * @returns {Pick<EditorInfo, 'id' | 'name' | 'profileUrl'>[]} An array of basic editor info objects.
-     */
-    function parseEditorsFromPage(doc) {
-        const rows = doc.querySelectorAll(
-            'form[action*="/account/subscriptions/editor/remove"] tbody tr'
-        );
-        const editors = [];
-        rows.forEach((row) => {
-            const idInput = row.querySelector('input[name="id"]');
-            const link = row.querySelector('a[href*="/user/"]');
-            if (idInput && link) {
-                editors.push({
-                    id: idInput.value,
-                    name: link.textContent.trim(),
-                    profileUrl: link.href,
+            } else if (header.includes('Votes')) {
+                table.querySelectorAll('tbody tr').forEach(row => {
+                    const cells = row.querySelectorAll('td, th');
+                    if(cells.length >= 3) stats.votes[cells[0].textContent.trim()] = parseStatNumber(cells[2].textContent);
                 });
             }
         });
-        return editors;
+        return stats;
     }
 
-    /**
-     * Fetches all pages of editor subscriptions and returns a complete list of basic editor info.
-     * @param {number} totalEditors - The total number of editors to fetch.
-     * @returns {Promise<Pick<EditorInfo, 'id' | 'name' | 'profileUrl'>[]>} A promise resolving to the full list of editors.
-     */
-    async function fetchAllSubscribedEditors(totalEditors) {
-        const totalPages = Math.ceil(totalEditors / EDITORS_PER_PAGE);
-        const baseUrl = location.pathname;
-        const pagePromises = [];
+    function parseProfile(doc, url, forceId = null) {
+        const id = forceId || getEditorId(doc);
+        if (!id) return { id: null, error: 'No ID found' };
 
-        updateProgress(`Fetching ${totalPages} subscription pages...`);
+        const hasUnsubLink = !!doc.querySelector('a[href*="/subscriptions/editor/remove"]');
+        const pageText = doc.getElementById('page')?.textContent || '';
+        const name = doc.querySelector('h1 a bdi')?.textContent.trim() || 'Unknown';
 
-        for (let i = 1; i <= totalPages; i++) {
-            const currentPage = parseInt(
-                new URLSearchParams(location.search).get('page') || '1',
-                10
-            );
-            if (i === currentPage) {
-                pagePromises.push(Promise.resolve(document));
-            } else {
-                pagePromises.push(fetchDOM(`${baseUrl}?page=${i}`));
-            }
-        }
+        const isDeleted = pageText.includes('user has been deleted') || name.startsWith('Deleted Editor #');
 
-        const pages = await Promise.all(pagePromises);
-
-        let allEditors = [];
-        pages.forEach((doc) => {
-            allEditors.push(...parseEditorsFromPage(doc));
-        });
-
-        allEditors = allEditors.filter(
-            (editor, index, self) =>
-                index === self.findIndex((e) => e.id === editor.id)
-        );
-
-        return allEditors;
-    }
-
-    /**
-     * Fetches and scrapes a single editor's profile and edits pages.
-     * @param {Pick<EditorInfo, 'id' | 'name' | 'profileUrl'>} editor - Basic editor info.
-     * @returns {Promise<EditorInfo>} A promise resolving to the full, processed editor info.
-     */
-    async function processEditor(editor) {
-        const processedEditor = {
-            ...editor,
-            isSpammer: null,
-            lastEditDate: null,
-            restrictions: null,
-            memberSince: null,
-            userType: null,
-            error: null,
+        const editor = {
+            id, name,
+            profileUrl: url,
+            isSpammer: pageText.includes(SPAMMER_TEXT),
+            isDeleted: isDeleted,
+            isSubscribed: hasUnsubLink,
+            isLost: hasUnsubLink ? false : undefined,
+            stats: scrapeStats(doc),
+            acceptedEdits: 0, rejectedEdits: 0, rejectionRate: 0,
+            lastUpdated: Date.now()
         };
 
+        if (editor.isSpammer || editor.isDeleted) return editor;
+
+        const getMeta = (label) => [...doc.querySelectorAll('.profileinfo th')].find(th => th.textContent.trim() === label)?.nextElementSibling;
+
+        editor.restrictions = getMeta('Restrictions:')?.textContent.trim();
+        const dateStr = getMeta('Member since:')?.textContent.trim();
+        if(dateStr) editor.memberSince = new Date(dateStr).toISOString();
+
+        const typeNode = getMeta('User type:');
+        if (typeNode) {
+            const clone = typeNode.cloneNode(true);
+            clone.querySelector('a[href*="nominate"]')?.remove();
+            editor.userType = clone.textContent.replace(/\s+/g, ' ').replace(/\(\s*\)/g, '').trim();
+            if (editor.userType.includes('Deleted user')) editor.isDeleted = true;
+        }
+
+        if (editor.isDeleted) return editor;
+
+        editor.acceptedEdits = editor.stats.edits?.['Accepted'] || 0;
+        editor.rejectedEdits = editor.stats.edits?.['Voted down'] || 0;
+        const total = editor.acceptedEdits + editor.rejectedEdits;
+        if (total > 0) editor.rejectionRate = (editor.rejectedEdits / total) * 100;
+
+        return editor;
+    }
+
+    function getEditorId(doc) {
+        const subLinks = [
+            doc.querySelector('a[href*="/subscriptions/editor/remove"]')?.href, // Subscribed
+            doc.querySelector('a[href*="/subscriptions/editor/add"]')?.href     // Not subscribed
+        ];
+
+        for (const h of subLinks) {
+            const m = h?.match(/[?&]id=(\d+)/);
+            if (m) return m[1];
+        }
+        return null;
+    }
+
+    async function fetchEditorFull(basicInfo) {
         try {
-            // 1. Fetch profile page
-            const profileDoc = await fetchDOM(editor.profileUrl);
-            const ths = profileDoc.querySelectorAll('.profileinfo th');
+            const { status, doc, finalUrl } = await request('GET', basicInfo.profileUrl);
 
-            // 2. Check for spammer
-            const pageContent = profileDoc.getElementById('page')?.textContent || '';
-            if (pageContent.includes(SPAMMER_TEXT)) {
-                processedEditor.isSpammer = true;
-            } else {
-                processedEditor.isSpammer = false;
+            if (status === 404) {
+                const recovered = await tryResolveEditorById(basicInfo.id);
+                if (recovered) return fetchEditorFull(recovered);
+                return { ...basicInfo, isDeleted: true, error: 'Page 404', lastUpdated: Date.now() };
             }
 
-            // 3. Scrape Restrictions
-            const restrictionsTh = [...ths].find(
-                (th) => th.textContent.trim() === 'Restrictions:'
-            );
-            if (restrictionsTh && restrictionsTh.nextElementSibling) {
-                processedEditor.restrictions =
-                    restrictionsTh.nextElementSibling.textContent.trim();
-            }
+            const effectiveUrl = finalUrl || basicInfo.profileUrl;
+            const data = parseProfile(doc, effectiveUrl, basicInfo.id);
 
-            // 4. Scrape Member Since
-            const memberSinceTh = [...ths].find(
-                (th) => th.textContent.trim() === 'Member since:'
-            );
-            if (memberSinceTh && memberSinceTh.nextElementSibling) {
-                const memberSinceStr =
-                    memberSinceTh.nextElementSibling.textContent.trim();
-                try {
-                    processedEditor.memberSince = new Date(
-                        memberSinceStr
-                    ).toISOString();
-                } catch (e) {
-                    console.warn(
-                        `[${SCRIPT_NAME}] Could not parse memberSince date: ${memberSinceStr}`,
-                        e
-                    );
-                    processedEditor.memberSince = memberSinceStr;
+            if (data.error || data.isSpammer || data.isDeleted) return data;
+
+            if ((data.stats.edits?.['Total'] || 0) > 0) {
+                const { doc: editsDoc } = await request('GET', `${effectiveUrl}/edits`);
+                if (editsDoc) {
+                    const dateStr = editsDoc.querySelector('div.edit-header:not(.open) td.edit-expiration')?.lastChild?.textContent.trim();
+                    if (dateStr) data.lastEditDate = new Date(dateStr).toISOString();
+                    else if (editsDoc.querySelector('div.edit-header.open')) data.lastEditDate = new Date().toISOString();
                 }
             }
-
-            // 5. Scrape User Type
-            const userTypeTh = [...ths].find(
-                (th) => th.textContent.trim() === 'User type:'
-            );
-            if (userTypeTh && userTypeTh.nextElementSibling) {
-                // Select only the <a> tags linking to editor docs to exclude other links
-                const userTypeLinks = userTypeTh.nextElementSibling.querySelectorAll(
-                    'a[href*="/doc/Editor#"]'
-                );
-                processedEditor.userType = [...userTypeLinks]
-                    .map((link) => link.textContent.trim())
-                    .join(', ');
-            }
-
-            if (processedEditor.isSpammer) {
-                return processedEditor;
-            }
-
-            // 6. Check for 0 edits on profile page
-            let totalEdits = -1;
-            const statsThs = profileDoc.querySelectorAll('.statistics th');
-            const totalEditsTh = [...statsThs].find(
-                (th) => th.textContent.trim() === 'Total'
-            );
-            if (totalEditsTh && totalEditsTh.nextElementSibling) {
-                totalEdits = parseInt(
-                    totalEditsTh.nextElementSibling.textContent,
-                    10
-                );
-            }
-
-            if (totalEdits === 0) {
-                // Editor has 0 edits. lastEditDate remains null.
-                // This is an optimization, avoids fetching the edits page.
-                return processedEditor;
-            }
-
-            // 7. Fetch edits page (HTML)
-            const editsDoc = await fetchDOM(`${editor.profileUrl}/edits`);
-
-            // 8. Find last *closed* edit
-            const expirationCell = editsDoc.querySelector(
-                'div.edit-header:not(.open) td.edit-expiration'
-            );
-            if (expirationCell && expirationCell.lastChild) {
-                const dateStr = expirationCell.lastChild.textContent.trim();
-                if (dateStr) {
-                    try {
-                        processedEditor.lastEditDate = new Date(
-                            dateStr
-                        ).toISOString();
-                    } catch (e) {
-                        console.warn(
-                            `[${SCRIPT_NAME}] Could not parse date: ${dateStr}`,
-                            e
-                        );
-                        processedEditor.error = 'Could not parse date';
-                    }
-                }
-            } else {
-                // 9. No closed edits found. Check for *open* edits.
-                const openEdit = editsDoc.querySelector('div.edit-header.open');
-                if (openEdit) {
-                    // This editor has pending edits, so they are active.
-                    processedEditor.lastEditDate = new Date().toISOString();
-                }
-                // If no closed edits AND no open edits, lastEditDate remains null.
-            }
-            return processedEditor;
-        } catch (error) {
-            console.error(
-                `[${SCRIPT_NAME}] Failed to process editor ${editor.name}:`,
-                error
-            );
-            processedEditor.error = error.message;
-            return processedEditor;
-        }
+            return data;
+        } catch (e) { return { ...basicInfo, error: e.message }; }
     }
 
-    /**
-     * Manages a concurrent queue of editors to process.
-     * @param {Pick<EditorInfo, 'id' | 'name' | 'profileUrl'>[]} editors - A list of basic editor info objects.
-     * @returns {Promise<EditorInfo[]>} A promise that resolves when all editors have been processed.
-     */
-    async function processEditorQueue(editors) {
-        const queue = [...editors];
-        const results = [];
-        let processedCount = 0;
-        const totalCount = editors.length;
-
-        async function worker() {
-            while (queue.length > 0) {
-                const editor = queue.shift();
-                if (!editor) continue;
-
-                const data = await processEditor(editor);
-                results.push(data);
-                processedCount++;
-                updateProgress(
-                    `Processing editor ${processedCount} of ${totalCount}: ${editor.name}`
-                );
+    async function tryResolveEditorById(id) {
+        try {
+            const url = `/search/edits?conditions.0.field=editor&conditions.0.operator=%3D&conditions.0.args.0=${id}`;
+            const { doc } = await request('GET', url);
+            if (!doc) return null;
+            const userLink = doc.querySelector('.edit-list .subheader a[href^="/user/"]');
+            if (userLink) {
+                return { id, name: userLink.textContent.trim(), profileUrl: userLink.href };
             }
-        }
-
-        const workers = Array(CONCURRENCY_LIMIT).fill(0).map(worker);
-        await Promise.all(workers);
-        return results;
+        } catch (e) { error(`Resolve ID failed:`, e); }
+        return null;
     }
 
+    function getTotalPages(doc) {
+        const listItems = doc.querySelectorAll('#page > p + ul > li');
+        const editorLi = [...listItems].find(li => li.textContent.includes(' editors'));
+        const total = editorLi ? parseInt(editorLi.textContent.replace(/,/g,'')) : 0;
+        return Math.ceil(total / EDITORS_PER_PAGE) || 1;
+    }
     // #endregion
 
-    // #region Report UI
+    // #region Cache & Storage
+    const storage = {
+        getSettings: () => { try { return { showVisited: false, ...JSON.parse(localStorage.getItem(SETTINGS_KEY)) }; } catch { return { showVisited: false }; } },
+        saveSettings: (s) => localStorage.setItem(SETTINGS_KEY, JSON.stringify(s)),
+        getCache: () => { try { return JSON.parse(localStorage.getItem(CACHE_KEY)) || {}; } catch { return {}; } },
+        saveEditor: (e) => {
+            const cache = storage.getCache();
+            const prev = cache[e.id];
+            if (prev?.name && prev.name !== e.name) {
+                e.previousNames = [...(prev.previousNames || []), prev.name];
+            } else if (prev?.previousNames) {
+                e.previousNames = prev.previousNames;
+            }
+            // Preserve subscribed status if not explicitly set in the new object
+            if (e.isSubscribed === undefined && prev) e.isSubscribed = prev.isSubscribed;
 
-    /**
-     * Reads the current `allEditorData` and updates the statistics block in the report UI.
-     * Dynamically calculates the "inactive" count based on the user's input.
-     */
+            cache[e.id] = { ...prev, ...e, lastUpdated: Date.now() };
+            localStorage.setItem(CACHE_KEY, JSON.stringify(cache));
+        },
+        remove: (ids) => {
+            const cache = storage.getCache();
+            ids.forEach(id => delete cache[id]);
+            localStorage.setItem(CACHE_KEY, JSON.stringify(cache));
+        }
+    };
+    // #endregion
+
+    // #region UI Rendering
     function updateReportStats() {
-        const yearsInput = document.getElementById('esm-inactive-years');
-        const years = parseInt(yearsInput?.value, 10) || 5;
+        let years = parseInt(document.getElementById('esm-inactive-years')?.value, 10);
+        if (isNaN(years) || years < 1) {
+            years = 1;
+            const input = document.getElementById('esm-inactive-years');
+            if(input) input.value = 1;
+        }
+
+        const cutoff = new Date();
+        cutoff.setFullYear(cutoff.getFullYear() - years);
 
         const stats = {
             total: allEditorData.length,
-            spammers: allEditorData.filter((e) => e.isSpammer).length,
-            noEdits: allEditorData.filter(
-                (e) => !e.isSpammer && !e.lastEditDate && !e.error
-            ).length,
-            errors: allEditorData.filter((e) => e.error).length,
+            visited: allEditorData.filter(e => !e.isSubscribed).length,
+            spammers: allEditorData.filter(e => e.isSpammer).length,
+            highRejection: allEditorData.filter(e => (e.rejectionRate || 0) > 10).length,
+            inactive: allEditorData.filter(e => e.isSubscribed && !e.isLost && !e.isSpammer && !e.error && (!e.lastEditDate || new Date(e.lastEditDate) < cutoff)).length,
+            lost: allEditorData.filter(e => e.isLost).length,
+            deleted: allEditorData.filter(e => e.isDeleted).length
         };
 
-        const cutoffDate = new Date();
-        cutoffDate.setFullYear(cutoffDate.getFullYear() - years);
-        const inactiveCount = allEditorData.filter((e) => {
-            if (e.isSpammer || e.error) return false;
-            if (!e.lastEditDate) return true;
-            return new Date(e.lastEditDate) < cutoffDate;
-        }).length;
-
-        const statsContainer = document.querySelector('.esm-stats');
-        if (statsContainer) {
-            statsContainer.querySelector(
-                '#esm-stats-total'
-            ).textContent = ` ${stats.total}`;
-            statsContainer.querySelector(
-                '#esm-stats-spammers'
-            ).textContent = ` ${stats.spammers}`;
-            document.getElementById('esm-inactive-years-text').textContent =
-                years;
-            document.getElementById('esm-inactive-count').textContent =
-                ` ${inactiveCount}`;
-            statsContainer.querySelector(
-                '#esm-stats-no-edits'
-            ).textContent = ` ${stats.noEdits}`;
-            statsContainer.querySelector(
-                '#esm-stats-errors'
-            ).textContent = ` ${stats.errors}`;
-        }
+        const setTxt = (id, txt) => { const el = document.getElementById(id); if (el) el.textContent = txt; };
+        setTxt('esm-stats-total', ` ${stats.total}`);
+        setTxt('esm-stats-visited', ` ${stats.visited}`);
+        setTxt('esm-stats-spammers', ` ${stats.spammers}`);
+        setTxt('esm-inactive-count', ` ${stats.inactive}`);
+        setTxt('esm-stats-high-rejection', ` ${stats.highRejection}`);
+        setTxt('esm-stats-lost', ` ${stats.lost} (${stats.deleted} deleted)`);
+        setTxt('esm-inactive-years-text', years);
 
         const spamBtn = document.getElementById('esm-unsub-spammers');
         if (spamBtn) {
-            spamBtn.textContent = `Unsubscribe All Spammers (${stats.spammers})`;
+            spamBtn.textContent = `Unsubscribe Spammers (${stats.spammers})`;
             spamBtn.disabled = stats.spammers === 0;
-        }
-
-        const selectedBtn = document.getElementById('esm-unsub-selected');
-        if (selectedBtn) {
-            selectedBtn.textContent = 'Unsubscribe Selected (0)';
-            selectedBtn.disabled = true;
         }
     }
 
-    /**
-     * Builds the main report UI.
-     */
+    function renderReportTable() {
+        const tbody = document.querySelector('#esm-report-table tbody');
+        if (!tbody) return;
+
+        const settings = storage.getSettings();
+        let displayData = settings.showVisited ? allEditorData : allEditorData.filter(e => e.isSubscribed);
+
+        const { key, asc } = sortState;
+
+        document.querySelectorAll('#esm-report-table th.esm-sortable').forEach(th => {
+            th.classList.remove('sorted-asc', 'sorted-desc');
+            if (th.dataset.id === key) {
+                th.classList.add(asc ? 'sorted-asc' : 'sorted-desc');
+            }
+        });
+
+        if (displayData.length === 0) {
+            const msg = allEditorData.length > 0 ? 'No subscriptions to display (Visited profiles are hidden).' : 'No data found. Try scanning.';
+            tbody.innerHTML = `<tr><td colspan="${COLUMNS.length}" style="text-align:center; padding:20px;">${msg}</td></tr>`;
+            return;
+        }
+
+        const colDef = COLUMNS.find(c => c.id === key) || COLUMNS.find(c => c.id === 'status');
+
+        displayData.sort((a, b) => {
+            let valA = colDef.getValue(a);
+            let valB = colDef.getValue(b);
+
+            if (valA == null) valA = asc ? Infinity : -Infinity;
+            if (valB == null) valB = asc ? Infinity : -Infinity;
+
+            if (typeof valA === 'string') { valA = valA.toLowerCase(); valB = valB.toLowerCase(); }
+
+            if (valA < valB) return asc ? -1 : 1;
+            if (valA > valB) return asc ? 1 : -1;
+            return 0;
+        });
+
+        tbody.innerHTML = displayData.map(e => {
+            const rowClass = e.isDeleted ? 'esm-row-deleted' : e.isLost ? 'esm-row-lost' : e.isSpammer ? 'esm-row-spam' : !e.isSubscribed ? 'esm-row-visited' : '';
+            const cells = COLUMNS.map(col => `<td class="${col.className || ''}">${col.render(e)}</td>`).join('');
+            return `<tr class="${rowClass}">${cells}</tr>`;
+        }).join('');
+    }
+
     function buildReportUI() {
-        const reportContainer = document.createElement('div');
-        reportContainer.id = 'esm-report-ui';
-        reportContainer.innerHTML = `
-            <h1>Editor Subscription Report</h1>
+        const existing = document.getElementById('esm-report-ui');
+        if (existing) existing.remove();
+        const settings = storage.getSettings();
+        const years = parseInt(document.getElementById('esm-inactive-years')?.value || '5', 10);
+
+        const div = document.createElement('div');
+        div.id = 'esm-report-ui';
+        div.innerHTML = `
+            <h1>Editor Subscription Manager</h1>
             <div class="esm-controls">
                 <div class="esm-stats">
                     <ul>
-                        <li><strong>Total Processed:</strong><span id="esm-stats-total">...</span></li>
-                        <li><strong>Spammers:</strong><span id="esm-stats-spammers">...</span></li>
-                        <li>
-                            <strong>Inactive (> <span id="esm-inactive-years-text">5</span> years):</strong>
-                            <span id="esm-inactive-count">...</span>
-                        </li>
-                        <li><strong>No Edits:</strong><span id="esm-stats-no-edits">...</span></li>
-                        <li><strong>Processing Errors:</strong><span id="esm-stats-errors">...</span></li>
+                        <li><strong>Total Cached:</strong> <span id="esm-stats-total">...</span></li>
+                        <li><strong>Visited Only:</strong> <span id="esm-stats-visited">...</span></li>
+                        <li><strong>Spammers:</strong> <span id="esm-stats-spammers">...</span></li>
+                        <li><strong>Inactive (> <span id="esm-inactive-years-text">${years}</span>y):</strong> <span id="esm-inactive-count">...</span></li>
+                        <li><strong>High Rejection (>10%):</strong> <span id="esm-stats-high-rejection">...</span></li>
+                        <li><strong>Lost/Deleted Subs:</strong> <span id="esm-stats-lost">...</span></li>
                     </ul>
                 </div>
                 <div class="esm-actions">
-                    <h3>Batch Actions</h3>
                     <div class="esm-action-row">
-                        <button id="esm-unsub-spammers" disabled>
-                            Unsubscribe All Spammers (0)
-                        </button>
+                        <button id="esm-refresh-new" title="Updates only new or expired entries">↻ Scan (Smart)</button>
+                        <button id="esm-refresh-all" title="Force updates all cache entries">↻ Refresh (Full)</button>
+                        <button id="esm-close-report">Close</button>
                     </div>
                     <div class="esm-action-row">
-                        <label>Unsubscribe if last edit > </label>
-                        <input type="number" id="esm-inactive-years" value="5" min="1" max="20" />
-                        <label> years ago</label>
-                        <button id="esm-unsub-inactive">Unsubscribe Inactive</button>
+                        <label>Unsubscribe Inactive > </label>
+                        <input type="number" id="esm-inactive-years" value="${years}" min="1" style="width:40px"> y
+                        <button id="esm-unsub-inactive">Go</button>
                     </div>
                     <div class="esm-action-row">
-                        <button id="esm-unsub-selected" disabled>Unsubscribe Selected (0)</button>
+                        <label style="cursor:pointer; display:flex; align-items:center;">
+                            <input type="checkbox" id="esm-show-visited" style="margin-right:5px;"> Show Visited Profiles
+                        </label>
                     </div>
-                    <hr>
-                    <button id="esm-close-report">Close Report</button>
+                    <div class="esm-action-row">
+                        <button id="esm-unsub-spammers" disabled>Unsubscribe Spammers</button>
+                        <button id="esm-unsub-selected" disabled>Unsubscribe / Dismiss Selected</button>
+                    </div>
                 </div>
             </div>
             <table class="tbl" id="esm-report-table">
                 <thead>
-                    <tr>
-                        <th class="checkbox-cell"><input type="checkbox" id="esm-select-all" /></th>
-                        <th class="esm-sortable" data-key="name">Name</th>
-                        <th class="esm-sortable" data-key="id">ID</th>
-                        <th class="esm-sortable" data-key="isSpammer">Spammer?</th>
-                        <th class="esm-sortable" data-key="userType">User Type</th>
-                        <th class="esm-sortable" data-key="restrictions">Restrictions</th>
-                        <th class="esm-sortable" data-key="memberSince">Member Since</th>
-                        <th class="esm-sortable" data-key="lastEditDate">Last Closed Edit</th>
-                        <th class="esm-sortable" data-key="error">Error</th>
-                    </tr>
+                    <tr>${COLUMNS.map(c => `<th class="${c.className || ''} ${c.sortable!==false?'esm-sortable':''}" data-id="${c.id}">${c.header}</th>`).join('')}</tr>
                 </thead>
                 <tbody></tbody>
             </table>
         `;
 
-        // Hide the original page content
-        const pageDiv = document.getElementById('page');
-        const contentElements = pageDiv.querySelectorAll(
-            'h2, p, ul, nav, form'
-        );
-        contentElements.forEach((el) => {
-            // Ensure we only hide direct children of #page
-            if (el.parentElement === pageDiv) {
-                el.style.display = 'none';
+        document.getElementById('page').childNodes.forEach(c => { if(c.id !== 'esm-report-ui' && c.style) c.style.display = 'none'; });
+        document.getElementById('page').appendChild(div);
+
+        const getEl = (id) => document.getElementById(id);
+
+        getEl('esm-show-visited').checked = settings.showVisited;
+
+        getEl('esm-close-report').onclick = () => location.reload();
+        getEl('esm-refresh-new').onclick = () => runManager('scan');
+        getEl('esm-refresh-all').onclick = () => runManager('refresh');
+        getEl('esm-show-visited').onchange = (e) => {
+            const currentSettings = storage.getSettings();
+            storage.saveSettings({ ...currentSettings, showVisited: e.target.checked });
+            renderReportTable();
+        };
+        getEl('esm-inactive-years').oninput = updateReportStats;
+
+        getEl('esm-report-table').querySelector('thead').onclick = (e) => {
+            const th = e.target.closest('th.esm-sortable');
+            if(th) {
+                sortState.asc = sortState.key === th.dataset.id ? !sortState.asc : true;
+                sortState.key = th.dataset.id;
+                renderReportTable();
             }
-        });
-        // Append the report inside the #page div
-        pageDiv.appendChild(reportContainer);
-
-        // Call functions *after* UI is in the DOM
-        updateReportStats();
-        renderReportTable();
-        addReportListeners();
-    }
-
-    /**
-     * Sorts `allEditorData` and renders the HTML table body.
-     */
-    function renderReportTable() {
-        const tbody = document.querySelector('#esm-report-table tbody');
-        if (!tbody) return;
-
-        const { key, asc } = sortState;
-        allEditorData.sort((a, b) => {
-            let valA = a[key];
-            let valB = b[key];
-
-            if (valA === null || valA === undefined) valA = asc ? 'zzz' : '...';
-            if (valB === null || valB === undefined) valB = asc ? 'zzz' : '...';
-            if (typeof valA === 'boolean') valA = valA.toString();
-            if (typeof valB === 'boolean') valB = valB.toString();
-
-            let result = 0;
-            if (valA < valB) {
-                result = -1;
-            } else if (valA > valB) {
-                result = 1;
-            }
-            return asc ? result : -result;
-        });
-
-        tbody.innerHTML = allEditorData
-            .map((editor) => {
-                const lastEditStr = editor.lastEditDate
-                    ? new Date(editor.lastEditDate).toLocaleDateString()
-                    : 'N/A';
-                const memberSinceStr = editor.memberSince
-                    ? new Date(editor.memberSince).toLocaleDateString()
-                    : 'N/A';
-                return `
-                <tr>
-                    <td><input type="checkbox" class="esm-select-row" data-id="${
-                        editor.id
-                    }" /></td>
-                    <td><a href="${editor.profileUrl}" target="_blank">${
-                    editor.name
-                }</a></td>
-                    <td>${editor.id}</td>
-                    <td>${
-                        editor.isSpammer === null
-                            ? '?'
-                            : editor.isSpammer
-                            ? '<strong>Yes</strong>'
-                            : 'No'
-                    }</td>
-                    <td>${editor.userType || ''}</td>
-                    <td>${editor.restrictions || ''}</td>
-                    <td>${memberSinceStr}</td>
-                    <td>${lastEditStr}</td>
-                    <td>${editor.error || ''}</td>
-                </tr>
-            `;
-            })
-            .join('');
-    }
-
-    /**
-     * Attaches all event listeners for the report UI.
-     */
-    function addReportListeners() {
-        document
-            .getElementById('esm-close-report')
-            .addEventListener('click', () => {
-                document.getElementById('esm-report-ui').remove();
-
-                // Unhide the original page content
-                const pageDiv = document.getElementById('page');
-                const contentElements = pageDiv.querySelectorAll(
-                    'h2, p, ul, nav, form'
-                );
-                contentElements.forEach((el) => {
-                    if (el.parentElement === pageDiv) {
-                        el.style.display = '';
-                    }
-                });
-
-                showProgress(false);
-                setButtonsDisabled(false);
-            });
-
-        // Listener for the years input
-        document
-            .getElementById('esm-inactive-years')
-            .addEventListener('input', updateReportStats);
-
-        // Table header sorting
-        document
-            .querySelectorAll('#esm-report-table th.esm-sortable')
-            .forEach((th) => {
-                th.addEventListener('click', () => {
-                    const key = th.dataset.key;
-                    if (sortState.key === key) {
-                        sortState.asc = !sortState.asc;
-                    } else {
-                        sortState.key = key;
-                        sortState.asc = true;
-                    }
-                    renderReportTable();
-                });
-            });
-
-        // Checkbox logic
-        const updateSelectedCount = () => {
-            const count = document.querySelectorAll(
-                '.esm-select-row:checked'
-            ).length;
-            const btn = document.getElementById('esm-unsub-selected');
-            btn.textContent = `Unsubscribe Selected (${count})`;
-            btn.disabled = count === 0;
         };
 
-        document
-            .getElementById('esm-select-all')
-            .addEventListener('change', (e) => {
-                document
-                    .querySelectorAll('.esm-select-row')
-                    .forEach((cb) => (cb.checked = e.target.checked));
-                updateSelectedCount();
-            });
+        const updateSel = () => {
+            const n = document.querySelectorAll('.esm-select-row:checked').length;
+            const btn = getEl('esm-unsub-selected');
+            btn.textContent = `Unsubscribe / Dismiss Selected (${n})`;
+            btn.disabled = n === 0;
+        };
+        getEl('esm-select-all').onchange = (e) => {
+            document.querySelectorAll('.esm-select-row').forEach(c => c.checked = e.target.checked);
+            updateSel();
+        };
+        getEl('esm-report-table').querySelector('tbody').onchange = (e) => { if(e.target.matches('.esm-select-row')) updateSel(); };
 
-        document
-            .querySelector('#esm-report-table tbody')
-            .addEventListener('change', (e) => {
-                if (e.target.classList.contains('esm-select-row')) {
-                    updateSelectedCount();
-                }
-            });
+        const doUnsub = async (ids) => {
+            if(!ids.length) return;
+            const toUnsub = ids.filter(id => { const e = allEditorData.find(x=>x.id===id); return e && !e.isLost && e.isSubscribed; });
 
-        // Action buttons
-        document
-            .getElementById('esm-unsub-spammers')
-            .addEventListener('click', async () => {
-                const ids = allEditorData
-                    .filter((e) => e.isSpammer)
-                    .map((e) => e.id);
-                if (
-                    ids.length > 0 &&
-                    confirm(
-                        `Are you sure you want to unsubscribe from ${ids.length} spammer(s)?`
-                    )
-                ) {
-                    showProgress(true);
-                    await unsubscribe(ids);
-                }
-            });
+            if(toUnsub.length) {
+                updateProgress(`Unsubscribing ${toUnsub.length}...`);
+                await Promise.all(Array(CONCURRENCY_LIMIT).fill(0).map(async () => {
+                    while(toUnsub.length) {
+                        const id = toUnsub.shift();
+                        try {
+                            await requestGet(`${location.origin}/account/subscriptions/editor/remove?id=${id}`);
+                        } catch(e){error(e);}
+                    }
+                }));
+            }
+            storage.remove(ids);
+            allEditorData = allEditorData.filter(e => !ids.includes(e.id));
+            renderReportTable();
+            showProgress(false);
+        };
 
-        document
-            .getElementById('esm-unsub-inactive')
-            .addEventListener('click', async () => {
-                const years = parseInt(
-                    document.getElementById('esm-inactive-years').value,
-                    10
-                );
-                if (isNaN(years) || years < 1) {
-                    alert('Please enter a valid number of years.');
-                    return;
-                }
+        getEl('esm-unsub-selected').onclick = () => {
+            const ids = [...document.querySelectorAll('.esm-select-row:checked')].map(c => c.dataset.id);
+            if(confirm(`Process ${ids.length} selected items?`)) doUnsub(ids);
+        };
+        const spammers = allEditorData.filter(e => e.isSpammer);
+        getEl('esm-unsub-spammers').textContent = `Unsubscribe Spam (${spammers.length})`;
+        getEl('esm-unsub-spammers').disabled = !spammers.length;
+        getEl('esm-unsub-spammers').onclick = () => { if(confirm('Unsubscribe spammers?')) doUnsub(spammers.map(e=>e.id)); };
 
-                const cutoffDate = new Date();
-                cutoffDate.setFullYear(cutoffDate.getFullYear() - years);
+        getEl('esm-unsub-inactive').onclick = () => {
+            const y = parseInt(getEl('esm-inactive-years').value);
+            const d = new Date(); d.setFullYear(d.getFullYear() - y);
+            const ids = allEditorData.filter(e => e.isSubscribed && !e.isLost && !e.isSpammer && !e.error && (!e.lastEditDate || new Date(e.lastEditDate) < d)).map(e => e.id);
+            if(confirm(`Unsubscribe ${ids.length} inactive?`)) doUnsub(ids);
+        };
 
-                const ids = allEditorData
-                    .filter((e) => {
-                        if (e.isSpammer || e.error) return false;
-                        if (!e.lastEditDate) return true;
-                        return new Date(e.lastEditDate) < cutoffDate;
-                    })
-                    .map((e) => e.id);
-
-                if (
-                    ids.length > 0 &&
-                    confirm(
-                        `Are you sure you want to unsubscribe from ${ids.length} editor(s) inactive for > ${years} years?`
-                    )
-                ) {
-                    showProgress(true);
-                    await unsubscribe(ids);
-                } else if (ids.length === 0) {
-                    alert('No editors match the inactivity criteria.');
-                }
-            });
-
-        document
-            .getElementById('esm-unsub-selected')
-            .addEventListener('click', async () => {
-                const ids = [
-                    ...document.querySelectorAll('.esm-select-row:checked'),
-                ].map((cb) => cb.dataset.id);
-
-                if (
-                    ids.length > 0 &&
-                    confirm(
-                        `Are you sure you want to unsubscribe from ${ids.length} selected editor(s)?`
-                    )
-                ) {
-                    showProgress(true);
-                    await unsubscribe(ids);
-                }
-            });
+        updateReportStats();
+        renderReportTable();
     }
-
     // #endregion
 
-    // #region Initialization
-
+    // #region Logic Flow
     /**
-     * Creates the main "Manage" buttons and appends them to the page.
-     * @returns {HTMLDivElement} The container holding the buttons.
+     * @param {'scan'|'refresh'} mode
      */
-    function createMainButtons() {
-        const container = document.createElement('div');
-        container.className = 'esm-main-button-container';
-
-        const testButton = document.createElement('button');
-        testButton.type = 'button';
-        testButton.id = 'esm-test-button';
-        testButton.className = 'esm-main-button';
-        testButton.textContent = 'Manage Current Page (Test)';
-        testButton.addEventListener('click', () => runManager(false));
-
-        const fullButton = document.createElement('button');
-        fullButton.type = 'button';
-        fullButton.id = 'esm-full-button';
-        fullButton.className = 'esm-main-button';
-        fullButton.textContent = 'Manage All Subscriptions';
-        fullButton.addEventListener('click', () => runManager(true));
-
-        container.appendChild(testButton);
-        container.appendChild(fullButton);
-        return container;
-    }
-
-    /**
-     * Creates the progress bar UI element and appends it to the body.
-     * @returns {HTMLDivElement} The progress bar element.
-     */
-    function createProgressUI() {
-        const progressUI = document.createElement('div');
-        progressUI.id = 'esm-progress-ui';
-        progressUI.innerHTML = `<p id="esm-progress-text">Starting...</p>`;
-        document.body.appendChild(progressUI);
-        return progressUI;
-    }
-
-    /**
-     * The main execution flow.
-     * @param {boolean} [isFullRun=false] - True to run on all pages, false for current page only.
-     */
-    async function runManager(isFullRun = false) {
-        setButtonsDisabled(true);
-        showProgress(true, 'Initializing...');
+    async function runManager(mode) {
+        document.querySelectorAll('button').forEach(b => b.disabled = true);
+        showProgress(true, 'Reading subscription list...');
 
         try {
-            let basicEditorList = [];
+            // 1. Sync Subscription List
+            const { doc: page1 } = await request('GET', `${location.pathname}?page=1`);
+            let totalPages = 1;
+            if (page1) totalPages = getTotalPages(page1);
 
-            if (isFullRun) {
-                const totalEditors = getTotalEditorCount();
-                if (totalEditors === 0) {
-                    throw new Error('Could not find total editor count.');
+            const editorStubs = [];
+            const scrapeList = (doc) => [...doc.querySelectorAll('form tbody tr')].map(tr => ({
+                id: tr.querySelector('input')?.value,
+                name: tr.querySelector('a')?.textContent.trim(),
+                profileUrl: tr.querySelector('a')?.href,
+                isSubscribed: true
+            })).filter(x=>x.id);
+
+            if(page1) editorStubs.push(...scrapeList(page1));
+
+            for(let i=2; i<=totalPages; i++) {
+                updateProgress(`Reading page ${i}/${totalPages}...`);
+                const { doc } = await request('GET', `${location.pathname}?page=${i}`);
+                if(doc) editorStubs.push(...scrapeList(doc));
+            }
+
+            const uniqueStubs = editorStubs.filter((e,i,a) => a.findIndex(x => x.id === e.id) === i);
+            const currentSubIds = new Set(uniqueStubs.map(e => e.id));
+
+            // 2. Prepare Cache & Queue
+            let cache = storage.getCache();
+            const queue = [];
+
+            // Add subscribed stubs to processing queue or update status
+            uniqueStubs.forEach(stub => {
+                const cached = cache[stub.id];
+                if (!cached) {
+                    queue.push({ ...stub, reason: 'new' });
+                } else {
+                    cached.isSubscribed = true;
+                    // Reset 'lost' status if it was previously lost
+                    if (cached.isLost) cached.isLost = false;
+
+                    const age = (Date.now() - (cached.lastUpdated || 0)) / 86400000;
+                    if (mode === 'refresh' || age > CACHE_TTL_DAYS || cached.error) {
+                        queue.push({ ...cached, reason: 'update' });
+                    }
                 }
-                basicEditorList = await fetchAllSubscribedEditors(totalEditors);
-            } else {
-                updateProgress('Processing current page...');
-                basicEditorList = parseEditorsFromPage(document);
+            });
+
+            // Mark missing subscriptions as lost in cache
+            Object.values(cache).forEach(e => {
+                if (e.isSubscribed && !currentSubIds.has(e.id)) {
+                    e.isLost = true; // Potentially deleted or unsubscribed elsewhere
+                    queue.push({ ...e, reason: 'lost_check' });
+                } else if (mode === 'refresh' && !e.isSubscribed) {
+                    // Refresh visited profiles too if full refresh
+                    queue.push({ ...e, reason: 'refresh_visited' });
+                }
+            });
+
+            // 3. Process Queue
+            if(queue.length > 0) {
+                updateProgress(`Updating ${queue.length} profiles...`);
+                let processed = 0;
+
+                const worker = async () => {
+                    while(queue.length) {
+                        const task = queue.shift();
+                        let result;
+
+                        // Just a quick check for lost items first to see if they are deleted or just unsubbed
+                        if (task.reason === 'lost_check') {
+                            result = await fetchEditorFull(task);
+                            if (!result.error && !result.isDeleted) {
+                                // Profile exists, so we just aren't subscribed anymore
+                                result.isSubscribed = false;
+                                result.isLost = false;
+                            } else {
+                                // Deleted or error
+                                result.isSubscribed = true; // Keep as subbed so it shows as "LOST" or "DELETED" in list
+                                result.isLost = !result.isDeleted;
+                            }
+                        } else {
+                            result = await fetchEditorFull(task);
+                            if (task.isSubscribed) result.isSubscribed = true;
+                        }
+
+                        storage.saveEditor(result);
+                        processed++;
+                        updateProgress(`Processed ${processed} profiles... (${result.name})`);
+                    }
+                };
+                await Promise.all(Array(CONCURRENCY_LIMIT).fill(0).map(worker));
             }
 
-            if (basicEditorList.length === 0) {
-                throw new Error('No editors found to process.');
-            }
-
-            allEditorData = await processEditorQueue(basicEditorList);
+            // Reload Cache to get everything
+            cache = storage.getCache();
+            allEditorData = Object.values(cache);
 
             showProgress(false);
             buildReportUI();
-        } catch (error) {
-            console.error(`[${SCRIPT_NAME}] A critical error occurred:`, error);
-            alert(`A critical error occurred: ${error.message}`);
-            showProgress(false);
-            setButtonsDisabled(false);
+
+        } catch (e) { error(e); alert(e.message); showProgress(false); location.reload(); }
+    }
+
+    async function runPassiveScraper() {
+        const id = getEditorId(document);
+
+        log(`Passive Scraper: ID=${id}, URL=${location.href}`);
+
+        if(!id) return;
+
+        const notif = document.createElement('div');
+        notif.id = 'esm-notification';
+        notif.textContent = `ESM: Updating...`;
+        Object.assign(notif.style, { position:'fixed', top:'10px', right:'10px', background:'#eee', padding:'5px 10px', border:'1px solid #999', zIndex:9999, fontSize:'12px', opacity: 0.9, transition: 'opacity 0.5s' });
+        document.body.appendChild(notif);
+
+        // Attach listeners to subscribe/unsubscribe buttons for immediate feedback
+        const attachListeners = () => {
+            const subBtn = document.querySelector('a[href*="/subscriptions/editor/add"]');
+            const unsubBtn = document.querySelector('a[href*="/subscriptions/editor/remove"]');
+
+            const handleManualChange = (isSub) => {
+                const cache = storage.getCache();
+                if(cache[id]) {
+                    cache[id].isSubscribed = isSub;
+                    cache[id].isLost = false;
+                    storage.saveEditor(cache[id]);
+                    const el = document.getElementById('esm-notification');
+                    if(el) {
+                        el.textContent = isSub ? 'ESM: Subscribed!' : 'ESM: Unsubscribed!';
+                        el.style.background = '#e6f7ff';
+                        setTimeout(() => el.style.opacity = '0', 2000);
+                    }
+                }
+            };
+
+            if(subBtn) subBtn.addEventListener('click', () => handleManualChange(true));
+            if(unsubBtn) unsubBtn.addEventListener('click', () => handleManualChange(false));
+        };
+        attachListeners();
+
+        try {
+            // Use current page as source
+            const data = parseProfile(document, location.href, id);
+
+            // Check cache for previous name
+            const cache = storage.getCache();
+            const prev = cache[id];
+            if (prev) {
+                if(prev.name !== data.name) data.previousNames = [...(prev.previousNames||[]), prev.name];
+                else data.previousNames = prev.previousNames;
+                // Preserve existing subscription status if undetermined from UI (though parseProfile tries)
+                if (data.isSubscribed === undefined) data.isSubscribed = prev.isSubscribed;
+            }
+
+            // Fetch extra edits data for "Last Edit" date
+            const { doc } = await request('GET', `${location.origin}/user/${encodeURIComponent(data.name)}/edits`);
+            if(doc) {
+               const dateStr = doc.querySelector('div.edit-header:not(.open) td.edit-expiration')?.lastChild?.textContent.trim();
+               if(dateStr) data.lastEditDate = new Date(dateStr).toISOString();
+            }
+
+            storage.saveEditor(data);
+
+            notif.textContent = 'ESM: Profile Cached.';
+            notif.style.background = '#ebfccb';
+            notif.style.borderColor = 'green';
+            setTimeout(()=>notif.remove(), 2000);
+        } catch(e) {
+            error(e);
+            notif.style.background='#fccbcb';
+            notif.style.borderColor = 'red';
+            notif.textContent='ESM: Error';
+            setTimeout(()=>notif.remove(), 3000);
         }
     }
+    // #endregion
 
-    /**
-     * Adds the required CSS styles for the UI.
-     */
+    // #region Helpers
+    function showProgress(show, txt) {
+        let el = document.getElementById('esm-progress');
+        if(!el) {
+            el = document.createElement('div');
+            Object.assign(el.style, { position:'fixed', top:0, left:0, width:'100%', background:'#333', color:'#fff', textAlign:'center', padding:'10px', zIndex:10000 });
+            el.id = 'esm-progress'; document.body.appendChild(el);
+        }
+        el.style.display = show ? 'block' : 'none';
+        if(txt) el.textContent = txt;
+    }
+    function updateProgress(txt) { showProgress(true, txt); }
+
     function addStyles() {
         GM_addStyle(`
-            .esm-main-button-container {
-                display: inline-block;
-                margin-left: 1em;
-                vertical-align: middle;
-            }
-            .esm-main-button {
-                margin-left: 0.5em;
-            }
-            #esm-progress-ui {
-                position: fixed;
-                top: 0;
-                left: 0;
-                width: 100%;
-                background: #363636;
-                color: white;
-                padding: 10px;
-                text-align: center;
-                z-index: 9998;
-                border-bottom: 2px solid #f2a600;
-                font-size: 1.2em;
-                display: none; /* Hidden by default */
-            }
-            #esm-report-ui {
-                padding: 1em;
-                background: #f1f1ff;
-                border: 1px solid #ccc;
-                margin-top: 1em;
-            }
-            #esm-report-ui h1 {
-                margin-top: 0;
-            }
-            .esm-controls {
-                display: grid;
-                grid-template-columns: 1fr 2fr;
-                gap: 2em;
-                margin-bottom: 1em;
-                padding: 1em;
-                background: white;
-                border: 1px solid #ddd;
-            }
-            .esm-stats ul {
-                list-style: none;
-                padding: 0;
-                margin: 0;
-            }
-            .esm-stats li {
-                margin-bottom: 0.5em;
-            }
-            .esm-stats li > strong {
-                min-width: 150px;
-                display: inline-block;
-            }
-            .esm-action-row {
-                margin-bottom: 1em;
-            }
-            .esm-action-row input[type="number"] {
-                width: 50px;
-            }
-            #esm-report-table {
-                width: 100%;
-            }
-            #esm-report-table th.esm-sortable {
-                cursor: pointer;
-            }
-            #esm-report-table th.esm-sortable:hover {
-                background: #eee;
-            }
-            #esm-report-table th.esm-sortable::after {
-                content: ' \\25B8'; /* Small triangle */
-                font-size: 0.8em;
-                opacity: 0.5;
-            }
-            /* Widen columns */
-            #esm-report-table th[data-key="userType"],
-            #esm-report-table td:nth-child(5),
-            #esm-report-table th[data-key="restrictions"],
-            #esm-report-table td:nth-child(6) {
-                min-width: 200px;
-            }
+            #esm-report-ui { background:#fff; padding:20px; border:1px solid #ccc; margin-top:20px; }
+            .esm-controls { display:flex; gap:20px; margin-bottom:20px; flex-wrap:wrap; border-bottom:1px solid #eee; padding-bottom:20px; }
+            .esm-stats ul { list-style:none; padding:0; margin:0; }
+            .esm-stats li { margin-bottom:5px; }
+            .esm-action-row { margin-bottom:10px; display:flex; align-items:center; gap:10px; }
+            #esm-report-table { width:100%; border-collapse:collapse; }
+            #esm-report-table th, #esm-report-table td { border:1px solid #ddd; padding:6px; text-align:left; font-size:0.9em; }
+            #esm-report-table th { background:#f9f9f9; position:relative; padding-right:20px; }
+            #esm-report-table th:first-child { padding-right: 6px; }
+            #esm-report-table th:first-child, #esm-report-table td:first-child { width: 25px; text-align: center; }
+            #esm-report-table th.esm-sortable { cursor:pointer; }
+            #esm-report-table th.esm-sortable:not(.sorted-asc):not(.sorted-desc):hover::after { content: '↕'; position: absolute; right: 5px; opacity: 0.6; font-size: 0.8em; }
+            #esm-report-table th.esm-sortable.sorted-asc::after { content: '▲'; position: absolute; right: 5px; opacity: 1; font-size: 0.8em; }
+            #esm-report-table th.esm-sortable.sorted-desc::after { content: '▼'; position: absolute; right: 5px; opacity: 1; font-size: 0.8em; }
+            .esm-num { text-align:right !important; font-family:monospace; }
+            .esm-bad-stat { color:red; font-weight:bold; }
+            .esm-warn-stat { color:#d35400; }
+            .esm-stale { color:#999; font-style:italic; }
+            .esm-fresh { color:green; }
+            .esm-aka { font-size: 0.85em; color: #666; font-style: italic; display:block; margin-top:2px; }
+            .esm-row-deleted { background-color: #ffe6e6; opacity: 0.7; }
+            .esm-row-lost { background-color: #fff9e6; }
+            .esm-row-visited { background-color: #f7f7f7; color: #666; }
         `);
     }
+    // #endregion
 
-    /**
-     * Initializes the script by adding the buttons to the page.
-     */
     function init() {
-        if (!location.pathname.match(/\/user\/.*\/subscriptions\/editor/)) {
+        const path = location.pathname;
+
+        // 1. Subscription Management Page
+        if (path.match(/\/user\/[^/]+\/subscriptions\/editor/)) {
+            const h2 = document.querySelector('#page > h2');
+            if (h2 && h2.textContent.includes('Editor subscriptions')) {
+                addStyles();
+                const container = document.createElement('div');
+                container.style.display = 'inline-block';
+                container.style.marginLeft = '20px';
+                container.innerHTML = `<button id="esm-btn-open" style="font-weight:bold">Manage Subscriptions</button>`;
+                h2.appendChild(container);
+                document.getElementById('esm-btn-open').onclick = () => runManager('scan'); // Default to smart scan
+            }
             return;
         }
 
-        const heading = document.querySelector('#page > h2');
-        if (heading && heading.textContent.includes('Editor subscriptions')) {
-            addStyles();
-            const buttons = createMainButtons();
-            heading.appendChild(buttons);
-            createProgressUI();
+        // 2. User Profile Page (Passive Scan)
+        // Check if path matches /user/<name> but NOT sub-pages like /edits, /votes etc.
+        const userMatch = path.match(/^\/user\/([^/]+)$/);
+        if (userMatch) {
+            runPassiveScraper();
         }
     }
 
