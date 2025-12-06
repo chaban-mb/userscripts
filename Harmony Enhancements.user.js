@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Harmony: Enhancements
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      1.17.0
+// @version      1.18.0
 // @tag          ai-created
 // @description  Adds some convenience features, various UI and behavior settings, as well as an improved language detection to Harmony.
 // @author       chaban
@@ -287,42 +287,38 @@
     * A map of functions that generate the required form parameters from the release data object.
     * Each function takes the corresponding value from the release data and a setter function
     * to add key-value pairs to our desired state map.
+    *
+    * Simple fields can specify `paramName` directly, which maps 1:1.
+    * Complex fields can provide a custom `generator` function.
     */
     const PARAMETER_GENERATORS = {
         'title': {
             cleanupPrefix: 'name',
-            generator: (value, set) => set('name', value),
+            paramName: 'name',
         },
         'comment': {
             cleanupPrefix: 'comment',
-            generator: (value, set) => set('comment', value),
+            paramName: 'comment',
         },
-        /*
         'annotation': {
-        cleanupPrefix: 'annotation',
-        generator: (value, set) => set('annotation', value),
+            cleanupPrefix: 'annotation',
+            paramName: 'annotation',
         },
-        */
         'gtin': {
             cleanupPrefix: 'barcode',
-            generator: (value, set) => set('barcode', value),
+            paramName: 'barcode',
         },
         'status': {
             cleanupPrefix: 'status',
-            generator: (value, set) => set('status', value),
+            paramName: 'status',
         },
         'packaging': {
             cleanupPrefix: 'packaging',
-            generator: (value, set) => set('packaging', value),
+            paramName: 'packaging',
         },
         'script.code': {
             cleanupPrefix: 'script',
-            generator: (value, set, langState) => {
-                const scriptCode = langState?.script || value;
-                if (scriptCode) {
-                    set('script', scriptCode);
-                }
-            },
+            paramName: 'script',
         },
         'types': {
             cleanupPrefix: 'type.',
@@ -367,10 +363,9 @@
         },
         'language': {
             cleanupPrefix: 'language',
-            generator: (value, set, langState) => {
-                const langCode = langState?.code || value?.code;
-                if (langCode) {
-                    set('language', langCode);
+            generator: (value, set) => {
+                if (value?.code) {
+                    set('language', value.code);
                 }
             },
         },
@@ -421,6 +416,7 @@
         dom: {},
         data: {
             release: undefined,
+            originalRelease: null,
         },
         lang: {
             code: null,
@@ -517,6 +513,7 @@
                 log('Final processed release object:', structuredClone(releaseObj));
             }
             AppState.data.release = releaseObj;
+            AppState.data.originalRelease = structuredClone(releaseObj);
             return AppState.data.release;
         } catch (e) {
             error('Failed to parse Fresh state JSON.', e);
@@ -1523,8 +1520,15 @@
 
             // --- Update the UI and Seeder ---
             const updateSeeder = (lang, script) => {
-                AppState.lang.code = lang;
-                AppState.lang.script = script;
+                if (lang) {
+                    AppState.data.release.language = { code: lang };
+                }
+
+                if (script) {
+                    AppState.data.release.script = { code: script };
+                } else if (lang === 'zxx') {
+                    AppState.data.release.script = null;
+                }
             };
 
             if (isZxx) {
@@ -1927,7 +1931,7 @@
         },
 
         updateProperties: (form) => {
-            buildSeederParameters(form, AppState.data.release, AppState.lang, ['gtin', 'packaging']);
+            buildSeederParameters(form, AppState.data.release, AppState.data.originalRelease, ['gtin', 'packaging']);
         },
 
         unsetLanguageData: () => {
@@ -1972,16 +1976,15 @@
 
     /**
     * Builds or augments a seeder form with parameters from the release data.
-    * Can operate in two modes:
-    * 1. Full build (default): Cleans and creates all inputs based on the data.
-    * 2. Selective build: If `paramsToBuild` is provided, only creates inputs for those
-    * parameters and does not perform a cleanup.
+    * This function operates in a "patch" mode by comparing the current
+    * release data to the original data snapshot.
+    *
     * @param {HTMLFormElement} form - The form element to modify.
-    * @param {object} releaseData - The release data from AppState.
-    * @param {object} langState - The language data from AppState.
+    * @param {object} releaseData - The *current*, (potentially modified) release data.
+    * @param {object} originalReleaseData - The *original*, unmodified release data.
     * @param {string[] | null} [paramsToBuild=null] - Optional array of parameters to build.
     */
-    function buildSeederParameters(form, releaseData, langState, paramsToBuild = null) {
+    function buildSeederParameters(form, releaseData, originalReleaseData, paramsToBuild = null) {
         if (!releaseData) return;
 
         const desiredInputs = new Map();
@@ -1992,14 +1995,42 @@
         };
         const getValueFromPath = (obj, path) => path.split('.').reduce((acc, part) => acc?.[part], obj);
 
-        const generatorsToRun = paramsToBuild
-        ? Object.entries(PARAMETER_GENERATORS).filter(([key]) => paramsToBuild.includes(key))
-        : Object.entries(PARAMETER_GENERATORS);
+        const pathsToBuild = new Set(paramsToBuild || []);
+
+        if (!paramsToBuild) {
+            for (const key of Object.keys(PARAMETER_GENERATORS)) {
+                const newValue = getValueFromPath(releaseData, key);
+                const oldValue = getValueFromPath(originalReleaseData, key);
+
+                if (JSON.stringify(newValue) !== JSON.stringify(oldValue)) {
+                    pathsToBuild.add(key);
+                }
+            }
+        }
+
+        const generatorsToRun = [];
+        for (const [key, config] of Object.entries(PARAMETER_GENERATORS)) {
+            if (pathsToBuild.has(key)) {
+                generatorsToRun.push([key, config]);
+            }
+        }
+
+        const prefixesToClear = generatorsToRun.map(([, config]) => config.cleanupPrefix);
+        form.querySelectorAll('input[type="hidden"]').forEach(input => {
+            if (prefixesToClear.some(prefix => input.name.startsWith(prefix))) {
+                input.remove();
+            }
+        });
 
         for (const [key, config] of generatorsToRun) {
             const value = getValueFromPath(releaseData, key);
-            if ((value != null) || config.generator.length === 3) {
-                config.generator(value, set, langState);
+
+            if ((value != null) || config.generator || config.paramName) {
+                if (config.generator) {
+                    config.generator(value, set);
+                } else if (config.paramName) {
+                    set(config.paramName, value);
+                }
             }
         }
 
@@ -2016,16 +2047,6 @@
                 input.value = value;
                 form.appendChild(input);
             }
-        }
-
-        if (!paramsToBuild) {
-            const managedPrefixes = Object.values(PARAMETER_GENERATORS).map(rule => rule.cleanupPrefix);
-            form.querySelectorAll('input[type="hidden"]').forEach(input => {
-                const isManaged = managedPrefixes.some(prefix => input.name.startsWith(prefix));
-                if (isManaged && !desiredInputs.has(input.name)) {
-                    input.remove();
-                }
-            });
         }
     }
 
@@ -2057,7 +2078,7 @@
         }
 
         if (formName === 'release-seeder') {
-            buildSeederParameters(form, AppState.data.release, AppState.lang);
+            buildSeederParameters(form, AppState.data.release, AppState.data.originalRelease, null);
         }
 
         form.submit();
