@@ -503,10 +503,9 @@
          */
         async apiRequest(endpoint, { token, method = 'GET', body = null }) {
             if (rateLimitState.isBlocked && Date.now() < rateLimitState.resetTime) {
-                const secondsRemaining = Math.ceil((rateLimitState.resetTime - Date.now()) / 1000);
-                const errorMessage = `Rate limited. Wait ${secondsRemaining}s.`;
-                console.error(`[${GM.info.script.name}] ${errorMessage}`);
-                throw new Error(errorMessage);
+                const waitMs = (rateLimitState.resetTime - Date.now()) + 100;
+                console.warn(`[${GM.info.script.name}] Rate limited locally. Waiting ${Math.ceil(waitMs / 1000)}s...`);
+                await new Promise(resolve => setTimeout(resolve, waitMs));
             }
             rateLimitState.isBlocked = false;
 
@@ -537,7 +536,9 @@
                     const retryAfterMs = parseInt(retryAfter ? retryAfter[1] : '10', 10) * 1000;
                     rateLimitState.isBlocked = true;
                     rateLimitState.resetTime = Date.now() + retryAfterMs;
-                    throw new Error(`Rate limit exceeded. Wait ${retryAfterMs/1000}s.`);
+                    console.warn(`[${GM.info.script.name}] 429 Rate limit exceeded. Waiting ${retryAfterMs / 1000}s before retrying...`);
+                    await new Promise(resolve => setTimeout(resolve, retryAfterMs + 100));
+                    return this.apiRequest(endpoint, { token, method, body });
                 }
 
                 return response.responseText ? JSON.parse(response.responseText) : {};
