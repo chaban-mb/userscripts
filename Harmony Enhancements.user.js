@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Harmony: Enhancements
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      1.18.0
+// @version      1.19.0
 // @tag          ai-created
 // @description  Adds some convenience features, various UI and behavior settings, as well as an improved language detection to Harmony.
 // @author       chaban
@@ -50,7 +50,16 @@
             runAt: 'submit',
             formName: 'release-update-seeder',
         },
-
+        cleanArtistNames: {
+            key: 'enhancements.seeder.cleanArtistNames',
+            label: 'Drop artist names from seed if MBID is present',
+            description: 'Prevents sending the artist name to the MusicBrainz seeder if an MBID is available.',
+            defaultValue: false,
+            section: 'Seeder Behavior',
+            type: 'checkbox',
+            runAt: 'submit',
+            formName: 'release-seeder',
+        },
         // UI Settings
         hideDebugMessages: {
             key: 'enhancements.ui.hideDebugMessages',
@@ -1928,6 +1937,22 @@
                 form.action = url.toString();
             }
 
+        },
+        cleanArtistNames: () => {
+            const clean = (artists) => {
+                if (!Array.isArray(artists)) return;
+                artists.forEach(artist => {
+                    if (artist.mbid) {
+                        artist.name = null;
+                    }
+                });
+            };
+            clean(AppState.data.release.artists);
+            AppState.data.release.media?.forEach(medium => {
+                if (medium.tracklist) {
+                    clean(medium.tracklist.flatMap(t => t.artists));
+                }
+            });
         },
 
         updateProperties: (form) => {
