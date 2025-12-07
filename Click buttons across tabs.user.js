@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Click buttons across tabs
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      4.6.0
+// @version      4.7.0
 // @tag          ai-created
 // @description  Clicks specified buttons across tabs using the Broadcast Channel API and closes tabs after successful submission.
 // @author       chaban
@@ -25,6 +25,27 @@
     const tabId = `[${Math.random().toString(36).substring(2, 6)}]`;
     console.log(`%c[${scriptName}] ${tabId} Script initialization started on ${location.href}`, 'font-weight: bold;');
 
+    const SUBMISSION_TRIGGERED_FLAG = 'broadcastChannelSubmissionState';
+    const REFERRER_CLOSE_TRIGGERED_FLAG = 'referrerCloseTriggeredState';
+    const RELOAD_ATTEMPTS_KEY = 'magicisrc_reload_attempts';
+    const RELOAD_LOCK_KEY = 'magicisrc-reload-lock';
+    const MAGICISRC_SUBMIT_LOCK_KEY = 'magicisrc-submit-lock';
+    const ISRC_HUNT_SUBMIT_LOCK_KEY = 'isrc-hunt-submit-lock';
+    const MB_SUBMIT_COORDINATION_LOCK_KEY = 'mb-submit-coordination-lock';
+    const MB_LAST_SUBMIT_TIMESTAMP_KEY = 'mb_last_submit_timestamp';
+    const DEBUG_LOG_CHANNEL_NAME = `${scriptName}_debug_log`;
+
+    // --- Settings Keys ---
+    const MUSICBRAINZ_SUBMITS_PER_SECOND_SETTING = 'mb_submits_per_second';
+    const MUSICBRAINZ_DISABLE_RATE_LIMITER_SETTING = 'mb_disable_rate_limiter';
+    const DISABLE_AUTO_CLOSE_SETTING = 'mb_button_clicker_disableAutoClose';
+    const MB_ENABLE_MANUAL_MERGE_AUTOCLOSE = 'mb_enable_manual_merge_autoclose';
+    const MAGICISRC_ENABLE_AUTO_RELOAD = 'magicisrc_enableAutoReload';
+    const DEBUG_LOGGING_SETTING = 'debug_logging_enabled';
+    const DEFAULT_MB_SUBMITS_PER_SECOND = 5;
+
+    let registeredMenuCommandIDs = [];
+    let debugLogChannel;
     /**
      * @typedef {Object} SiteConfig
      * @property {string|string[]} hostnames - Hostnames where this configuration applies.
@@ -36,6 +57,7 @@
      * @property {(RegExp|string)[]} [successUrlPatterns] - URL patterns that indicate a successful submission.
      * @property {boolean} [shouldCloseAfterSuccess=false] - Whether to close the tab after a successful submission.
      * @property {boolean} [autoClick=false] - Whether to click the button automatically on page load.
+     * @property {string} [requiredSetting] - A GM setting key that must be true for this rule to activate.
      * @property {() => boolean} [isNoOp] - A function that checks if the current page state represents a no-op submission (e.g., a "no changes" banner).
      * @property {(config: SiteConfig, triggerAction: () => Promise<boolean>) => void} [submissionHandler] - Custom logic to execute when a submission is triggered.
      * @property {{hostnames: string[], paths: (string|RegExp)[]}} [referrerPatterns] - If present, this rule becomes a referrer-based closer. A click on `buttonSelector` on a matching page will set a flag. If the next page's referrer matches these patterns, it will be closed.
@@ -49,6 +71,7 @@
             paths: ['/merge', '/edit'],
             buttonSelector: 'button.submit.positive[type="submit"]',
             shouldCloseAfterSuccess: true,
+            requiredSetting: MB_ENABLE_MANUAL_MERGE_AUTOCLOSE,
             referrerPatterns: {
                 hostnames: ['musicbrainz.org'],
                 paths: ['/merge', '/edit'],
@@ -159,25 +182,6 @@
             },
         },
     ];
-
-    const SUBMISSION_TRIGGERED_FLAG = 'broadcastChannelSubmissionState';
-    const REFERRER_CLOSE_TRIGGERED_FLAG = 'referrerCloseTriggeredState';
-    const RELOAD_ATTEMPTS_KEY = 'magicisrc_reload_attempts';
-    const RELOAD_LOCK_KEY = 'magicisrc-reload-lock';
-    const MAGICISRC_SUBMIT_LOCK_KEY = 'magicisrc-submit-lock';
-    const ISRC_HUNT_SUBMIT_LOCK_KEY = 'isrc-hunt-submit-lock';
-    const MB_SUBMIT_COORDINATION_LOCK_KEY = 'mb-submit-coordination-lock';
-    const MB_LAST_SUBMIT_TIMESTAMP_KEY = 'mb_last_submit_timestamp';
-    const DEBUG_LOG_CHANNEL_NAME = `${scriptName}_debug_log`;
-    const MUSICBRAINZ_SUBMITS_PER_SECOND_SETTING = 'mb_submits_per_second';
-    const MUSICBRAINZ_DISABLE_RATE_LIMITER_SETTING = 'mb_disable_rate_limiter';
-    const DISABLE_AUTO_CLOSE_SETTING = 'mb_button_clicker_disableAutoClose';
-    const MAGICISRC_ENABLE_AUTO_RELOAD = 'magicisrc_enableAutoReload';
-    const DEBUG_LOGGING_SETTING = 'debug_logging_enabled';
-    const DEFAULT_MB_SUBMITS_PER_SECOND = 5;
-
-    let registeredMenuCommandIDs = [];
-    let debugLogChannel;
 
     /**
      * @summary Sends a log message to all tabs if debug logging is enabled.
@@ -377,6 +381,12 @@
                 defaultValue: false,
             },
             {
+                key: MB_ENABLE_MANUAL_MERGE_AUTOCLOSE,
+                getLabel: async (value) => `Auto Close Manual Merges/Edits: ${value ? 'ENABLED' : 'DISABLED'}`,
+                onClick: async (currentValue) => GM.setValue(MB_ENABLE_MANUAL_MERGE_AUTOCLOSE, !currentValue),
+                defaultValue: true,
+            },
+            {
                 key: MAGICISRC_ENABLE_AUTO_RELOAD,
                 getLabel: async (value) => `MagicISRC Auto Reload: ${value ? 'ENABLED' : 'DISABLED'}`,
                 onClick: async (currentValue) => GM.setValue(MAGICISRC_ENABLE_AUTO_RELOAD, !currentValue),
@@ -461,7 +471,7 @@
      * @summary Sets up listeners for specified configurations.
      * @param {SiteConfig[]} configs - An array of configuration objects.
      */
-    function setupConfigListeners(configs) {
+    async function setupConfigListeners(configs) {
         const pendingSubmissionJSON = sessionStorage.getItem(SUBMISSION_TRIGGERED_FLAG);
         if (pendingSubmissionJSON) {
             try {
@@ -488,6 +498,14 @@
             const triggerAction = () => waitForButtonAndClick(config);
 
             if (config.referrerPatterns && config.buttonSelector) {
+                if (config.requiredSetting) {
+                    const isEnabled = await GM.getValue(config.requiredSetting, true);
+                    if (!isEnabled) {
+                        debugLog(`Referrer-close rule disabled by setting for ${config.paths}`, 'royalblue');
+                        continue;
+                    }
+                }
+
                 if (window.history.length === 1) {
                     debugLog(`Page is in a new tab (history length: 1). Setting up referrer-based close trigger for "${config.buttonSelector}".`, 'royalblue');
                     onDOMLoaded(() => {
@@ -619,7 +637,7 @@
 
         const activeConfigs = getActiveConfigs();
         if (activeConfigs.length > 0) {
-            setupConfigListeners(activeConfigs);
+            await setupConfigListeners(activeConfigs);
         }
 
         setupMagicISRC();
