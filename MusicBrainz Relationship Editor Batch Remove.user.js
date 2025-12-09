@@ -1,12 +1,35 @@
 // ==UserScript==
 // @name         MusicBrainz: Relationship Editor Batch Remove
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      1.0.1
-// @description  Adds a toggle to batch remove/restore relationships of the same type and entity by Ctrl-clicking the remove button.
+// @version      1.1.0
+// @description  Adds a toggle to batch remove/restore relationships. Shift+Click: Same Type. Ctrl+Click: Same Target. Ctrl+Shift+Click: Same Type & Target.
 // @tag          ai-created
 // @author       chaban
 // @license      MIT
 // @match        *://*.musicbrainz.org/release/*/edit-relationships
+// @match        *://*.musicbrainz.org/area/*/edit
+// @match        *://*.musicbrainz.org/artist/*/edit
+// @match        *://*.musicbrainz.org/event/*/edit
+// @match        *://*.musicbrainz.org/instrument/*/edit
+// @match        *://*.musicbrainz.org/label/*/edit
+// @match        *://*.musicbrainz.org/place/*/edit
+// @match        *://*.musicbrainz.org/recording/*/edit
+// @match        *://*.musicbrainz.org/release-group/*/edit
+// @match        *://*.musicbrainz.org/series/*/edit
+// @match        *://*.musicbrainz.org/work/*/edit
+// @match        *://*.musicbrainz.org/url/*/edit
+// @match        *://*.musicbrainz.eu/release/*/edit-relationships
+// @match        *://*.musicbrainz.eu/area/*/edit
+// @match        *://*.musicbrainz.eu/artist/*/edit
+// @match        *://*.musicbrainz.eu/event/*/edit
+// @match        *://*.musicbrainz.eu/instrument/*/edit
+// @match        *://*.musicbrainz.eu/label/*/edit
+// @match        *://*.musicbrainz.eu/place/*/edit
+// @match        *://*.musicbrainz.eu/recording/*/edit
+// @match        *://*.musicbrainz.eu/release-group/*/edit
+// @match        *://*.musicbrainz.eu/series/*/edit
+// @match        *://*.musicbrainz.eu/work/*/edit
+// @match        *://*.musicbrainz.eu/url/*/edit
 // @icon         https://musicbrainz.org/static/images/favicons/android-chrome-512x512.png
 // @grant        none
 // @run-at       document-idle
@@ -14,170 +37,228 @@
 
 'use strict';
 
-// --- CONFIGURATION ---
-// Set this to true to enable detailed logging in the developer console (F12)
 const DEBUG = false;
-// ---------------------
-
-const SCRIPT_NAME = 'MusicBrainz: Relationship Editor Batch Remove';
+const SCRIPT_NAME = GM.info.script.name;
 
 /**
- * Injects CSS for visual feedback when Ctrl is pressed.
+ * Injects CSS to provide visual feedback when modifier keys are held.
+ * - Ctrl Only (Target Match): Orange outline
+ * - Shift Only (Type Match): Blue outline
+ * - Ctrl + Shift (Specific Match): Yellow outline
  */
 function addGlobalStyle() {
     const style = document.createElement('style');
     style.type = 'text/css';
     style.textContent = `
-        body.ctrl-is-down .rel-editor-table .remove-item {
-            background-color: #ffc !important;
-            outline: 2px solid #cc0;
-        }
+        body.ctrl-is-down:not(.shift-is-down) .rel-editor-table .remove-item { background-color: #ffe0b2 !important; outline: 2px solid #ff9800; }
+        body.shift-is-down:not(.ctrl-is-down) .rel-editor-table .remove-item { background-color: #bbdefb !important; outline: 2px solid #2196f3; }
+        body.ctrl-is-down.shift-is-down .rel-editor-table .remove-item { background-color: #ffc !important; outline: 2px solid #cc0; }
     `;
     document.head.appendChild(style);
 }
 
 /**
- * Toggles a class on the body based on the Ctrl key's state.
- * @param {KeyboardEvent} event
+ * Event handler to toggle CSS classes on the body based on modifier keys.
+ * Used for the visual feedback styling defined in addGlobalStyle.
+ * * @param {KeyboardEvent} event - The keydown or keyup event.
  */
-function toggleCtrlClass(event) {
-    if (event.key === 'Control') {
-        document.body.classList.toggle('ctrl-is-down', event.type === 'keydown');
+function toggleModifierClasses(event) {
+    if (event.key === 'Control') document.body.classList.toggle('ctrl-is-down', event.type === 'keydown');
+    if (event.key === 'Shift') document.body.classList.toggle('shift-is-down', event.type === 'keydown');
+}
+
+/**
+ * Traverses the internal React Fiber tree starting from a DOM element to retrieve its props.
+ * This allows access to the internal 'relationship' and 'source' objects bound to the UI component,
+ * bypassing the need for fragile DOM parsing or ID scraping.
+ *
+ * @param {HTMLElement} element - The DOM element (button) that was clicked.
+ * @returns {Object|null} The React props object containing { relationship, source, dispatch } or null if not found.
+ */
+function getReactProps(element) {
+    const key = Object.keys(element).find(k => k.startsWith('__reactFiber'));
+    if (!key) return null;
+
+    let fiber = element[key];
+
+    while (fiber) {
+        const props = fiber.memoizedProps || fiber.props;
+        if (props && props.relationship && props.source) {
+            return props;
+        }
+        fiber = fiber.return;
     }
+    return null;
 }
 
 /**
- * Creates a readable summary of a MusicBrainz entity.
- * @param {object} entity The entity object from the editor state.
- * @returns {string} A formatted string summary.
+ * Resolves which entity in a relationship is the "Target" (the entity being linked TO).
+ * MusicBrainz relationships are stored as { entity0, entity1 }, not source/target.
+ * This function compares IDs against the current source to find the other entity.
+ *
+ * @param {Object} rel - The relationship object from MusicBrainz state.
+ * @param {Object} source - The source entity object currently being edited.
+ * @returns {Object|null} The target entity object, or null if data is malformed.
  */
-function formatEntity(entity) {
-    if (!entity) return '[No Entity]';
-    return `(${entity.entityType}) "${entity.name}" [ID: ${entity.id}]`;
+function resolveTarget(rel, source) {
+    // 1. Return explicit target if available (some contexts provide this)
+    if (rel.target) return rel.target;
+
+    // 2. Safety check for malformed data
+    if (!rel.entity0 || !rel.entity1) return null;
+
+    // 3. Compare IDs to find the one that isn't the source
+    if (rel.entity0.id !== source.id) return rel.entity0;
+    if (rel.entity1.id !== source.id) return rel.entity1;
+
+    // 4. Edge Case: Self-Link (Source ID == Target ID)
+    // If both IDs match the source, return entity1 as the default valid target reference.
+    return rel.entity1;
 }
 
 /**
- * Main handler for the batch toggle logic.
- * @param {MouseEvent} event The click event.
+ * Main click handler for the batch remove functionality.
+ * * Logic Flow:
+ * 1. Validates the click target (must be a remove button) and modifier keys.
+ * 2. Retrieves the specific relationship data via React Fiber props (getReactProps).
+ * 3. Identifies the "Master" relationship (the one clicked) and its context (Source Entity Type).
+ * 4. Harvests all visible relationships from the MB state tree, filtering strictly by Source Entity Type.
+ * 5. Filters the harvested list against the user's criteria (Link Type match or Target Entity match).
+ * 6. Dispatches 'remove-relationship' actions to the remaining matches.
+ * * @param {MouseEvent} event - The click event triggered on the content area.
  */
 function handleBatchToggle(event) {
-    if (!event.ctrlKey || !event.target.matches('.icon.remove-item')) {
-        return;
-    }
+    const target = event.target;
+
+    // 1. Basic Validation
+    if (!target.matches('.icon.remove-item')) return;
+
+    const matchType = event.shiftKey;
+    const matchTarget = event.ctrlKey;
+
+    // Only proceed if a modifier key is held
+    if (!matchType && !matchTarget) return;
 
     event.preventDefault();
     event.stopPropagation();
     event.stopImmediatePropagation();
 
-    const { relationshipEditor, tree: wbt, linkedEntities } = MB;
-    const relationshipId = parseInt(event.target.id.split('-').pop(), 10);
+    // --- STEP 1: GET MASTER DATA ---
+    const props = getReactProps(target);
 
-    if (DEBUG) console.group(`--- ${SCRIPT_NAME} ---`);
+    if (!props) return;
 
-    if (isNaN(relationshipId)) {
-        if (DEBUG) {
-            console.error('Could not parse relationship ID from button:', event.target);
-            console.groupEnd();
-        }
+    const masterRel = props.relationship;
+    const masterSource = props.source;
+    const dispatch = props.dispatch;
+
+    if (!dispatch) return;
+
+    // Safe Resolve of Target Entity
+    const masterTargetEntity = resolveTarget(masterRel, masterSource);
+
+    // Abort if we can't identify the target to prevent accidental removals
+    if (!masterTargetEntity) {
+        if (DEBUG) console.warn(`[${SCRIPT_NAME}] Target entity could not be resolved. Aborting.`);
         return;
     }
 
+    const masterTargetGid = masterTargetEntity.gid;
+    const masterLinkTypeId = masterRel.linkTypeID;
+
     if (DEBUG) {
-        console.log('Clicked Element:', event.target);
-        console.log(`Parsed Relationship ID: ${relationshipId}`);
+        console.log(`[${SCRIPT_NAME}] Target: ${masterTargetEntity.name} (GID: ${masterTargetGid})`);
+        console.log(`[${SCRIPT_NAME}] Source: ${masterSource.entityType} (ID: ${masterSource.id})`);
     }
 
-    const relationshipsByType = new Map();
-    let masterRel = null;
+    // --- STEP 2: HARVEST & SCOPE ---
+    const { relationshipEditor, tree: wbt } = MB;
+    const candidates = [];
 
-    for (const [source, targetTypeGroups] of wbt.iterate(relationshipEditor.state.relationshipsBySource)) {
-        for (const [, linkTypeGroups] of wbt.iterate(targetTypeGroups)) {
-            for (const linkTypeGroup of wbt.iterate(linkTypeGroups)) {
-                for (const phraseGroup of wbt.iterate(linkTypeGroup.phraseGroups)) {
-                    for (const rel of wbt.iterate(phraseGroup.relationships)) {
-                        if (rel.id === relationshipId) masterRel = rel;
-                        if (!relationshipsByType.has(rel.linkTypeID)) {
-                            relationshipsByType.set(rel.linkTypeID, []);
+    // Strategy A: Full Editor (Release/Release Group - Tree Structure)
+    if (wbt && relationshipEditor && relationshipEditor.state.relationshipsBySource) {
+        for (const [source, targetTypeGroups] of wbt.iterate(relationshipEditor.state.relationshipsBySource)) {
+            // Strict Scope Check
+            // We only collect relationships from the same Source Entity Type (e.g. only 'work' or only 'recording').
+            // This prevents ID collisions where two different entities share a relationship ID.
+            if (source.entityType !== masterSource.entityType) continue;
+
+            for (const [, linkTypeGroups] of wbt.iterate(targetTypeGroups)) {
+                for (const linkTypeGroup of wbt.iterate(linkTypeGroups)) {
+                    if (linkTypeGroup.phraseGroups) {
+                        for (const phraseGroup of wbt.iterate(linkTypeGroup.phraseGroups)) {
+                            if (phraseGroup.relationships) {
+                                for (const rel of wbt.iterate(phraseGroup.relationships)) {
+                                    candidates.push({ rel, source });
+                                }
+                            }
                         }
-                        relationshipsByType.get(rel.linkTypeID).push({ rel, source });
                     }
                 }
             }
         }
     }
-
-    if (!masterRel) {
-        if (DEBUG) {
-            console.error('Could not find the clicked relationship in the editor state.');
-            console.groupEnd();
-        }
-        return;
+    // Strategy B: Mini Editor (Edit Artist/Recording/Work - Flat Array)
+    // On individual edit pages, the source entity holds the list directly.
+    else if (masterSource && masterSource.relationships) {
+        masterSource.relationships.forEach(rel => {
+            candidates.push({ rel, source: masterSource });
+        });
     }
 
-    const masterLinkTypeId = masterRel.linkTypeID;
-    const allRelsOfMasterType = relationshipsByType.get(masterLinkTypeId) || [];
-    const masterItem = allRelsOfMasterType.find(({ rel }) => rel.id === relationshipId);
+    // --- STEP 3: FILTER MATCHES ---
+    const relsToToggle = candidates.filter(({ rel, source }) => {
+        const targetEntity = resolveTarget(rel, source);
+        // If target is missing or malformed on a candidate, skip it safely
+        if (!targetEntity || !targetEntity.gid) return false;
 
-    // The grouping entity is the one that is NOT a recording or a work.
-    let groupingEntity;
-    if (masterItem.source.entityType !== 'recording' && masterItem.source.entityType !== 'work') {
-        groupingEntity = masterItem.source;
-    } else {
-        groupingEntity = masterItem.rel.entity0.id === masterItem.source.id ? masterItem.rel.entity1 : masterItem.rel.entity0;
-    }
-    const groupingEntityId = groupingEntity.id;
+        let isMatch = true;
+        // Check Shift: Link Type Match
+        if (matchType && rel.linkTypeID !== masterLinkTypeId) isMatch = false;
+        // Check Ctrl: Target Entity Match
+        if (matchTarget && targetEntity.gid !== masterTargetGid) isMatch = false;
 
-    // Filter the group to only include relationships with the same external entity.
-    const relsToToggle = allRelsOfMasterType.filter(({ rel }) => {
-        return rel.entity0.id === groupingEntityId || rel.entity1.id === groupingEntityId;
+        return isMatch;
     });
 
-    if (DEBUG) {
-        const linkTypeInfo = linkedEntities.link_type[masterLinkTypeId];
-        console.group('Master Relationship Info');
-        console.log(`Link Type: "${linkTypeInfo.name}" (ID: ${masterLinkTypeId})`);
-        console.log('Grouping Entity:', formatEntity(groupingEntity));
-        console.log('Full Relationship Object:');
-        console.dir(masterRel);
-        console.groupEnd();
-        console.group(`Filtered Group: Found ${relsToToggle.length} relationships matching the target entity`);
-        relsToToggle.forEach(({ rel, source }, index) => {
-            const target = rel.entity0.id === source.id ? rel.entity1 : rel.entity0;
-            console.log(`${index + 1}. Rel ID: ${rel.id}, Source: ${formatEntity(source)}, Target: ${formatEntity(target)}`);
-        });
-        console.groupEnd();
-    }
+    if (DEBUG) console.log(`[${SCRIPT_NAME}] Found ${relsToToggle.length} items.`);
 
-    const areAllInGroupRemoved = relsToToggle.every(({ rel }) => rel._status === 3);
+    // --- STEP 4: ACTION ---
+    // Determine Toggle Direction:
+    // - If ALL selected items are removed (Status 3), we restore them.
+    // - If ANY selected item is active, we remove the active ones.
+    const areAllRemoved = relsToToggle.every(({ rel }) => rel._status === 3);
 
-    if (areAllInGroupRemoved) {
-        // Action: RESTORE the filtered group.
-        for (const { rel } of relsToToggle) {
-            if (rel._status === 3) {
-                relationshipEditor.dispatch({ type: 'remove-relationship', relationship: rel });
-            }
+    let changeCount = 0;
+    relsToToggle.forEach(({ rel }) => {
+        const isRemoved = (rel._status === 3);
+        const shouldAct = areAllRemoved ? isRemoved : !isRemoved;
+
+        if (shouldAct) {
+            dispatch({ type: 'remove-relationship', relationship: rel });
+            changeCount++;
         }
-    } else {
-        // Action: REMOVE the filtered group.
-        for (const { rel } of relsToToggle) {
-            if (rel._status !== 3) {
-                relationshipEditor.dispatch({ type: 'remove-relationship', relationship: rel });
-            }
-        }
-    }
+    });
 
-    if (DEBUG) console.groupEnd();
+    if (DEBUG) console.log(`[${SCRIPT_NAME}] Processed ${changeCount} items.`);
 }
 
 /**
- * Sets up the script's features once the MusicBrainz React app is ready.
+ * Initializes the script: adds styles and event listeners.
  */
 function setup() {
     addGlobalStyle();
-    document.addEventListener('keydown', toggleCtrlClass);
-    document.addEventListener('keyup', toggleCtrlClass);
-    window.addEventListener('blur', () => document.body.classList.remove('ctrl-is-down'));
-    document.getElementById('content').addEventListener('click', handleBatchToggle, true);
+
+    document.addEventListener('keydown', toggleModifierClasses);
+    document.addEventListener('keyup', toggleModifierClasses);
+
+    // Clear modifiers on blur to prevent "stuck" keys when Alt-Tabbing
+    window.addEventListener('blur', () => document.body.classList.remove('ctrl-is-down', 'shift-is-down'));
+
+    const content = document.getElementById('content');
+    if (content) {
+        content.addEventListener('click', handleBatchToggle, true);
+    }
 }
 
 // Wait for the MB relationship editor to be fully initialized.
