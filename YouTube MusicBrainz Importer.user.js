@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YouTube: MusicBrainz Importer
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      2.7.5
+// @version      2.7.4
 // @description  Imports YouTube videos to MusicBrainz as a new standalone recording
 // @tag          ai-created
 // @author       nikki, RustyNova, chaban
@@ -490,7 +490,7 @@
         resetTime: 0,
     };
 
-    const ListenBrainzAPI = {
+const ListenBrainzAPI = {
         _searchCache: new Map(),
         /**
          * Generic helper for making requests to the ListenBrainz API.
@@ -508,12 +508,13 @@
                 await new Promise(resolve => setTimeout(resolve, waitMs));
             }
             rateLimitState.isBlocked = false;
-
             const url = Config.LISTENBRAINZ_API_ROOT + endpoint;
             const headers = new Headers();
-            if (token) headers.append('Authorization', `Token ${token}`);
-            if (body) headers.append('Content-Type', 'application/json');
 
+            // This is where the Authorization header is constructed
+            if (token) headers.append('Authorization', `Token ${token}`);
+
+            if (body) headers.append('Content-Type', 'application/json');
             try {
                 const response = await Utils.gmXmlHttpRequest({
                     method,
@@ -521,7 +522,6 @@
                     headers: Object.fromEntries(headers.entries()),
                     data: body ? JSON.stringify(body) : null,
                 }, 'ListenBrainz API');
-
                 const remaining = response.responseHeaders.match(/x-ratelimit-remaining:\s*(\d+)/i);
                 const resetIn = response.responseHeaders.match(/x-ratelimit-reset-in:\s*(\d+)/i);
 
@@ -562,8 +562,10 @@
         },
 
         async lookupTrack(artist, title) {
+            const token = await TokenManager.getToken();
             const endpoint = `metadata/lookup/?artist_name=${encodeURIComponent(artist)}&recording_name=${encodeURIComponent(title)}&metadata=false&inc=artist`;
-            const data = await this.apiRequest(endpoint, {});
+            const data = await this.apiRequest(endpoint, { token });
+
             return data.recording_mbid ? { title, creator: artist, identifier: `https://musicbrainz.org/recording/${data.recording_mbid}` } : null;
         },
 
