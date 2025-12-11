@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Click buttons across tabs
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      4.7.0
+// @version      4.8.0
 // @tag          ai-created
 // @description  Clicks specified buttons across tabs using the Broadcast Channel API and closes tabs after successful submission.
 // @author       chaban
@@ -32,7 +32,6 @@
     const MAGICISRC_SUBMIT_LOCK_KEY = 'magicisrc-submit-lock';
     const ISRC_HUNT_SUBMIT_LOCK_KEY = 'isrc-hunt-submit-lock';
     const MB_SUBMIT_COORDINATION_LOCK_KEY = 'mb-submit-coordination-lock';
-    const MB_LAST_SUBMIT_TIMESTAMP_KEY = 'mb_last_submit_timestamp';
     const DEBUG_LOG_CHANNEL_NAME = `${scriptName}_debug_log`;
 
     // --- Settings Keys ---
@@ -46,6 +45,8 @@
 
     let registeredMenuCommandIDs = [];
     let debugLogChannel;
+    let activeClosureObserver = null;
+
     /**
      * @typedef {Object} SiteConfig
      * @property {string|string[]} hostnames - Hostnames where this configuration applies.
@@ -58,9 +59,9 @@
      * @property {boolean} [shouldCloseAfterSuccess=false] - Whether to close the tab after a successful submission.
      * @property {boolean} [autoClick=false] - Whether to click the button automatically on page load.
      * @property {string} [requiredSetting] - A GM setting key that must be true for this rule to activate.
-     * @property {() => boolean} [isNoOp] - A function that checks if the current page state represents a no-op submission (e.g., a "no changes" banner).
+     * @property {() => boolean} [isNoOp] - A function that checks if the current page state represents a no-op submission.
      * @property {(config: SiteConfig, triggerAction: () => Promise<boolean>) => void} [submissionHandler] - Custom logic to execute when a submission is triggered.
-     * @property {{hostnames: string[], paths: (string|RegExp)[]}} [referrerPatterns] - If present, this rule becomes a referrer-based closer. A click on `buttonSelector` on a matching page will set a flag. If the next page's referrer matches these patterns, it will be closed.
+     * @property {{hostnames: string[], paths: (string|RegExp)[]}} [referrerPatterns] - If present, this rule becomes a referrer-based closer.
      */
 
     /** @type {SiteConfig[]} */
@@ -101,8 +102,18 @@
                     'The data you have submitted does not make any changes to the data already present.'
                 );
             },
-            submissionHandler: (_config, triggerAction) => {
-                rateLimitedMBSubmit(triggerAction);
+            submissionHandler: (config, _ignoredTrigger) => {
+                // 1. WAIT OUTSIDE LOCK: Pass 'false' to wait for button to be enabled ONLY
+                waitForButtonAndClick(config, null, false).then(() => {
+
+                    // 2. REQUEST LOCK: Now that we know it's ready, we queue up
+                    rateLimitedMBSubmit(async () => {
+
+                        // 3. CLICK INSIDE LOCK: Pass 'true' (or omit) to click
+                        // We reuse the function to be safe, in case the button state changed in the last millisecond
+                        await waitForButtonAndClick(config, null, true);
+                    });
+                });
             },
         },
         {
@@ -233,19 +244,27 @@
     }
 
     /**
-     * @summary Waits for a button to appear and become enabled, then clicks it.
+     * @summary Waits for a button to appear and become enabled. Can optionally click it.
      * @param {SiteConfig} config - The configuration object for the button.
      * @param {Function} [onClick] - An optional callback to execute immediately after the click.
-     * @returns {Promise<boolean>} Resolves to true if clicked, false otherwise.
+     * @param {boolean} [performClick=true] - If false, resolves once the button is ready WITHOUT clicking.
+     * @returns {Promise<boolean>} Resolves to true if found/clicked.
      */
-    async function waitForButtonAndClick(config, onClick) {
+    async function waitForButtonAndClick(config, onClick, performClick = true) {
         return new Promise(resolve => {
-            const checkAndClick = (obs) => {
+            const checkAndAct = (obs) => {
                 const btn = document.querySelector(config.buttonSelector);
+
+                // Only proceed if button exists AND is enabled
                 if (btn && !btn.disabled) {
-                    debugLog(`Button "${config.buttonSelector}" found and enabled. Clicking.`, 'green');
-                    btn.click();
-                    onClick?.(btn);
+                    if (performClick) {
+                        debugLog(`Button "${config.buttonSelector}" ready. Clicking.`, 'green');
+                        btn.click();
+                        onClick?.(btn);
+                    } else {
+                        debugLog(`Button "${config.buttonSelector}" is ready (waiting mode complete).`, 'green');
+                    }
+
                     if (obs) obs.disconnect();
                     resolve(true);
                     return true;
@@ -254,8 +273,9 @@
             };
 
             onDOMLoaded(() => {
-                if (checkAndClick(null)) return;
-                const observer = new MutationObserver((_, obs) => checkAndClick(obs));
+                if (checkAndAct(null)) return;
+                const observer = new MutationObserver((_, obs) => checkAndAct(obs));
+                // attributes: true is CRITICAL to detect when 'disabled' is removed
                 observer.observe(document.body, { childList: true, subtree: true, attributes: true });
             });
         });
@@ -311,16 +331,12 @@
             debugLog(`Acquired reload lock. This tab will handle the reload.`, 'red');
             let attempts = parseInt(sessionStorage.getItem(RELOAD_ATTEMPTS_KEY) || '0');
             attempts++;
-
             const backoffSeconds = Math.pow(2, Math.min(attempts, 6));
             const jitter = Math.random();
             const delay = (backoffSeconds + jitter) * 1000;
-
             debugLog(`MagicISRC error detected. Reload attempt ${attempts}. Retrying in ${Math.round(delay / 1000)}s.`, 'red');
             sessionStorage.setItem(RELOAD_ATTEMPTS_KEY, attempts.toString());
-
             await new Promise(resolve => setTimeout(resolve, delay));
-
             debugLog(`Performing full page reload to re-trigger logic.`, 'red');
             location.reload();
         });
@@ -331,9 +347,7 @@
      */
     function setupMagicISRC() {
         if (!location.hostname.includes('magicisrc')) return;
-
         debugLog('Setting up MagicISRC error observer.');
-
         onDOMLoaded(() => {
             const checkAndHandleError = () => {
                 const errorHeader = document.querySelector('#container h1');
@@ -344,15 +358,10 @@
                 }
                 return false;
             };
-
             if (checkAndHandleError()) return;
-
             const Observer = new MutationObserver(() => {
-                if (checkAndHandleError()) {
-                    Observer.disconnect();
-                }
+                if (checkAndHandleError()) Observer.disconnect();
             });
-
             Observer.observe(document.body, { childList: true, subtree: true });
         });
     }
@@ -478,8 +487,8 @@
                 const state = JSON.parse(pendingSubmissionJSON);
                 const pendingConfig = siteConfigurations.find(c => c.channelName === state.channel && c.messageTrigger === state.messageTrigger);
 
-                if (pendingConfig && (isSubmissionSuccessful(pendingConfig, true) || pendingConfig.isNoOp?.())) {
-                    debugLog(`Found pending submission flag on a success/no-op page. Letting success handler take over.`, 'purple');
+                if (pendingConfig && (isSubmissionSuccessful(pendingConfig, true))) {
+                    debugLog(`Found pending submission flag on a success page. Letting success handler take over.`, 'purple');
                 } else {
                     const activePendingConfig = configs.find(c => c.channelName === state.channel && c.messageTrigger === state.messageTrigger);
                     if (activePendingConfig && activePendingConfig.submissionHandler) {
@@ -568,6 +577,7 @@
 
     /**
      * @summary Checks all conditions (referrer-based or submission-based) to determine if the tab should be closed.
+     * Uses an active observer if a submission flag exists but conditions aren't met yet (hydration handling).
      */
     async function evaluatePageForClosure() {
         // --- 1. Check for Referrer-Based Close Condition ---
@@ -577,7 +587,6 @@
                 sessionStorage.removeItem(REFERRER_CLOSE_TRIGGERED_FLAG);
                 return;
             }
-
             sessionStorage.removeItem(REFERRER_CLOSE_TRIGGERED_FLAG);
             try {
                 const patterns = JSON.parse(referrerFlag);
@@ -596,33 +605,54 @@
 
         // --- 2. Check for Submission-Based Close Condition ---
         const submissionFlag = sessionStorage.getItem(SUBMISSION_TRIGGERED_FLAG);
-        if (submissionFlag) {
-            try {
-                const state = JSON.parse(submissionFlag);
-                const config = siteConfigurations.find(c =>
-                    c.channelName === state.channel && c.messageTrigger === state.messageTrigger
-                );
+        if (!submissionFlag) return;
 
-                if (!config) return;
+        let config = null;
+        let state = null;
+        try {
+            state = JSON.parse(submissionFlag);
+            config = siteConfigurations.find(c =>
+                c.channelName === state.channel && c.messageTrigger === state.messageTrigger
+            );
+        } catch (e) {
+            console.error(`[${scriptName}] Error parsing submission state:`, e);
+            sessionStorage.removeItem(SUBMISSION_TRIGGERED_FLAG);
+            return;
+        }
 
-                const isSuccess = isSubmissionSuccessful(config, true);
-                const isPostSubmissionNoOp = config.isNoOp?.() ?? false;
+        if (!config) return;
 
-                if (state.isPreSubmissionNoOp || isSuccess || isPostSubmissionNoOp) {
-                    sessionStorage.removeItem(SUBMISSION_TRIGGERED_FLAG);
-                    const reason = isSuccess ? 'Submission successful' : 'Submission was a no-op';
-                    await closeTab(reason);
+        // Cleanup any previous observer to prevent duplicates if history state changes rapidly
+        if (activeClosureObserver) {
+            activeClosureObserver.disconnect();
+            activeClosureObserver = null;
+        }
+
+        const checkAndClose = async () => {
+            const isSuccess = isSubmissionSuccessful(config, true);
+            const isNoOp = config.isNoOp ? config.isNoOp() : false;
+
+            if (state.isPreSubmissionNoOp || isSuccess || isNoOp) {
+                if (activeClosureObserver) {
+                    activeClosureObserver.disconnect();
+                    activeClosureObserver = null;
                 }
-            } catch (e) {
-                console.error(`[${scriptName}] Error parsing submission state:`, e);
                 sessionStorage.removeItem(SUBMISSION_TRIGGERED_FLAG);
+                const reason = isSuccess ? 'Submission successful' : 'Submission was a no-op';
+                await closeTab(reason);
+                return true;
             }
+            return false;
+        };
+
+        if (await checkAndClose()) return;
+        if (config.isNoOp) {
+            debugLog('Submission flag present, but conditions not met yet. Observing for delayed UI updates...', 'olivedrab');
+            activeClosureObserver = new MutationObserver(() => checkAndClose());
+            activeClosureObserver.observe(document.body, { childList: true, subtree: true });
         }
     }
 
-    /**
-     * @summary Main script entry point.
-     */
     async function main() {
         await setupMenuCommands();
 
