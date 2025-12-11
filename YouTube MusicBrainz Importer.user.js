@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YouTube: MusicBrainz Importer
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      2.7.5
+// @version      2.8.0
 // @description  Imports YouTube videos to MusicBrainz as a new standalone recording
 // @tag          ai-created
 // @author       nikki, RustyNova, chaban
@@ -490,7 +490,7 @@
         resetTime: 0,
     };
 
-    const ListenBrainzAPI = {
+const ListenBrainzAPI = {
         _searchCache: new Map(),
         /**
          * Generic helper for making requests to the ListenBrainz API.
@@ -503,18 +503,18 @@
          */
         async apiRequest(endpoint, { token, method = 'GET', body = null }) {
             if (rateLimitState.isBlocked && Date.now() < rateLimitState.resetTime) {
-                const secondsRemaining = Math.ceil((rateLimitState.resetTime - Date.now()) / 1000);
-                const errorMessage = `Rate limited. Wait ${secondsRemaining}s.`;
-                console.error(`[${GM.info.script.name}] ${errorMessage}`);
-                throw new Error(errorMessage);
+                const waitMs = (rateLimitState.resetTime - Date.now()) + 100;
+                console.warn(`[${GM.info.script.name}] Rate limited locally. Waiting ${Math.ceil(waitMs / 1000)}s...`);
+                await new Promise(resolve => setTimeout(resolve, waitMs));
             }
             rateLimitState.isBlocked = false;
-
             const url = Config.LISTENBRAINZ_API_ROOT + endpoint;
             const headers = new Headers();
-            if (token) headers.append('Authorization', `Token ${token}`);
-            if (body) headers.append('Content-Type', 'application/json');
 
+            // This is where the Authorization header is constructed
+            if (token) headers.append('Authorization', `Token ${token}`);
+
+            if (body) headers.append('Content-Type', 'application/json');
             try {
                 const response = await Utils.gmXmlHttpRequest({
                     method,
@@ -522,7 +522,6 @@
                     headers: Object.fromEntries(headers.entries()),
                     data: body ? JSON.stringify(body) : null,
                 }, 'ListenBrainz API');
-
                 const remaining = response.responseHeaders.match(/x-ratelimit-remaining:\s*(\d+)/i);
                 const resetIn = response.responseHeaders.match(/x-ratelimit-reset-in:\s*(\d+)/i);
 
@@ -537,7 +536,9 @@
                     const retryAfterMs = parseInt(retryAfter ? retryAfter[1] : '10', 10) * 1000;
                     rateLimitState.isBlocked = true;
                     rateLimitState.resetTime = Date.now() + retryAfterMs;
-                    throw new Error(`Rate limit exceeded. Wait ${retryAfterMs/1000}s.`);
+                    console.warn(`[${GM.info.script.name}] 429 Rate limit exceeded. Waiting ${retryAfterMs / 1000}s before retrying...`);
+                    await new Promise(resolve => setTimeout(resolve, retryAfterMs + 100));
+                    return this.apiRequest(endpoint, { token, method, body });
                 }
 
                 return response.responseText ? JSON.parse(response.responseText) : {};
@@ -561,8 +562,10 @@
         },
 
         async lookupTrack(artist, title) {
+            const token = await TokenManager.getToken();
             const endpoint = `metadata/lookup/?artist_name=${encodeURIComponent(artist)}&recording_name=${encodeURIComponent(title)}&metadata=false&inc=artist`;
-            const data = await this.apiRequest(endpoint, {});
+            const data = await this.apiRequest(endpoint, { token });
+
             return data.recording_mbid ? { title, creator: artist, identifier: `https://musicbrainz.org/recording/${data.recording_mbid}` } : null;
         },
 
