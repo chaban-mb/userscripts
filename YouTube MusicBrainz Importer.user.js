@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YouTube: MusicBrainz Importer
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      2.8.0
+// @version      2.8.1
 // @description  Imports YouTube videos to MusicBrainz as a new standalone recording
 // @tag          ai-created
 // @author       nikki, RustyNova, chaban
@@ -260,6 +260,25 @@
                         }
                     },
                     onerror: (response) => {
+                        if (!navigator.onLine) {
+                            console.log(`[${GM.info.script.name}] Offline detected. Waiting for network...`);
+                            const waitForOnline = () => new Promise(resolve => {
+                                const handler = () => {
+                                    window.removeEventListener('online', handler);
+                                    resolve();
+                                };
+                                window.addEventListener('online', handler);
+                            });
+
+                            waitForOnline().then(() => {
+                                console.log(`[${GM.info.script.name}] Network restored. Retrying...`);
+                                Utils.gmXmlHttpRequest(details, apiName, currentRetry)
+                                    .then(resolve)
+                                    .catch(reject);
+                            });
+                            return;
+                        }
+
                         console.error(`[${GM.info.script.name}] ${apiName} network error:`, response);
                         const error = new Error(`Network error for ${apiName}: ${response.statusText}`);
                         error.status = response.status;
@@ -310,7 +329,7 @@
          * @param {string} text The raw text (e.g., YouTube description).
          * @returns {{parsedTracks: Array<Object>, unparsedLines: Array<string>}}
          */
-        parseTracklist: function(text) {
+        parseTracklist: function (text) {
             if (!text) {
                 return { parsedTracks: [], unparsedLines: [] };
             }
@@ -376,7 +395,7 @@
          * @param {Array<any>} arr2
          * @returns {Array<any>}
          */
-        findLCS: function(arr1, arr2) {
+        findLCS: function (arr1, arr2) {
             const m = arr1.length;
             const n = arr2.length;
             const dp = Array(m + 1).fill(0).map(() => Array(n + 1).fill(0));
@@ -412,7 +431,7 @@
          * @param {number[]} indices - A list of indices to delete, sorted in descending order.
          * @returns {Array<{index: number, count: number}>} An array of chunks to delete.
          */
-        groupDeletions: function(indices) {
+        groupDeletions: function (indices) {
             if (indices.length === 0) {
                 return [];
             }
@@ -476,7 +495,7 @@
                 }
             } catch (error) {
                 console.error(`[${GM.info.script.name}] Error fetching YouTube video data for ${videoId}:`, error);
-                this._videoDataCache.set(videoId, false);
+                // Do not cache errors to allow retries on subsequent navigations
                 throw error;
             }
         },
@@ -490,7 +509,7 @@
         resetTime: 0,
     };
 
-const ListenBrainzAPI = {
+    const ListenBrainzAPI = {
         _searchCache: new Map(),
         /**
          * Generic helper for making requests to the ListenBrainz API.
@@ -900,7 +919,7 @@ const ListenBrainzAPI = {
         _containerDiv: null,
         _currentButton: null,
 
-        _clearContainer: function() {
+        _clearContainer: function () {
             const element = this._containerDiv;
             while (element && element.firstChild) {
                 element.removeChild(element.firstChild);
@@ -945,7 +964,7 @@ const ListenBrainzAPI = {
             this._containerDiv.style.display = 'flex';
         },
 
-        hide: function() {
+        hide: function () {
             this._containerDiv.style.display = 'none';
         },
 
@@ -956,7 +975,7 @@ const ListenBrainzAPI = {
             this._replaceButton(loadingButton);
         },
 
-        setStateTokenNeeded: function(onSuccessCallback) {
+        setStateTokenNeeded: function (onSuccessCallback) {
             const button = this._createButton(
                 L10n.getString('tokenMissing'),
                 L10n.getString('tokenMissingTitle'),
@@ -1012,7 +1031,7 @@ const ListenBrainzAPI = {
             this._replaceButton(link);
         },
 
-        setStateReport: function(title, mbid, openReportCallback) {
+        setStateReport: function (title, mbid, openReportCallback) {
             const link = document.createElement('a');
             link.href = `//listenbrainz.org/playlist/${mbid}`;
             link.title = L10n.getString('linkedToPlaylistTitle', { title });
@@ -1029,13 +1048,13 @@ const ListenBrainzAPI = {
             this._containerDiv.style.display = 'flex';
         },
 
-        setStateInProgress: function(message) {
+        setStateInProgress: function (message) {
             const button = this._createButton(message, '', '', null);
             button.disabled = true;
             this._replaceButton(button);
         },
 
-        displayError: function(message) {
+        displayError: function (message) {
             const button = this._createButton(message, '', Config.CLASS_NAMES.BUTTON_ERROR, null);
             button.disabled = true;
             this._replaceButton(button);
@@ -1046,7 +1065,7 @@ const ListenBrainzAPI = {
      * High-level logic for creating and syncing ListenBrainz playlists.
      */
     const PlaylistLogic = {
-        _generateReportHTML: function(notFoundTracks, unparsedLines, videoTitle) {
+        _generateReportHTML: function (notFoundTracks, unparsedLines, videoTitle) {
             let html = `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><title>Playlist Import Report: ${videoTitle}</title>
             <style>body{font-family:sans-serif;padding:1em 2em;background-color:#f9f9f9;} h1,h2{border-bottom:1px solid #ccc;padding-bottom:5px;} ul{list-style:none;padding-left:0;} li{margin-bottom:0.8em;padding:0.5em;background-color:white;border:1px solid #ddd;border-radius:4px;} a{text-decoration:none;color:#007bff;font-weight:bold;margin-left:1em;}</style>
             </head><body><h1>Playlist Import Report</h1><h2>${videoTitle}</h2>`;
@@ -1088,13 +1107,13 @@ const ListenBrainzAPI = {
             const uniqueArtists = new Set(parsedTracks.map(t => t.artist)).size;
             const uniqueTitles = new Set(parsedTracks.map(t => t.title)).size;
             const parserIsLikelySwapped = (uniqueArtists > 0 && uniqueTitles > 0 && parsedTracks.length > 3)
-                                          ? (uniqueArtists > uniqueTitles)
-                                          : false;
+                ? (uniqueArtists > uniqueTitles)
+                : false;
 
             if (parserIsLikelySwapped) {
                 console.log(`[${GM.info.script.name}] Tracklist heuristic: uniqueArtists=${uniqueArtists}, uniqueTitles=${uniqueTitles}. Parser output likely swapped. Prioritizing swapped lookup.`);
             } else {
-                 console.log(`[${GM.info.script.name}] Tracklist heuristic: uniqueArtists=${uniqueArtists}, uniqueTitles=${uniqueTitles}. Parser output seems correct. Prioritizing parser order lookup.`);
+                console.log(`[${GM.info.script.name}] Tracklist heuristic: uniqueArtists=${uniqueArtists}, uniqueTitles=${uniqueTitles}. Parser output seems correct. Prioritizing parser order lookup.`);
             }
             // --- End of heuristic ---
 
@@ -1114,7 +1133,7 @@ const ListenBrainzAPI = {
                     if (result) {
                         foundTracks.push(result);
                     } else {
-                         // Add original track object with the heuristic's guess applied for potential second pass/reporting
+                        // Add original track object with the heuristic's guess applied for potential second pass/reporting
                         potentiallyNotFound.push({
                             artist: artistGuess1,
                             title: titleGuess1,
@@ -1128,16 +1147,16 @@ const ListenBrainzAPI = {
                     }
                 } catch (error) {
                     console.error(`[${GM.info.script.name}] Error during Pass 1 lookup for track: "${artistGuess1} - ${titleGuess1}" (Original line: ${track.originalLine})`, error);
-                     // Add to potentiallyNotFound on error too, using heuristic guess for report
-                     potentiallyNotFound.push({
-                            artist: artistGuess1,
-                            title: titleGuess1,
-                            timestamp: track.timestamp,
-                            timestampSeconds: track.timestampSeconds,
-                            originalLine: track.originalLine,
-                            altArtist: parserIsLikelySwapped ? track.artist.trim() : track.title.trim(),
-                            altTitle: parserIsLikelySwapped ? track.title.trim() : track.artist.trim()
-                        });
+                    // Add to potentiallyNotFound on error too, using heuristic guess for report
+                    potentiallyNotFound.push({
+                        artist: artistGuess1,
+                        title: titleGuess1,
+                        timestamp: track.timestamp,
+                        timestampSeconds: track.timestampSeconds,
+                        originalLine: track.originalLine,
+                        altArtist: parserIsLikelySwapped ? track.artist.trim() : track.title.trim(),
+                        altTitle: parserIsLikelySwapped ? track.title.trim() : track.artist.trim()
+                    });
                 }
                 i++;
             }
@@ -1152,7 +1171,7 @@ const ListenBrainzAPI = {
                 let j = 0;
 
                 for (const trackInfo of potentiallyNotFound) {
-                     if (progressCallback) progressCallback(j, potentiallyNotFound.length, 'Pass 2'); // Indicate pass 2
+                    if (progressCallback) progressCallback(j, potentiallyNotFound.length, 'Pass 2'); // Indicate pass 2
 
                     try {
                         // Use the alternative guess stored earlier
@@ -1162,7 +1181,7 @@ const ListenBrainzAPI = {
                         } else {
                             // Track still not found, add its *heuristic guess* to final report list
                             console.log(`[${GM.info.script.name}] Track still not found on Pass 2: "${trackInfo.artist} - ${trackInfo.title}" (Original line: ${trackInfo.originalLine})`);
-                             finalNotFoundTracks.push({
+                            finalNotFoundTracks.push({
                                 artist: trackInfo.artist, // Report using heuristic guess
                                 title: trackInfo.title,   // Report using heuristic guess
                                 timestamp: trackInfo.timestamp,
@@ -1173,28 +1192,28 @@ const ListenBrainzAPI = {
                     } catch (error) {
                         console.error(`[${GM.info.script.name}] Error during Pass 2 lookup for track: "${trackInfo.altArtist} - ${trackInfo.altTitle}" (Original line: ${trackInfo.originalLine})`, error);
                         // Add heuristic guess to report on error
-                         finalNotFoundTracks.push({
-                                artist: trackInfo.artist,
-                                title: trackInfo.title,
-                                timestamp: trackInfo.timestamp,
-                                timestampSeconds: trackInfo.timestampSeconds,
-                                originalLine: trackInfo.originalLine
-                            });
+                        finalNotFoundTracks.push({
+                            artist: trackInfo.artist,
+                            title: trackInfo.title,
+                            timestamp: trackInfo.timestamp,
+                            timestampSeconds: trackInfo.timestampSeconds,
+                            originalLine: trackInfo.originalLine
+                        });
                     }
                     j++;
                 }
-            } else if (potentiallyNotFound.length > 0){
-                 // First pass found *some* tracks, so don't run second pass.
-                 // Convert potentiallyNotFound (which includes altArtist/altTitle)
-                 // back to the simple structure needed for the report.
-                 finalNotFoundTracks = potentiallyNotFound.map(trackInfo => ({
+            } else if (potentiallyNotFound.length > 0) {
+                // First pass found *some* tracks, so don't run second pass.
+                // Convert potentiallyNotFound (which includes altArtist/altTitle)
+                // back to the simple structure needed for the report.
+                finalNotFoundTracks = potentiallyNotFound.map(trackInfo => ({
                     artist: trackInfo.artist, // Report using heuristic guess
                     title: trackInfo.title,   // Report using heuristic guess
                     timestamp: trackInfo.timestamp,
                     timestampSeconds: trackInfo.timestampSeconds,
                     originalLine: trackInfo.originalLine
                 }));
-                 console.log(`[${GM.info.script.name}] First pass found ${foundTracks.length} tracks. Skipping second pass.`);
+                console.log(`[${GM.info.script.name}] First pass found ${foundTracks.length} tracks. Skipping second pass.`);
             }
 
             return { foundTracks, notFoundTracks: finalNotFoundTracks, unparsedLines };
