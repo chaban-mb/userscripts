@@ -7,7 +7,10 @@
 // @author       chaban
 // @license      MIT
 // @match        https://www.thalia.de/*
+// @match        https://www.yomeru.de/*
+// @match        https://tokyopop.de/*
 // @match        https://www.manga-passion.de/*
+// @match        https://www.carlsen.de/*
 // @connect      barcode.tec-it.com
 // @grant        GM_addStyle
 // @grant        GM_getValue
@@ -21,7 +24,7 @@
     'use strict';
 
     const TEC_IT_BASE_URL = 'https://barcode.tec-it.com/barcode.ashx';
-    const ISBN_REGEX = /\b(?:(97[89])[- ]?)?([\d][- ]?){9}[\dxX]\b/g;
+    const ISBN_REGEX = /(?<!-)\b(?:(97[89])[- ]?)?([\d][- ]?){9}[\dxX]\b(?!-)/g;
 
     const SETTING_KEY = 'isbnBarcodeEmbedState';
     const WRAPPER_CLASS = 'isbn-barcode-wrapper';
