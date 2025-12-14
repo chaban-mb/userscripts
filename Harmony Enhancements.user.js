@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Harmony: Enhancements
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      1.19.0
+// @version      1.19.1
 // @tag          ai-created
 // @description  Adds some convenience features, various UI and behavior settings, as well as an improved language detection to Harmony.
 // @author       chaban
@@ -1950,7 +1950,7 @@
             clean(AppState.data.release.artists);
             AppState.data.release.media?.forEach(medium => {
                 if (medium.tracklist) {
-                    clean(medium.tracklist.flatMap(t => t.artists));
+                    clean(medium.tracklist.flatMap(t => t.artists || []));
                 }
             });
         },
