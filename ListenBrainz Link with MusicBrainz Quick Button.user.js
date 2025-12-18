@@ -2,6 +2,7 @@
 // @name         ListenBrainz: Link with MusicBrainz Quick Button
 // @namespace    chttps://musicbrainz.org/user/chaban
 // @version      1.0
+// @tag          ai-created
 // @description  Adds a "Link with MusicBrainz" button directly to the listen row and automatically handles the copy text action.
 // @author       chaban
 // @match        https://*.listenbrainz.org/*
