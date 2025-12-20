@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Spotify: MusicBrainz importer
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      1.4.0
+// @version      1.4.1
 // @tag          ai-created
 // @description  Adds buttons for MusicBrainz, ListenBrainz, Harmony, ISRC Hunt and SAMBL to Spotify.
 // @author       chaban, garylaski, RustyNova
@@ -121,7 +121,7 @@
                         return main.constructUrl(`${main.URLS.MUSICBRAINZ_BASE}/search`, { query: title, type: 'artist' });
                     }
                     if (pageInfo.type === 'track') {
-                        return main.constructUrl(`${main.URLS.MUSICBRAINZ_BASE}/search`, { query: `recording:"${title}" AND artist:"${artist}"`, type: 'recording' });
+                        return main.constructUrl(`${main.URLS.MUSICBRAINZ_BASE}/search`, { query: `recording:"${title}" AND artist:"${artist}"`, type: 'recording', method: 'advanced' });
                     }
                     return main.constructUrl(`${main.URLS.MUSICBRAINZ_BASE}/taglookup/index`, { 'tag-lookup.release': title, 'tag-lookup.artist': artist });
                 },
