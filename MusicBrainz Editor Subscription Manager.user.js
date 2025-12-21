@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MusicBrainz: Editor Subscription Manager
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      0.2.0
+// @version      0.2.1
 // @tag          ai-created
 // @description  Manages subscriptions, tracks name changes and detects deleted users.
 // @author       chaban
@@ -781,7 +781,7 @@
                 container.style.marginLeft = '20px';
                 container.innerHTML = `<button id="esm-btn-open" style="font-weight:bold">Manage Subscriptions</button>`;
                 h2.appendChild(container);
-                document.getElementById('esm-btn-open').onclick = () => runManager('scan'); // Default to smart scan
+                document.getElementById('esm-btn-open').onclick = () => runManager();
             }
             return;
         }
