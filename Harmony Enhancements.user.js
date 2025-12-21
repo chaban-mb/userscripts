@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Harmony: Enhancements
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      1.19.1
+// @version      1.19.2
 // @tag          ai-created
 // @description  Adds some convenience features, various UI and behavior settings, as well as an improved language detection to Harmony.
 // @author       chaban
@@ -1361,6 +1361,11 @@
                     url: `https://music.youtube.com/search?q="${encodeURIComponent(barcode)}"`
                 });
             }
+
+            searchLinks.push({
+                name: 'Search Bandcamp',
+                url: `https://bandcamp.com/search?q=${encodedArtist}%20${encodedTitle}&item_type=a`
+            });
 
             searchLinks.push({
                 name: 'Search Beatsource',
