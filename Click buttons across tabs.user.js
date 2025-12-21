@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Click buttons across tabs
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      4.8.0
+// @version      4.8.1
 // @tag          ai-created
 // @description  Clicks specified buttons across tabs using the Broadcast Channel API and closes tabs after successful submission.
 // @author       chaban
@@ -457,22 +457,19 @@
      */
     async function rateLimitedMBSubmit(callback) {
         const limiterDisabled = await GM.getValue(MUSICBRAINZ_DISABLE_RATE_LIMITER_SETTING, false);
-        if (limiterDisabled) {
-            debugLog('MusicBrainz rate limiter is disabled. Submitting immediately.', 'orange');
-            await callback();
-            return;
-        }
-
         const submitsPerSecond = await GM.getValue(MUSICBRAINZ_SUBMITS_PER_SECOND_SETTING, DEFAULT_MB_SUBMITS_PER_SECOND);
         const requiredInterval = 1000 / submitsPerSecond;
 
         debugLog(`Requesting MB submission lock...`);
         navigator.locks.request(MB_SUBMIT_COORDINATION_LOCK_KEY, async () => {
             debugLog(`Acquired MB submission lock.`, 'green');
-            debugLog(`Executing submission.`, 'darkgreen');
             await callback();
-            debugLog(`Holding lock for ${requiredInterval.toFixed(0)}ms to respect rate limit...`, 'orange');
-            await new Promise(resolve => setTimeout(resolve, requiredInterval));
+            if (!limiterDisabled) {
+                debugLog(`Holding lock for ${requiredInterval.toFixed(0)}ms to respect rate limit...`, 'orange');
+                await new Promise(resolve => setTimeout(resolve, requiredInterval));
+            } else {
+                debugLog(`Rate limiter disabled. Releasing lock immediately.`, 'green');
+            }
         });
     }
 
