@@ -1,12 +1,11 @@
 // ==UserScript==
 // @name         ListenBrainz: Link with MusicBrainz Quick Button
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      1.0.1
+// @version      1.0.2
 // @tag          ai-created
 // @description  Adds a "Link with MusicBrainz" button directly to the listen row and automatically handles the copy text action.
 // @author       chaban
 // @match        https://*.listenbrainz.org/*
-// @exclude      https://*listenbrainz.org/settings/link-listens/*
 // @grant        none
 // @run-at       document-end
 // ==/UserScript==
@@ -90,9 +89,16 @@
      * Scans the page for listen cards and active modals.
      */
     function scanPage() {
-        const listens = document.querySelectorAll('.listen-card');
-        listens.forEach(addLinkButton);
+        // Check if we are on the specific settings page where buttons should NOT be added
+        const isSettingsPage = window.location.pathname.includes('/settings/link-listens');
 
+        // Only add buttons if we are NOT on the settings page
+        if (!isSettingsPage) {
+            const listens = document.querySelectorAll('.listen-card');
+            listens.forEach(addLinkButton);
+        }
+
+        // Always handle the modal, regardless of the page
         handleModal();
     }
 
