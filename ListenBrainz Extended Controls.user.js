@@ -1,0 +1,271 @@
+// ==UserScript==
+// @name         ListenBrainz: Extended Controls
+// @namespace    https://musicbrainz.org/user/chaban
+// @version      1.1.0
+// @tag          ai-created
+// @description  Allows customizing which actions are shown in listen controls cards, moving "Open in Music Service" links to the main controls area, displaying source info, and auto-copying text in the "Link Listen" modal.
+// @author       chaban
+// @match        https://*.listenbrainz.org/*
+// @grant        GM_setValue
+// @grant        GM_getValue
+// @grant        GM_addStyle
+// @run-at       document-end
+// ==/UserScript==
+
+(function() {
+    'use strict';
+
+    const REGISTRY = {
+        excludedFromDiscovery: ['open in musicbrainz', 'inspect listen', 'more actions', 'love', 'hate'],
+        serviceMappingTable: [
+            { domain: 'spotify.com', name: 'Spotify' },
+            { domain: 'bandcamp.com', name: 'Bandcamp' },
+            { domain: 'youtube.com', name: 'YouTube' },
+            { domain: 'music.youtube.com', name: 'YouTube Music' },
+            { domain: 'deezer.com', name: 'Deezer' },
+            { domain: 'tidal.com', name: 'TIDAL' },
+            { domain: 'music.apple.com', name: 'Apple Music' },
+            { domain: 'archive.org', name: 'Internet Archive' },
+            { domain: 'soundcloud.com', name: 'Soundcloud' },
+            { domain: 'jamendo.com', name: 'Jamendo Music' },
+            { domain: 'play.google.com', name: 'Google Play Music' }
+        ],
+        icons: {
+            player: 'M512 256A256 256 0 1 1 0 256a256 256 0 1 1 512 0zM188.3 147.1c-7.6 4.2-12.3 12.3-12.3 20.9V344c0 8.7 4.7 16.7 12.3 20.9s16.8 4.1 24.3-.5l144-88c7.1-4.4 11.5-12.1 11.5-20.5s-4.4-16.1-11.5-20.5l-144-88c-7.4-4.5-16.7-4.7-24.3-.5z'
+        }
+    };
+
+    const DEFAULT_SETTINGS = {
+        moveServiceLinks: false,
+        showPlayerIndicator: false,
+        showLoveHate: true,
+        autoCopyModalText: true,
+        enabledActions: ['Link with MusicBrainz']
+    };
+
+    let settings = GM_getValue('UserJS.ListenBrainz.ExtendedListenControls', DEFAULT_SETTINGS);
+    const processedCards = new WeakSet();
+    const processedCopyButtons = new WeakSet();
+    let discoveredActions = new Set();
+    let reactFiberKey = null;
+
+    const notify = () => window.dispatchEvent(new CustomEvent('UserJS.ListenBrainz.ExtendedListenControls.settings_changed'));
+
+    // --- Native UI Styles ---
+    GM_addStyle(`
+        #lb-ext-settings-menu {
+            position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            z-index: 10000; width: 340px; max-height: 85vh; overflow-y: auto;
+        }
+        .lb-setting-item { display: flex; align-items: center; margin-bottom: 10px; cursor: pointer; font-size: 14px; }
+        .lb-setting-item input { margin-right: 12px; }
+        #lb-settings-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.4); z-index: 9999; cursor: pointer; }
+        #lb-ext-gear { cursor: pointer; }
+    `);
+
+    // --- DOM Helper ---
+    function el(tag, props = {}, children = []) {
+        const element = (tag === 'svg' || tag === 'path')
+            ? document.createElementNS('http://www.w3.org/2000/svg', tag)
+            : document.createElement(tag);
+        Object.entries(props).forEach(([key, value]) => {
+            if (key === 'style' && typeof value === 'object') Object.assign(element.style, value);
+            else if (key === 'on') Object.entries(value).forEach(([ev, fn]) => element.addEventListener(ev, fn));
+            else if (tag === 'path' || tag === 'svg') element.setAttribute(key === 'className' ? 'class' : key, value);
+            else element[key] = value;
+        });
+        children.forEach(child => {
+            if (typeof child === 'string') element.appendChild(document.createTextNode(child));
+            else if (child) element.appendChild(child);
+        });
+        return element;
+    }
+
+    function getFriendlyServiceName(info) {
+        const val = (info.music_service || info.listening_from || "").toLowerCase();
+        const match = REGISTRY.serviceMappingTable.find(item => val.includes(item.domain.toLowerCase()));
+        return match ? match.name : (info.music_service_name || (info.listening_from !== info.media_player ? info.listening_from : null));
+    }
+
+    // --- UI Logic ---
+    function closeSettings() {
+        document.getElementById('lb-ext-settings-menu')?.remove();
+        document.getElementById('lb-settings-overlay')?.remove();
+        document.removeEventListener('keydown', handleEsc);
+    }
+    function handleEsc(e) { if (e.key === 'Escape') closeSettings(); }
+
+    function createSettingsUI() {
+        if (document.getElementById('lb-ext-settings-menu')) return;
+        discoverActionsOnPage();
+        const createCheckbox = (label, isKey, target) => {
+            const input = el('input', {
+                type: 'checkbox',
+                checked: isKey ? settings[target] : settings.enabledActions.includes(target),
+                on: { change: (e) => {
+                    if (isKey) settings[target] = e.target.checked;
+                    else {
+                        if (e.target.checked) !settings.enabledActions.includes(target) && settings.enabledActions.push(target);
+                        else settings.enabledActions = settings.enabledActions.filter(a => a !== target);
+                    }
+                    GM_setValue('UserJS.ListenBrainz.ExtendedListenControls', settings);
+                    notify();
+                }}
+            });
+            return el('label', { className: 'lb-setting-item' }, [input, label]);
+        };
+
+        const menu = el('div', { id: 'lb-ext-settings-menu', className: 'card p-4 shadow' }, [
+            el('h4', { className: 'card-title border-bottom pb-2 mb-3' }, ['Extended Controls']),
+            createCheckbox("Show Love/Hate Buttons", true, 'showLoveHate'),
+            createCheckbox("Show 'Open in Service' Links", true, 'moveServiceLinks'),
+            createCheckbox("Show Source Info", true, 'showPlayerIndicator'),
+            createCheckbox("Auto-copy Text in Link Listen Modal", true, 'autoCopyModalText'),
+            el('div', { className: 'mt-3 mb-2 small text-muted font-weight-bold text-uppercase' }, ['Quick Buttons']),
+            ...Array.from(discoveredActions).sort().map(label => createCheckbox(label, false, label)),
+            el('button', { className: 'btn btn-secondary btn-block mt-3', on: { click: closeSettings } }, ['Close'])
+        ]);
+
+        document.body.appendChild(el('div', { id: 'lb-settings-overlay', on: { click: closeSettings } }));
+        document.body.appendChild(menu);
+        document.addEventListener('keydown', handleEsc);
+    }
+
+    function discoverActionsOnPage() {
+        document.querySelectorAll('.listen-card .dropdown-item').forEach(item => {
+            const label = (item.title || item.getAttribute('aria-label') || item.innerText || "").trim();
+            const lower = label.toLowerCase();
+            if (lower.startsWith('open in ') || REGISTRY.excludedFromDiscovery.includes(lower) || !label) return;
+            discoveredActions.add(label);
+        });
+    }
+
+    function injectSettingsButton() {
+        if (document.getElementById('lb-ext-gear')) return;
+        const navBottom = document.querySelector('.navbar-bottom');
+        if (!navBottom) return;
+        navBottom.appendChild(el('a', { id: 'lb-ext-gear', on: { click: (e) => { e.preventDefault(); createSettingsUI(); } } }, ['Extended Controls']));
+    }
+
+    // --- Core Logic ---
+    function getListenData(domElement) {
+        if (!reactFiberKey) reactFiberKey = Object.keys(domElement).find(k => k.startsWith("__reactFiber"));
+        const fiber = domElement[reactFiberKey];
+        return fiber?.return?.memoizedProps?.listen || fiber?.return?.return?.memoizedProps?.listen || null;
+    }
+
+    function createQuickBtn(originalItem, customClass, isLink) {
+        const icon = originalItem.querySelector('svg, i, img');
+        const children = icon ? [icon.cloneNode(true)] : [(originalItem.title || "X").substring(0, 1)];
+        return el(isLink ? 'a' : 'button', {
+            className: `btn btn-transparent lb-ext-btn ${customClass}`,
+            title: originalItem.title || originalItem.getAttribute('aria-label') || "",
+            href: isLink ? originalItem.href : undefined,
+            target: isLink ? '_blank' : undefined,
+            rel: isLink ? 'noopener noreferrer' : undefined,
+            on: isLink ? {} : { click: (e) => { e.stopPropagation(); e.preventDefault(); originalItem.click(); } }
+        }, children);
+    }
+
+    function addQuickButtons(card) {
+        if (processedCards.has(card)) return;
+        const controls = card.querySelector('.listen-controls');
+        const menuBtn = controls?.querySelector('.dropdown-toggle');
+        if (!controls || !menuBtn) return;
+
+        // Native elements to potentially hide
+        const nativeLove = controls.querySelector('.love');
+        const nativeHate = controls.querySelector('.hate');
+
+        const stateRegistry = { staticMoved: [], originals: [] };
+
+        // 1. Static Actions
+        card.querySelectorAll('.dropdown-item').forEach(item => {
+            const label = (item.title || item.getAttribute('aria-label') || "").trim();
+            const lowerLabel = label.toLowerCase();
+            if (!lowerLabel.startsWith('open in ') && !REGISTRY.excludedFromDiscovery.includes(lowerLabel)) {
+                const moved = createQuickBtn(item, 'lb-static-moved', false);
+                controls.insertBefore(moved, menuBtn);
+                stateRegistry.staticMoved.push({ el: moved, name: label });
+                stateRegistry.originals.push({ el: item, name: label });
+            }
+        });
+
+        // 2. Service Link Slot
+        let cardServiceOriginal = null, movedServiceBtn = null;
+        card.querySelectorAll('.dropdown-item').forEach(item => {
+            const title = (item.title || item.getAttribute('aria-label') || "").toLowerCase();
+            if (title.startsWith('open in ') && !REGISTRY.excludedFromDiscovery.includes(title)) {
+                cardServiceOriginal = item;
+                movedServiceBtn = createQuickBtn(item, 'lb-dynamic-moved', true);
+                controls.insertBefore(movedServiceBtn, menuBtn);
+            }
+        });
+
+        // 3. Player Indicator Slot
+        let indicator = null;
+        const info = getListenData(card)?.track_metadata?.additional_info;
+        if (info) {
+            const player = info.media_player;
+            const client = info.submission_client;
+            const serviceFriendly = getFriendlyServiceName(info);
+            const tooltipLines = [];
+            if (player) tooltipLines.push(`Player: ${player}`);
+            if (client && client !== player) tooltipLines.push(`Client: ${client}`);
+            if (serviceFriendly) tooltipLines.push(`Service: ${serviceFriendly}`);
+
+            if (tooltipLines.length > 0) {
+                indicator = el('button', {
+                    className: 'btn btn-transparent lb-player-indicator',
+                    style: { cursor: 'help' },
+                    title: tooltipLines.join('\n'),
+                    on: { click: (e) => e.stopPropagation() }
+                }, [
+                    el('svg', { viewBox: '0 0 512 512', style: { width: '1em', height: '1em', fill: 'currentColor', verticalAlign: '-0.125em' } }, [
+                        el('path', { d: REGISTRY.icons.player })
+                    ])
+                ]);
+                controls.insertBefore(indicator, menuBtn);
+            }
+        }
+
+        const update = () => {
+            // Native button visibility
+            if (nativeLove) nativeLove.style.display = settings.showLoveHate ? '' : 'none';
+            if (nativeHate) nativeHate.style.display = settings.showLoveHate ? '' : 'none';
+
+            // Custom controls visibility
+            stateRegistry.staticMoved.forEach(m => m.el.style.display = settings.enabledActions.includes(m.name) ? '' : 'none');
+            stateRegistry.originals.forEach(o => o.el.style.display = settings.enabledActions.includes(o.name) ? 'none' : 'block');
+
+            const canMoveService = settings.moveServiceLinks && movedServiceBtn;
+            if (movedServiceBtn) movedServiceBtn.style.display = canMoveService ? '' : 'none';
+            if (cardServiceOriginal) cardServiceOriginal.style.display = canMoveService ? 'none' : 'block';
+            if (indicator) indicator.style.display = (settings.showPlayerIndicator && !canMoveService) ? '' : 'none';
+        };
+
+        window.addEventListener('UserJS.ListenBrainz.ExtendedListenControls.settings_changed', update);
+        update();
+        processedCards.add(card);
+    }
+
+    function scanPage() {
+        injectSettingsButton();
+        if (window.location.pathname.includes('/settings/link-listens')) return;
+        discoverActionsOnPage();
+        document.querySelectorAll('.listen-card').forEach(addQuickButtons);
+
+        if (settings.autoCopyModalText) {
+            const modal = document.getElementById('MBIDMappingModal');
+            if (modal) modal.querySelectorAll('button').forEach(btn => {
+                if (!processedCopyButtons.has(btn) && btn.innerText.toLowerCase().includes('copy text')) {
+                    processedCopyButtons.add(btn);
+                    btn.click();
+                }
+            });
+        }
+    }
+
+    scanPage();
+    new MutationObserver(scanPage).observe(document.body, { childList: true, subtree: true });
+})();
