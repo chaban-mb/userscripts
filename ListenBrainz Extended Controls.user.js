@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ListenBrainz: Extended Controls
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      1.1.2
+// @version      1.1.3
 // @tag          ai-created
 // @description  Allows customizing which actions are shown in listen controls cards, moving "Open in Music Service" links to the main controls area, displaying source info, and auto-copying text in the "Link Listen" modal.
 // @author       chaban
@@ -32,8 +32,10 @@
         ],
         icons: {
             player: 'M512 256A256 256 0 1 1 0 256a256 256 0 1 1 512 0zM188.3 147.1c-7.6 4.2-12.3 12.3-12.3 20.9V344c0 8.7 4.7 16.7 12.3 20.9s16.8 4.1 24.3-.5l144-88c7.1-4.4 11.5-12.1 11.5-20.5s-4.4-16.1-11.5-20.5l-144-88c-7.4-4.5-16.7-4.7-24.3-.5z',
-            // Simple "H" in a circle style icon
-            harmony: 'M256 32C132.3 32 32 132.3 32 256s100.3 224 224 224 224-100.3 224-224S379.7 32 256 32zm74 304h-36v-64h-76v64h-36V176h36v64h76v-64h36v160z'
+            harmony: {
+                viewBox: '0 0 200 200',
+                d: 'M68.08,122.59c4.17,2.66,9.11,4.23,14.42,4.23,14.82,0,26.84-12.02,26.84-26.84s-12.02-26.84-26.84-26.84c-5.35,0-10.31,1.58-14.5,4.28-.31.02-.63.02-.94.02-2.42,0-4.85-.49-6.9-1.86-2.99-1.99-4.29-6.45-4.77-11.01V21.54L7.74,48.87v102.25l47.64,27.34v-43.03c.49-4.57,1.78-9.02,4.77-11.01,2.06-1.37,4.48-1.86,6.9-1.86.34,0,.68,0,1.02.03Z M63.67,175.1v-39.19c.38-3.11,1.04-4.35,1.25-4.68.26-.13.6-.23,1-.29,5.1,2.74,10.78,4.18,16.58,4.18,19.37,0,35.13-15.76,35.13-35.13s-15.76-35.13-35.13-35.13c-5.83,0-11.53,1.45-16.64,4.21-.38-.06-.69-.16-.94-.28-.21-.33-.87-1.57-1.25-4.68V24.9L107.08,0l85.18,48.87v102.25l-85.18,48.87-43.4-24.9Z'
+            }
         }
     };
 
@@ -246,8 +248,15 @@ function makeHarmonyUrl(albumUrl) {
     return h.toString();
 }
 
-
-
+    function getIcon(key) {
+        const data = REGISTRY.icons[key];
+        const isObj = typeof data === 'object';
+        const viewBox = isObj ? data.viewBox : '0 0 512 512';
+        const d = isObj ? data.d : data;
+        return el('svg', { viewBox: viewBox, style: { width: '1em', height: '1em', fill: 'currentColor', verticalAlign: '-0.125em' } }, [
+            el('path', { d: d })
+        ]);
+    }
 
     function addQuickButtons(card) {
         if (processedCards.has(card)) return;
@@ -297,12 +306,7 @@ function makeHarmonyUrl(albumUrl) {
                 target: '_blank',
                 rel: 'noopener noreferrer',
                 on: { click: (e) => e.stopPropagation() }
-            }, [
-                el('svg', { viewBox: '0 0 512 512', style: { width: '1em', height: '1em', fill: 'currentColor', verticalAlign: '-0.125em' } }, [
-                    el('path', { d: REGISTRY.icons.harmony })
-                ])
-            ]);
-
+            }, [ getIcon('harmony') ]);
             controls.insertBefore(harmonyBtn, menuBtn);
         }
 
@@ -324,11 +328,7 @@ function makeHarmonyUrl(albumUrl) {
                     style: { cursor: 'help' },
                     title: tooltipLines.join('\n'),
                     on: { click: (e) => e.stopPropagation() }
-                }, [
-                    el('svg', { viewBox: '0 0 512 512', style: { width: '1em', height: '1em', fill: 'currentColor', verticalAlign: '-0.125em' } }, [
-                        el('path', { d: REGISTRY.icons.player })
-                    ])
-                ]);
+                }, [ getIcon('player') ]);
                 controls.insertBefore(indicator, menuBtn);
             }
         }
