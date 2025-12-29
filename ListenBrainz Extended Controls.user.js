@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ListenBrainz: Extended Controls
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      1.1.1
+// @version      1.1.2
 // @tag          ai-created
 // @description  Allows customizing which actions are shown in listen controls cards, moving "Open in Music Service" links to the main controls area, displaying source info, and auto-copying text in the "Link Listen" modal.
 // @author       chaban
@@ -31,7 +31,9 @@
             { domain: 'play.google.com', name: 'Google Play Music' }
         ],
         icons: {
-            player: 'M512 256A256 256 0 1 1 0 256a256 256 0 1 1 512 0zM188.3 147.1c-7.6 4.2-12.3 12.3-12.3 20.9V344c0 8.7 4.7 16.7 12.3 20.9s16.8 4.1 24.3-.5l144-88c7.1-4.4 11.5-12.1 11.5-20.5s-4.4-16.1-11.5-20.5l-144-88c-7.4-4.5-16.7-4.7-24.3-.5z'
+            player: 'M512 256A256 256 0 1 1 0 256a256 256 0 1 1 512 0zM188.3 147.1c-7.6 4.2-12.3 12.3-12.3 20.9V344c0 8.7 4.7 16.7 12.3 20.9s16.8 4.1 24.3-.5l144-88c7.1-4.4 11.5-12.1 11.5-20.5s-4.4-16.1-11.5-20.5l-144-88c-7.4-4.5-16.7-4.7-24.3-.5z',
+            // Simple "H" in a circle style icon
+            harmony: 'M256 32C132.3 32 32 132.3 32 256s100.3 224 224 224 224-100.3 224-224S379.7 32 256 32zm74 304h-36v-64h-76v64h-36V176h36v64h76v-64h36v160z'
         }
     };
 
@@ -40,7 +42,8 @@
         showPlayerIndicator: false,
         showLoveHate: true,
         autoCopyModalText: true,
-        enabledActions: ['Link with MusicBrainz']
+        enabledActions: ['Link with MusicBrainz'],
+        showHarmonyButton: true
     };
 
     let settings = GM_getValue('UserJS.ListenBrainz.ExtendedListenControls', DEFAULT_SETTINGS);
@@ -61,6 +64,9 @@
         .lb-setting-item input { margin-right: 12px; }
         #lb-settings-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.4); z-index: 9999; cursor: pointer; }
         #lb-ext-gear { cursor: pointer; }
+
+        .lb-harmony-btn svg { opacity: 0.9; }
+        .lb-harmony-btn:hover svg { opacity: 1; }
     `);
 
     // --- DOM Helper ---
@@ -98,6 +104,7 @@
     function createSettingsUI() {
         if (document.getElementById('lb-ext-settings-menu')) return;
         discoverActionsOnPage();
+
         const createCheckbox = (label, isKey, target) => {
             const input = el('input', {
                 type: 'checkbox',
@@ -121,6 +128,7 @@
             createCheckbox("Show 'Open in Service' Links", true, 'moveServiceLinks'),
             createCheckbox("Show Source Info", true, 'showPlayerIndicator'),
             createCheckbox("Auto-copy Text in Link Listen Modal", true, 'autoCopyModalText'),
+            createCheckbox("Show Harmony Button (unmapped only)", true, 'showHarmonyButton'),
             el('div', { className: 'mt-3 mb-2 small text-muted font-weight-bold text-uppercase' }, ['Quick Buttons']),
             ...Array.from(discoveredActions).sort().map(label => createCheckbox(label, false, label)),
             el('button', { className: 'btn btn-secondary btn-block mt-3', on: { click: closeSettings } }, ['Close'])
@@ -167,6 +175,80 @@
         }, children);
     }
 
+    // --- Harmony helpers ---
+    function isUnmappedListen(listen) {
+        const m = listen?.track_metadata?.mbid_mapping;
+        // Treat as mapped if we have a recording MBID
+        return !(m && m.recording_mbid);
+    }
+
+ function normalizeSpotifyAlbum(value) {
+    if (!value) return null;
+    const s = String(value).trim();
+
+    // Full album URL
+    const m1 = s.match(/open\.spotify\.com\/album\/([A-Za-z0-9]+)/);
+    if (m1) return `https://open.spotify.com/album/${m1[1]}`;
+
+    // spotify:album:<id>
+    const m2 = s.match(/^spotify:album:([A-Za-z0-9]+)$/);
+    if (m2) return `https://open.spotify.com/album/${m2[1]}`;
+
+    // raw ID
+    if (/^[A-Za-z0-9]+$/.test(s)) {
+        return `https://open.spotify.com/album/${s}`;
+    }
+
+    return null;
+}
+
+function getAlbumUrlFromListen(listen) {
+    const info = listen?.track_metadata?.additional_info || {};
+
+    // Spotify (LB is inconsistent here)
+    const spotify = normalizeSpotifyAlbum(
+        info.spotify_album_id ||
+        info.spotify_album_uri ||
+        info.spotify_album_url
+    );
+    if (spotify) return spotify;
+
+    // Deezer
+    if (info.deezer_album_id) {
+        const v = String(info.deezer_album_id);
+        return v.startsWith('http')
+            ? v
+            : `https://www.deezer.com/album/${v}`;
+    }
+
+    // TIDAL
+    if (info.tidal_album_id) {
+        const v = String(info.tidal_album_id);
+        return v.startsWith('http')
+            ? v
+            : `https://tidal.com/browse/album/${v}`;
+    }
+
+    // Apple Music (already a URL)
+    if (info.apple_music_album_url) return info.apple_music_album_url;
+
+    // Fallback
+    if (info.origin_url) return info.origin_url;
+    if (info.track_url) return info.track_url;
+
+    return null;
+}
+
+function makeHarmonyUrl(albumUrl) {
+    const h = new URL('https://harmony.pulsewidth.org.uk/release');
+    h.searchParams.set('url', albumUrl);
+    h.searchParams.set('category', 'preferred');
+    return h.toString();
+}
+
+
+
+
     function addQuickButtons(card) {
         if (processedCards.has(card)) return;
         const controls = card.querySelector('.listen-controls');
@@ -202,9 +284,31 @@
             }
         });
 
+        // 2.5 Harmony Button (unmapped only, if we can build an album URL)
+        let harmonyBtn = null;
+        const listen = getListenData(card);
+        const albumUrl = getAlbumUrlFromListen(listen);
+
+        if (listen && isUnmappedListen(listen) && albumUrl) {
+            harmonyBtn = el('a', {
+                className: 'btn btn-transparent lb-ext-btn lb-harmony-btn',
+                title: 'Open in Harmony (prefilled)',
+                href: makeHarmonyUrl(albumUrl),
+                target: '_blank',
+                rel: 'noopener noreferrer',
+                on: { click: (e) => e.stopPropagation() }
+            }, [
+                el('svg', { viewBox: '0 0 512 512', style: { width: '1em', height: '1em', fill: 'currentColor', verticalAlign: '-0.125em' } }, [
+                    el('path', { d: REGISTRY.icons.harmony })
+                ])
+            ]);
+
+            controls.insertBefore(harmonyBtn, menuBtn);
+        }
+
         // 3. Player Indicator Slot
         let indicator = null;
-        const info = getListenData(card)?.track_metadata?.additional_info;
+        const info = listen?.track_metadata?.additional_info;
         if (info) {
             const player = info.media_player;
             const client = info.submission_client;
@@ -242,6 +346,8 @@
             if (movedServiceBtn) movedServiceBtn.style.display = canMoveService ? '' : 'none';
             if (cardServiceOriginal) cardServiceOriginal.style.display = canMoveService ? 'none' : 'block';
             if (indicator) indicator.style.display = (settings.showPlayerIndicator && !canMoveService) ? '' : 'none';
+
+            if (harmonyBtn) harmonyBtn.style.display = (settings.showHarmonyButton ? '' : 'none');
         };
 
         window.addEventListener('UserJS.ListenBrainz.ExtendedListenControls.settings_changed', update);
