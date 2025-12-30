@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ListenBrainz: Extended Controls
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      1.1.3
+// @version      1.1.4
 // @tag          ai-created
 // @description  Allows customizing which actions are shown in listen controls cards, moving "Open in Music Service" links to the main controls area, displaying source info, and auto-copying text in the "Link Listen" modal.
 // @author       chaban
@@ -178,10 +178,9 @@
     }
 
     // --- Harmony helpers ---
-    function isUnmappedListen(listen) {
-        const m = listen?.track_metadata?.mbid_mapping;
-        // Treat as mapped if we have a recording MBID
-        return !(m && m.recording_mbid);
+    function isCardLinked(card) {
+        const titleLink = card.querySelector('.title-duration > div > a[href*="/track/"]');
+        return !!titleLink;
     }
 
  function normalizeSpotifyAlbum(value) {
@@ -259,10 +258,44 @@ function makeHarmonyUrl(albumUrl) {
     }
 
     function addQuickButtons(card) {
-        if (processedCards.has(card)) return;
         const controls = card.querySelector('.listen-controls');
         const menuBtn = controls?.querySelector('.dropdown-toggle');
         if (!controls || !menuBtn) return;
+
+        // --- DYNAMIC PART: Harmony Button (Runs every scan) ---
+        // We check the DOM directly to see if the title is a link
+        const isLinked = isCardLinked(card);
+        const existingHarmony = controls.querySelector('.lb-harmony-btn');
+
+        if (isLinked) {
+            // Case A: Listen is now linked -> Remove button immediately
+            if (existingHarmony) existingHarmony.remove();
+        } else {
+            // Case B: Listen is NOT linked
+            if (existingHarmony) {
+                // Button exists, just ensure visibility matches settings
+                existingHarmony.style.display = settings.showHarmonyButton ? '' : 'none';
+            } else if (settings.showHarmonyButton) {
+                // Button missing, but needed -> Create it
+                // We still need React props for the URL data, but we don't trust the "is_mapped" prop there
+                const listen = getListenData(card);
+                const albumUrl = getAlbumUrlFromListen(listen);
+                if (albumUrl) {
+                    const harmonyBtn = el('a', {
+                        className: 'btn btn-transparent lb-ext-btn lb-harmony-btn',
+                        title: 'Open in Harmony (prefilled)',
+                        href: makeHarmonyUrl(albumUrl),
+                        target: '_blank',
+                        rel: 'noopener noreferrer',
+                        on: { click: (e) => e.stopPropagation() }
+                    }, [ getIcon('harmony') ]);
+                    controls.insertBefore(harmonyBtn, menuBtn);
+                }
+            }
+        }
+
+        // --- STATIC PART: Other Buttons (Runs once per card) ---
+        if (processedCards.has(card)) return;
 
         // Native elements to potentially hide
         const nativeLove = controls.querySelector('.love');
@@ -293,25 +326,9 @@ function makeHarmonyUrl(albumUrl) {
             }
         });
 
-        // 2.5 Harmony Button (unmapped only, if we can build an album URL)
-        let harmonyBtn = null;
-        const listen = getListenData(card);
-        const albumUrl = getAlbumUrlFromListen(listen);
-
-        if (listen && isUnmappedListen(listen) && albumUrl) {
-            harmonyBtn = el('a', {
-                className: 'btn btn-transparent lb-ext-btn lb-harmony-btn',
-                title: 'Open in Harmony (prefilled)',
-                href: makeHarmonyUrl(albumUrl),
-                target: '_blank',
-                rel: 'noopener noreferrer',
-                on: { click: (e) => e.stopPropagation() }
-            }, [ getIcon('harmony') ]);
-            controls.insertBefore(harmonyBtn, menuBtn);
-        }
-
         // 3. Player Indicator Slot
         let indicator = null;
+        const listen = getListenData(card);
         const info = listen?.track_metadata?.additional_info;
         if (info) {
             const player = info.media_player;
@@ -347,7 +364,7 @@ function makeHarmonyUrl(albumUrl) {
             if (cardServiceOriginal) cardServiceOriginal.style.display = canMoveService ? 'none' : 'block';
             if (indicator) indicator.style.display = (settings.showPlayerIndicator && !canMoveService) ? '' : 'none';
 
-            if (harmonyBtn) harmonyBtn.style.display = (settings.showHarmonyButton ? '' : 'none');
+            // Note: Harmony visibility is handled in the dynamic block above
         };
 
         window.addEventListener('UserJS.ListenBrainz.ExtendedListenControls.settings_changed', update);
