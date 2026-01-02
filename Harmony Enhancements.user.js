@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Harmony: Enhancements
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      1.19.2
+// @version      1.20.0
 // @tag          ai-created
 // @description  Adds some convenience features, various UI and behavior settings, as well as an improved language detection to Harmony.
 // @author       chaban
@@ -1241,38 +1241,42 @@
                 e.preventDefault();
                 try {
                     const text = await navigator.clipboard.readText();
-                    const urlMatch = text.match(/https?:\/\/[^\s]+/);
-                    if (!urlMatch) {
+                    const urlMatches = text.match(/https?:\/\/[^\s]+/g);
+
+                    if (!urlMatches || urlMatches.length === 0) {
                         showTooltip('No URL found in clipboard!', 'error', e);
                         return;
                     }
-                    const clipboardUrl = urlMatch[0];
-                    let lookupParams = null;
 
-                    for (const config of URL_CONFIG) {
-                        const result = config.pattern.exec(clipboardUrl);
-                        if (result) {
-                            const value = config.postProcess(result, clipboardUrl);
-                            if (value) {
-                                lookupParams = { param: config.param, value };
-                                break;
+                    const url = new URL(window.location.href);
+                    if (url.pathname === '/') {
+                        url.pathname = '/release';
+                    }
+
+                    let addedCount = 0;
+
+                    for (const clipboardUrl of urlMatches) {
+                        for (const config of URL_CONFIG) {
+                            const result = config.pattern.exec(clipboardUrl);
+                            if (result) {
+                                const value = config.postProcess(result, clipboardUrl);
+                                if (value) {
+                                    if (config.param === 'url') {
+                                        url.searchParams.append(config.param, value);
+                                    } else {
+                                        url.searchParams.set(config.param, value);
+                                    }
+                                    addedCount++;
+                                    break;
+                                }
                             }
                         }
                     }
 
-                    if (lookupParams) {
-                        const url = new URL(window.location.href);
-                        if (url.pathname === '/') {
-                            url.pathname = '/release';
-                        }
-                        if (lookupParams.param === 'url') {
-                            url.searchParams.append(lookupParams.param, lookupParams.value);
-                        } else {
-                            url.searchParams.set(lookupParams.param, lookupParams.value);
-                        }
+                    if (addedCount > 0) {
                         window.location.href = url.toString();
                     } else {
-                        showTooltip('URL is not a supported release link!', 'error', e);
+                        showTooltip('No supported release links found in clipboard!', 'error', e);
                     }
                 } catch (err) {
                     const message = err.name === 'NotAllowedError' ? 'Clipboard permission denied!' : 'Could not read clipboard!';
