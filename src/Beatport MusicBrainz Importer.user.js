@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        Beatport: MusicBrainz Importer
 // @namespace   https://musicbrainz.org/user/chaban
-// @version     2.5.1
+// @version     2.6.0
 // @description Adds MusicBrainz status icons to Beatport releases and allows importing them with Harmony
 // @tag         ai-created
 // @author      RustyNova, chaban
@@ -11,12 +11,12 @@
 // @icon        https://www.google.com/s2/favicons?sz=64&domain=beatport.com
 // @grant       GM.xmlHttpRequest
 // @run-at      document-idle
-// @require     lib/MusicBrainzAPI.js
+// @require     ../lib/MusicBrainzAPI.js
 // @updateURL    https://github.com/chaban-mb/userscripts/raw/main/src/Beatport%20MusicBrainz%20Importer.user.js
 // @downloadURL  https://github.com/chaban-mb/userscripts/raw/main/src/Beatport%20MusicBrainz%20Importer.user.js
 // ==/UserScript==
 
-(function() {
+(function () {
   'use strict';
 
   /**
@@ -49,7 +49,8 @@
       RELEASE_LINK: '[href*="/release/"]',
       ANCHOR: '.date',
       ICONS_CONTAINER: '.button_container',
-      RELEASE_CONTROLS_CONTAINER: '[class*="CollectionControls-style__Wrapper"]'
+      RELEASE_CONTROLS_CONTAINER: '[class*="CollectionControls-style__Wrapper"]',
+      LOADING_OVERLAY: 'div[class*="LoadingOverlay-style__LoadingOverlayStyled"]'
     },
     CLASS_NAMES: {
       STATUS_ICON: 'status-icon',
@@ -79,24 +80,24 @@
      * @param {string[]} path - An array of property names representing the path to the desired value.
      * @returns {any | undefined} The value at the specified path, or undefined if any part of the path is missing.
      */
-    _getNestedProperty: function(obj, path) {
-        return path.reduce((acc, part) => (acc && acc[part] !== undefined) ? acc[part] : undefined, obj);
+    _getNestedProperty: function (obj, path) {
+      return path.reduce((acc, part) => (acc && acc[part] !== undefined) ? acc[part] : undefined, obj);
     },
 
     /**
      * Retrieves the __NEXT_DATA__ object from the page.
      * @returns {object | null} The parsed __NEXT_DATA__ object, or null if not found or parsing fails.
      */
-    _getNextData: function() {
-        const nextDataScript = document.getElementById('__NEXT_DATA__');
-        if (nextDataScript && nextDataScript.textContent) {
-            try {
-                return JSON.parse(nextDataScript.textContent);
-            } catch (e) {
-                return null;
-            }
+    _getNextData: function () {
+      const nextDataScript = document.getElementById('__NEXT_DATA__');
+      if (nextDataScript && nextDataScript.textContent) {
+        try {
+          return JSON.parse(nextDataScript.textContent);
+        } catch (e) {
+          return null;
         }
-        return null;
+      }
+      return null;
     },
 
     /**
@@ -104,7 +105,7 @@
      * @param {string} pathname - The window.location.pathname string.
      * @returns {string} The pathname without a language prefix.
      */
-    _getBasePathname: function(pathname) {
+    _getBasePathname: function (pathname) {
       const langPrefixRegex = /^\/[a-z]{2}\//;
       if (langPrefixRegex.test(pathname)) {
         return '/' + pathname.substring(pathname.indexOf('/', 1) + 1);
@@ -117,51 +118,51 @@
      * Prioritizes 'release' directly, then looks into 'dehydratedState.queries'.
      * @returns {object | null} The release data object, or null if not found.
      */
-    getReleaseDataFromNextData: function() {
-        const parsedData = this._getNextData();
-        if (!parsedData) {
-            return null;
-        }
+    getReleaseDataFromNextData: function () {
+      const parsedData = this._getNextData();
+      if (!parsedData) {
+        return null;
+      }
 
-        // 1. Try to get release data directly from pageProps.release
-        let release = this._getNestedProperty(parsedData, ['props', 'pageProps', 'release']);
-        if (release && release.id) {
-            return release;
-        }
+      // 1. Try to get release data directly from pageProps.release
+      let release = this._getNestedProperty(parsedData, ['props', 'pageProps', 'release']);
+      if (release && release.id) {
+        return release;
+      }
 
-        // 2. If not found directly, search within dehydratedState.queries
-        const queries = this._getNestedProperty(parsedData, ['props', 'pageProps', 'dehydratedState', 'queries']);
+      // 2. If not found directly, search within dehydratedState.queries
+      const queries = this._getNestedProperty(parsedData, ['props', 'pageProps', 'dehydratedState', 'queries']);
 
-        if (Array.isArray(queries)) {
-            const currentReleaseId = window.location.pathname.split('/').pop(); // Extract ID from URL
+      if (Array.isArray(queries)) {
+        const currentReleaseId = window.location.pathname.split('/').pop(); // Extract ID from URL
 
-            for (const query of queries) {
-                const queryData = this._getNestedProperty(query, ['state', 'data']);
-                if (queryData) {
-                    // Case 1: queryData.results is an array of releases (e.g., label releases list)
-                    if (Array.isArray(queryData.results)) {
-                        const foundRelease = queryData.results.find(item =>
-                            item.id && item.id.toString() === currentReleaseId
-                        );
-                        if (foundRelease) {
-                            return foundRelease;
-                        }
-                    }
-                    // Case 2: queryData itself is the release object (e.g., single release page data)
-                    else if (queryData.id && queryData.id.toString() === currentReleaseId) {
-                        return queryData;
-                    }
-                }
+        for (const query of queries) {
+          const queryData = this._getNestedProperty(query, ['state', 'data']);
+          if (queryData) {
+            // Case 1: queryData.results is an array of releases (e.g., label releases list)
+            if (Array.isArray(queryData.results)) {
+              const foundRelease = queryData.results.find(item =>
+                item.id && item.id.toString() === currentReleaseId
+              );
+              if (foundRelease) {
+                return foundRelease;
+              }
             }
+            // Case 2: queryData itself is the release object (e.g., single release page data)
+            else if (queryData.id && queryData.id.toString() === currentReleaseId) {
+              return queryData;
+            }
+          }
         }
-        return null; // Release data not found in __NEXT_DATA__
+      }
+      return null; // Release data not found in __NEXT_DATA__
     },
 
     /**
      * Extracts artist and release name from the Open Graph title meta tag.
      * @returns {{artist: string, release: string}|null} An object with artist and release, or null if not found.
      */
-    getArtistAndReleaseFromMetaTags: function() {
+    getArtistAndReleaseFromMetaTags: function () {
       const ogTitleMeta = document.querySelector('meta[property="og:title"]');
       if (ogTitleMeta && ogTitleMeta.content) {
         const ogTitle = ogTitleMeta.content;
@@ -193,7 +194,7 @@
      * @param {string} selector - The CSS selector for the element to wait for.
      * @returns {Promise<HTMLElement>} A promise that resolves with the element when found.
      */
-    waitForElement: function(selector) {
+    waitForElement: function (selector) {
       return new Promise((resolve) => {
         const observer = new MutationObserver((mutations, obs) => {
           const element = document.querySelector(selector);
@@ -263,15 +264,15 @@
      * @param {HTMLElement} container - The container element to which the icon will be appended.
      * @param {string} releaseUrl - The Beatport release URL to be used in the Harmony link.
      */
-    addMissingIcon: function(container, releaseUrl) {
+    addMissingIcon: function (container, releaseUrl) {
       let iconLink = document.createElement("a");
       iconLink.className = `${Config.CLASS_NAMES.STATUS_ICON} ${Config.CLASS_NAMES.HARMONY_ICON}`;
       iconLink.href = getHarmonyImportUrl(releaseUrl);
       iconLink.target = "_blank";
       iconLink.title = "Import with Harmony"
       container.appendChild(iconLink);
-      iconLink.onclick = function() {
-          BeatportMusicBrainzImporter._mbApi.clearCache();
+      iconLink.onclick = function () {
+        BeatportMusicBrainzImporter._mbApi.invalidateCacheForUrl(releaseUrl);
       };
     },
 
@@ -281,7 +282,7 @@
      * @param {string} type - The MusicBrainz entity type (e.g., "release", "release-group").
      * @param {string} mbid - The MusicBrainz ID of the entity.
      */
-    addReleaseIcon: function(container, type, mbid) {
+    addReleaseIcon: function (container, type, mbid) {
       let iconLink = document.createElement("a");
       iconLink.className = `${Config.CLASS_NAMES.STATUS_ICON} ${Config.CLASS_NAMES.RELEASE_ICON}`;
       iconLink.href = getMusicBrainzReleaseUrl(type, mbid);
@@ -296,14 +297,13 @@
      * @param {string} releaseUrl - The Beatport URL of the release.
      * @param {Array|null} mbStatus - The MusicBrainz status ([targetType, mbid]) or null if not found.
      */
-    updateReleaseRow: async function(rowElement, releaseUrl, mbStatus) {
+    updateReleaseRow: async function (rowElement, releaseUrl, mbStatus) {
       const dateDiv = rowElement.querySelector(Config.SELECTORS.ANCHOR);
       if (!dateDiv) {
         return;
       }
 
-      // Disconnect observer before modifying DOM
-      BeatportMusicBrainzImporter._observerInstance.disconnect();
+
 
       let existingIconsContainer = dateDiv.querySelector(`.${Config.CLASS_NAMES.ICONS_CONTAINER}`);
       if (existingIconsContainer) {
@@ -321,7 +321,8 @@
 
       dateDiv.appendChild(iconsContainer);
 
-      BeatportMusicBrainzImporter._observerInstance.observe(Config.OBSERVER_CONFIG.root, Config.OBSERVER_CONFIG.options);
+      // Mark row as processed for this specific URL to handle React DOM recycling
+      BeatportMusicBrainzImporter._processedRows.set(rowElement, releaseUrl);
     }
   };
 
@@ -334,8 +335,8 @@
      * @param {string} url - The URL to open.
      * @returns {function} An event handler function.
      */
-    _createOpenWindowHandler: function(url) {
-      return function() {
+    _createOpenWindowHandler: function (url) {
+      return function () {
         window.open(url, '_blank').focus();
       };
     },
@@ -345,12 +346,12 @@
      * @param {HTMLElement} container - The container to append the button to.
      * @param {string} releaseUrl - The current Beatport release URL.
      */
-    addHarmonyImportButton: function(container, releaseUrl) {
+    addHarmonyImportButton: function (container, releaseUrl) {
       let button = document.createElement("button");
       button.textContent = "Import with Harmony";
       button.className = `${Config.CLASS_NAMES.BUTTON_HARMONY}`;
       button.title = "Import with Harmony"
-      button.onclick = function() {
+      button.onclick = function () {
         BeatportMusicBrainzImporter._mbApi.invalidateCacheForUrl(releaseUrl);
         window.open(getHarmonyImportUrl(releaseUrl), '_blank').focus();
       };
@@ -364,7 +365,7 @@
      * @param {string} type - The MusicBrainz entity type.
      * @param {string} mbid - The MusicBrainz ID.
      */
-    addOpenMusicBrainzButton: function(container, type, mbid) {
+    addOpenMusicBrainzButton: function (container, type, mbid) {
       let button = document.createElement("button");
       button.textContent = "Open in MusicBrainz";
       button.className = `${Config.CLASS_NAMES.BUTTON_MUSICBRAINZ}`;
@@ -380,7 +381,7 @@
      * @param {string} artist - The artist name.
      * @param {string} release - The release name.
      */
-    addSearchMusicBrainzButton: function(container, artist, release) {
+    addSearchMusicBrainzButton: function (container, artist, release) {
       let button = document.createElement("button");
       button.textContent = "Search in MusicBrainz";
       button.className = `${Config.CLASS_NAMES.BUTTON_MUSICBRAINZ}`;
@@ -394,26 +395,26 @@
      * Processes the current release page to add import/search buttons.
      * @param {Array|null|undefined} mbStatus - The MusicBrainz status for the current URL.
      */
-    processReleasePageButtons: async function(mbStatus, releaseUrl) {
+    processReleasePageButtons: async function (mbStatus, releaseUrl) {
       const anchor = await Utils.waitForElement(Config.SELECTORS.RELEASE_CONTROLS_CONTAINER);
       if (!anchor) {
         return;
       }
 
-      BeatportMusicBrainzImporter._observerInstance.disconnect();
+      // Disconnect observer before modifying DOM - No longer needed as we use Next.js router events
 
       let container = anchor.querySelector(`.${Config.CLASS_NAMES.ICONS_CONTAINER}`);
       if (container) {
-          while (container.firstChild) {
-              container.removeChild(container.firstChild);
-          }
+        while (container.firstChild) {
+          container.removeChild(container.firstChild);
+        }
       } else {
-          container = document.createElement("div");
-          container.className = Config.CLASS_NAMES.ICONS_CONTAINER;
-          anchor.appendChild(container);
+        container = document.createElement("div");
+        container.className = Config.CLASS_NAMES.ICONS_CONTAINER;
+        anchor.appendChild(container);
       }
 
-        this.addHarmonyImportButton(container, releaseUrl);
+      this.addHarmonyImportButton(container, releaseUrl);
 
       if (mbStatus !== null && mbStatus !== undefined) {
         this.addOpenMusicBrainzButton(container, mbStatus[0], mbStatus[1]);
@@ -442,7 +443,7 @@
         }
       }
 
-      BeatportMusicBrainzImporter._observerInstance.observe(Config.OBSERVER_CONFIG.root, Config.OBSERVER_CONFIG.options);
+      // BeatportMusicBrainzImporter._observerInstance.observe(Config.OBSERVER_CONFIG.root, Config.OBSERVER_CONFIG.options);
     }
   };
 
@@ -454,7 +455,7 @@
      * Checks if the current page URL matches any of the supported patterns.
      * @returns {boolean} True if the current page is supported, false otherwise.
      */
-    isSupportedPage: function() {
+    isSupportedPage: function () {
       const pathname = window.location.pathname;
       const basePathname = Utils._getBasePathname(pathname);
       return Config.SUPPORTED_PATHS.some(path => basePathname.startsWith(path));
@@ -464,7 +465,7 @@
      * Checks if the current page is a specific release detail page.
      * @returns {boolean} True if on a release detail page, false otherwise.
      */
-    isReleaseDetailPage: function() {
+    isReleaseDetailPage: function () {
       const pathname = window.location.pathname;
       const basePathname = Utils._getBasePathname(pathname);
       return basePathname.startsWith('/release/');
@@ -475,7 +476,7 @@
      * @returns {Array<{url: string, element: HTMLElement}>} An array of objects, each containing
      * a release URL and its DOM element.
      */
-    getReleasesToProcess: function() {
+    getReleasesToProcess: function () {
       const releases = document.querySelectorAll(Config.SELECTORS.RELEASE_ROW);
       const unprocessedReleases = [];
 
@@ -483,10 +484,10 @@
         const releaseLinkElement = releaseRow.querySelector(Config.SELECTORS.RELEASE_LINK);
         if (releaseLinkElement && releaseLinkElement.href) {
           const url = releaseLinkElement.href;
-          const dateDiv = releaseRow.querySelector(Config.SELECTORS.ANCHOR);
-          const existingIconsContainer = dateDiv ? dateDiv.querySelector(`.${Config.CLASS_NAMES.ICONS_CONTAINER}`) : null;
+          // Check if we already processed THIS specific URL for this row
+          const lastProcessed = BeatportMusicBrainzImporter._processedRows.get(releaseRow);
+          if (lastProcessed !== url) {
 
-          if (!existingIconsContainer) {
             unprocessedReleases.push({
               url: url,
               element: releaseRow
@@ -504,30 +505,30 @@
   const BeatportMusicBrainzImporter = {
     _runningUpdate: false,
     _scheduleUpdate: false,
-    _observerTimeoutId: null,
-    _previousUrl: '',
-    _observerInstance: null,
-    _nprogressObserver: null,
     _mbApi: null,
+    _processedRows: new WeakMap(),
+
+    _log: function (msg) {
+      console.log(`[MB Import] ${msg}`);
+    },
 
     /**
      * Initializes the application: injects CSS and sets up the MutationObserver.
      */
-    init: function() {
+    init: function () {
       this._mbApi = new MusicBrainzAPI({
-          user_agent: `${Config.USER_AGENT}/${GM_info.script.version} ( ${GM_info.script.namespace} )`
+        user_agent: `${Config.USER_AGENT}/${GM_info.script.version} ( ${GM_info.script.namespace} )`
       });
       this._injectCSS();
-      this._setupObservers();
-      this._previousUrl = window.location.href;
-      // Initial run after NProgress finishes
-      this._waitForNProgressToFinish().then(() => this.runUpdate());
+      this._hookNextRouter();
+      // Initial run
+      setTimeout(() => this.runUpdate(), 1000);
     },
 
     /**
      * Injects custom CSS rules into the document head.
      */
-    _injectCSS: function() {
+    _injectCSS: function () {
       const head = document.head || document.getElementsByTagName('head')[0];
       if (head) {
         const style = document.createElement('style');
@@ -610,105 +611,73 @@
       }
     },
 
+
+
     /**
-     * Waits for the NProgress busy class to be removed from the HTML element.
-     * @returns {Promise<void>} A promise that resolves when 'nprogress-busy' class is removed.
+     * Hooks into the Next.js router to listen for navigation events.
      */
-    _waitForNProgressToFinish: function() {
-        return new Promise(resolve => {
-            const htmlElement = document.documentElement;
+    _hookNextRouter: function () {
+      const self = this;
 
-            if (!htmlElement.classList.contains('nprogress-busy')) {
-                resolve(); // Already done loading
-                return;
-            }
+      const checkContentAndTrigger = (observer, source) => {
+        const isDetail = DOMScanner.isReleaseDetailPage();
 
-            // Disconnect any existing NProgress observer to prevent duplicates if called multiple times
-            if (this._nprogressObserver) {
-                this._nprogressObserver.disconnect();
-                this._nprogressObserver = null;
-            }
+        // Use the standard scanner. If it finds anything, it means NEW content has arrived.
+        const itemsToProcess = DOMScanner.getReleasesToProcess();
 
-            // Create an observer to watch for the 'nprogress-busy' class removal
-            this._nprogressObserver = new MutationObserver((mutationsList) => {
-                for (const mutation of mutationsList) {
-                    if (mutation.type === 'attributes' && mutation.attributeName === 'class') {
-                        if (!htmlElement.classList.contains('nprogress-busy')) {
-                            this._nprogressObserver.disconnect();
-                            this._nprogressObserver = null; // Clear reference
-                            resolve();
-                            break; // Stop iterating mutations and resolve
-                        }
-                    }
-                }
+        if (isDetail) {
+          const controls = document.querySelector(Config.SELECTORS.RELEASE_CONTROLS_CONTAINER);
+          // For detail pages, we just check if controls exist.
+          if (controls) { // A bit naive, but Detail pages usually re-render the whole container
+            if (observer) observer.disconnect();
+            self.runUpdate();
+            return true;
+          }
+        } else {
+          // List Page
+          if (itemsToProcess.length > 0) {
+            if (observer) observer.disconnect();
+            self.runUpdate();
+            return true;
+          }
+        }
+
+        return false;
+      };
+
+      const valCheckNext = () => {
+        if (unsafeWindow.next && unsafeWindow.next.router && unsafeWindow.next.router.events) {
+          unsafeWindow.next.router.events.on('routeChangeComplete', () => {
+
+            // 1. Immediate check (in case synchronous update)
+            if (checkContentAndTrigger(null, 'Immediate Check')) return;
+
+            // 2. Observer for async updates
+            const observer = new MutationObserver(() => {
+              checkContentAndTrigger(observer, 'MutationObserver');
             });
 
-            this._nprogressObserver.observe(htmlElement, { attributes: true, attributeFilter: ['class'] });
-        });
-    },
+            observer.observe(document.body, { childList: true, subtree: true });
 
-    /**
-     * Sets up all observers (MutationObserver and History API listeners).
-     */
-    _setupObservers: function() {
-      const self = this;
-      const originalPushState = history.pushState;
-      const originalReplaceState = history.replaceState;
-
-      history.pushState = function() {
-          originalPushState.apply(this, arguments);
-          // Only trigger if URL actually changed to avoid redundant calls if state is pushed without URL change
-          if (window.location.href !== self._previousUrl) {
-              self._previousUrl = window.location.href;
-              self._waitForNProgressToFinish().then(() => self.runUpdate());
-          }
-      };
-
-      history.replaceState = function() {
-          originalReplaceState.apply(this, arguments);
-          // Only trigger if URL actually changed
-          if (window.location.href !== self._previousUrl) {
-              self._previousUrl = window.location.href;
-              self._waitForNProgressToFinish().then(() => self.runUpdate());
-          }
-      };
-
-      window.addEventListener('popstate', () => {
-          // popstate always means URL changed (back/forward)
-          self._previousUrl = window.location.href;
-          self._waitForNProgressToFinish().then(() => self.runUpdate());
-      });
-
-      // 2. MutationObserver for dynamic content loading on the same page (e.g., infinite scroll)
-      const observer = new MutationObserver((mutations) => {
-        // Only proceed if NProgress is not active AND it's a list page.
-        if (!document.documentElement.classList.contains('nprogress-busy') && !DOMScanner.isReleaseDetailPage()) {
-          // Debounce general DOM mutations
-          if (this._observerTimeoutId) {
-            clearTimeout(this._observerTimeoutId);
-          }
-
-          this._observerTimeoutId = setTimeout(async () => {
-            this._observerTimeoutId = null;
-
-            // Only run update if there are new releases to process
-            if (DOMScanner.getReleasesToProcess().length > 0) {
-              this.runUpdate();
-            }
-          }, 50);
+            // Timeout safety
+            setTimeout(() => {
+              observer.disconnect();
+            }, 10000);
+          });
+          return;
         }
-        // The else if (window.location.href !== this._previousUrl) block is no longer needed here
-        // because the History API listeners handle URL changes and trigger _waitForNProgressToFinish.
-      });
-      this._observerInstance = observer;
-      observer.observe(Config.OBSERVER_CONFIG.root, Config.OBSERVER_CONFIG.options);
+
+        setTimeout(valCheckNext, 500);
+      };
+
+      valCheckNext();
     },
 
     /**
      * Main function to execute the process of scanning for releases, fetching data, and updating UI.
      * This function handles both status icons on list pages and import buttons on detail pages.
      */
-    runUpdate: async function() {
+    runUpdate: async function () {
 
       if (this._runningUpdate) {
         this._scheduleUpdate = true;
@@ -716,75 +685,126 @@
       }
       this._runningUpdate = true;
 
-      if (!DOMScanner.isSupportedPage()) {
-        this._runningUpdate = false;
-        return;
-      }
-
-      const isDetailPage = DOMScanner.isReleaseDetailPage();
-      let itemsToProcess = [];
-
-      // 1. --- Gather Raw Items ---
-      if (isDetailPage) {
-        itemsToProcess.push({
-          url: window.location.href,
-          element: null
-        });
-      } else {
-        itemsToProcess = DOMScanner.getReleasesToProcess();
-        if (itemsToProcess.length === 0) {
-          this._runningUpdate = false;
-          return;
-        }
-      }
-
-      // 2. --- Normalize All Items ---
-      const urlsToProcess = itemsToProcess.map(({ url, element }) => {
-        const parsedUrl = new URL(url);
-        const normalizedPathname = Utils._getBasePathname(parsedUrl.pathname);
-        const normalizedUrl = `${parsedUrl.origin}${normalizedPathname}${parsedUrl.search}`;
-        return {
-          normalizedUrl: normalizedUrl,
-          element: element
-        };
-      });
-      // 3. --- Unify API Lookup ---
-      const normalizedUrls = [...new Set(urlsToProcess.map(u => u.normalizedUrl))];
-      const mbStatusMap = new Map();
       try {
-        const mbResults = await this._mbApi.lookupUrl(normalizedUrls, ['release-rels']);
-        for (const normalizedUrl of normalizedUrls) {
-          const urlData = mbResults.get(normalizedUrl);
-          let status = null; // Default to 'not found'
+        do {
+          this._scheduleUpdate = false;
 
-          if (urlData && urlData.relations) {
-            const releaseRelation = urlData.relations.find(rel => rel['target-type'] === 'release' && rel.release);
-            if (releaseRelation) {
-              status = [releaseRelation['target-type'], releaseRelation.release.id];
+          if (!DOMScanner.isSupportedPage()) {
+            return;
+          }
+
+          const isDetailPage = DOMScanner.isReleaseDetailPage();
+          let itemsToProcess = [];
+
+          // 1. --- Gather Raw Items ---
+          if (isDetailPage) {
+            itemsToProcess.push({
+              url: window.location.href,
+              element: null
+            });
+          } else {
+            itemsToProcess = DOMScanner.getReleasesToProcess();
+            if (itemsToProcess.length === 0) {
+              continue;
             }
           }
-          mbStatusMap.set(normalizedUrl, status);
-        }
 
-      } catch (error) {
-        if (!error.message.includes('HTTP Error 404')) {
-          console.error('Failed to lookup Beatport URLs', error);
-        }
-        // On API error, set all URLs to null status (will show Harmony/search icon)
-        normalizedUrls.forEach(url => mbStatusMap.set(url, null));
+          // 2. --- Normalize Items & Group by URL ---
+          const urlToElementsMap = new Map();
+
+          itemsToProcess.forEach(({ url, element }) => {
+            const parsedUrl = new URL(url);
+            const normalizedPathname = Utils._getBasePathname(parsedUrl.pathname);
+            const normalizedUrl = `${parsedUrl.origin}${normalizedPathname}${parsedUrl.search}`;
+
+            if (!urlToElementsMap.has(normalizedUrl)) {
+              urlToElementsMap.set(normalizedUrl, []);
+            }
+            urlToElementsMap.get(normalizedUrl).push(element);
+          });
+
+          const uniqueUrls = Array.from(urlToElementsMap.keys());
+          const uncachedUrls = [];
+          const mbStatusMap = new Map();
+
+          // 3. --- Check API Cache & Instant Update ---
+          uniqueUrls.forEach(url => {
+            const cachedData = this._mbApi.getFromCache(url);
+            if (cachedData !== undefined) {
+              // The API cache stores the raw response object. We need to process it to get the status.
+              let status = null;
+              if (cachedData && cachedData.relations) {
+                const releaseRelation = cachedData.relations.find(rel => rel['target-type'] === 'release' && rel.release);
+                if (releaseRelation) {
+                  status = [releaseRelation['target-type'], releaseRelation.release.id];
+                }
+              }
+              // Note: If cachedData is null (e.g. 404), the status logic correctly results in null.
+              mbStatusMap.set(url, status);
+            } else {
+              uncachedUrls.push(url);
+            }
+          });
+
+          // Helper function to perform UI updates
+          const updateUIForUrls = async (urls) => {
+            for (const normalizedUrl of urls) {
+              const status = mbStatusMap.get(normalizedUrl);
+              const elements = urlToElementsMap.get(normalizedUrl);
+              for (const element of elements) {
+                if (isDetailPage) {
+                  await ButtonManager.processReleasePageButtons(status, normalizedUrl);
+                } else {
+                  if (element && element.isConnected) {
+                    await IconManager.updateReleaseRow(element, normalizedUrl, status);
+                  }
+                }
+              }
+            }
+          };
+
+          // Update cached items immediately
+          await updateUIForUrls(uniqueUrls.filter(u => mbStatusMap.has(u)));
+
+          // 4. --- Batch Lookup for Uncached Items ---
+          if (uncachedUrls.length > 0) {
+            try {
+              // We use the batch lookup here to be efficient with network requests
+              const mbResults = await this._mbApi.lookupUrl(uncachedUrls, ['release-rels']);
+
+              for (const normalizedUrl of uncachedUrls) {
+                const urlData = mbResults.get(normalizedUrl);
+                let status = null;
+
+                if (urlData && urlData.relations) {
+                  const releaseRelation = urlData.relations.find(rel => rel['target-type'] === 'release' && rel.release);
+                  if (releaseRelation) {
+                    status = [releaseRelation['target-type'], releaseRelation.release.id];
+                  }
+                }
+                mbStatusMap.set(normalizedUrl, status);
+              }
+            } catch (error) {
+              if (!error.message || !error.message.includes('HTTP Error 404')) {
+                console.error(`[MB Import] Failed batch lookup`, error);
+              }
+              uncachedUrls.forEach(url => {
+                mbStatusMap.set(url, null);
+              });
+            }
+
+            // Update UI for newly fetched items
+            await updateUIForUrls(uncachedUrls);
+          }
+
+        } while (this._scheduleUpdate);
+      } catch (err) {
+        console.error('[MB Import] Error in runUpdate:', err);
+      } finally {
+        this._runningUpdate = false;
       }
-      // 4. --- Diverge for UI Update ---
-      for (const { normalizedUrl, element } of urlsToProcess) {
-        const status = mbStatusMap.get(normalizedUrl);
-        if (isDetailPage) {
-          await ButtonManager.processReleasePageButtons(status, normalizedUrl);
-        } else {
-          await IconManager.updateReleaseRow(element, normalizedUrl, status);
-        }
-      }
-      this._runningUpdate = false;
     }
   };
 
-    BeatportMusicBrainzImporter.init();
+  BeatportMusicBrainzImporter.init();
 })();
