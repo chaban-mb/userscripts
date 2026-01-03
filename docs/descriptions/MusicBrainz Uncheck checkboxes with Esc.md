@@ -1,0 +1,1 @@
+By default this script will only deselect checkboxes used for merging and in the release relationship editor.

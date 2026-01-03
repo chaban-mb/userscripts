@@ -1,0 +1,1 @@
+Requires the [Display acoustIDs and merge recordings with common acoustID userscript](https://github.com/loujine/musicbrainz-scripts/?tab=readme-ov-file#musicbrainz-edit-display-acoustids-and-merge-recordings-with-common-acoustid) to be installed.

@@ -1,0 +1,1 @@
+This is a modernized version of the original CheckBoxMate Greasemonkey script by scottmweaver.

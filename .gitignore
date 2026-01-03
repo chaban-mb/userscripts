@@ -1,0 +1,4 @@
+# Local Build Tools
+tools/
+*.log
+*.py

@@ -1,0 +1,1 @@
+Fixes [MBS-12374](https://tickets.metabrainz.org/browse/MBS-12374) and [MBS-12452](https://tickets.metabrainz.org/browse/MBS-12452)

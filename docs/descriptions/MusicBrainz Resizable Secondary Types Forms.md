@@ -1,0 +1,1 @@
+Fixes [MBS-10509](https://tickets.metabrainz.org/browse/MBS-10509)

@@ -1,0 +1,1 @@
+Fixes [MBS-12524](https://tickets.metabrainz.org/browse/MBS-12524)
