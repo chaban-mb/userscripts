@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        MusicBrainz: Add Spotify and Deezer ISRC link to release pages
 // @namespace   https://musicbrainz.org/user/chaban
-// @version     1.2
+// @version     1.3
 // @tag         ai-created
 // @description Adds an "import ISRCs" link to MusicBrainz release pages with a Spotify or Deezer URL
 // @author      atj, chaban

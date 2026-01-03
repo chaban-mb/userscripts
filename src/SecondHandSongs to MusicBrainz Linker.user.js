@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SecondHandSongs to MusicBrainz Linker
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      1.3
+// @version      1.4
 // @tag          ai-created
 // @description  Adds links from secondhandsongs.com to MusicBrainz entities.
 // @author       chaban

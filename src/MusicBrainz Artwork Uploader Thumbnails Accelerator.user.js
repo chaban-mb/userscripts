@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         [DEPRECATED] MusicBrainz: Artwork Uploader Thumbnails Accelerator
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      1.0.5
+// @version      1.0.6
 // @tag          ai-created
 // @description  Replaces data URI thumbnails on the artwork uploader with object URLs for better performance.
 // @author       chaban

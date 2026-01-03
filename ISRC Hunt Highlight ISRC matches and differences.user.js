@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ISRC Hunt: Highlight ISRC matches and differences
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      1.2.1
+// @version      1.2.2
 // @description  Highlights matching ISRCs in green and non-matches red.
 // @tag          ai-created
 // @author       chaban

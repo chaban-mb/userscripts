@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MusicBrainz: Add Spotify & SoundExchange search buttons on ISRC page
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      3.2
+// @version      3.3
 // @description  Adds buttons to search for the ISRC on Spotify and SoundExchange
 // @tag          ai-created
 // @author       rinsuki, chaban

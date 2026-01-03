@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ISRC Hunt: Hide a-tisket links, normalize link style
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      1.0
+// @version      1.1
 // @description  Hides a-tisket links on ISRC Hunt and normalizes link style
 // @tag          ai-created
 // @author       chaban

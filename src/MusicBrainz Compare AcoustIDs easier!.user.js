@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name          MusicBrainz: Compare AcoustIDs easier!
 // @namespace     https://musicbrainz.org/user/chaban
-// @version       1.1.1
+// @version       1.1.2
 // @tag           ai-created
 // @description   Displays AcoustID fingerprints in more places at MusicBrainz.
 // @author        otringal, chaban

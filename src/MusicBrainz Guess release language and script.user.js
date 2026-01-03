@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MusicBrainz: Guess release language and script
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      1.0.2
+// @version      1.0.3
 // @tag          ai-created
 // @description  Guess release language and script from release tracklist using Language Detector API
 // @author       ROpdebee, chaban

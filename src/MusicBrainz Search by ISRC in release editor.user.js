@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MusicBrainz: Search by ISRC in release editor
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      1.1.1
+// @version      1.1.2
 // @tag          ai-created
 // @description  Hooks into the inline recording search of the release editor to allow searching by ISRC.
 // @author       chaban

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        MusicBrainz: Highlight identical barcodes and toggle merge checkboxes
 // @namespace   https://musicbrainz.org/user/chaban
-// @version     1.2
+// @version     1.3
 // @tag         ai-created
 // @description Highlights sets of identical barcodes and toggles checkboxes for merging on click
 // @author      chaban

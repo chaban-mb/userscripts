@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MusicBrainz: Relationship Editor Batch Remove
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      1.1.0
+// @version      1.1.1
 // @description  Adds a toggle to batch remove/restore relationships. Shift+Click: Same Type. Ctrl+Click: Same Target. Ctrl+Shift+Click: Same Type & Target.
 // @tag          ai-created
 // @author       chaban

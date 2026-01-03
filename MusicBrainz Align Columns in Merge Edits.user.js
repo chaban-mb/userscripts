@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MusicBrainz: Align Columns in Merge Edits
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      2.4.1
+// @version      2.4.2
 // @tag          ai-created
 // @description  Aligns columns in merge edit tables for easier comparison.
 // @author       chaban

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        ISRC Hunt: Rewrite Harmony URLs
 // @namespace   https://musicbrainz.org/user/chaban
-// @version     1.1
+// @version     1.2
 // @description Rewrites links to Harmony to use "category=preferred"
 // @author      chaban
 // @license     MIT

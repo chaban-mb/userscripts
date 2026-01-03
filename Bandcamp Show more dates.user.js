@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        Bandcamp: Show more dates
 // @namespace   https://musicbrainz.org/user/chaban
-// @version     2.0
+// @version     2.1
 // @description Shows Bandcamp releases' real "publish date" below the listed release date
 // @tag         ai-created
 // @author      w_biggs (~joks), chaban

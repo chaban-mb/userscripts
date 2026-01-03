@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        DOM Mutation Observer Debugger
 // @namespace   https://musicbrainz.org/user/chaban
-// @version     1.0.0
+// @version     1.0.1
 // @tag         ai-created
 // @description Logs all DOM mutations (additions, removals, attribute changes) to the console for debugging purposes.
 // @author      chaban

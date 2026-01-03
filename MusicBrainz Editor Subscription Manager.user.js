@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MusicBrainz: Editor Subscription Manager
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      0.2.1
+// @version      0.2.2
 // @tag          ai-created
 // @description  Manages subscriptions, tracks name changes and detects deleted users.
 // @author       chaban

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MusicBrainz: Auto login MusicBrainz ISRC importers
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      2.1.1
+// @version      2.1.2
 // @description  Attempts to login on MusicBrainz ISRC submission sites like ISRC Hunt or MagicISRC and automatically handle OAuth authorization
 // @tag          ai-created
 // @author       chaban

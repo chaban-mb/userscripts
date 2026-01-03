@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MusicBrainz: Automatically show AcoustIDs
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      1.3.1
+// @version      1.3.2
 // @description  Automatically triggers the "Show acoustIDs" function of loujine's script
 // @tag          ai-created
 // @author       chaban
