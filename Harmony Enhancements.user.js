@@ -256,7 +256,7 @@
             key: 'enhancements.lang.techTerms',
             label: 'Technical Terms (one per line, regex supported)',
             description: 'Terms that are not specific to any language (like "remix" or "live") will be removed from titles before analysis.',
-            defaultValue: ['live', 'remix(es)?', 'edit(ion)?', 'medley', 'mix', 'version(s)?', 'instrumental', 'album', 'radio', 'single', 'vocal', 'dub', 'club', 'extended', 'original', 'acoustic', 'unplugged', 'mono', 'stereo', 'demo', 'remaster(ed)?', 'f(ea)?t\\.?', 'spee?d up', 'slowed', 'chopped', 'screwed', '8d'],
+            defaultValue: ['live', 'remix(es)?', 'edit(ion)?', 'medley', 'mix', 'version(s)?', 'instrumental', 'album', 'radio', 'single', 'vocal', 'dub', 'club', 'extended', 'original', 'acoustic', 'unplugged', 'mono', 'stereo', 'demo', 'remaster(ed)?', 'f(ea)?t\\.?', 'spee?d up', 'slowed', 'chopped', 'screwed', '8d', 'fast', 'slow'],
             section: 'Language Detection',
             type: 'textarea',
         },
@@ -1108,7 +1108,7 @@
     async function resetLanguageSettings() {
         const langConfigs = Object.values(SETTINGS_CONFIG).filter(c => c.section === 'Language Detection');
         for (const config of langConfigs) {
-            await GM_setValue(config.key, config.defaultValue);
+            await GM_deleteValue(config.key);
             const input = document.getElementById(config.key);
             if (!input) continue;
 
@@ -2297,8 +2297,10 @@
         GM_addStyle(css);
     }
 
-    async function migrateLanguageSettings() {
+    async function runSettingsCleanup() {
         const settings = AppState.settings;
+
+        // 1. Language Settings Migration (Legacy)
         const modeKey = SETTINGS_CONFIG.languageDetectionMode.key;
         const oldEnabledKey = 'enhancements.lang.enabled';
         const oldDisableKey = 'enhancements.lang.disableDetection';
@@ -2322,11 +2324,49 @@
             await GM_deleteValue(oldDisableKey);
             await GM_deleteValue(`${oldEnabledKey}.backup`);
         }
+
+        // 2. Cleanup List Defaults
+        const cleanupLists = [SETTINGS_CONFIG.techTerms, SETTINGS_CONFIG.stopWords];
+
+        const areSetsEqual = (a, b) => a.size === b.size && [...a].every(value => b.has(value));
+
+        for (const config of cleanupLists) {
+            // Use a unique symbol to detect if the key is missing/unset
+            const UNSET = 'HE_UNSET_' + Math.random();
+            const storedValue = await GM_getValue(config.key, UNSET);
+
+            if (storedValue !== UNSET && Array.isArray(storedValue)) {
+                const storedSet = new Set(storedValue);
+                const defaultSet = new Set(config.defaultValue);
+
+                let shouldDelete = false;
+
+                // Check 1: Matches current default (e.g. fast/slow included)
+                // This covers cases where user saved "no effective change"
+                if (areSetsEqual(storedSet, defaultSet)) {
+                    shouldDelete = true;
+                }
+
+                // Check 2: Matches OLD default (for techTerms only)
+                // This covers users who have the old default "forked" in storage
+                if (!shouldDelete && config.key === SETTINGS_CONFIG.techTerms.key) {
+                    const oldDefaultSet = new Set(config.defaultValue.filter(x => !['fast', 'slow'].includes(x)));
+                    if (areSetsEqual(storedSet, oldDefaultSet)) {
+                        shouldDelete = true;
+                    }
+                }
+
+                if (shouldDelete) {
+                    await GM_deleteValue(config.key);
+                    log(`Cleanup: Reset ${config.key} to default (stored value matched default).`);
+                }
+            }
+        }
     }
 
     async function main() {
         AppState.settings = await getSettings();
-        await migrateLanguageSettings();
+        await runSettingsCleanup();
         await DebugModule.init();
 
         const { path } = AppState;
