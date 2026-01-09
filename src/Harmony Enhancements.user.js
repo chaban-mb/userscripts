@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Harmony: Enhancements
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      1.21.0
+// @version      1.21.1
 // @tag          ai-created
 // @description  Adds some convenience features, various UI and behavior settings, as well as an improved language detection to Harmony.
 // @author       chaban
@@ -1807,22 +1807,32 @@
             }
 
             const originalLabel = { ...releaseData.labels[0] };
-            const labelName = originalLabel.name.trim().toLowerCase();
+            const labelName = originalLabel.name.trim();
 
-            // Condition 1: Check if the full artist string matches the label.
-            const fullArtistString = formatArtistString(releaseData.artists).trim().toLowerCase();
-            const isFullMatch = fullArtistString === labelName;
-            // Condition 2: Check if label name is composed of artist names (Self-Release)
-            // e.g. "Artist A", "Artist A & Artist B", "Artist A x Artist B", "Artist A feat. Artist B"
-            const artistNames = releaseData.media.flatMap(m => m.tracklist.map(t => t.artist)).filter(Boolean);
-            const uniqueArtists = [...new Set(artistNames.flatMap(a => [a, ...a.split(/[,&]|\bx\b|\bfeat\.?|\bft\.?|\bvs\.?/i).map(s => s.trim())]))].filter(Boolean);
+            if (!labelName || originalLabel.mbid) return;
 
-            // Sort artists by length (descending) to match longest names first (prevents partial matches)
-            const sortedArtists = uniqueArtists.sort((a, b) => b.length - a.length);
+            // 1. Gather all artist names (Release Artists + Track Artists)
+            const allArtists = [
+                ...releaseData.artists,
+                ...(releaseData.media || []).flatMap(m =>
+                    (m.tracklist || []).flatMap(t => t.artists || [])
+                )
+            ];
+
+            // 2. Extract unique names and sort by length (descending)
+            const uniqueArtistNames = new Set();
+            allArtists.forEach(artist => {
+                if (artist && artist.name) {
+                    uniqueArtistNames.add(artist.name.trim());
+                }
+            });
+
+            const sortedArtists = Array.from(uniqueArtistNames)
+                .sort((a, b) => b.length - a.length);
 
             let remainingLabel = labelName;
 
-            // 2. Iteratively remove artist names
+            // 3. Iteratively remove artist names
             for (const artistName of sortedArtists) {
                 // Escape regex special characters in artist name
                 const escapedName = artistName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
