@@ -1812,13 +1812,30 @@
             // Condition 1: Check if the full artist string matches the label.
             const fullArtistString = formatArtistString(releaseData.artists).trim().toLowerCase();
             const isFullMatch = fullArtistString === labelName;
+            // Condition 2: Check if label name is composed of artist names (Self-Release)
+            // e.g. "Artist A", "Artist A & Artist B", "Artist A x Artist B", "Artist A feat. Artist B"
+            const artistNames = releaseData.media.flatMap(m => m.tracklist.map(t => t.artist)).filter(Boolean);
+            const uniqueArtists = [...new Set(artistNames.flatMap(a => [a, ...a.split(/[,&]|\bx\b|\bfeat\.?|\bft\.?|\bvs\.?/i).map(s => s.trim())]))].filter(Boolean);
 
-            // Condition 2: Check if any individual artist name matches the label.
-            const individualArtistNames = new Set(releaseData.artists.map(artist => artist.name.trim().toLowerCase()));
-            const isPartialMatch = individualArtistNames.has(labelName);
+            // Sort artists by length (descending) to match longest names first (prevents partial matches)
+            const sortedArtists = uniqueArtists.sort((a, b) => b.length - a.length);
 
-            // If either condition is true (and the label isn't already identified by an MBID), it's a self-release.
-            if ((isFullMatch || isPartialMatch) && !originalLabel.mbid) {
+            let remainingLabel = labelName;
+
+            // 2. Iteratively remove artist names
+            for (const artistName of sortedArtists) {
+                // Escape regex special characters in artist name
+                const escapedName = artistName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                // Case-insensitive replacement
+                const regex = new RegExp(escapedName, 'i');
+                remainingLabel = remainingLabel.replace(regex, '');
+            }
+
+            // 3. Check if what's left is only separators/whitespace
+            const SEPARATORS_REGEX = /^(?:x|&|,|\/|-|\+|feat\.|ft\.|pres\.|presents|vs\.|vs|\s)+$/i;
+            const isSelfRelease = remainingLabel.length === 0 || SEPARATORS_REGEX.test(remainingLabel);
+
+            if (isSelfRelease && !originalLabel.mbid) {
                 AppState.data.release.labels[0] = { ...originalLabel, ...NO_LABEL };
 
                 const { mainLabelList } = AppState.dom;
