@@ -18,7 +18,7 @@
 // @grant        GM.registerMenuCommand
 // @run-at       document-end
 // @noframes
-// @require      lib/MusicBrainzAPI.js
+// @require      ../lib/MusicBrainzAPI.js
 // @updateURL    https://github.com/chaban-mb/userscripts/raw/main/src/YouTube%20MusicBrainz%20Importer.user.js
 // @downloadURL  https://github.com/chaban-mb/userscripts/raw/main/src/YouTube%20MusicBrainz%20Importer.user.js
 // ==/UserScript==

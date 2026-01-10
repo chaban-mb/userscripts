@@ -19,7 +19,7 @@
 // @connect     self
 // @icon        https://musicbrainz.org/static/images/favicons/android-chrome-512x512.png
 // @grant       GM_xmlhttpRequest
-// @require     lib/MusicBrainzAPI.js
+// @require     ..lib/MusicBrainzAPI.js
 // @updateURL    https://github.com/chaban-mb/userscripts/raw/main/src/MusicBrainz%20Add%20search%20link%20for%20barcode.user.js
 // @downloadURL  https://github.com/chaban-mb/userscripts/raw/main/src/MusicBrainz%20Add%20search%20link%20for%20barcode.user.js
 // ==/UserScript==

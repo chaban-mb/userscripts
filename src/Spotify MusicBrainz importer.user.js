@@ -15,7 +15,7 @@
 // @grant        GM.getValue
 // @grant        GM.setValue
 // @grant        GM.registerMenuCommand
-// @require      lib/MusicBrainzAPI.js
+// @require      ../lib/MusicBrainzAPI.js
 // @updateURL    https://github.com/chaban-mb/userscripts/raw/main/src/Spotify%20MusicBrainz%20importer.user.js
 // @downloadURL  https://github.com/chaban-mb/userscripts/raw/main/src/Spotify%20MusicBrainz%20importer.user.js
 // ==/UserScript==
