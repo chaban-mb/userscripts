@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Harmony: Enhancements
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      1.21.1
+// @version      1.21.2
 // @tag          ai-created
 // @description  Adds some convenience features, various UI and behavior settings, as well as an improved language detection to Harmony.
 // @author       chaban
@@ -256,7 +256,7 @@
             key: 'enhancements.lang.techTerms',
             label: 'Technical Terms (one per line, regex supported)',
             description: 'Terms that are not specific to any language (like "remix" or "live") will be removed from titles before analysis.',
-            defaultValue: ['live', 'remix(es)?', 'edit(ion)?', 'medley', 'mix', 'version(s)?', 'instrumental', 'album', 'radio', 'single', 'vocal', 'dub', 'club', 'extended', 'original', 'acoustic', 'unplugged', 'mono', 'stereo', 'demo', 'remaster(ed)?', 'f(ea)?t\\.?', 'spee?d up', 'slowed', 'chopped', 'screwed', '8d', 'fast', 'slow'],
+            defaultValue: ['live', '(re)?mix(es)?', 'edit(ion)?', 'medley', 'version(s)?', 'instrumental', 'album', 'radio', 'single', 'vocal', 'dub', 'club', 'extended', 'original', 'acoustic', 'unplugged', 'mono', 'stereo', 'demo', '(re)?master(ed)?', 'f(ea)?t\\.?', 'spee?d up', 'slow(ed)?', 'chopped', 'screwed', '8d', 'fast'],
             section: 'Language Detection',
             type: 'textarea',
         },
