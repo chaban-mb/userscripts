@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        Beatport: MusicBrainz Importer
 // @namespace   https://musicbrainz.org/user/chaban
-// @version     2.6.0
+// @version     2.6.1
 // @description Adds MusicBrainz status icons to Beatport releases and allows importing them with Harmony
 // @tag         ai-created
 // @author      RustyNova, chaban
@@ -35,7 +35,8 @@
       '/artist/',
       '/track/',
       '/genre/',
-      '/release/'
+      '/release/',
+      '/chart/'
     ],
 
     HARMONY_DEFAULT_PARAMS: {
