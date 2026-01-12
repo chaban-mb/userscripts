@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Harmony: Enhancements
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      1.21.2
+// @version      1.22.0
 // @tag          ai-created
 // @description  Adds some convenience features, various UI and behavior settings, as well as an improved language detection to Harmony.
 // @author       chaban
@@ -700,11 +700,11 @@
         },
 
         /**
-        * Replaces the content of the main label element with a new name and an optional MB link.
-        * @param {HTMLElement} labelListElement - The <span> element containing the label (e.g., AppState.dom.mainLabelList).
-        * @param {string} newLabelName - The new text for the label.
-        * @param {string | null} [newMbid] - The optional MBID to link to.
-        */
+            * Replaces the content of the main label element with a new name and an optional MB link.
+            * @param {HTMLElement} labelListElement - The <span> element containing the label (e.g., AppState.dom.mainLabelList).
+            * @param {string} newLabelName - The new text for the label.
+            * @param {string | null} [newMbid] - The optional MBID to link to.
+            */
         updateLabelLink: (labelListElement, newLabelName, newMbid) => {
             if (!labelListElement) return;
 
@@ -724,6 +724,63 @@
             } else {
                 labelListElement.appendChild(document.createTextNode(newLabelName));
             }
+        },
+
+        /**
+         * Builds the HTML for a list of artists, preserving links from scraped data if available.
+         * @param {object[]} artists - Array of artist objects {name, mbid?}.
+         * @returns {string} - The constructed HTML string.
+         */
+        buildArtistCreditsHTML: (artists) => {
+            const { scrapedArtistLinks } = AppState.dom;
+            return artists.reduce((html, artist, index) => {
+                let artistLinkHTML = `<span>${artist.name}</span>`;
+
+                // Try to find an existing link for this artist name
+                if (scrapedArtistLinks) {
+                    const matchingSpans = scrapedArtistLinks.filter(data => data.name === artist.name);
+                    if (matchingSpans.length > 0) {
+                        const bestSpanData = matchingSpans.reduce((best, current) => {
+                            return current.count > best.count ? current : best;
+                        }, matchingSpans[0]);
+                        artistLinkHTML = bestSpanData.html;
+                    }
+                }
+
+                html += artistLinkHTML;
+                if (index < artists.length - 1) {
+                    const joinPhrase = (index === artists.length - 2) ? ' & ' : ', ';
+                    html += joinPhrase;
+                }
+                return html;
+            }, '');
+        },
+
+        /**
+         * Updates a tracklist artist cell with new artists, adding an indicator and preserving alt-values.
+         * @param {HTMLTableCellElement} cell - The table cell to update.
+         * @param {object[]} newArtists - The new list of artists.
+         * @param {string} oldArtistsString - The original artist string (for tooltip).
+         * @param {object} [options] - Options for the indicator.
+         */
+        updateTrackArtistCell: (cell, newArtists, oldArtistsString, options = {}) => {
+            if (!cell) return;
+
+            const existingAltValues = cell.querySelector('ul.alt-values');
+            const newHTML = UI_UTILS.buildArtistCreditsHTML(newArtists);
+
+            cell.innerHTML = newHTML;
+
+            const tooltipPrefix = options.tooltipPrefix || 'Original track artists:';
+            const overwrittenSpan = UI_UTILS.createIndicatorSpan('overwritten', oldArtistsString, { ...options, tooltipPrefix });
+            cell.appendChild(overwrittenSpan);
+
+            if (existingAltValues) {
+                cell.appendChild(document.createTextNode(' '));
+                cell.appendChild(existingAltValues);
+            }
+
+            cell.setAttribute(DATA_ATTRIBUTE_APPLIED, 'true');
         },
     };
 
@@ -2100,34 +2157,11 @@
             const newArtists = formatArtistString(commonTrackArtists);
             AppState.data.release.artists = commonTrackArtists;
 
-            const { artistCreditSpan, scrapedArtistLinks } = AppState.dom;
+            const { artistCreditSpan } = AppState.dom;
             if (artistCreditSpan) {
-                const newCreditHTML = commonTrackArtists.reduce((html, artist, index) => {
-                    const artistLinkHTML = (() => {
-                        const matchingSpans = scrapedArtistLinks.filter(data => data.name === artist.name);
-
-                        if (matchingSpans.length === 0) {
-                            return `<span>${artist.name}</span>`;
-                        }
-
-                        const bestSpanData = matchingSpans.reduce((best, current) => {
-                            return current.count > best.count ? current : best;
-                        }, matchingSpans[0]);
-
-                        return bestSpanData.html;
-                    })();
-
-                    html += artistLinkHTML;
-
-                    if (index < commonTrackArtists.length - 1) {
-                        const joinPhrase = (index === commonTrackArtists.length - 2) ? ' & ' : ', ';
-                        html += joinPhrase;
-                    }
-                    return html;
-                }, '');
-
+                const newCreditHTML = UI_UTILS.buildArtistCreditsHTML(commonTrackArtists);
                 artistCreditSpan.innerHTML = newCreditHTML;
-                const overwrittenSpan = UI_UTILS.createIndicatorSpan('overwritten', oldArtists, 'Original release artists:');
+                const overwrittenSpan = UI_UTILS.createIndicatorSpan('overwritten', oldArtists, { tooltipPrefix: 'Original release artists:' });
                 artistCreditSpan.append(overwrittenSpan);
             }
             const messageContent = `Synced more detailed track artist credit to release artist.<br><b>Before:</b> ${oldArtists}<br><b>After:</b> ${newArtists}`;
