@@ -185,6 +185,16 @@
             runAt: 'load',
             paths: [/^\/release(?!\/actions)/],
         },
+        detectRemixers: {
+            key: 'enhancements.releaseData.detectRemixers',
+            label: 'Detect and remove remixers from track artists',
+            description: 'If an artist is mentioned in the track title\'s version string (e.g. "Title (Artist X Remix)"), remove them from the track artist list.',
+            defaultValue: false,
+            section: 'Release Data',
+            type: 'checkbox',
+            runAt: 'load',
+            paths: [/^\/release(?!\/actions)/],
+        },
 
         // Language Detection
         languageDetectionMode: {
@@ -1859,6 +1869,89 @@
                         mainLabelList.parentNode.insertBefore(overwrittenSpan, mainLabelList.nextSibling);
                     }
                 }
+            }
+        },
+
+        detectRemixers: () => {
+            const releaseData = getReleaseDataFromJSON();
+            if (!releaseData?.media) return;
+
+            // Keywords that indicate a remix/version string
+            const REMIX_KEYWORDS = ['Remix', 'Rework', 'Edit', 'Mix', 'Flip', 'Bootleg', 'Mashup', 'VIP', 'Dub'];
+            const KEYWORDS_REGEX = new RegExp(`\\b(${REMIX_KEYWORDS.join('|')})\\b`, 'i');
+
+            // Regex to find content in parentheses or brackets at the end of the title
+            // Captures the content inside the brackets/parens
+            const VERSION_REGEX = /(?:[([{\u3010\u300C])([^)}\]\u3011\u300D]*?)(?:[)}\]\u3011\u300D])\s*$/;
+
+            // Separators often found around artist names in these strings
+            const SEPARATORS = '[\\s&,./+()\\[\\]-]';
+            const BOUNDARY_START = `(?:^|${SEPARATORS})`;
+            const BOUNDARY_END = `(?:$|${SEPARATORS})`;
+
+            const { tracklistTitleCells } = AppState.dom;
+            const flattenedTracks = releaseData.media.flatMap(m => m.tracklist || []);
+
+            const removedArtistsLog = [];
+            let changesMade = false;
+
+            flattenedTracks.forEach((track, index) => {
+                const title = track.title;
+                if (!title) return;
+
+                const match = title.match(VERSION_REGEX);
+                if (!match) return;
+
+                const versionString = match[1];
+
+                if (!KEYWORDS_REGEX.test(versionString)) return;
+                if (!track.artists || track.artists.length <= 1) return;
+
+                const keptArtists = [];
+                const removedFromThisTrack = [];
+
+                track.artists.forEach(artist => {
+                    const artistName = artist.name.trim();
+                    const escapedName = artistName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                    const nameRegex = new RegExp(`${BOUNDARY_START}${escapedName}${BOUNDARY_END}`, 'i');
+
+                    if (nameRegex.test(versionString)) {
+                        removedFromThisTrack.push(artistName);
+                        changesMade = true;
+                    } else {
+                        keptArtists.push(artist);
+                    }
+                });
+
+                if (removedFromThisTrack.length > 0) {
+                    if (keptArtists.length > 0) {
+                        const oldArtistsString = formatArtistString(track.artists);
+                        track.artists = keptArtists;
+                        removedArtistsLog.push({
+                            track: track.number,
+                            title: title,
+                            removed: removedFromThisTrack
+                        });
+
+                        // --- UI Update ---
+                        const titleCell = tracklistTitleCells[index];
+                        if (titleCell) {
+                            const row = titleCell.parentElement;
+                            const artistCell = row.cells[2];
+                            if (artistCell) {
+                                UI_UTILS.updateTrackArtistCell(artistCell, keptArtists, oldArtistsString);
+                            }
+                        }
+                    }
+                }
+            });
+
+            if (changesMade && removedArtistsLog.length > 0) {
+                const lines = removedArtistsLog.map(log =>
+                    `Track ${log.track}: Removed <b>${log.removed.join(', ')}</b> (MATCHED: "${log.title}")`
+                );
+                const messageContent = `Detected and removed remixers from track artists based on title:<br>${lines.join('<br>')}`;
+                createAndInsertMessage('he-remixer-detection', messageContent, 'debug', ['he-artist-sync', 'he-title-style-correction']);
             }
         },
 
