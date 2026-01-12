@@ -195,6 +195,16 @@
             runAt: 'load',
             paths: [/^\/release(?!\/actions)/],
         },
+        removeBarcodeCatalogNumbers: {
+            key: 'enhancements.releaseData.removeBarcodeCatalogNumbers',
+            label: 'Remove catalog number if it matches the barcode',
+            description: 'If a label\'s catalog number is identical to the release GTIN (barcode), remove it from the seed data and UI.',
+            defaultValue: false,
+            section: 'Release Data',
+            type: 'checkbox',
+            runAt: 'load',
+            paths: [/^\/release(?!\/actions)/],
+        },
 
         // Language Detection
         languageDetectionMode: {
@@ -1952,6 +1962,69 @@
                 );
                 const messageContent = `Detected and removed remixers from track artists based on title:<br>${lines.join('<br>')}`;
                 createAndInsertMessage('he-remixer-detection', messageContent, 'debug', ['he-artist-sync', 'he-title-style-correction']);
+            }
+        },
+
+        removeBarcodeCatalogNumbers: () => {
+            const releaseData = getReleaseDataFromJSON();
+            const { gtin, labels } = releaseData;
+
+            if (!gtin || !labels || labels.length === 0) return;
+
+            const firstLabelSpan = AppState.dom.mainLabelList;
+            if (!firstLabelSpan) return;
+
+            const labelListItems = firstLabelSpan.closest('ul')?.querySelectorAll('li');
+            if (!labelListItems) return;
+
+            let changesMade = false;
+            const removedLogs = [];
+
+            labels.forEach((label, index) => {
+                const catNum = label.catalogNumber ? String(label.catalogNumber).trim() : '';
+                const cleanGtin = String(gtin).trim();
+
+                if (catNum === cleanGtin) {
+                    label.catalogNumber = null;
+                    changesMade = true;
+                    removedLogs.push(label.name);
+
+                    if (labelListItems[index]) {
+                        const li = labelListItems[index];
+
+                        let textNodeToReplace = null;
+
+                        for (const node of li.childNodes) {
+                            if (node.nodeType === Node.TEXT_NODE && node.textContent.includes(cleanGtin)) {
+                                textNodeToReplace = node;
+                                break;
+                            }
+                        }
+
+                        if (textNodeToReplace) {
+                            textNodeToReplace.textContent = textNodeToReplace.textContent.replace(cleanGtin, '');
+
+                            const removedSpan = UI_UTILS.createIndicatorSpan('removed', cleanGtin, {
+                                type: 'removed',
+                                tooltipPrefix: 'Removed catalog number (matches barcode):',
+                                standalone: true
+                            });
+
+                            const labelLinkSpan = li.querySelector('.entity-links');
+                            if (labelLinkSpan) {
+                                labelLinkSpan.after(removedSpan);
+                                labelLinkSpan.after(' ');
+                            } else {
+                                li.append(removedSpan);
+                            }
+                        }
+                    }
+                }
+            });
+
+            if (changesMade) {
+                const messageContent = `Removed catalog numbers that matched the barcode (${gtin}) for labels: <b>${removedLogs.join(', ')}</b>`;
+                createAndInsertMessage('he-cat-barcode-match', messageContent, 'debug');
             }
         },
 
