@@ -413,6 +413,7 @@ Import your Discogs collection directly into a MusicBrainz collection.
 
 1. Make a new release collection
 1. Upload your CSV
+
 [📷 View Screenshot](https://community.metabrainz.org/uploads/default/original/3X/d/3/d32d6965a2c57564bac560c8550a8089d14491f5.png)
 
 ## MusicBrainz: Mass Merge Recordings from Edit
