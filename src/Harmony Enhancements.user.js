@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Harmony: Enhancements
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      1.22.0
+// @version      1.22.1
 // @tag          ai-created
 // @description  Adds some convenience features, various UI and behavior settings, as well as an improved language detection to Harmony.
 // @author       chaban
@@ -1768,7 +1768,7 @@
 
             const providers = releaseData.info?.providers || [];
             const providerCount = providers.length;
-            const regexp = /(?<title>.+?)(?:\s+?[\u2010\u2012\u2013\u2014~/-])(?![^(]*\)) (?<eti>.*)/;
+            const regexp = /(?<title>.+?)(?:\s+?[~/-])(?![^(]*\)) (?<eti>.*)/;
             let modifications = [];
 
             const getCorrectedTitle = (originalTitle) => {
