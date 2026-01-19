@@ -8,6 +8,8 @@ A comprehensive userscript for **[Harmony](http://harmony.pulsewidth.org.uk/)** 
 - **Normalize ETI:** Converts hyphenated Extra Title Information (ETI) on titles (e.g., `Title - Remix` to `Title (Remix)`) to match MusicBrainz style guidelines.
 - **Self-Release Labeling:** Automatically sets the label to the special purpose label `[no label]` for self-releases where the artist name matches the label name.
 - **Label MBID Mapping:** Automatically sets a known Label MBID based on a user-defined list if Harmony cannot resolve it.
+- **Remixer Removal:** Detects remix information in track titles (e.g., `(Artist Remix)`) and automatically removes the credited remixer from the track artist field.
+- **Catalog Number Cleanup:** Automatically removes catalog numbers that are identical to the release barcode (GTIN).
 
 #### Language Detection
 - **Enhanced Language/Script Guessing:** Implements a secondary **browser-based language detection** system which can be more accurate than Harmony's default.
