@@ -15,7 +15,7 @@
 // @downloadURL  https://github.com/chaban-mb/userscripts/raw/main/src/MusicBrainz%20Artwork%20Uploader%20Turbo.user.js
 // ==/UserScript==
 
-(function() {
+(function () {
     'use strict';
 
     // --- MAIN APPLICATION ---
@@ -291,14 +291,32 @@
                 }
 
                 async _handleRetry(file, error) {
-                    const httpStatus = error[0]?.status ?? null;
+                    const httpStatus = error.status ?? (typeof error[1] === 'number' ? error[1] : null) ?? error[0]?.status ?? null;
+
+                    // Avoid retrying on form errors that aren't specifically handled (like expiration)
+                    if (file.editErrorMessage() || file.signErrorMessage()) {
+                        file._script.stage = `Failed (Form Error)`;
+                        this.hasCriticalError = true;
+                        ArtworkUploaderTurbo.logger.error(`Unrecoverable form error for file "${file.name}": ${file.editErrorMessage() || file.signErrorMessage()}`);
+                        ArtworkUploaderTurbo.UI.updateDebugUI();
+                        return false;
+                    }
+
                     const isRetriable = (httpStatus >= 500 || httpStatus === 429 || httpStatus === 408 || httpStatus === 0 || httpStatus === null);
 
                     if (isRetriable) {
                         file._script.retryDelay = file._script.retryDelay || ArtworkUploaderTurbo.INITIAL_RETRY_DELAY_MS;
-                        file._script.stage = `Retrying (HTTP ${httpStatus ?? 'N/A'})...`;
-                        ArtworkUploaderTurbo.UI.updateDebugUI();
-                        await new Promise(resolve => setTimeout(resolve, file._script.retryDelay));
+                        const delay = file._script.retryDelay;
+                        const startTime = Date.now();
+
+                        while (Date.now() - startTime < delay) {
+                            const remaining = Math.ceil((delay - (Date.now() - startTime)) / 1000);
+                            file._script.stage = `Retrying (HTTP ${httpStatus ?? 'N/A'}) in ${remaining}s...`;
+                            ArtworkUploaderTurbo.UI.updateDebugUI();
+                            await new Promise(resolve => setTimeout(resolve, 500));
+                            if (this.hasCriticalError) return false;
+                        }
+
                         file._script.retryDelay = Math.min(file._script.retryDelay * 2, ArtworkUploaderTurbo.MAX_RETRY_DELAY_MS);
                         return true;
                     }
@@ -312,7 +330,7 @@
                 }
 
                 async _signerThread() {
-                    while (this.processedFileCount + this.filesToSubmit.length + this.filesToUpload.length < this.allFiles.length) {
+                    while (this.processedFileCount + this.filesToSubmit.length + this.filesToUpload.length < this.allFiles.length && !this.hasCriticalError) {
                         const file = this.filesToSign.shift();
                         if (!file) { await new Promise(r => setTimeout(r, 100)); continue; }
                         if (!file._script) file._script = {};
@@ -321,6 +339,7 @@
                             try {
                                 file.status(MB.Art.upload_status_enum.signing);
                                 file._script.stage = 'Signing';
+                                file.signErrorMessage('');
                                 ArtworkUploaderTurbo.UI.updateDebugUI();
                                 file.postfields = await ArtworkUploaderTurbo.toNativePromise(MB.Art.sign_upload(file, this.gid, file.mimeType()));
                                 this.filesToUpload.push(file);
@@ -333,7 +352,7 @@
                 }
 
                 async _uploaderWorker() {
-                     while (this.processedFileCount < this.allFiles.length && !this.hasCriticalError) {
+                    while (this.processedFileCount < this.allFiles.length && !this.hasCriticalError) {
                         const file = this.filesToUpload.shift();
                         if (!file) { await new Promise(r => setTimeout(r, 100)); continue; }
 
@@ -365,8 +384,9 @@
                             try {
                                 file.status(MB.Art.upload_status_enum.submitting);
                                 file._script.stage = 'Submitting';
+                                file.editErrorMessage('');
                                 ArtworkUploaderTurbo.UI.updateDebugUI();
-                                await ArtworkUploaderTurbo.toNativePromise(MB.Art.submit_edit(file, file.postfields, file.mimeType(), position));
+                                await this._doSubmitEdit(file, file.postfields, file.mimeType(), position);
                                 file.progress(100);
                                 file.status(MB.Art.upload_status_enum.done);
                                 file._script.stage = 'Done';
@@ -374,9 +394,57 @@
                                 ArtworkUploaderTurbo.UI.updateDebugUI();
                                 break;
                             } catch (error) {
+                                if (error.isFormExpired) {
+                                    file._script.stage = 'Form expired, restarting...';
+                                    file._script.retryDelay = 0;
+                                    this.filesToSign.push(file);
+                                    ArtworkUploaderTurbo.UI.updateDebugUI();
+                                    break;
+                                }
                                 if (!(await this._handleRetry(file, error))) break;
                             }
                         }
+                    }
+                }
+
+                async _doSubmitEdit(file, postfields, mimeType, position) {
+                    const { formName } = this;
+                    const formData = new FormData();
+                    formData.append(`${formName}.id`, postfields.image_id);
+                    formData.append(`${formName}.nonce`, postfields.nonce);
+                    formData.append(`${formName}.position`, position);
+                    formData.append(`${formName}.mime_type`, mimeType);
+                    formData.append(`${formName}.comment`, file.comment());
+                    formData.append(`${formName}.edit_note`, $('textarea.edit-note').val());
+                    if ($(`#id-${formName}\\.make_votable`).prop('checked')) {
+                        formData.append(`${formName}.make_votable`, 'on');
+                    }
+                    for (const checkbox of file.types()) {
+                        if (checkbox.checked()) {
+                            formData.append(`${formName}.type_id`, checkbox.id);
+                        }
+                    }
+
+                    const response = await fetch($(`#${formName}`).attr('action'), {
+                        method: 'POST',
+                        headers: { 'Accept': 'application/json' },
+                        body: formData
+                    });
+
+                    const data = await response.json().catch(() => ({}));
+                    if (!response.ok || data.has_errors) {
+                        if (data.field?.nonce?.has_errors) {
+                            throw { isFormExpired: true, status: response.status, data };
+                        }
+                        if (data.field) {
+                            for (const field of Object.values(data.field)) {
+                                if (field.has_errors) {
+                                    file.editErrorMessage(field.errors[0]);
+                                    break;
+                                }
+                            }
+                        }
+                        throw { status: response.status, data };
                     }
                 }
             }
@@ -389,7 +457,7 @@
                     clearInterval(checkMB);
 
                     const originalVM = MB.Art.UploadProcessViewModel;
-                    MB.Art.UploadProcessViewModel = function(...args) {
+                    MB.Art.UploadProcessViewModel = function (...args) {
                         const instance = new originalVM(...args);
                         ArtworkUploaderTurbo.state.upvm = instance;
                         ArtworkUploaderTurbo.logger.log('Successfully captured UploadProcessViewModel instance.');
