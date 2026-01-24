@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ListenBrainz: Extended Controls
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      1.2.0
+// @version      1.2.1
 // @tag          ai-created
 // @description  Allows customizing which actions are shown in listen controls cards, moving "Open in Music Service" links to the main controls area, displaying source info, and auto-copying text in the "Link Listen" modal.
 // @author       chaban
@@ -45,13 +45,18 @@
             jellyfin: 'https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/jellyfin.svg',
             kodi: 'https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/kodi.svg',
             lastfm: 'https://upload.wikimedia.org/wikipedia/commons/b/b7/Last.fm_favicon.png',
+            'listenbrainz lastfm': 'https://upload.wikimedia.org/wikipedia/commons/b/b7/Last.fm_favicon.png',
             listenbrainz: 'https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/listenbrainz.svg',
             lms: 'https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/lyrion-dark.svg',
+            mopidy: 'https://raw.githubusercontent.com/home-assistant/brands/master/custom_integrations/mopidy/icon.png',
             mpv: 'https://raw.githubusercontent.com/mpv-player/mpv/refs/heads/master/etc/mpv.svg',
             'music-assistant': 'https://avatars.githubusercontent.com/u/71128003',
+            musicbee: 'https://getmusicbee.com/img/musicbee.png',
             navidrome: 'https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/navidrome.svg',
             'pano scrobbler': 'https://raw.githubusercontent.com/kawaiiDango/pano-scrobbler/refs/heads/main/composeApp/src/desktopMain/composeResources/drawable/ic_launcher_with_bg.svg',
+            plex: 'https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/plex.svg',
             squeezelite: 'https://raw.githubusercontent.com/CDrummond/squeezelite/android/fastlane/metadata/android/en-US/images/icon.png',
+            strawberry: 'https://raw.githubusercontent.com/strawberrymusicplayer/strawberry/master/data/icons/full/strawberry.png',
             tidal: 'https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/tidal.svg',
             'web scrobbler': 'https://raw.githubusercontent.com/web-scrobbler/web-scrobbler/refs/heads/master/src/icons/main/universal.svg'
         }
@@ -379,7 +384,7 @@
                     if (!val) return null;
                     const lowerVal = String(val).toLowerCase();
                     return Object.keys(REGISTRY.icons).find(key =>
-                        !['player', 'harmony'].includes(key) && lowerVal.includes(key.toLowerCase())
+                        !['player', 'harmony'].includes(key) && lowerVal.startsWith(key.toLowerCase())
                     );
                 };
 
