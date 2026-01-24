@@ -707,7 +707,7 @@
 
         /**
             * Replaces the content of the main label element with a new name and an optional MB link.
-            * @param {HTMLElement} labelListElement - The <span> element containing the label (e.g., AppState.dom.mainLabelList).
+            * @param {HTMLElement} labelListElement - The <span> element containing the label (e.g., element from AppState.dom.labelListElements).
             * @param {string} newLabelName - The new text for the label.
             * @param {string | null} [newMbid] - The optional MBID to link to.
             */
@@ -2052,7 +2052,7 @@
 
             if (!gtin || !labels || labels.length === 0) return;
 
-            const firstLabelSpan = AppState.dom.mainLabelList;
+            const firstLabelSpan = AppState.dom.labelListElements?.[0];
             if (!firstLabelSpan) return;
 
             const labelListItems = firstLabelSpan.closest('ul')?.querySelectorAll('li');
@@ -2399,8 +2399,7 @@
             });
         }
 
-        AppState.dom.mainLabelList = document.querySelector('ul.release-labels li span.entity-links');
-        AppState.dom.labelListElements = document.querySelectorAll('ul.release-labels li span.entity-links');
+        AppState.dom.labelListElements = document.querySelectorAll('ul.release-labels:not(.inline) li span.entity-links');
         AppState.dom.scrapedArtistLinks = Array.from(document.querySelectorAll('.entity-links')).map(span => ({
             name: span.textContent.trim(),
             count: span.querySelectorAll('a').length,
