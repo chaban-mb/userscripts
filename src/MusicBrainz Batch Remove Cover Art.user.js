@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MusicBrainz: Batch Remove Cover Art
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      0.5.6
+// @version      0.6.0
 // @description  Allows batch removing cover art from MusicBrainz releases.
 // @tag          ai-created
 // @author       chaban, jesus2099
@@ -491,6 +491,7 @@
 
         let totalRemovals = 0;
         let completedRemovals = 0;
+        let lastChecked = null;
 
         coverArtDivs.forEach((artworkContDiv) => {
             if (artworkContDiv.closest('.mb-batch-remove-artwork-wrapper')) return;
@@ -529,6 +530,7 @@
                 span.classList.remove('has-content', 'status-success', 'status-error');
             });
             isAborting = false;
+            lastChecked = null;
         };
 
         selectAllCheckbox.addEventListener('change', (event) => {
@@ -636,6 +638,27 @@
                 });
             });
         };
+
+        document.getElementById('content').addEventListener('click', (event) => {
+            if (event.target.classList.contains('cover-art-checkbox')) {
+                const checkbox = event.target;
+                if (event.shiftKey && lastChecked && lastChecked !== checkbox) {
+                    const checkboxes = Array.from(document.querySelectorAll('input.cover-art-checkbox:not(:disabled)'));
+                    const start = checkboxes.indexOf(lastChecked);
+                    const end = checkboxes.indexOf(checkbox);
+
+                    if (start > -1 && end > -1) {
+                        const low = Math.min(start, end);
+                        const high = Math.max(start, end);
+                        const shouldCheck = checkbox.checked;
+                        for (let i = low; i <= high; i++) {
+                            checkboxes[i].checked = shouldCheck;
+                        }
+                    }
+                }
+                lastChecked = checkbox;
+            }
+        });
     };
 
     observeDOM();
