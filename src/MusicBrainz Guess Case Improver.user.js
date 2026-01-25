@@ -47,8 +47,9 @@
     const etiPhrasesToLowercase = [
         'official lyric video', 'official music video', 'backing track',
         'kinetic lyric video', 'animated', 'animation', 'official video',
-        'official visualizer', 'slowed' , 'super slowed', 'speed up', 'sped up',
-        'super speed up', 'extra slowed', 'ultra slowed', 'slowed & reverb', 'slowed + reverb'
+        'official visualizer', 'slowed', 'super slowed', 'speed up', 'sped up',
+        'super speed up', 'extra slowed', 'ultra slowed', 'slowed & reverb', 'slowed + reverb',
+        'music video'
     ];
 
     const JOIN_PHRASE_PATTERN = /\s*\b(?:featuring|feat|ft|vs)\.?\b\s*|\s*(?:[,，、&・×/])\s*|\s+and\s+/gi;
