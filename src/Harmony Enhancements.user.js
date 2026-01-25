@@ -2121,29 +2121,70 @@
             if (labelMap.size === 0) return;
 
             const { labelListElements } = AppState.dom;
+            if (!labelListElements) return;
 
-            releaseData.labels.forEach((originalLabel, index) => {
-                if (originalLabel.mbid) return;
+            labelListElements.forEach((labelListElement, index) => {
+                const originalLabel = releaseData.labels[index];
+                if (!originalLabel) return;
 
                 const currentLabelName = originalLabel.name.trim();
-                const matchedUrl = labelMap.get(currentLabelName);
+
+                const namesToTry = [currentLabelName, ...(AppState.dom.labelAltNames || [])];
+
+                let matchedName = null;
+                let matchedUrl = null;
+
+                for (const name of namesToTry) {
+                    if (labelMap.has(name)) {
+                        matchedName = name;
+                        matchedUrl = labelMap.get(name);
+                        break;
+                    }
+                }
 
                 if (matchedUrl) {
                     const mbid = matchedUrl.split('/').pop();
+                    const oldMbid = originalLabel.mbid;
+                    const oldName = originalLabel.name;
+
+                    if (oldMbid === mbid && oldName === matchedName) return;
+
+                    // Update State
+                    AppState.data.release.labels[index].name = matchedName;
                     AppState.data.release.labels[index].mbid = mbid;
 
-                    const labelListElement = labelListElements[index];
-                    if (labelListElement) {
-                        UI_UTILS.updateLabelLink(labelListElement, currentLabelName, mbid);
-                        const addedSpan = UI_UTILS.createIndicatorSpan('added', mbid, {
-                            type: 'added',
-                            tooltip: `MBID ${mbid} added via user mapping.`,
-                        });
-                        if (!labelListElement.nextElementSibling?.classList.contains('he-added-label')) {
-                            labelListElement.parentNode.insertBefore(addedSpan, labelListElement.nextSibling);
-                        }
+                    // Update UI
+                    UI_UTILS.updateLabelLink(labelListElement, matchedName, mbid);
+
+                    const isOverwriting = !!oldMbid || oldName !== matchedName;
+                    const indicatorText = isOverwriting ? 'overwritten' : 'added';
+                    const type = isOverwriting ? 'overwritten' : 'added';
+
+                    let tooltip;
+                    if (oldName !== matchedName) {
+                        tooltip = `Original label "${oldName}" replaced by user mapping for "${matchedName}".`;
+                    } else if (oldMbid) {
+                        tooltip = `Original MBID (${oldMbid}) overwritten via user mapping.`;
+                    } else {
+                        tooltip = `MBID ${mbid} added via user mapping.`;
                     }
-                    const messageContent = `Mapped label "${currentLabelName}" to MBID: ${mbid}`;
+
+                    const indicatorSpan = UI_UTILS.createIndicatorSpan(indicatorText, null, {
+                        type,
+                        tooltip,
+                    });
+
+                    // Remove existing HE indicators if present (to avoid stacking)
+                    const existingIndicator = labelListElement.nextElementSibling;
+                    if (existingIndicator?.classList.contains('he-added-label') || existingIndicator?.classList.contains('he-overwritten-label')) {
+                        existingIndicator.remove();
+                    }
+
+                    labelListElement.parentNode.insertBefore(indicatorSpan, labelListElement.nextSibling);
+
+                    const messageContent = (oldName !== matchedName)
+                        ? `Promoted label "${matchedName}" (MBID: ${mbid}) over original "${oldName}" via user mapping.`
+                        : `Mapped label "${matchedName}" to MBID: ${mbid}`;
                     createAndInsertMessage('he-label-map-success', messageContent, 'debug');
                 }
             });
@@ -2397,6 +2438,10 @@
                     AppState.dom.releaseInfoRowsByHeader.set(headerText, th.parentElement);
                 }
             });
+
+            // Cache alt label names
+            AppState.dom.labelAltNames = Array.from(document.querySelectorAll('ul.release-labels ~ ul.alt-values .entity-links'))
+                .map(span => span.textContent.trim());
         }
 
         AppState.dom.labelListElements = document.querySelectorAll('ul.release-labels:not(.inline) li span.entity-links');
