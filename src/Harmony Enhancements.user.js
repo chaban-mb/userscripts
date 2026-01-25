@@ -2407,12 +2407,6 @@
         }));
     }
 
-    /** Caches DOM elements for the release actions page. */
-    function cacheReleaseActionsPageDOM() {
-        AppState.dom.actionsHeader = Array.from(document.querySelectorAll('h2')).find(h => h.textContent.includes('Release Actions'));
-        AppState.dom.releaseArtistNode = document.querySelector('.release-artist');
-    }
-
     /** Caches DOM elements for the settings page. */
     function cacheSettingsPageDOM() {
         AppState.dom.settingsMain = document.querySelector('main');
@@ -2626,8 +2620,6 @@
         } else if (path.startsWith('/release') && !path.startsWith('/release/actions')) {
             cacheReleaseLookupPageDOM();
             getReleaseDataFromJSON();
-        } else if (path.startsWith('/release/actions')) {
-            cacheReleaseActionsPageDOM();
         } else if (path.startsWith('/settings')) {
             cacheSettingsPageDOM();
             initSettingsPage();
