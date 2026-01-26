@@ -130,13 +130,11 @@ A comprehensive userscript for **[Harmony](http://harmony.pulsewidth.org.uk/)** 
 - **Customizable Settings:** Offers a dedicated settings panel to control detection mode (browser, Harmony, or none) and fine-tune **confidence thresholds** for applying changes.
 
 #### Seeder Behavior
-- **Skip MusicBrainz Confirmation:** Adds an option to skip the MusicBrainz confirmation page when submitting new releases.
 - **Include GTIN and Packaging on Update**: Adds an option to include GTIN (barcode) and set packaging when updating existing releases.
 - **Drop Artist Names as credited from Seed:** When an MBID is available, this option removes the artist's name from the seed data.
 
 #### UI & Workflow
 - **Clipboard Re-Lookup:** Adds a **"Re-Lookup from Clipboard"** button to the lookup form for quickly starting a new lookup or extending an existing one using a supported source URL found in your clipboard.
-- **Release Actions Page Re-Lookup:** Adds a **"Re-Lookup with Harmony" link** to the Release Actions page for **easily** re-running a lookup.
 - **External Search Links:** Adds quick search links for yet unsupported providers (Qobuz, YouTube Music, Beatsource, etc.).
 - **Minor Tweaks:** Enables **copying the permalink URL** on click and provides options to **hide verbose/redundant info sections** for a cleaner UI.
 
@@ -558,4 +556,3 @@ Adds a button to YouTube video pages to easily import them as MusicBrainz record
 ### Features
 - **Data Import:** Pre-fills the MusicBrainz "Add Recording" form with title, length and  artist.
 - **ListenBrainz Sync:** Also supports creating ListenBrainz playlists for mix videos with tracklists.
-
