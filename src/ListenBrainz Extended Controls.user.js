@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ListenBrainz: Extended Controls
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      1.2.1
+// @version      1.2.2
 // @tag          ai-created
 // @description  Allows customizing which actions are shown in listen controls cards, moving "Open in Music Service" links to the main controls area, displaying source info, and auto-copying text in the "Link Listen" modal.
 // @author       chaban
@@ -39,6 +39,11 @@
                 d: 'M68.08,122.59c4.17,2.66,9.11,4.23,14.42,4.23,14.82,0,26.84-12.02,26.84-26.84s-12.02-26.84-26.84-26.84c-5.35,0-10.31,1.58-14.5,4.28-.31.02-.63.02-.94.02-2.42,0-4.85-.49-6.9-1.86-2.99-1.99-4.29-6.45-4.77-11.01V21.54L7.74,48.87v102.25l47.64,27.34v-43.03c.49-4.57,1.78-9.02,4.77-11.01,2.06-1.37,4.48-1.86,6.9-1.86.34,0,.68,0,1.02.03Z M63.67,175.1v-39.19c.38-3.11,1.04-4.35,1.25-4.68.26-.13.6-.23,1-.29,5.1,2.74,10.78,4.18,16.58,4.18,19.37,0,35.13-15.76,35.13-35.13s-15.76-35.13-35.13-35.13c-5.83,0-11.53,1.45-16.64,4.21-.38-.06-.69-.16-.94-.28-.21-.33-.87-1.57-1.25-4.68V24.9L107.08,0l85.18,48.87v102.25l-85.18,48.87-43.4-24.9Z'
             },
             ampcast: 'https://raw.githubusercontent.com/rekkyrosso/ampcast/refs/heads/main/app/www/favicon.svg',
+            audacious: 'https://github.com/audacious-media-player/audacious/raw/master/images/audacious.png',
+            auxio: 'https://github.com/OxygenCobalt/Auxio/raw/dev/fastlane/metadata/android/en-US/images/icon.png',
+            bandcamp: 'https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/bandcamp.svg',
+            'booming music': 'https://github.com/mardous/BoomingMusic/raw/master/metadata/en-US/images/icon.png',
+            deezer: 'https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/deezer.svg',
             foobar2000: 'https://upload.wikimedia.org/wikipedia/de/7/7c/Foobar2000_Icon.svg',
             funkwhale: 'https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/funkwhale.svg',
             gonic: 'https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/gonic.svg',
@@ -46,8 +51,8 @@
             kodi: 'https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/kodi.svg',
             lastfm: 'https://upload.wikimedia.org/wikipedia/commons/b/b7/Last.fm_favicon.png',
             'listenbrainz lastfm': 'https://upload.wikimedia.org/wikipedia/commons/b/b7/Last.fm_favicon.png',
-            listenbrainz: 'https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/listenbrainz.svg',
             lms: 'https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/lyrion-dark.svg',
+            lollypop: 'https://gitlab.gnome.org/World/lollypop/raw/master/data/icons/hicolor/256x256/apps/org.gnome.Lollypop.png',
             mopidy: 'https://raw.githubusercontent.com/home-assistant/brands/master/custom_integrations/mopidy/icon.png',
             mpv: 'https://raw.githubusercontent.com/mpv-player/mpv/refs/heads/master/etc/mpv.svg',
             'music-assistant': 'https://avatars.githubusercontent.com/u/71128003',
@@ -55,10 +60,17 @@
             navidrome: 'https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/navidrome.svg',
             'pano scrobbler': 'https://raw.githubusercontent.com/kawaiiDango/pano-scrobbler/refs/heads/main/composeApp/src/desktopMain/composeResources/drawable/ic_launcher_with_bg.svg',
             plex: 'https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/plex.svg',
+            rythmbox: 'https://gitlab.gnome.org/GNOME/rhythmbox/raw/master/data/icons/hicolor/scalable/apps/org.gnome.Rhythmbox3.svg',
+            soundcloud: 'https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/soundcloud.svg',
+            spotify: 'https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/spotify.svg',
             squeezelite: 'https://raw.githubusercontent.com/CDrummond/squeezelite/android/fastlane/metadata/android/en-US/images/icon.png',
             strawberry: 'https://raw.githubusercontent.com/strawberrymusicplayer/strawberry/master/data/icons/full/strawberry.png',
+            tauon: 'https://github.com/Taiko2k/Tauon/blob/master/src/tauon/assets/icon-128.png',
             tidal: 'https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/tidal.svg',
-            'web scrobbler': 'https://raw.githubusercontent.com/web-scrobbler/web-scrobbler/refs/heads/master/src/icons/main/universal.svg'
+            'web scrobbler': 'https://raw.githubusercontent.com/web-scrobbler/web-scrobbler/refs/heads/master/src/icons/main/universal.svg',
+            'youtube music': 'https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/youtube-music.svg',
+            youtube: 'https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/youtube.svg',
+            'YT Music': 'https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/youtube-music.svg',
         }
     };
     const DEFAULT_SETTINGS = {
@@ -379,7 +391,11 @@
             if (client && client !== player) tooltipLines.push(`Client: ${client}`);
 
             if (tooltipLines.length > 0) {
-                const service = info.music_service || info.music_service_name || info.listening_from;
+                /*
+                "music_service": "navi.alephrium.com",
+                "music_service_name": "navidrome",
+                */
+                const service = info.music_service_name || info.music_service || info.listening_from;
                 const findMatch = (val) => {
                     if (!val) return null;
                     const lowerVal = String(val).toLowerCase();
@@ -388,7 +404,7 @@
                     );
                 };
 
-                const iconKey = findMatch(player) || findMatch(client) || findMatch(service) || 'player';
+                const iconKey = findMatch(player) || findMatch(service) || findMatch(client) || 'player';
                 indicator = el('button', {
                     className: 'btn btn-transparent lb-player-indicator',
                     style: { cursor: 'help' },

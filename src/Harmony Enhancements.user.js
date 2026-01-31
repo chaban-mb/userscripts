@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Harmony: Enhancements
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      1.24.0
+// @version      1.25.0
 // @tag          ai-created
 // @description  Adds some convenience features, various UI and behavior settings, as well as an improved language detection to Harmony.
 // @author       chaban
@@ -140,8 +140,11 @@
         mapLabelMbids: {
             key: 'enhancements.label.mapMbids',
             label: 'Map label names to MBIDs',
-            description: 'Automatically assigns a Label MBID based on a list of mappings if Harmony couldn\'t find one. Uses case-sensitive matching.<br>Format: <code>Exact Label Name=Label MBID</code> or <code>Exact Label Name=Label URL</code> (one per line).',
-            defaultValue: [],
+            description: 'Automatically assigns a Label MBID based on a list of mappings if Harmony couldn\'t find one. Can also overwrite existing labels, e.g to "[no label]". Uses case-sensitive matching.<br>Format: <code>Exact Label Name=Label MBID</code> or <code>Exact Label Name=Label URL</code> (one per line).',
+            defaultValue: [
+                'igroovemusic.com=https://musicbrainz.org/label/157afde4-4bf5-4039-8ad2-5a15acc85176',
+                'recordJet=https://musicbrainz.org/label/157afde4-4bf5-4039-8ad2-5a15acc85176'
+            ],
             section: 'Release Data',
             type: 'textarea',
             runAt: 'load',
@@ -707,7 +710,7 @@
 
         /**
             * Replaces the content of the main label element with a new name and an optional MB link.
-            * @param {HTMLElement} labelListElement - The <span> element containing the label (e.g., AppState.dom.mainLabelList).
+            * @param {HTMLElement} labelListElement - The <span> element containing the label (e.g., element from AppState.dom.labelListElements).
             * @param {string} newLabelName - The new text for the label.
             * @param {string | null} [newMbid] - The optional MBID to link to.
             */
@@ -2052,7 +2055,7 @@
 
             if (!gtin || !labels || labels.length === 0) return;
 
-            const firstLabelSpan = AppState.dom.mainLabelList;
+            const firstLabelSpan = AppState.dom.labelListElements?.[0];
             if (!firstLabelSpan) return;
 
             const labelListItems = firstLabelSpan.closest('ul')?.querySelectorAll('li');
@@ -2121,29 +2124,80 @@
             if (labelMap.size === 0) return;
 
             const { labelListElements } = AppState.dom;
+            if (!labelListElements) return;
 
-            releaseData.labels.forEach((originalLabel, index) => {
-                if (originalLabel.mbid) return;
+            labelListElements.forEach((labelListElement, index) => {
+                const originalLabel = releaseData.labels[index];
+                if (!originalLabel) return;
 
                 const currentLabelName = originalLabel.name.trim();
-                const matchedUrl = labelMap.get(currentLabelName);
+
+                const namesToTry = [currentLabelName, ...(AppState.dom.labelAltNames || [])];
+
+                let matchedName = null;
+                let matchedUrl = null;
+
+                for (const name of namesToTry) {
+                    if (labelMap.has(name)) {
+                        matchedName = name;
+                        matchedUrl = labelMap.get(name);
+                        break;
+                    }
+                }
 
                 if (matchedUrl) {
                     const mbid = matchedUrl.split('/').pop();
+                    const oldMbid = originalLabel.mbid;
+                    const oldName = originalLabel.name;
+
+                    if (oldMbid === mbid && oldName === matchedName) return;
+
+                    // Special handling for mapping to [no label]
+                    const isNoLabel = mbid === NO_LABEL.mbid;
+                    if (isNoLabel) {
+                        matchedName = NO_LABEL.name;
+                    }
+
+                    // Update State
+                    AppState.data.release.labels[index].name = matchedName;
                     AppState.data.release.labels[index].mbid = mbid;
 
-                    const labelListElement = labelListElements[index];
-                    if (labelListElement) {
-                        UI_UTILS.updateLabelLink(labelListElement, currentLabelName, mbid);
-                        const addedSpan = UI_UTILS.createIndicatorSpan('added', mbid, {
-                            type: 'added',
-                            tooltip: `MBID ${mbid} added via user mapping.`,
-                        });
-                        if (!labelListElement.nextElementSibling?.classList.contains('he-added-label')) {
-                            labelListElement.parentNode.insertBefore(addedSpan, labelListElement.nextSibling);
-                        }
+                    // Update UI
+                    UI_UTILS.updateLabelLink(labelListElement, matchedName, mbid);
+
+                    const isOverwriting = !!oldMbid || oldName !== matchedName;
+                    let indicatorText = isOverwriting ? 'overwritten' : 'added';
+                    let type = isOverwriting ? 'overwritten' : 'added';
+                    let tooltip;
+
+                    if (isNoLabel) {
+                        indicatorText = 'overwritten';
+                        type = 'overwritten';
+                        tooltip = `Original label: ${oldName}`;
+                    } else if (oldName !== matchedName) {
+                        tooltip = `Original label "${oldName}" replaced by user mapping for "${matchedName}".`;
+                    } else if (oldMbid) {
+                        tooltip = `Original MBID (${oldMbid}) overwritten via user mapping.`;
+                    } else {
+                        tooltip = `MBID ${mbid} added via user mapping.`;
                     }
-                    const messageContent = `Mapped label "${currentLabelName}" to MBID: ${mbid}`;
+
+                    const indicatorSpan = UI_UTILS.createIndicatorSpan(indicatorText, null, {
+                        type,
+                        tooltip,
+                    });
+
+                    // Remove existing HE indicators if present (to avoid stacking)
+                    const existingIndicator = labelListElement.nextElementSibling;
+                    if (existingIndicator?.classList.contains('he-added-label') || existingIndicator?.classList.contains('he-overwritten-label')) {
+                        existingIndicator.remove();
+                    }
+
+                    labelListElement.parentNode.insertBefore(indicatorSpan, labelListElement.nextSibling);
+
+                    const messageContent = (oldName !== matchedName)
+                        ? `Promoted label "${matchedName}" (MBID: ${mbid}) over original "${oldName}" via user mapping.`
+                        : `Mapped label "${matchedName}" to MBID: ${mbid}`;
                     createAndInsertMessage('he-label-map-success', messageContent, 'debug');
                 }
             });
@@ -2397,21 +2451,18 @@
                     AppState.dom.releaseInfoRowsByHeader.set(headerText, th.parentElement);
                 }
             });
+
+            // Cache alt label names
+            AppState.dom.labelAltNames = Array.from(document.querySelectorAll('ul.release-labels ~ ul.alt-values .entity-links'))
+                .map(span => span.textContent.trim());
         }
 
-        AppState.dom.mainLabelList = document.querySelector('ul.release-labels li span.entity-links');
-        AppState.dom.labelListElements = document.querySelectorAll('ul.release-labels li span.entity-links');
+        AppState.dom.labelListElements = document.querySelectorAll('ul.release-labels:not(.inline) li span.entity-links');
         AppState.dom.scrapedArtistLinks = Array.from(document.querySelectorAll('.entity-links')).map(span => ({
             name: span.textContent.trim(),
             count: span.querySelectorAll('a').length,
             html: span.outerHTML,
         }));
-    }
-
-    /** Caches DOM elements for the release actions page. */
-    function cacheReleaseActionsPageDOM() {
-        AppState.dom.actionsHeader = Array.from(document.querySelectorAll('h2')).find(h => h.textContent.includes('Release Actions'));
-        AppState.dom.releaseArtistNode = document.querySelector('.release-artist');
     }
 
     /** Caches DOM elements for the settings page. */
@@ -2627,8 +2678,6 @@
         } else if (path.startsWith('/release') && !path.startsWith('/release/actions')) {
             cacheReleaseLookupPageDOM();
             getReleaseDataFromJSON();
-        } else if (path.startsWith('/release/actions')) {
-            cacheReleaseActionsPageDOM();
         } else if (path.startsWith('/settings')) {
             cacheSettingsPageDOM();
             initSettingsPage();

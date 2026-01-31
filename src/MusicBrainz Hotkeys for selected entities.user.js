@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MusicBrainz: Hotkeys for selected entities
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      1.5.2
+// @version      1.6.0
 // @description  Adds hotkeys to perform actions on selected entities. "A" = Artwork, "D" = Delete, "E" = Edit, "W" = Merge, "Q" = Aliases, "R" = Relationship Editor
 // @tag          ai-created
 // @author       chaban
@@ -9,8 +9,15 @@
 // @match        *://*.musicbrainz.org/artist*
 // @match        *://*.musicbrainz.org/area/*
 // @match        *://*.musicbrainz.org/release-group/*
+// @match        *://*.musicbrainz.org/release/*
+// @match        *://*.musicbrainz.org/recording/*
+// @match        *://*.musicbrainz.org/work/*
 // @match        *://*.musicbrainz.org/label/*
 // @match        *://*.musicbrainz.org/place/*
+// @match        *://*.musicbrainz.org/instrument/*
+// @match        *://*.musicbrainz.org/genre/*
+// @match        *://*.musicbrainz.org/event/*
+// @match        *://*.musicbrainz.org/series/*
 // @match        *://*.musicbrainz.org/isrc/*
 // @match        *://*.musicbrainz.org/iswc/*
 // @match        *://*.musicbrainz.org/report/*
@@ -27,10 +34,11 @@
 // @downloadURL  https://github.com/chaban-mb/userscripts/raw/main/src/MusicBrainz%20Hotkeys%20for%20selected%20entities.user.js
 // ==/UserScript==
 
-(function() {
+(function () {
     'use strict';
 
     const entityTypes = {
+        artist: { actions: ['edit', 'aliases'] },
         release: { actions: ['delete', 'edit', 'viewArtwork', 'aliases', 'edit-relationships'] },
         recording: { actions: ['delete', 'edit', 'aliases'] },
         work: { actions: ['edit', 'aliases'] },
@@ -71,6 +79,20 @@
     }
 
     /**
+     * Returns the URL for a specific action on an entity.
+     * @param {object} entityInfo - The entity information (type and MBID).
+     * @param {string} action - The action to perform.
+     * @returns {string} The URL for the action.
+     */
+    function getUrlForAction(entityInfo, action) {
+        let url = `/${entityInfo.type}/${entityInfo.mbid}/${action}`;
+        if (action === 'viewArtwork') {
+            url = entityInfo.type === 'release' ? `/release/${entityInfo.mbid}/cover-art` : `/event/${entityInfo.mbid}/event-art`;
+        }
+        return url;
+    }
+
+    /**
      * Opens pages based on action.
      * @param {NodeListOf<HTMLInputElement>} checkboxes - Checkboxes of entities.
      * @param {string} action - Type of action (edit, delete, viewArtwork, aliases).
@@ -82,16 +104,22 @@
                 const entityLink = row.querySelector('a[href]');
                 const entityInfo = extractEntityInfoFromLink(entityLink);
                 if (entityInfo && entityTypes[entityInfo.type].actions.includes(action) && entityInfo.mbid) {
-                    let url = `/${entityInfo.type}/${entityInfo.mbid}/${action}`;
-                    if (action === 'viewArtwork') {
-                        url = entityInfo.type === 'release' ? `/release/${entityInfo.mbid}/cover-art` : `/event/${entityInfo.mbid}/event-art`;
-                    }
+                    const url = getUrlForAction(entityInfo, action);
                     setTimeout(() => {
                         window.open(url, '_blank');
                     }, index * 1000);
                 }
             }
         });
+    }
+
+    /**
+     * Gets the entity information from the current page URL.
+     * @returns {object|null} An object containing the entity type and MBID, or null if not detectable.
+     */
+    function getCurrentEntity() {
+        const entityInfo = extractEntityFromURL(window.location.href);
+        return entityInfo && entityTypes[entityInfo.type] ? entityInfo : null;
     }
 
     /**
@@ -128,43 +156,71 @@
         const checkedSelector = 'input[name="add-to-merge"]:checked';
         const checkboxes = document.querySelectorAll(checkedSelector);
 
-        switch (event.key) {
-            case 'w':
-                if (checkboxes.length > 1) {
-                    const container = document.querySelector('.list-merge-buttons-row-container');
-                    if (container) {
-                        const buttons = container.querySelectorAll('button[formtarget="_blank"]');
-                        if (buttons.length > 0) {
-                            buttons[buttons.length - 1].click();
+        // If items are selected, perform actions on them.
+        if (checkboxes.length > 0) {
+            switch (event.key) {
+                case 'w':
+                    if (checkboxes.length > 1) {
+                        const container = document.querySelector('.list-merge-buttons-row-container');
+                        if (container) {
+                            const buttons = container.querySelectorAll('button[formtarget="_blank"]');
+                            if (buttons.length > 0) {
+                                buttons[buttons.length - 1].click();
+                            }
                         }
                     }
-                }
-                break;
-            case 'd':
-                if (checkboxes.length > 0) {
+                    break;
+                case 'd':
                     openPages(checkboxes, 'delete');
-                }
-                break;
-            case 'e':
-                if (checkboxes.length > 0) {
+                    break;
+                case 'e':
                     openPages(checkboxes, 'edit');
-                }
-                break;
-            case 'a':
-                if (checkboxes.length > 0) {
+                    break;
+                case 'a':
                     openPages(checkboxes, 'viewArtwork');
-                }
-                break;
-            case 'q':
-                if (checkboxes.length > 0) {
+                    break;
+                case 'q':
                     openPages(checkboxes, 'aliases');
-                }
-                break;
-            case 'r':
-                if (checkboxes.length > 0) {
+                    break;
+                case 'r':
                     openPages(checkboxes, 'edit-relationships');
-                }
-                break;
+                    break;
+            }
+        } else {
+            // No items selected, try to perform action on the current page entity.
+            const currentEntity = getCurrentEntity();
+
+            // Special handling for Merge (w) which uses a sidebar link
+            if (event.key === 'w') {
+                document.querySelector('#sidebar [href*="merge_queue"]')?.click();
+                return;
+            }
+
+            if (!currentEntity) return;
+
+            let action = '';
+            switch (event.key) {
+                case 'd':
+                    action = 'delete';
+                    break;
+                case 'e':
+                    action = 'edit';
+                    break;
+                case 'a':
+                    action = 'viewArtwork';
+                    break;
+                case 'q':
+                    action = 'aliases';
+                    break;
+                case 'r':
+                    action = 'edit-relationships';
+                    break;
+            }
+
+            if (action && entityTypes[currentEntity.type].actions.includes(action)) {
+                const url = getUrlForAction(currentEntity, action);
+                window.open(url, '_blank');
+            }
         }
     }
 
