@@ -140,8 +140,11 @@
         mapLabelMbids: {
             key: 'enhancements.label.mapMbids',
             label: 'Map label names to MBIDs',
-            description: 'Automatically assigns a Label MBID based on a list of mappings if Harmony couldn\'t find one. Uses case-sensitive matching.<br>Format: <code>Exact Label Name=Label MBID</code> or <code>Exact Label Name=Label URL</code> (one per line).',
-            defaultValue: [],
+            description: 'Automatically assigns a Label MBID based on a list of mappings if Harmony couldn\'t find one. Can also overwrite existing labels, e.g to "[no label]". Uses case-sensitive matching.<br>Format: <code>Exact Label Name=Label MBID</code> or <code>Exact Label Name=Label URL</code> (one per line).',
+            defaultValue: [
+                'igroovemusic.com=https://musicbrainz.org/label/157afde4-4bf5-4039-8ad2-5a15acc85176',
+                'recordJet=https://musicbrainz.org/label/157afde4-4bf5-4039-8ad2-5a15acc85176'
+            ],
             section: 'Release Data',
             type: 'textarea',
             runAt: 'load',
@@ -2149,6 +2152,12 @@
 
                     if (oldMbid === mbid && oldName === matchedName) return;
 
+                    // Special handling for mapping to [no label]
+                    const isNoLabel = mbid === NO_LABEL.mbid;
+                    if (isNoLabel) {
+                        matchedName = NO_LABEL.name;
+                    }
+
                     // Update State
                     AppState.data.release.labels[index].name = matchedName;
                     AppState.data.release.labels[index].mbid = mbid;
@@ -2157,11 +2166,15 @@
                     UI_UTILS.updateLabelLink(labelListElement, matchedName, mbid);
 
                     const isOverwriting = !!oldMbid || oldName !== matchedName;
-                    const indicatorText = isOverwriting ? 'overwritten' : 'added';
-                    const type = isOverwriting ? 'overwritten' : 'added';
-
+                    let indicatorText = isOverwriting ? 'overwritten' : 'added';
+                    let type = isOverwriting ? 'overwritten' : 'added';
                     let tooltip;
-                    if (oldName !== matchedName) {
+
+                    if (isNoLabel) {
+                        indicatorText = 'overwritten';
+                        type = 'overwritten';
+                        tooltip = `Original label: ${oldName}`;
+                    } else if (oldName !== matchedName) {
                         tooltip = `Original label "${oldName}" replaced by user mapping for "${matchedName}".`;
                     } else if (oldMbid) {
                         tooltip = `Original MBID (${oldMbid}) overwritten via user mapping.`;
