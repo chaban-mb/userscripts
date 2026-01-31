@@ -391,7 +391,11 @@
             if (client && client !== player) tooltipLines.push(`Client: ${client}`);
 
             if (tooltipLines.length > 0) {
-                const service = info.music_service || info.music_service_name || info.listening_from;
+                /*
+                "music_service": "navi.alephrium.com",
+                "music_service_name": "navidrome",
+                */
+                const service = info.music_service_name || info.music_service || info.listening_from;
                 const findMatch = (val) => {
                     if (!val) return null;
                     const lowerVal = String(val).toLowerCase();
