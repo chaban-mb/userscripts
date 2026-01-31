@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ListenBrainz: Extended Controls
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      1.2.1
+// @version      1.2.2
 // @tag          ai-created
 // @description  Allows customizing which actions are shown in listen controls cards, moving "Open in Music Service" links to the main controls area, displaying source info, and auto-copying text in the "Link Listen" modal.
 // @author       chaban
@@ -39,6 +39,7 @@
                 d: 'M68.08,122.59c4.17,2.66,9.11,4.23,14.42,4.23,14.82,0,26.84-12.02,26.84-26.84s-12.02-26.84-26.84-26.84c-5.35,0-10.31,1.58-14.5,4.28-.31.02-.63.02-.94.02-2.42,0-4.85-.49-6.9-1.86-2.99-1.99-4.29-6.45-4.77-11.01V21.54L7.74,48.87v102.25l47.64,27.34v-43.03c.49-4.57,1.78-9.02,4.77-11.01,2.06-1.37,4.48-1.86,6.9-1.86.34,0,.68,0,1.02.03Z M63.67,175.1v-39.19c.38-3.11,1.04-4.35,1.25-4.68.26-.13.6-.23,1-.29,5.1,2.74,10.78,4.18,16.58,4.18,19.37,0,35.13-15.76,35.13-35.13s-15.76-35.13-35.13-35.13c-5.83,0-11.53,1.45-16.64,4.21-.38-.06-.69-.16-.94-.28-.21-.33-.87-1.57-1.25-4.68V24.9L107.08,0l85.18,48.87v102.25l-85.18,48.87-43.4-24.9Z'
             },
             ampcast: 'https://raw.githubusercontent.com/rekkyrosso/ampcast/refs/heads/main/app/www/favicon.svg',
+            bandcamp: 'https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/bandcamp.svg',
             foobar2000: 'https://upload.wikimedia.org/wikipedia/de/7/7c/Foobar2000_Icon.svg',
             funkwhale: 'https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/funkwhale.svg',
             gonic: 'https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/gonic.svg',
@@ -388,7 +389,7 @@
                     );
                 };
 
-                const iconKey = findMatch(player) || findMatch(client) || findMatch(service) || 'player';
+                const iconKey = findMatch(player) || findMatch(service) || findMatch(client) || 'player';
                 indicator = el('button', {
                     className: 'btn btn-transparent lb-player-indicator',
                     style: { cursor: 'help' },
