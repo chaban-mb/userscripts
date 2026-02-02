@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Harmony: Enhancements
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      1.25.0
+// @version      1.25.1
 // @tag          ai-created
 // @description  Adds some convenience features, various UI and behavior settings, as well as an improved language detection to Harmony.
 // @author       chaban
@@ -2464,6 +2464,10 @@
             html: span.outerHTML,
         }));
     }
+    /** Caches DOM elements for the release actions page. */
+    function cacheReleaseActionsPageDOM() {
+        AppState.dom.releaseArtistNode = document.querySelector('.release-artist');
+    }
 
     /** Caches DOM elements for the settings page. */
     function cacheSettingsPageDOM() {
@@ -2678,6 +2682,8 @@
         } else if (path.startsWith('/release') && !path.startsWith('/release/actions')) {
             cacheReleaseLookupPageDOM();
             getReleaseDataFromJSON();
+        } else if (path.startsWith('/release/actions')) {
+            cacheReleaseActionsPageDOM();
         } else if (path.startsWith('/settings')) {
             cacheSettingsPageDOM();
             initSettingsPage();
