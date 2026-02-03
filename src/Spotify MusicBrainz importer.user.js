@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Spotify: MusicBrainz importer
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      1.4.2
+// @version      1.4.3
 // @tag          ai-created
 // @description  Adds buttons for MusicBrainz, ListenBrainz, Harmony, ISRC Hunt and SAMBL to Spotify.
 // @author       chaban, garylaski, RustyNova
@@ -68,8 +68,8 @@
                 '.encore-text-headline-large'
             ],
             ALBUM_LINK_ON_TRACK_PAGE: [
-                '[data-testid="entityTitle"] ~ div a[href^="/album/"]',
-                '[data-testid="track-page"] > div:first-child a[href^="/album/"]'
+                '[data-testid="entityTitle"] ~ div a[href*="/album/"]',
+                '[data-testid="track-page"] > div:first-child a[href*="/album/"]'
             ],
         };
         static URLS = {
