@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ListenBrainz: Extended Controls
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      1.2.2
+// @version      1.2.3
 // @tag          ai-created
 // @description  Allows customizing which actions are shown in listen controls cards, moving "Open in Music Service" links to the main controls area, displaying source info, and auto-copying text in the "Link Listen" modal.
 // @author       chaban
@@ -51,6 +51,7 @@
             kodi: 'https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/kodi.svg',
             lastfm: 'https://upload.wikimedia.org/wikipedia/commons/b/b7/Last.fm_favicon.png',
             'listenbrainz lastfm': 'https://upload.wikimedia.org/wikipedia/commons/b/b7/Last.fm_favicon.png',
+            'listenbrainz web': 'https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/listenbrainz.svg',
             lms: 'https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/lyrion-dark.svg',
             lollypop: 'https://gitlab.gnome.org/World/lollypop/raw/master/data/icons/hicolor/256x256/apps/org.gnome.Lollypop.png',
             mopidy: 'https://raw.githubusercontent.com/home-assistant/brands/master/custom_integrations/mopidy/icon.png',
