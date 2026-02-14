@@ -70,6 +70,19 @@ ISRC Hunt: Submit ISRCs (All Tabs)<br>
 - **Rate Limiting:** Has a configurable rate limit to prevent errors during bulk submissions.
 - **Auto-Close:** Can automatically close tabs after a successful submission.
 
+## Deezer: MusicBrainz importer
+
+[![Install](https://img.shields.io/badge/Install-success.svg?style=for-the-badge&logo=tampermonkey)](https://github.com/chaban-mb/userscripts/raw/main/src/Deezer%20MusicBrainz%20importer.user.js)
+[![Source](https://img.shields.io/badge/Source-grey.svg?style=for-the-badge&logo=github)](https://github.com/chaban-mb/userscripts/blob/main/src/Deezer%20MusicBrainz%20importer.user.js)
+
+Helper userscript for MusicBrainz editors to simplify data import from Deezer. It provides quick access to external tools for data import and editing.
+
+### Features
+- **Release Seeding**: Allows importing releases with [Harmony](http://harmony.pulsewidth.org.uk/) and search for existing artists, releases, or recordings on MusicBrainz.
+- **SAMBL**: Provides quick access to [SAMBL](https://github.com/Lioncat6/SAMBL-React), which can fetch an artist's entire Deezer discography and compare it against MusicBrainz. This allows editors to quickly identify missing release or incomplete entries.
+- **ISRC Hunt**: Provides quick access to [ISRC Hunt](https://isrchunt.com/) to find and import track-level ISRCs.
+- **ListenBrainz**: Provides quick access to [ListenBrainz](https://listenbrainz.org/), an open-source alternative to Last.fm built entirely on top of MusicBrainz data.
+
 ## Discourse: Disable Touch Detection
 
 [![Install](https://img.shields.io/badge/Install-success.svg?style=for-the-badge&logo=tampermonkey)](https://github.com/chaban-mb/userscripts/raw/main/src/Discourse%20Disable%20Touch%20Detection.user.js)
