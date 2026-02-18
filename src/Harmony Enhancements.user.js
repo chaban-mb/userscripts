@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Harmony: Enhancements
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      1.25.1
+// @version      1.25.2
 // @tag          ai-created
 // @description  Adds some convenience features, various UI and behavior settings, as well as an improved language detection to Harmony.
 // @author       chaban
@@ -111,7 +111,7 @@
             key: 'enhancements.releaseType.enabled',
             label: 'Improve release type detection',
             description: 'Uses the technical terms list to determine if a release with multiple tracks is actually a single with multiple versions.',
-            defaultValue: false,
+            defaultValue: true,
             section: 'Release Data',
             type: 'checkbox',
             runAt: 'load',
@@ -121,7 +121,7 @@
             key: 'enhancements.eti.normalize',
             label: 'Normalize hyphenated extra title information (ETI)',
             description: 'Converts track titles like "Title - Remix" to "Title (Remix)" to match MusicBrainz style guidelines.',
-            defaultValue: false,
+            defaultValue: true,
             section: 'Release Data',
             type: 'checkbox',
             runAt: 'load',
@@ -131,7 +131,7 @@
             key: 'enhancements.artists.syncTrackArtist',
             label: 'Sync track artist to release artist for singles',
             description: 'For single-track releases, if the track artist credit is more detailed (i.e., has more artists) than the release artist credit, the release artist will be updated to match.',
-            defaultValue: false,
+            defaultValue: true,
             section: 'Release Data',
             type: 'checkbox',
             runAt: 'load',
@@ -162,7 +162,7 @@
             key: 'enhancements.label.setNoLabel',
             label: 'Set label to [no label] for self-releases',
             description: 'If a release appears to be self-released (label name is the same as the artist name), automatically set the label to the special purpose label "[no label]".',
-            defaultValue: false,
+            defaultValue: true,
             section: 'Release Data',
             type: 'checkbox',
             runAt: 'load',
@@ -172,7 +172,7 @@
             key: 'enhancements.releaseData.detectRemixers',
             label: 'Detect and remove remixers from track artists',
             description: 'If an artist is mentioned in the track title\'s version string (e.g. "Title (Artist X Remix)"), remove them from the track artist list.',
-            defaultValue: false,
+            defaultValue: true,
             section: 'Release Data',
             type: 'checkbox',
             runAt: 'load',
@@ -182,7 +182,7 @@
             key: 'enhancements.releaseData.removeBarcodeCatalogNumbers',
             label: 'Remove catalog number if it matches the barcode',
             description: 'If a label\'s catalog number is identical to the release GTIN (barcode), remove it from the seed data and UI.',
-            defaultValue: false,
+            defaultValue: true,
             section: 'Release Data',
             type: 'checkbox',
             runAt: 'load',
