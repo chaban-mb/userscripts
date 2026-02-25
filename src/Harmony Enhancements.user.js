@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Harmony: Enhancements
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      1.25.2
+// @version      1.25.3
 // @tag          ai-created
 // @description  Adds some convenience features, various UI and behavior settings, as well as an improved language detection to Harmony.
 // @author       chaban
@@ -1728,14 +1728,14 @@
             let detectionReason = '';
 
             // 1. More flexible title-based detection for EPs.
-            if (/\bEP\b/i.test(releaseTitle) && ['Album', 'Single'].includes(originalType)) {
+            if (/\bEP\b/i.test(releaseTitle)) {
                 detectedType = 'EP';
                 detectionReason = `Detected "EP" in release title`;
             }
 
             // 2. Original logic to detect singles from track titles (overrides EP detection).
             const totalTracks = media.reduce((sum, m) => sum + ((Array.isArray(m.tracklist) ? m.tracklist.length : 0)), 0);
-            if (totalTracks > 1) {
+            if (totalTracks > 1 && detectedType !== 'EP') {
                 const allTitles = media.flatMap(m => (Array.isArray(m.tracklist) ? m.tracklist.map(t => t.title) : []));
                 const coreTitles = getCleanedTitles(allTitles, { cleanLevel: 'light' });
                 const uniqueLowerCaseTitles = new Set(coreTitles.map(title => title.toLowerCase()));
