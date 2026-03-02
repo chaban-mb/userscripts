@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ListenBrainz: Extended Controls
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      1.2.3
+// @version      1.2.4
 // @tag          ai-created
 // @description  Allows customizing which actions are shown in listen controls cards, moving "Open in Music Service" links to the main controls area, displaying source info, and auto-copying text in the "Link Listen" modal.
 // @author       chaban
@@ -66,6 +66,7 @@
             spotify: 'https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/spotify.svg',
             squeezelite: 'https://raw.githubusercontent.com/CDrummond/squeezelite/android/fastlane/metadata/android/en-US/images/icon.png',
             strawberry: 'https://raw.githubusercontent.com/strawberrymusicplayer/strawberry/master/data/icons/full/strawberry.png',
+            symfonium: 'https://support.symfonium.app/uploads/default/original/1X/f75391edecf69e50eed1f1fc03b0f3ac61e34c96.png',
             tauon: 'https://github.com/Taiko2k/Tauon/blob/master/src/tauon/assets/icon-128.png',
             tidal: 'https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/tidal.svg',
             'web scrobbler': 'https://raw.githubusercontent.com/web-scrobbler/web-scrobbler/refs/heads/master/src/icons/main/universal.svg',
