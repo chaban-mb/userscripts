@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Harmony: Enhancements
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      1.25.3
+// @version      1.25.4
 // @tag          ai-created
 // @description  Adds some convenience features, various UI and behavior settings, as well as an improved language detection to Harmony.
 // @author       chaban
@@ -1790,7 +1790,12 @@
                 const etiTrimmed = eti.trim();
                 if (!etiTrimmed) return null;
 
-                const newTitle = `${title.trim()} (${etiTrimmed})`;
+                // Split any further ETI sections separated by ' - ', ' ~ ', or ' / '
+                // The negative lookahead (?![^(]*\)) ensures we don't split on hyphens inside existing parentheses
+                const etiParts = etiTrimmed.split(/\s+[~/-]\s+(?![^(]*\))/).filter(part => part.trim() !== '');
+                const etiFormatted = etiParts.map(part => `(${part.trim()})`).join(' ');
+
+                const newTitle = `${title.trim()} ${etiFormatted}`;
                 return { original: originalTitle, new: newTitle };
             };
 
