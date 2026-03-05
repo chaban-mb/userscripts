@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        MusicBrainz: Reports Statistics
 // @namespace   https://musicbrainz.org/user/chaban
-// @version     2.0.5
+// @version     2.0.6
 // @description Indicates report changes since the last visit and hides reports without items.
 // @tag         ai-created
 // @author      chaban
@@ -140,7 +140,7 @@
      * @returns {number|null} UTC milliseconds timestamp, or null if not found/parsed.
      */
     function parseGeneratedOnTimestamp(htmlContent) {
-        const match = htmlContent.match(/Generated on (\d{4}-\d{2}-\d{2} \d{2}:\d{2} GMT[+-]\d{1,2})/);
+        const match = htmlContent.match(/Generated on (\d{4}-\d{2}-\d{2} \d{2}:\d{2} (?:GMT[+-]\d{1,2}|UTC))/);
         if (match && match[1]) {
             try {
                 const dateString = match[1].replace(/GMT([+-]\d{1,2})/, '$1:00');
