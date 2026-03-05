@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MusicBrainz: Guess Case Improver
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      0.5.0
+// @version      0.5.1
 // @tag          ai-created
 // @description  Improves the native "Guess Case" for release, recording and track titles with advanced artist and ETI parsing. Also removes duplicate artists after using "Guess feat. artists" on tracklists.
 // @author       chaban
@@ -49,7 +49,7 @@
         'kinetic lyric video', 'animated', 'animation', 'official video',
         'official visualizer', 'slowed', 'super slowed', 'speed up', 'sped up',
         'super speed up', 'extra slowed', 'ultra slowed', 'slowed & reverb', 'slowed + reverb',
-        'music video'
+        'music video', 'super sped up', 'low pitched', 'slowed down'
     ];
 
     const JOIN_PHRASE_PATTERN = /\s*\b(?:featuring|feat|ft|vs)\.?\b\s*|\s*(?:[,，、&・×/])\s*|\s+and\s+/gi;
