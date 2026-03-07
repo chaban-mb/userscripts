@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        MusicBrainz: Highlight identical barcodes and toggle merge checkboxes
 // @namespace   https://musicbrainz.org/user/chaban
-// @version     1.3
+// @version     1.4.0
 // @tag         ai-created
 // @description Highlights sets of identical barcodes and toggles checkboxes for merging on click
 // @author      chaban
@@ -13,6 +13,7 @@
 // @match       *://*.musicbrainz.org/edit/*
 // @match       *://*.musicbrainz.org/user/*/edits*
 // @match       *://*.musicbrainz.org/search/edits*
+// @match       *://*.musicbrainz.org/report/*
 // @icon        https://musicbrainz.org/static/images/favicons/android-chrome-512x512.png
 // @grant       none
 // @run-at      document-idle
@@ -20,18 +21,25 @@
 // @downloadURL  https://github.com/chaban-mb/userscripts/raw/main/src/MusicBrainz%20Highlight%20identical%20barcodes%20and%20toggle%20merge%20checkboxes.user.js
 // ==/UserScript==
 
-(function() {
+(function () {
     'use strict';
 
     const identifierToColor = {};
     const identifierToCheckboxes = {};
+    const usedColors = new Set();
 
     function getRandomColor() {
         const letters = '89ABCDEF';
-        let color = '#';
-        for (let i = 0; i < 6; i++) {
-            color += letters[Math.floor(Math.random() * letters.length)];
-        }
+        let color;
+        let attempts = 0;
+        do {
+            color = '#';
+            for (let i = 0; i < 6; i++) {
+                color += letters[Math.floor(Math.random() * letters.length)];
+            }
+            attempts++;
+        } while (usedColors.has(color) && attempts < 100);
+        usedColors.add(color);
         return color;
     }
 
@@ -172,9 +180,13 @@
     }
 
     function highlightBarcodesOnPage() {
-        document.querySelectorAll('.mergeable-table, table.merge-releases').forEach(table => {
+        const selectors = ['.mergeable-table', 'table.merge-releases'];
+        if (window.location.pathname.startsWith('/report/')) {
+            selectors.push('table.tbl');
+        }
+        document.querySelectorAll(selectors.join(', ')).forEach(table => {
             processTable(table);
         });
     }
-highlightBarcodesOnPage();
+    highlightBarcodesOnPage();
 })();
