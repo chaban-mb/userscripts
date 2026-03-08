@@ -457,6 +457,21 @@ Power-up for the MusicBrainz Relationship Editor that enables batch removal of r
     - <kbd>Ctrl</kbd>+<kbd>Shift</kbd>: Affects all relationships of the **same type AND target**.
 - **Toggle Mode:** Easily switch between removal and restore.
 
+## MusicBrainz: Release day of the week
+
+[![Install](https://img.shields.io/badge/Install-success.svg?style=for-the-badge&logo=tampermonkey)](https://github.com/chaban-mb/userscripts/raw/main/src/MusicBrainz%20Release%20day%20of%20the%20week.user.js)
+[![Source](https://img.shields.io/badge/Source-grey.svg?style=for-the-badge&logo=github)](https://github.com/chaban-mb/userscripts/blob/main/src/MusicBrainz%20Release%20day%20of%20the%20week.user.js)
+
+Displays the day of the week for release events across MusicBrainz and color-codes them based on regional standard release days.
+
+Based on the [original script](https://userscripts-mirror.org/scripts/show/130233) by Jugdish and SultS.
+
+### Features
+
+* **Visual Validation:** Automatically color-codes release days (Green = Standard, Orange = Non-Standard, Grey = Unknown) to easily spot potential errors at a glance.
+* **Historical Accuracy:** Understands complex historical release rules, such as Germany's shift to Fridays in September 2005 and the introduction of the Global Release Day on July 10, 2015.
+* **Informative Tooltips:** Hover over any injected weekday to see exactly why it was flagged (e.g., "Expected Tuesday for United States, but is Friday").
+
 ## MusicBrainz: Remember Search Type
 
 [![Install](https://img.shields.io/badge/Install-success.svg?style=for-the-badge&logo=tampermonkey)](https://github.com/chaban-mb/userscripts/raw/main/src/MusicBrainz%20Remember%20Search%20Type.user.js)
