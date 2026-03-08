@@ -2,7 +2,7 @@
 // @name           MusicBrainz: Release day of the week
 // @namespace      https://github.com/chaban-mb/userscripts
 // @description    Display the day of the week for release events.
-// @version        2024.03.08.1
+// @version        2024.03.08.2
 // @author         Jugdish, SultS, chaban
 // @include        http*://*musicbrainz.org/release*
 // @include        http*://*musicbrainz.org/recording/*
@@ -30,6 +30,8 @@
         'New Zealand': 1,    // Mon
         'United Kingdom': 1, // Mon
         'United States': 2,  // Tue
+        '[Worldwide]': (date) => (date >= new Date('2015-07-10') ? 5 : null),
+        'XW': (date) => (date >= new Date('2015-07-10') ? 5 : null),
     };
 
     const style = document.createElement('style');
@@ -69,8 +71,11 @@
         let country = null;
         const container = el.closest('li, td, tr');
         if (container) {
-            // Check for flags/abbr tags which usually contain country info
-            const countryEl = container.querySelector('abbr[title], bdi, .flag');
+            // Check for abbr[title] first, then bdi, then .flag
+            let countryEl = container.querySelector('abbr[title]');
+            if (!countryEl) countryEl = container.querySelector('bdi');
+            if (!countryEl) countryEl = container.querySelector('.flag');
+
             if (countryEl) {
                 country = (countryEl.title || countryEl.textContent || '').trim();
                 // Special case for flags that might just have country code in text
@@ -109,7 +114,10 @@
                             const dayOfWeek = date.getUTCDay();
 
                             let country = null;
-                            const countryEl = li.querySelector('abbr[title], bdi, .flag');
+                            let countryEl = li.querySelector('abbr[title]');
+                            if (!countryEl) countryEl = li.querySelector('bdi');
+                            if (!countryEl) countryEl = li.querySelector('.flag');
+
                             if (countryEl) {
                                 country = (countryEl.title || countryEl.textContent || '').trim();
                             }
