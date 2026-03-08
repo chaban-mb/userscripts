@@ -20,7 +20,7 @@
 (function () {
     'use strict';
 
-    // Safari Fallback für requestIdleCallback
+    // Safari fallback for requestIdleCallback
     const requestIdle = window.requestIdleCallback || function (cb) {
         return setTimeout(function () { cb(); }, 1);
     };
@@ -50,20 +50,20 @@
     `;
     document.head.appendChild(style);
 
-    // --- PHASE 1: BACKGROUND PROCESSING (DOM Reads & Logic) ---
     function buildWriteTasks(nodesToProcess) {
         const tasks = [];
+        // Track nodes we've seen in this batch so we don't process them twice
         const seenTextNodes = new Set();
 
-        // Punktgenaue Selektoren für alle bekannten Orte, an denen Release-Daten stehen
+        // Places where dates usually show up, including fallbacks for other userscripts
         const validContainersSelector = [
-            '.release-events',               // Reguläre Listen (Recording-, Artist-, Label-Pages)
-            '.release-events-diff',          // Diff-Tabellen (Edit-Pages)
-            '.edit-release-events',          // Historische Edits
-            'table.details.add-release',     // "Add release" Edit-Tables
-            'table.details.edit-release',    // "Edit release" Edit-Tables
-            'span.release-date',             // Nativ gerenderte Daten (z.B. Sidebar, Release-Tab)
-            'span[data-name="release-date"]' // Fallback für "Supercharged CAA Edits"
+            '.release-events',
+            '.release-events-diff',
+            '.edit-release-events',
+            'table.details.add-release',
+            'table.details.edit-release',
+            'span.release-date',
+            'span[data-name="release-date"]'
         ].join(', ');
 
         nodesToProcess.forEach(root => {
@@ -71,15 +71,12 @@
 
             let containers = Array.from(root.querySelectorAll(validContainersSelector));
 
-            // Wenn der mutierte Node selbst ein gesuchter Container ist
             if (root.matches && root.matches(validContainersSelector)) {
                 containers.push(root);
             } else if (containers.length === 0) {
-                // Sicherheitsnetz für kleine Mutationen: Liegt der Node in einem gültigen Container?
+                // Catch small DOM mutations happening inside our containers
                 const parentContainer = root.closest ? root.closest(validContainersSelector) : null;
-                if (parentContainer) {
-                    containers = [root];
-                }
+                if (parentContainer) containers = [root];
             }
 
             containers.forEach(container => {
@@ -87,7 +84,7 @@
                 let textNode;
 
                 while (textNode = walker.nextNode()) {
-                    // SCHUTZ: Ignoriere Texte innerhalb von Disambiguations oder Kommentaren
+                    // Skip disambiguation comments to avoid highlighting dates mentioned in them
                     if (textNode.parentNode && textNode.parentNode.classList && textNode.parentNode.classList.contains('comment')) {
                         continue;
                     }
@@ -95,6 +92,7 @@
                     if (seenTextNodes.has(textNode)) continue;
                     if (!dateRegex.test(textNode.nodeValue)) continue;
 
+                    // Skip if we already added a weekday tag next to this date
                     if (textNode.nextSibling && textNode.nextSibling.nodeType === Node.ELEMENT_NODE && textNode.nextSibling.classList.contains('mb-day-of-week')) {
                         continue;
                     }
@@ -118,7 +116,7 @@
                     if (parentContainer) {
                         countryEl = parentContainer.querySelector('abbr[title]') || parentContainer.querySelector('bdi') || parentContainer.querySelector('.flag');
 
-                        // Tabellen-Logik für historische Edits
+                        // On historic edit tables, the country column is right after the date column
                         if (!countryEl && parentContainer.tagName === 'TD') {
                             let next = parentContainer.nextElementSibling;
                             while (next && !countryEl) {
@@ -132,7 +130,7 @@
                         country = (countryEl.title || countryEl.textContent || '').trim();
                         if (country && country.length === 2 && countryEl.title) country = countryEl.title.trim();
                     } else if (textNode.parentNode && textNode.parentNode.tagName === 'SPAN') {
-                        // Fallback für Userscripte wie "Supercharged Cover Art Edits"
+                        // Fallback for custom layouts like the "Supercharged Cover Art Edits" script
                         let sibling = textNode.parentNode.nextSibling;
                         if (sibling && sibling.nodeType === Node.TEXT_NODE) {
                             let rMatch = sibling.nodeValue.match(/^\s*\(([A-Z]{2})(?:,.*)?\)/);
@@ -140,6 +138,7 @@
                         }
                     }
 
+                    // Make sure undefined countries don't accidentally get flagged as non-standard
                     let expectedDay = null;
                     if (country && COUNTRY_RELEASE_DAYS[country] !== undefined) {
                         const expected = COUNTRY_RELEASE_DAYS[country];
@@ -148,6 +147,7 @@
 
                     const statusClass = (expectedDay !== null) ? ((dayOfWeek === expectedDay) ? 'standard' : 'non-standard') : 'unknown';
 
+                    // Queue the DOM update to avoid layout thrashing
                     tasks.push({
                         textNode,
                         splitIndex: match.index + dateStr.length,
@@ -161,7 +161,6 @@
         return tasks;
     }
 
-    // --- PHASE 2: VISUAL UPDATES (DOM Writes) ---
     function flushWriteTasks(tasks) {
         tasks.forEach(task => {
             if (!task.textNode.parentNode) return;
@@ -175,8 +174,6 @@
         });
     }
 
-
-    // --- DER OBSERVER (Die Orchestrierung) ---
     const collectedNodes = new Set();
     let isScheduled = false;
 
@@ -184,6 +181,7 @@
         if (isScheduled) return;
         isScheduled = true;
 
+        // Do the heavy lifting during browser idle time so scrolling stays smooth
         requestIdle(() => {
             const nodesArray = Array.from(collectedNodes);
             collectedNodes.clear();
@@ -191,6 +189,7 @@
             const tasks = buildWriteTasks(nodesArray);
 
             if (tasks.length > 0) {
+                // Do all visual DOM updates together in the next frame
                 requestAnimationFrame(() => {
                     flushWriteTasks(tasks);
                 });
@@ -200,17 +199,16 @@
         });
     }
 
-    // Initialer Durchlauf
     collectedNodes.add(document.body);
     scheduleProcessing();
 
-    // Dynamischer Observer
     const observer = new MutationObserver((mutations) => {
         let needsProcessing = false;
 
         for (const mutation of mutations) {
             for (const node of mutation.addedNodes) {
                 if (node.nodeType === Node.ELEMENT_NODE) {
+                    // Don't let our own injected spans trigger another update loop
                     if (node.classList && node.classList.contains('mb-day-of-week')) continue;
 
                     collectedNodes.add(node);
