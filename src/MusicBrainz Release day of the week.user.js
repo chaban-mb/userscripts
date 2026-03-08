@@ -30,18 +30,23 @@
     const fullDayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
     const dateRegex = /\b(\d{4}-\d{2}-\d{2})\b/;
 
-    const COUNTRY_RELEASE_DAYS = {
-        'Australia': 1, 'AU': 1,
-        'France': 1, 'FR': 1,
-        'Germany': (date) => (date < new Date('2005-09-01') ? 1 : 5),
-        'DE': (date) => (date < new Date('2005-09-01') ? 1 : 5),
-        'Japan': 3, 'JP': 3,
-        'New Zealand': 1, 'NZ': 1,
-        'United Kingdom': 1, 'GB': 1,
-        'United States': 2, 'US': 2,
-        '[Worldwide]': (date) => (date >= new Date('2015-07-10') ? 5 : null),
-        'XW': (date) => (date >= new Date('2015-07-10') ? 5 : null),
+    const COUNTRY_RULES = {
+        'AU': { name: 'Australia', expectedDay: 1 },
+        'FR': { name: 'France', expectedDay: 1 },
+        'DE': { name: 'Germany', expectedDay: (date) => (date < new Date('2005-09-01') ? 1 : 5) },
+        'JP': { name: 'Japan', expectedDay: 3 },
+        'NZ': { name: 'New Zealand', expectedDay: 1 },
+        'GB': { name: 'United Kingdom', expectedDay: 1 },
+        'US': { name: 'United States', expectedDay: 2 },
+        'XW': { name: 'Worldwide', expectedDay: (date) => (date >= new Date('2015-07-10') ? 5 : null) }
     };
+
+    const COUNTRY_MAP = new Map();
+    for (const [code, rule] of Object.entries(COUNTRY_RULES)) {
+        COUNTRY_MAP.set(code, rule);
+        COUNTRY_MAP.set(rule.name, rule);
+    }
+    COUNTRY_MAP.set('[Worldwide]', COUNTRY_RULES['XW']);
 
     const style = document.createElement('style');
     style.textContent = `
@@ -143,15 +148,19 @@
 
                     // Make sure undefined countries don't accidentally get flagged as non-standard
                     let expectedDay = null;
-                    if (country && COUNTRY_RELEASE_DAYS[country] !== undefined) {
-                        const expected = COUNTRY_RELEASE_DAYS[country];
-                        expectedDay = typeof expected === 'function' ? expected(date) : expected;
+                    let rule = null;
+
+                    if (country) {
+                        rule = COUNTRY_MAP.get(country);
+                        if (rule !== undefined) {
+                            expectedDay = typeof rule.expectedDay === 'function' ? rule.expectedDay(date) : rule.expectedDay;
+                        }
                     }
 
                     const statusClass = (expectedDay !== null) ? ((dayOfWeek === expectedDay) ? 'standard' : 'non-standard') : 'unknown';
 
                     let tooltipText = '';
-                    const displayCountry = country === 'XW' || country === '[Worldwide]' ? 'Worldwide' : country;
+                    const displayCountry = rule ? rule.name : country;
 
                     if (expectedDay !== null && dayOfWeek !== expectedDay) {
                         tooltipText = `Expected ${fullDayNames[expectedDay]} for ${displayCountry}, but is ${fullDayNames[dayOfWeek]}.`;
