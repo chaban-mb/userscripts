@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name           MusicBrainz: Release day of the week
-// @namespace      https://github.com/chaban-mb/userscripts
+// @namespace      https://musicbrainz.org/user/chaban
 // @description    Display the day of the week for release events.
 // @version        1.0.0
 // @author         Jugdish, SultS, chaban
