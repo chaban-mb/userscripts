@@ -4,15 +4,15 @@
 // @description    Display the day of the week for release events.
 // @version        1.0.0
 // @author         Jugdish, SultS, chaban
-// @include        http*://*musicbrainz.org/release*
-// @include        http*://*musicbrainz.org/recording/*
-// @include        http*://*musicbrainz.org/edit/*
-// @include        http*://*musicbrainz.org/*/edits
-// @include        http*://*musicbrainz.org/label/*
-// @include        http*://*musicbrainz.org/area/*
-// @include        http*://*musicbrainz.org/search*
-// @include        http*://*musicbrainz.org/artist/*/releases*
-// @include        http*://*musicbrainz.org/area/*/releases*
+// @match          https://*.musicbrainz.org/release*
+// @match          https://*.musicbrainz.org/recording/*
+// @match          https://*.musicbrainz.org/edit/*
+// @match          https://*.musicbrainz.org/*/edits
+// @match          https://*.musicbrainz.org/label/*
+// @match          https://*.musicbrainz.org/area/*
+// @match          https://*.musicbrainz.org/search*
+// @match          https://*.musicbrainz.org/artist/*/releases*
+// @match          https://*.musicbrainz.org/area/*/releases*
 // @grant          none
 // @run-at         document-idle
 // ==/UserScript==
