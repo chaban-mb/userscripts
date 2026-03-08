@@ -13,6 +13,7 @@
 // @match          https://*.musicbrainz.org/search*
 // @match          https://*.musicbrainz.org/artist/*/releases*
 // @match          https://*.musicbrainz.org/area/*/releases*
+// @icon           https://musicbrainz.org/static/images/favicons/android-chrome-512x512.png
 // @grant          none
 // @run-at         document-idle
 // ==/UserScript==
