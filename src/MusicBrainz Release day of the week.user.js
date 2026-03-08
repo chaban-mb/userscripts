@@ -26,6 +26,7 @@
     };
 
     const dayNames = new Intl.DateTimeFormat('en', { weekday: 'short' });
+    const fullDayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
     const dateRegex = /\b(\d{4}-\d{2}-\d{2})\b/;
 
     const COUNTRY_RELEASE_DAYS = {
@@ -148,12 +149,28 @@
 
                     const statusClass = (expectedDay !== null) ? ((dayOfWeek === expectedDay) ? 'standard' : 'non-standard') : 'unknown';
 
+                    let tooltipText = '';
+                    const displayCountry = country === 'XW' || country === '[Worldwide]' ? 'Worldwide' : country;
+
+                    if (expectedDay !== null && dayOfWeek !== expectedDay) {
+                        tooltipText = `Expected ${fullDayNames[expectedDay]} for ${displayCountry}, but is ${fullDayNames[dayOfWeek]}.`;
+                    } else if (expectedDay !== null && dayOfWeek === expectedDay) {
+                        tooltipText = `Standard release day for ${displayCountry}.`;
+                    } else if (displayCountry === 'Worldwide') {
+                        tooltipText = 'No standard Global Release Day existed prior to July 10, 2015.';
+                    } else if (country) {
+                        tooltipText = `No standard release day known for ${displayCountry}.`;
+                    } else {
+                        tooltipText = 'Could not determine country.';
+                    }
+
                     // Queue the DOM update to avoid layout thrashing
                     tasks.push({
                         textNode,
                         splitIndex: match.index + dateStr.length,
                         statusClass,
-                        dayName
+                        dayName,
+                        tooltipText
                     });
                 }
             });
@@ -169,6 +186,11 @@
             const daySpan = document.createElement('span');
             daySpan.className = `mb-day-of-week ${task.statusClass}`;
             daySpan.textContent = task.dayName;
+
+            if (task.tooltipText) {
+                daySpan.title = task.tooltipText;
+                daySpan.style.cursor = 'help';
+            }
 
             const splitNode = task.textNode.splitText(task.splitIndex);
             task.textNode.parentNode.insertBefore(daySpan, splitNode);
