@@ -1,9 +1,11 @@
 // ==UserScript==
 // @name           MusicBrainz: Release day of the week
 // @namespace      https://musicbrainz.org/user/chaban
+// @version        1.0.1
 // @description    Display the day of the week for release events.
-// @version        1.0.0
+// @tag            ai-created
 // @author         Jugdish, SultS, chaban
+// @license        MIT
 // @match          https://*.musicbrainz.org/release*
 // @match          https://*.musicbrainz.org/recording/*
 // @match          https://*.musicbrainz.org/edit/*
