@@ -2,7 +2,7 @@
 // @name           MusicBrainz: Release day of the week
 // @namespace      https://github.com/chaban-mb/userscripts
 // @description    Display the day of the week for release events.
-// @version        2024.03.08.3
+// @version        1.0.0
 // @author         Jugdish, SultS, chaban
 // @include        http*://*musicbrainz.org/release*
 // @include        http*://*musicbrainz.org/recording/*
@@ -20,21 +20,26 @@
 (function () {
     'use strict';
 
+    // Safari Fallback für requestIdleCallback
+    const requestIdle = window.requestIdleCallback || function (cb) {
+        return setTimeout(function () { cb(); }, 1);
+    };
+
     const dayNames = new Intl.DateTimeFormat('en', { weekday: 'short' });
+    const dateRegex = /\b(\d{4}-\d{2}-\d{2})\b/;
 
     const COUNTRY_RELEASE_DAYS = {
-        'Australia': 1,      // Mon
-        'France': 1,         // Mon
-        'Germany': (date) => (date < new Date('2005-09-01') ? 1 : 5), // Mon before Sep 2005, Fri after
-        'Japan': 3,          // Wed
-        'New Zealand': 1,    // Mon
-        'United Kingdom': 1, // Mon
-        'United States': 2,  // Tue
+        'Australia': 1,
+        'France': 1,
+        'Germany': (date) => (date < new Date('2005-09-01') ? 1 : 5),
+        'Japan': 3,
+        'New Zealand': 1,
+        'United Kingdom': 1,
+        'United States': 2,
         '[Worldwide]': (date) => (date >= new Date('2015-07-10') ? 5 : null),
         'XW': (date) => (date >= new Date('2015-07-10') ? 5 : null),
     };
 
-    // Stylesheet injizieren
     const style = document.createElement('style');
     style.textContent = `
         .mb-day-of-week { font-weight: bold; margin-left: 0.3em; white-space: nowrap; }
@@ -45,132 +50,177 @@
     `;
     document.head.appendChild(style);
 
-    function getExpectedDay(country, date) {
-        const expected = COUNTRY_RELEASE_DAYS[country];
-        if (typeof expected === 'function') {
-            return expected(date);
-        }
-        return expected;
-    }
+    // --- PHASE 1: BACKGROUND PROCESSING (DOM Reads & Logic) ---
+    function buildWriteTasks(nodesToProcess) {
+        const tasks = [];
+        const seenTextNodes = new Set();
 
-    function processDates(root) {
-        if (!(root instanceof Element || root instanceof HTMLDocument)) return;
+        // Punktgenaue Selektoren für alle bekannten Orte, an denen Release-Daten stehen
+        const validContainersSelector = [
+            '.release-events',               // Reguläre Listen (Recording-, Artist-, Label-Pages)
+            '.release-events-diff',          // Diff-Tabellen (Edit-Pages)
+            '.edit-release-events',          // Historische Edits
+            'table.details.add-release',     // "Add release" Edit-Tables
+            'table.details.edit-release',    // "Edit release" Edit-Tables
+            'span.release-date',             // Nativ gerenderte Daten (z.B. Sidebar, Release-Tab)
+            'span[data-name="release-date"]' // Fallback für "Supercharged CAA Edits"
+        ].join(', ');
 
-        // Container definieren, in denen nach Daten gesucht werden soll
-        let containers = Array.from(root.querySelectorAll('.release-events, table.details, table.tbl, .edit-list'));
+        nodesToProcess.forEach(root => {
+            if (!document.contains(root)) return;
 
-        // Falls der übergebene Root-Knoten selbst ein gültiger Container ist
-        if (root instanceof Element && root.matches && root.matches('.release-events, table.details, table.tbl, .edit-list')) {
-            containers.push(root);
-        }
+            let containers = Array.from(root.querySelectorAll(validContainersSelector));
 
-        // Fallback: Wenn keine spezifischen Container gefunden wurden, nutze den Root (z.B. für kleine DOM-Updates)
-        if (containers.length === 0) {
-            containers = [root];
-        }
-
-        const dateRegex = /\b(\d{4}-\d{2}-\d{2})\b/;
-
-        containers.forEach(container => {
-            const walker = document.createTreeWalker(
-                container,
-                NodeFilter.SHOW_TEXT,
-                null,
-                false
-            );
-
-            let node;
-            const nodesToProcess = [];
-
-            // Alle relevanten Textknoten sammeln
-            while (node = walker.nextNode()) {
-                if (dateRegex.test(node.nodeValue)) {
-                    nodesToProcess.push(node);
+            // Wenn der mutierte Node selbst ein gesuchter Container ist
+            if (root.matches && root.matches(validContainersSelector)) {
+                containers.push(root);
+            } else if (containers.length === 0) {
+                // Sicherheitsnetz für kleine Mutationen: Liegt der Node in einem gültigen Container?
+                const parentContainer = root.closest ? root.closest(validContainersSelector) : null;
+                if (parentContainer) {
+                    containers = [root];
                 }
             }
 
-            // Knoten verarbeiten und DOM manipulieren
-            nodesToProcess.forEach(textNode => {
-                // Verhindern, dass bereits verarbeitete Daten doppelt markiert werden
-                if (textNode.nextSibling &&
-                    textNode.nextSibling.nodeType === Node.ELEMENT_NODE &&
-                    textNode.nextSibling.classList.contains('mb-day-of-week')) {
-                    return;
-                }
+            containers.forEach(container => {
+                const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, null, false);
+                let textNode;
 
-                const match = textNode.nodeValue.match(dateRegex);
-                if (!match) return;
+                while (textNode = walker.nextNode()) {
+                    // SCHUTZ: Ignoriere Texte innerhalb von Disambiguations oder Kommentaren
+                    if (textNode.parentNode && textNode.parentNode.classList && textNode.parentNode.classList.contains('comment')) {
+                        continue;
+                    }
 
-                const dateStr = match[1];
-                const date = new Date(dateStr);
-                if (isNaN(date.getTime())) return;
+                    if (seenTextNodes.has(textNode)) continue;
+                    if (!dateRegex.test(textNode.nodeValue)) continue;
 
-                const dayOfWeek = date.getUTCDay();
-                const dayName = dayNames.format(date);
+                    if (textNode.nextSibling && textNode.nextSibling.nodeType === Node.ELEMENT_NODE && textNode.nextSibling.classList.contains('mb-day-of-week')) {
+                        continue;
+                    }
 
-                // Land aus dem übergeordneten Kontext ermitteln
-                let country = null;
-                const parentEl = textNode.parentElement.closest('li, td, tr');
-                if (parentEl) {
-                    let countryEl = parentEl.querySelector('abbr[title]');
-                    if (!countryEl) countryEl = parentEl.querySelector('bdi');
-                    if (!countryEl) countryEl = parentEl.querySelector('.flag');
+                    seenTextNodes.add(textNode);
+
+                    const match = textNode.nodeValue.match(dateRegex);
+                    if (!match) continue;
+
+                    const dateStr = match[1];
+                    const date = new Date(dateStr);
+                    if (isNaN(date.getTime())) continue;
+
+                    const dayOfWeek = date.getUTCDay();
+                    const dayName = dayNames.format(date);
+
+                    let country = null;
+                    let countryEl = null;
+                    const parentContainer = textNode.parentElement ? textNode.parentElement.closest('li, td') : null;
+
+                    if (parentContainer) {
+                        countryEl = parentContainer.querySelector('abbr[title]') || parentContainer.querySelector('bdi') || parentContainer.querySelector('.flag');
+
+                        // Tabellen-Logik für historische Edits
+                        if (!countryEl && parentContainer.tagName === 'TD') {
+                            let next = parentContainer.nextElementSibling;
+                            while (next && !countryEl) {
+                                countryEl = next.querySelector('abbr[title]') || next.querySelector('bdi') || next.querySelector('.flag');
+                                next = next.nextElementSibling;
+                            }
+                        }
+                    }
 
                     if (countryEl) {
                         country = (countryEl.title || countryEl.textContent || '').trim();
-                        // Spezialfall: Flaggen, bei denen das Kürzel im Title steht
-                        if (country && country.length === 2 && countryEl.title) {
-                            country = countryEl.title.trim();
+                        if (country && country.length === 2 && countryEl.title) country = countryEl.title.trim();
+                    } else if (textNode.parentNode && textNode.parentNode.tagName === 'SPAN') {
+                        // Fallback für Userscripte wie "Supercharged Cover Art Edits"
+                        let sibling = textNode.parentNode.nextSibling;
+                        if (sibling && sibling.nodeType === Node.TEXT_NODE) {
+                            let rMatch = sibling.nodeValue.match(/^\s*\(([A-Z]{2})(?:,.*)?\)/);
+                            if (rMatch) country = rMatch[1];
                         }
                     }
+
+                    let expectedDay = null;
+                    if (country && COUNTRY_RELEASE_DAYS[country] !== undefined) {
+                        const expected = COUNTRY_RELEASE_DAYS[country];
+                        expectedDay = typeof expected === 'function' ? expected(date) : expected;
+                    }
+
+                    const statusClass = (expectedDay !== null) ? ((dayOfWeek === expectedDay) ? 'standard' : 'non-standard') : 'unknown';
+
+                    tasks.push({
+                        textNode,
+                        splitIndex: match.index + dateStr.length,
+                        statusClass,
+                        dayName
+                    });
                 }
-
-                const expectedDay = country ? getExpectedDay(country, date) : null;
-                let statusClass = 'unknown';
-
-                if (expectedDay !== null) {
-                    statusClass = (dayOfWeek === expectedDay) ? 'standard' : 'non-standard';
-                }
-
-                // Tag-Anzeige erstellen
-                const daySpan = document.createElement('span');
-                daySpan.className = `mb-day-of-week ${statusClass}`;
-                daySpan.textContent = dayName;
-
-                // Textknoten exakt nach dem Datum aufspalten und das Span einfügen
-                const splitIndex = match.index + dateStr.length;
-                const splitNode = textNode.splitText(splitIndex);
-                textNode.parentNode.insertBefore(daySpan, splitNode);
             });
+        });
+
+        return tasks;
+    }
+
+    // --- PHASE 2: VISUAL UPDATES (DOM Writes) ---
+    function flushWriteTasks(tasks) {
+        tasks.forEach(task => {
+            if (!task.textNode.parentNode) return;
+
+            const daySpan = document.createElement('span');
+            daySpan.className = `mb-day-of-week ${task.statusClass}`;
+            daySpan.textContent = task.dayName;
+
+            const splitNode = task.textNode.splitText(task.splitIndex);
+            task.textNode.parentNode.insertBefore(daySpan, splitNode);
+        });
+    }
+
+
+    // --- DER OBSERVER (Die Orchestrierung) ---
+    const collectedNodes = new Set();
+    let isScheduled = false;
+
+    function scheduleProcessing() {
+        if (isScheduled) return;
+        isScheduled = true;
+
+        requestIdle(() => {
+            const nodesArray = Array.from(collectedNodes);
+            collectedNodes.clear();
+
+            const tasks = buildWriteTasks(nodesArray);
+
+            if (tasks.length > 0) {
+                requestAnimationFrame(() => {
+                    flushWriteTasks(tasks);
+                });
+            }
+
+            isScheduled = false;
         });
     }
 
     // Initialer Durchlauf
-    processDates(document);
+    collectedNodes.add(document.body);
+    scheduleProcessing();
 
-    // Observer für dynamisch nachgeladene Inhalte (z.B. Edits aufklappen)
-    let timeout = null;
-    const addedNodes = new Set();
-
+    // Dynamischer Observer
     const observer = new MutationObserver((mutations) => {
+        let needsProcessing = false;
+
         for (const mutation of mutations) {
             for (const node of mutation.addedNodes) {
                 if (node.nodeType === Node.ELEMENT_NODE) {
-                    addedNodes.add(node);
+                    if (node.classList && node.classList.contains('mb-day-of-week')) continue;
+
+                    collectedNodes.add(node);
+                    needsProcessing = true;
                 }
             }
         }
 
-        if (addedNodes.size > 0) {
-            if (timeout) clearTimeout(timeout);
-            timeout = setTimeout(() => {
-                addedNodes.forEach(node => {
-                    if (document.contains(node)) {
-                        processDates(node);
-                    }
-                });
-                addedNodes.clear();
-            }, 50); // Leichtes Debouncing für bessere Performance
+        if (needsProcessing) {
+            scheduleProcessing();
         }
     });
 
