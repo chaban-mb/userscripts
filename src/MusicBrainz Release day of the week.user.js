@@ -2,7 +2,7 @@
 // @name           MusicBrainz: Release day of the week
 // @namespace      https://github.com/chaban-mb/userscripts
 // @description    Display the day of the week for release events.
-// @version        2024.03.08.2
+// @version        2024.03.08.3
 // @author         Jugdish, SultS, chaban
 // @include        http*://*musicbrainz.org/release*
 // @include        http*://*musicbrainz.org/recording/*
@@ -10,7 +10,7 @@
 // @include        http*://*musicbrainz.org/*/edits
 // @include        http*://*musicbrainz.org/label/*
 // @include        http*://*musicbrainz.org/area/*
-// @include        http*://*musicbrainz.org/search/*
+// @include        http*://*musicbrainz.org/search*
 // @include        http*://*musicbrainz.org/artist/*/releases*
 // @include        http*://*musicbrainz.org/area/*/releases*
 // @grant          none
@@ -34,6 +34,7 @@
         'XW': (date) => (date >= new Date('2015-07-10') ? 5 : null),
     };
 
+    // Stylesheet injizieren
     const style = document.createElement('style');
     style.textContent = `
         .mb-day-of-week { font-weight: bold; margin-left: 0.3em; white-space: nowrap; }
@@ -52,109 +53,102 @@
         return expected;
     }
 
-    function processDateElement(el) {
-        if (el.dataset.processed) return;
-        el.dataset.processed = 'true';
+    function processDates(root) {
+        if (!(root instanceof Element || root instanceof HTMLDocument)) return;
 
-        const dateStr = el.textContent.trim();
-        // Match YYYY-MM-DD
-        const match = dateStr.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-        if (!match) return;
+        // Container definieren, in denen nach Daten gesucht werden soll
+        let containers = Array.from(root.querySelectorAll('.release-events, table.details, table.tbl, .edit-list'));
 
-        const date = new Date(dateStr);
-        if (isNaN(date.getTime())) return;
+        // Falls der übergebene Root-Knoten selbst ein gültiger Container ist
+        if (root instanceof Element && root.matches && root.matches('.release-events, table.details, table.tbl, .edit-list')) {
+            containers.push(root);
+        }
 
-        const dayOfWeek = date.getUTCDay();
-        const dayName = dayNames.format(date);
+        // Fallback: Wenn keine spezifischen Container gefunden wurden, nutze den Root (z.B. für kleine DOM-Updates)
+        if (containers.length === 0) {
+            containers = [root];
+        }
 
-        // Try to find country
-        let country = null;
-        const container = el.closest('li, td, tr');
-        if (container) {
-            // Check for abbr[title] first, then bdi, then .flag
-            let countryEl = container.querySelector('abbr[title]');
-            if (!countryEl) countryEl = container.querySelector('bdi');
-            if (!countryEl) countryEl = container.querySelector('.flag');
+        const dateRegex = /\b(\d{4}-\d{2}-\d{2})\b/;
 
-            if (countryEl) {
-                country = (countryEl.title || countryEl.textContent || '').trim();
-                // Special case for flags that might just have country code in text
-                if (country && country.length === 2 && countryEl.title) {
-                    country = countryEl.title.trim();
+        containers.forEach(container => {
+            const walker = document.createTreeWalker(
+                container,
+                NodeFilter.SHOW_TEXT,
+                null,
+                false
+            );
+
+            let node;
+            const nodesToProcess = [];
+
+            // Alle relevanten Textknoten sammeln
+            while (node = walker.nextNode()) {
+                if (dateRegex.test(node.nodeValue)) {
+                    nodesToProcess.push(node);
                 }
             }
-        }
 
-        const expectedDay = country ? getExpectedDay(country, date) : null;
-        let statusClass = 'unknown';
+            // Knoten verarbeiten und DOM manipulieren
+            nodesToProcess.forEach(textNode => {
+                // Verhindern, dass bereits verarbeitete Daten doppelt markiert werden
+                if (textNode.nextSibling &&
+                    textNode.nextSibling.nodeType === Node.ELEMENT_NODE &&
+                    textNode.nextSibling.classList.contains('mb-day-of-week')) {
+                    return;
+                }
 
-        if (expectedDay !== null) {
-            statusClass = (dayOfWeek === expectedDay) ? 'standard' : 'non-standard';
-        }
+                const match = textNode.nodeValue.match(dateRegex);
+                if (!match) return;
 
-        const daySpan = document.createElement('span');
-        daySpan.className = `mb-day-of-week ${statusClass}`;
-        daySpan.textContent = dayName;
-        el.appendChild(daySpan);
-    }
+                const dateStr = match[1];
+                const date = new Date(dateStr);
+                if (isNaN(date.getTime())) return;
 
-    function processTextNodes(root) {
-        const releaseEvents = root.querySelectorAll('.release-events li');
-        releaseEvents.forEach(li => {
-            if (li.querySelector('.mb-day-of-week')) return;
+                const dayOfWeek = date.getUTCDay();
+                const dayName = dayNames.format(date);
 
-            for (const node of li.childNodes) {
-                if (node.nodeType === Node.TEXT_NODE) {
-                    const match = node.nodeValue.match(/(\d{4})-(\d{2})-(\d{2})/);
-                    if (match) {
-                        const dateStr = match[0];
-                        const date = new Date(dateStr);
-                        if (!isNaN(date.getTime())) {
-                            const dayName = dayNames.format(date);
-                            const dayOfWeek = date.getUTCDay();
+                // Land aus dem übergeordneten Kontext ermitteln
+                let country = null;
+                const parentEl = textNode.parentElement.closest('li, td, tr');
+                if (parentEl) {
+                    let countryEl = parentEl.querySelector('abbr[title]');
+                    if (!countryEl) countryEl = parentEl.querySelector('bdi');
+                    if (!countryEl) countryEl = parentEl.querySelector('.flag');
 
-                            let country = null;
-                            let countryEl = li.querySelector('abbr[title]');
-                            if (!countryEl) countryEl = li.querySelector('bdi');
-                            if (!countryEl) countryEl = li.querySelector('.flag');
-
-                            if (countryEl) {
-                                country = (countryEl.title || countryEl.textContent || '').trim();
-                            }
-
-                            const expectedDay = country ? getExpectedDay(country, date) : null;
-                            let statusClass = 'unknown';
-                            if (expectedDay !== null) {
-                                statusClass = (dayOfWeek === expectedDay) ? 'standard' : 'non-standard';
-                            }
-
-                            const daySpan = document.createElement('span');
-                            daySpan.className = `mb-day-of-week ${statusClass}`;
-                            daySpan.textContent = dayName;
-                            node.after(daySpan);
-                            break;
+                    if (countryEl) {
+                        country = (countryEl.title || countryEl.textContent || '').trim();
+                        // Spezialfall: Flaggen, bei denen das Kürzel im Title steht
+                        if (country && country.length === 2 && countryEl.title) {
+                            country = countryEl.title.trim();
                         }
                     }
                 }
-            }
+
+                const expectedDay = country ? getExpectedDay(country, date) : null;
+                let statusClass = 'unknown';
+
+                if (expectedDay !== null) {
+                    statusClass = (dayOfWeek === expectedDay) ? 'standard' : 'non-standard';
+                }
+
+                // Tag-Anzeige erstellen
+                const daySpan = document.createElement('span');
+                daySpan.className = `mb-day-of-week ${statusClass}`;
+                daySpan.textContent = dayName;
+
+                // Textknoten exakt nach dem Datum aufspalten und das Span einfügen
+                const splitIndex = match.index + dateStr.length;
+                const splitNode = textNode.splitText(splitIndex);
+                textNode.parentNode.insertBefore(daySpan, splitNode);
+            });
         });
     }
 
-    function run(root = document) {
-        if (!(root instanceof Element || root instanceof HTMLDocument)) return;
+    // Initialer Durchlauf
+    processDates(document);
 
-        const selectors = [
-            'span.release-date',
-            'span.diff-only-a',
-            'span.diff-only-b'
-        ];
-
-        root.querySelectorAll(selectors.join(', ')).forEach(processDateElement);
-
-        // Fallback for release page sidebar where dates might be direct text nodes
-        processTextNodes(root);
-    }
-
+    // Observer für dynamisch nachgeladene Inhalte (z.B. Edits aufklappen)
     let timeout = null;
     const addedNodes = new Set();
 
@@ -171,17 +165,15 @@
             if (timeout) clearTimeout(timeout);
             timeout = setTimeout(() => {
                 addedNodes.forEach(node => {
-                    // Check if node is still in document
                     if (document.contains(node)) {
-                        run(node);
+                        processDates(node);
                     }
                 });
                 addedNodes.clear();
-            }, 50);
+            }, 50); // Leichtes Debouncing für bessere Performance
         }
     });
 
     observer.observe(document.body, { childList: true, subtree: true });
 
-    run();
 })();
