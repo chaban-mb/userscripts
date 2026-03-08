@@ -29,13 +29,14 @@
     const dateRegex = /\b(\d{4}-\d{2}-\d{2})\b/;
 
     const COUNTRY_RELEASE_DAYS = {
-        'Australia': 1,
-        'France': 1,
+        'Australia': 1, 'AU': 1,
+        'France': 1, 'FR': 1,
         'Germany': (date) => (date < new Date('2005-09-01') ? 1 : 5),
-        'Japan': 3,
-        'New Zealand': 1,
-        'United Kingdom': 1,
-        'United States': 2,
+        'DE': (date) => (date < new Date('2005-09-01') ? 1 : 5),
+        'Japan': 3, 'JP': 3,
+        'New Zealand': 1, 'NZ': 1,
+        'United Kingdom': 1, 'GB': 1,
+        'United States': 2, 'US': 2,
         '[Worldwide]': (date) => (date >= new Date('2015-07-10') ? 5 : null),
         'XW': (date) => (date >= new Date('2015-07-10') ? 5 : null),
     };
