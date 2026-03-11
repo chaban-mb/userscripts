@@ -259,7 +259,7 @@
             key: 'enhancements.lang.techTerms',
             label: 'Technical Terms (one per line, regex supported)',
             description: 'Terms that are not specific to any language (like "remix" or "live") will be removed from titles before analysis.',
-            defaultValue: ['live', '(re)?mix(es)?', 'edit(ion)?', 'medley', 'version(s)?', 'instrumental', 'album', 'radio', 'single', 'vocal', 'dub', 'club', 'extended', 'original', 'acoustic', 'unplugged', 'mono', 'stereo', 'demo', '(re)?master(ed)?', 'f(ea)?t\\.?', 'spee?d up', 'slow(ed)?', 'chopped', 'screwed', '8d', 'fast'],
+            defaultValue: ['live', '(re)?mix(es)?', 'edit(ion)?', 'medley', 'version(s)?', 'instrumental', 'album', 'radio', 'single', 'vocal', 'dub', 'club', 'extended', 'original', 'acoustic', 'unplugged', 'mono', 'stereo', 'demo', '(re)?master(ed)?', 'f(ea)?t\\.?', 'spee?d up', 'slow(ed)?', 'chopped', 'screwed', '8d', 'fast', 'low pitched'],
             section: 'Language Detection',
             type: 'textarea',
         },
@@ -1976,7 +1976,7 @@
             if (!releaseData?.media) return;
 
             // Keywords that indicate a remix/version string
-            const REMIX_KEYWORDS = ['Remix', 'Rework', 'Edit', 'Mix', 'Flip', 'Bootleg', 'Mashup', 'VIP', 'Dub'];
+            const REMIX_KEYWORDS = ['Remix', 'Rework', 'Edit', 'Mix', 'Flip', 'Bootleg', 'Mashup', 'VIP', 'Dub', 'Version'];
             const KEYWORDS_REGEX = new RegExp(`\\b(${REMIX_KEYWORDS.join('|')})\\b`, 'i');
 
             // Regex to find content in parentheses or brackets at the end of the title
