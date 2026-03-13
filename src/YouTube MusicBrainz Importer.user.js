@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YouTube: MusicBrainz Importer
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      2.8.2
+// @version      2.8.3
 // @description  Imports YouTube videos to MusicBrainz as a new standalone recording
 // @tag          ai-created
 // @author       nikki, RustyNova, chaban
@@ -351,6 +351,10 @@
                 { // Format: Artist - Title (Timestamp)
                     regex: /^(.+?)\s*[-–—]\s*(.+?)\s+\(?((\d+:)?\d+:\d+)\)?$/,
                     map: (match) => ({ artist: match[1], title: match[2], timestampStr: match[3] })
+                },
+                { // Format: (Timestamp): Artist - Title
+                    regex: /^\(((?:\d+:)?\d+:\d+)\):?\s+(.+?)\s*[-–—]\s*(.+)$/,
+                    map: (match) => ({ timestampStr: match[1], artist: match[2], title: match[3] })
                 }
             ];
 
