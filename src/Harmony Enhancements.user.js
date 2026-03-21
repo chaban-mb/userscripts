@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Harmony: Enhancements
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      1.25.4
+// @version      1.25.5
 // @tag          ai-created
 // @description  Adds some convenience features, various UI and behavior settings, as well as an improved language detection to Harmony.
 // @author       chaban
@@ -1642,7 +1642,7 @@
                 if (langRow) {
                     langRow.querySelector('td').textContent = '[No linguistic content]';
                 } else {
-                    const newRow = releaseInfoTable.insertRow(scriptRow ? scriptRow.rowIndex + 1 : -1);
+                    const newRow = releaseInfoTable.insertRow(scriptRow ? scriptRow.rowIndex : -1);
                     newRow.id = 'he-language-row';
                     newRow.innerHTML = `<th>Language</th><td>[No linguistic content]</td>`;
                 }
@@ -1666,7 +1666,7 @@
                     }
                 }
             } else {
-                const newRow = releaseInfoTable.insertRow(scriptRow ? scriptRow.rowIndex + 1 : -1);
+                const newRow = releaseInfoTable.insertRow(scriptRow ? scriptRow.rowIndex : -1);
                 newRow.id = 'he-language-row';
                 const th = document.createElement('th');
                 th.textContent = 'Language';
