@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name           MusicBrainz: Release day of the week
 // @namespace      https://musicbrainz.org/user/chaban
-// @version        1.0.1
+// @version        1.0.2
 // @description    Display the day of the week for release events.
 // @tag            ai-created
 // @author         Jugdish, SultS, chaban
@@ -70,8 +70,6 @@
             '.release-events',
             '.release-events-diff',
             '.edit-release-events',
-            'table.details.add-release',
-            'table.details.edit-release',
             'span.release-date',
             'span[data-name="release-date"]'
         ].join(', ');
