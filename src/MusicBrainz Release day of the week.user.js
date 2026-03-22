@@ -18,6 +18,8 @@
 // @icon           https://musicbrainz.org/static/images/favicons/android-chrome-512x512.png
 // @grant          none
 // @run-at         document-idle
+// @updateURL    https://github.com/chaban-mb/userscripts/raw/main/src/MusicBrainz%20Release%20day%20of%20the%20week.user.js
+// @downloadURL  https://github.com/chaban-mb/userscripts/raw/main/src/MusicBrainz%20Release%20day%20of%20the%20week.user.js
 // ==/UserScript==
 
 (function () {
