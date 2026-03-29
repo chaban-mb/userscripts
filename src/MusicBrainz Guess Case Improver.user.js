@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MusicBrainz: Guess Case Improver
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      0.5.1
+// @version      0.6.0
 // @tag          ai-created
 // @description  Improves the native "Guess Case" for release, recording and track titles with advanced artist and ETI parsing. Also removes duplicate artists after using "Guess feat. artists" on tracklists.
 // @author       chaban
@@ -219,11 +219,14 @@
             let artistPartIndex = -1;
             for (let i = 0; i < parts.length; i++) {
                 const currentPart = parts[i];
+                const partNameLower = currentPart.trim().toLowerCase();
                 const artistsInPart = parseArtistNamesFromString(currentPart);
                 log(`Checking part ${i} ("${currentPart}") -> artists:`, artistsInPart);
 
+                // Check if the full unsplit part matches an artist (e.g. "Pete & Bas")
+                const fullPartMatch = artistsInEditor.includes(partNameLower);
                 const hasArtists = artistsInPart.length > 0 && artistsInEditor.length > 0;
-                const allArtistsMatch = hasArtists && artistsInPart.every(a => artistsInEditor.includes(a));
+                const allArtistsMatch = fullPartMatch || (hasArtists && artistsInPart.every(a => artistsInEditor.includes(a)));
 
                 log(`Part ${i} match? ${allArtistsMatch}`);
 
@@ -263,8 +266,7 @@
         return newText.trim();
     }
 
-    async function deduplicateTrackAC(trackRow) {
-        const openBubbleButton = trackRow.querySelector('.artist .open-ac');
+    async function deduplicateAC(openBubbleButton) {
         if (!openBubbleButton) return;
 
         const editor = new ArtistCreditsEditor();
@@ -272,18 +274,41 @@
 
         if (bubbleOpened) {
             const artistRows = editor.getArtistRows();
-            const seenArtists = new Set();
+            const seenArtists = new Map();
             const rowsToRemove = [];
+            const joinPhraseUpdates = [];
 
-            for (const row of artistRows) {
+            for (let i = 0; i < artistRows.length; i++) {
+                const row = artistRows[i];
                 const artistInput = row.querySelector('div.autocomplete2 input[type="text"]');
                 if (artistInput) {
                     const artistName = artistInput.value.trim().toLowerCase();
                     if (artistName && seenArtists.has(artistName)) {
                         rowsToRemove.push(row);
+
+                        const existingIdx = seenArtists.get(artistName);
+                        const prevRow = artistRows[i - 1];
+                        const prevJoinInput = prevRow?.querySelector('td:nth-child(3) input[type="text"]');
+                        const customJoinPhrase = prevJoinInput ? prevJoinInput.value : '';
+
+                        if (existingIdx > 0 && customJoinPhrase && customJoinPhrase.trim().match(/feat|ft|vs/i)) {
+                            joinPhraseUpdates.push({
+                                targetIdx: existingIdx - 1,
+                                newPhrase: customJoinPhrase
+                            });
+                        }
                     } else if (artistName) {
-                        seenArtists.add(artistName);
+                        seenArtists.set(artistName, i);
                     }
+                }
+            }
+
+            for (const update of joinPhraseUpdates) {
+                const targetRow = artistRows[update.targetIdx];
+                const joinInput = targetRow?.querySelector('td:nth-child(3) input[type="text"]');
+                if (joinInput) {
+                    log(`Updating join phrase for row ${update.targetIdx} to "${update.newPhrase}"`);
+                    setReactValue(joinInput, update.newPhrase);
                 }
             }
 
@@ -302,6 +327,14 @@
         } else {
             log('Failed to open AC bubble.');
         }
+    }
+
+    async function deduplicateTrackAC(trackRow) {
+        const openBubbleButton = trackRow.querySelector('.artist .open-ac');
+        await deduplicateAC(openBubbleButton);
+        // Wait for React to completely unmount the bubble and flush track state
+        // before the medium-loop sweeps to the very next track
+        await new Promise(resolve => setTimeout(resolve, 300));
     }
 
     function enhanceTrackGuessFeat(button) {
@@ -334,6 +367,36 @@
                     await deduplicateTrackAC(trackRow);
                 }
                 log('De-duplication sweep complete for medium.');
+            }, 100);
+        }, true);
+
+        button.dataset.enhanced = 'true';
+    }
+
+    function enhanceReleaseGuessFeat(button) {
+        if (button.dataset.enhanced) return;
+        log('Found Release/Recording "Guess Feat." button to enhance.', button);
+
+        button.addEventListener('click', () => {
+            log(`'Guess Feat.' click detected for release/recording. Allowing native script to run first.`);
+
+            // Fix the pristine value state for the guesscase button
+            const input = findAssociatedInput(button);
+            if (input) {
+                setTimeout(() => {
+                    pristineValues.set(input, input.value);
+                    log(`Updated pristine value for ${input.name || input.id} after Guess Feat click: "${input.value}"`);
+                }, 100);
+            }
+
+            // Deduplicate the global artist credit editor by opening its bubble
+            setTimeout(async () => {
+                const openBubbleButton = document.querySelector('.release-artist .open-ac, #artist-credit-editor .open-ac');
+                if (!openBubbleButton) {
+                    log('No open-ac button found for release/recording AC editor.');
+                    return;
+                }
+                await deduplicateAC(openBubbleButton);
             }, 100);
         }, true);
 
@@ -429,6 +492,72 @@
 
 
     // ====================================================================================
+    // --- Preserve Artist As Credited
+    // ====================================================================================
+
+    const pristineCreditedAsValues = new WeakMap();
+
+    // Track manual edits to the credited-as fields
+    document.addEventListener('input', (event) => {
+        if (event.isTrusted && event.target.tagName === 'INPUT' && event.target.id.includes('-credited-as-')) {
+            pristineCreditedAsValues.set(event.target, event.target.value);
+        }
+    }, true);
+
+    function restorePristineCreditedAs(element) {
+        const row = element.closest('tr');
+        if (!row) return;
+
+        const creditedAsInput = row.querySelector('input[id*="-credited-as-"]');
+        if (!creditedAsInput) return;
+
+        // Determine the "intended" credited as value just before the selection occurs
+        // Natively, if the user manually modified it, we have it in pristineCreditedAsValues.
+        // If not, we just take its current value which was synced with the autocomplete input
+        const searchInput = row.querySelector('td:nth-child(1) input[type="text"]') || element.querySelector('input[type="text"]');
+        if (!searchInput) return;
+
+        const currentValue = creditedAsInput.value;
+        if (currentValue !== searchInput.value) return; // Natively preserved
+
+        log(`Tracking 'credited as' field for selection overwrite: "${currentValue}"`);
+
+        // Use a lightweight 2-second polling interval to monitor the input directly.
+        // This securely waits out all browser 'click' delays and React unmounting phases,
+        // cleanly capturing the update only after React has fully rendered and settled "初音ミク".
+        let attempts = 0;
+        const interval = setInterval(() => {
+            if (creditedAsInput.value !== currentValue) {
+                log(`Overwritten 'credited as' field detected. Restoring pristine value: "${currentValue}"`);
+                setReactValue(creditedAsInput, currentValue);
+                clearInterval(interval);
+            }
+            if (++attempts > 40) clearInterval(interval); // Timeout safely after ~2 seconds
+        }, 50);
+    }
+
+    // Capture phase listeners ensure we arm the observer BEFORE the selection finishes
+    document.addEventListener('mousedown', (event) => {
+        if (event.button !== 0) return;
+        const li = event.target.closest('li.option-item');
+        if (li) {
+            const container = li.closest('.autocomplete2');
+            if (container) restorePristineCreditedAs(container);
+        }
+    }, true);
+
+    document.addEventListener('keydown', (event) => {
+        if ((event.key === 'Enter' || event.key === 'Tab') && event.target.tagName === 'INPUT') {
+            const container = event.target.closest('.autocomplete2');
+            if (container) {
+                const expanded = event.target.parentElement?.getAttribute('aria-expanded') === 'true';
+                if (expanded) restorePristineCreditedAs(container);
+            }
+        }
+    }, true);
+
+
+    // ====================================================================================
     // --- Initialization
     // ====================================================================================
 
@@ -466,7 +595,22 @@
             // as they are handled by `enhanceLegacyGuessCase`.
         });
 
-        document.querySelectorAll('button.guessfeat:not([data-enhanced])').forEach(button => (button.closest('tr.track') ? enhanceTrackGuessFeat(button) : (button.closest('fieldset.advanced-medium') && enhanceMediumGuessFeat(button))));
+        // Catch typical guessfeat icons, AND the standard MBS bottom-list action buttons
+        const guessFeatSelectors = [
+            'button.guessfeat:not([data-enhanced])',
+            'button[data-click="guessMediumFeatArtists"]:not([data-enhanced])',
+            'button[data-click="guessReleaseFeatArtists"]:not([data-enhanced])'
+        ].join(', ');
+
+        document.querySelectorAll(guessFeatSelectors).forEach(button => {
+            if (button.closest('tr.track') || button.dataset.click === 'guessTrackFeatArtists') {
+                enhanceTrackGuessFeat(button);
+            } else if (button.closest('fieldset.advanced-medium') || button.dataset.click === 'guessMediumFeatArtists') {
+                enhanceMediumGuessFeat(button);
+            } else {
+                enhanceReleaseGuessFeat(button);
+            }
+        });
     });
 
     observer.observe(document.body, { childList: true, subtree: true });
