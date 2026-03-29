@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Click buttons across tabs
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      4.8.2
+// @version      4.9.0
 // @tag          ai-created
 // @description  Clicks specified buttons across tabs using the Broadcast Channel API and closes tabs after successful submission.
 // @author       chaban
@@ -48,6 +48,27 @@
     let registeredMenuCommandIDs = [];
     let debugLogChannel;
     let activeClosureObserver = null;
+    let activeKeepAlives = [];
+
+    /**
+     * @summary Initializes a WebRTC local loopback connection to force Chrome to classify the tab as "active"
+     * and bypass Intensive Throttling, ensuring microtasks for cross-tab locks execute smoothly.
+     */
+    async function setupThrottlingBypass() {
+        if (activeKeepAlives.length > 0) return;
+        debugLog('Initializing WebRTC loopback to bypass Intensive Throttling.', 'green');
+        const pc1 = new RTCPeerConnection(), pc2 = new RTCPeerConnection();
+        pc1.createDataChannel("keep-alive");
+        pc1.onicecandidate = e => e.candidate && pc2.addIceCandidate(e.candidate);
+        pc2.onicecandidate = e => e.candidate && pc1.addIceCandidate(e.candidate);
+        const offer = await pc1.createOffer();
+        await pc1.setLocalDescription(offer);
+        await pc2.setRemoteDescription(offer);
+        const answer = await pc2.createAnswer();
+        await pc2.setLocalDescription(answer);
+        await pc1.setRemoteDescription(answer);
+        activeKeepAlives = [pc1, pc2];
+    }
 
     /**
      * @typedef {Object} SiteConfig
@@ -663,6 +684,8 @@
                 console.log(`%c[${scriptName}] [${timestamp}] ${msgTabId} ${message}`, `color: ${color}`);
             };
         }
+
+        await setupThrottlingBypass();
 
         const activeConfigs = getActiveConfigs();
         if (activeConfigs.length > 0) {

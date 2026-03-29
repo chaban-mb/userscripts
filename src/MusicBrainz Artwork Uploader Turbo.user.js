@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MusicBrainz: Artwork Uploader Turbo
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      3.2.0
+// @version      3.3.0
 // @tag          ai-created
 // @description  Allows for multiple artwork images to be uploaded simultaneously and recursively upload directories.
 // @author       chaban
@@ -15,7 +15,7 @@
 // @downloadURL  https://github.com/chaban-mb/userscripts/raw/main/src/MusicBrainz%20Artwork%20Uploader%20Turbo.user.js
 // ==/UserScript==
 
-(function() {
+(function () {
     'use strict';
 
     // --- MAIN APPLICATION ---
@@ -45,6 +45,23 @@
             return new Promise((resolve, reject) => {
                 deferred.done(resolve).fail((...args) => reject(args));
             });
+        },
+
+        // --- WEB RTC THROTTLING BYPASS ---
+        async setupThrottlingBypass() {
+            if (ArtworkUploaderTurbo.state.antiThrottlingPCs) return;
+            ArtworkUploaderTurbo.logger.log('Initializing WebRTC loopback to bypass Intensive Throttling...');
+            const pc1 = new RTCPeerConnection(), pc2 = new RTCPeerConnection();
+            pc1.createDataChannel("keep-alive");
+            pc1.onicecandidate = e => e.candidate && pc2.addIceCandidate(e.candidate);
+            pc2.onicecandidate = e => e.candidate && pc1.addIceCandidate(e.candidate);
+            const offer = await pc1.createOffer();
+            await pc1.setLocalDescription(offer);
+            await pc2.setRemoteDescription(offer);
+            const answer = await pc2.createAnswer();
+            await pc2.setLocalDescription(answer);
+            await pc1.setRemoteDescription(answer);
+            ArtworkUploaderTurbo.state.antiThrottlingPCs = [pc1, pc2];
         },
 
         // --- UI RENDERING ---
@@ -245,6 +262,8 @@
                 ArtworkUploaderTurbo.UI.updateDebugUI();
                 this._prepareUI(formName);
 
+                await ArtworkUploaderTurbo.setupThrottlingBypass();
+
                 const pipeline = new this.Pipeline(gid, ArtworkUploaderTurbo.state.files, formName);
                 await pipeline.start();
                 this._finalize(pipeline.hasCriticalError, entityType, archiveName, gid, formName);
@@ -291,7 +310,17 @@
                 }
 
                 async _handleRetry(file, error) {
-                    const httpStatus = error[0]?.status ?? null;
+                    let httpStatus = error[0]?.status ?? null;
+                    if (httpStatus === null && typeof error[1] === 'number') {
+                        httpStatus = error[1];
+                    } else if (httpStatus === null && typeof error[0] === 'string') {
+                        const match = error[0].match(/error (?:creating edit|obtaining signature|uploading image):.*?(\d{3})/i) || error[0].match(/(\d{3})/);
+                        if (match) httpStatus = parseInt(match[1], 10);
+                    }
+                    
+                    ArtworkUploaderTurbo.logger.error(`[DEBUG] _handleRetry called for file ${file.name}. Raw error object:`, error);
+                    ArtworkUploaderTurbo.logger.error(`[DEBUG] Parsed HTTP Status code:`, httpStatus);
+
                     const isRetriable = (httpStatus >= 500 || httpStatus === 429 || httpStatus === 408 || httpStatus === 0 || httpStatus === null);
 
                     if (isRetriable) {
@@ -312,7 +341,12 @@
                 }
 
                 async _signerThread() {
-                    while (this.processedFileCount + this.filesToSubmit.length + this.filesToUpload.length < this.allFiles.length) {
+                    while (this.processedFileCount < this.allFiles.length && !this.hasCriticalError) {
+                        if (this.filesToUpload.length >= ArtworkUploaderTurbo.UPLOAD_WORKER_LIMIT * 2) {
+                            await new Promise(r => setTimeout(r, 500));
+                            continue;
+                        }
+
                         const file = this.filesToSign.shift();
                         if (!file) { await new Promise(r => setTimeout(r, 100)); continue; }
                         if (!file._script) file._script = {};
@@ -323,6 +357,7 @@
                                 file._script.stage = 'Signing';
                                 ArtworkUploaderTurbo.UI.updateDebugUI();
                                 file.postfields = await ArtworkUploaderTurbo.toNativePromise(MB.Art.sign_upload(file, this.gid, file.mimeType()));
+                                ArtworkUploaderTurbo.logger.log(`[DEBUG] Successfully signed file ${file.name}`);
                                 this.filesToUpload.push(file);
                                 break;
                             } catch (error) {
@@ -333,7 +368,7 @@
                 }
 
                 async _uploaderWorker() {
-                     while (this.processedFileCount < this.allFiles.length && !this.hasCriticalError) {
+                    while (this.processedFileCount < this.allFiles.length && !this.hasCriticalError) {
                         const file = this.filesToUpload.shift();
                         if (!file) { await new Promise(r => setTimeout(r, 100)); continue; }
 
@@ -344,6 +379,7 @@
                                 ArtworkUploaderTurbo.UI.updateDebugUI();
                                 await ArtworkUploaderTurbo.toNativePromise(MB.Art.upload_image(file.postfields, file.data)
                                     .progress(value => { file.progress(10 + (value * 0.8)); }));
+                                ArtworkUploaderTurbo.logger.log(`[DEBUG] Successfully uploaded file ${file.name}`);
                                 this.filesToSubmit.push(file);
                                 break;
                             } catch (error) {
@@ -372,8 +408,17 @@
                                 file._script.stage = 'Done';
                                 this.processedFileCount++;
                                 ArtworkUploaderTurbo.UI.updateDebugUI();
+                                ArtworkUploaderTurbo.logger.log(`[DEBUG] Successfully submitted edit for file ${file.name}`);
                                 break;
                             } catch (error) {
+                                const errMsg = typeof file.editErrorMessage === 'function' ? file.editErrorMessage() : '';
+                                if (errMsg && errMsg.includes('expired')) {
+                                    ArtworkUploaderTurbo.logger.warn(`Nonce expired for ${file.name}, restarting upload process...`);
+                                    file._script.retryDelay = null;
+                                    file.editErrorMessage(''); // clear out old error
+                                    this.filesToSign.push(file);
+                                    break;
+                                }
                                 if (!(await this._handleRetry(file, error))) break;
                             }
                         }
@@ -389,7 +434,7 @@
                     clearInterval(checkMB);
 
                     const originalVM = MB.Art.UploadProcessViewModel;
-                    MB.Art.UploadProcessViewModel = function(...args) {
+                    MB.Art.UploadProcessViewModel = function (...args) {
                         const instance = new originalVM(...args);
                         ArtworkUploaderTurbo.state.upvm = instance;
                         ArtworkUploaderTurbo.logger.log('Successfully captured UploadProcessViewModel instance.');
