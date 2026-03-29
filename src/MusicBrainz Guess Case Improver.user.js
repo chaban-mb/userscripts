@@ -52,7 +52,7 @@
         'music video', 'super sped up', 'low pitched', 'slowed down'
     ];
 
-    const JOIN_PHRASE_PATTERN = /\s*\b(?:featuring|feat|ft|vs)\.?\b\s*|\s*(?:[,，、&・×/])\s*|\s+and\s+/gi;
+    const JOIN_PHRASE_PATTERN = /\s*\b(?:featuring|feat|ft|vs)\.?\b\s*|\s*(?:[,，、&・×/])\s*|\s+(?:and|x)\s+/gi;
 
     log('User configuration loaded.');
 
