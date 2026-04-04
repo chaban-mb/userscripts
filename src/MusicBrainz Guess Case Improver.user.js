@@ -10,6 +10,7 @@
 // @match        https://*.musicbrainz.org/recording/*/edit
 // @match        https://*.musicbrainz.org/release/*/edit*
 // @match        https://*.musicbrainz.org/release/add*
+// @match        https://*.musicbrainz.org/artist/*/credit/*/edit
 // @icon         https://musicbrainz.org/static/images/favicons/android-chrome-512x512.png
 // @grant        none
 // @updateURL    https://github.com/chaban-mb/userscripts/raw/main/src/MusicBrainz%20Guess%20Case%20Improver.user.js
@@ -209,7 +210,7 @@
         }
 
         const separator = ' - ';
-        const normalizedForSeparatorSearch = newText.replace(/\s*[-–]\s*/g, separator);
+        const normalizedForSeparatorSearch = newText.replace(/\s+[-–]\s+/g, separator);
         const parts = normalizedForSeparatorSearch.split(separator);
         log(`Split text into parts:`, parts);
 
@@ -511,14 +512,8 @@
         const creditedAsInput = row.querySelector('input[id*="-credited-as-"]');
         if (!creditedAsInput) return;
 
-        // Determine the "intended" credited as value just before the selection occurs
-        // Natively, if the user manually modified it, we have it in pristineCreditedAsValues.
-        // If not, we just take its current value which was synced with the autocomplete input
-        const searchInput = row.querySelector('td:nth-child(1) input[type="text"]') || element.querySelector('input[type="text"]');
-        if (!searchInput) return;
-
         const currentValue = creditedAsInput.value;
-        if (currentValue !== searchInput.value) return; // Natively preserved
+        if (!currentValue) return; // Empty row, nothing to preserve
 
         log(`Tracking 'credited as' field for selection overwrite: "${currentValue}"`);
 
