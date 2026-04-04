@@ -33,16 +33,6 @@
     // The top-level keys of this object MUST match the function names in the `enhancements` object.
     const SETTINGS_CONFIG = {
         // Seeder Behavior
-        updateProperties: {
-            key: 'enhancements.seeder.updateProperties',
-            label: 'Include GTIN and packaging when updating an existing release',
-            description: 'When using the "Update external links in MusicBrainz" button, also include the GTIN (barcode) and set packaging to "None".',
-            defaultValue: false,
-            section: 'Seeder Behavior',
-            type: 'checkbox',
-            runAt: 'submit',
-            formName: 'release-update-seeder',
-        },
         cleanArtistNames: {
             key: 'enhancements.seeder.cleanArtistNames',
             label: 'Drop artist names from seed if MBID is present',
@@ -51,7 +41,17 @@
             section: 'Seeder Behavior',
             type: 'checkbox',
             runAt: 'submit',
-            formName: 'release-seeder',
+            formNames: ['release-seeder', 'release-update-seeder'],
+        },
+        fullUpdateSeeding: {
+            key: 'enhancements.seeder.fullUpdateSeeding',
+            label: 'Complete Seeding for Updates',
+            description: 'When using the "Update external links in MusicBrainz" button, seed all available metadata (labels, artists, dates, etc.) via URL parameters. Requires the <a href="https://github.com/Lioncat6/MusicBrainz-UserScripts?tab=readme-ov-file#mb-release-edit-seeding-helper" target="_blank" rel="noopener noreferrer">MB Release Edit Seeding Helper</a> userscript.<br>Note: Medium (tracklist) data cannot be updated.',
+            defaultValue: true,
+            section: 'Seeder Behavior',
+            type: 'checkbox',
+            runAt: 'submit',
+            formName: 'release-update-seeder',
         },
         musicbrainzServer: {
             key: 'enhancements.musicbrainz.server',
@@ -395,7 +395,7 @@
             generator: (value, set) => {
                 value?.forEach((artist, index) => {
                     const prefix = `artist_credit.names.${index}`;
-                    set(`${prefix}.name`, artist.name);
+                    set(`${prefix}.name`, artist.creditedName || artist.name);
                     if (artist.mbid) {
                         set(`${prefix}.mbid`, artist.mbid);
                     } else {
@@ -438,7 +438,7 @@
 
                         track.artists?.forEach((artist, artistIndex) => {
                             const artistPrefix = `${trackPrefix}.artist_credit.names.${artistIndex}`;
-                            set(`${artistPrefix}.name`, artist.name);
+                            set(`${artistPrefix}.name`, artist.creditedName || artist.name);
                             if (artist.mbid) {
                                 set(`${artistPrefix}.mbid`, artist.mbid);
                             } else {
@@ -450,6 +450,33 @@
                             }
                         });
                     });
+                });
+            },
+        },
+        'releaseEvents': {
+            cleanupPrefix: 'events.',
+            generator: (value, set) => {
+                value?.forEach((event, index) => {
+                    const prefix = `events.${index}`;
+                    if (event.date) {
+                        if (event.date.year) set(`${prefix}.date.year`, event.date.year);
+                        if (event.date.month) set(`${prefix}.date.month`, event.date.month);
+                        if (event.date.day) set(`${prefix}.date.day`, event.date.day);
+                    }
+                    if (event.country) {
+                        set(`${prefix}.country`, event.country);
+                    }
+                });
+            },
+        },
+        'urls': {
+            cleanupPrefix: 'urls.',
+            generator: (value, set) => {
+                value?.forEach((urlObj, index) => {
+                    const url = typeof urlObj === 'string' ? urlObj : urlObj.url;
+                    if (url) {
+                        set(`urls.${index}.url`, url);
+                    }
                 });
             },
         },
@@ -2357,6 +2384,7 @@
                 artists.forEach(artist => {
                     if (artist.mbid) {
                         artist.name = null;
+                        artist.creditedName = null;
                     }
                 });
             };
@@ -2366,10 +2394,6 @@
                     clean(medium.tracklist.flatMap(t => t.artists || []));
                 }
             });
-        },
-
-        updateProperties: (form) => {
-            buildSeederParameters(form, AppState.data.release, AppState.data.originalRelease, ['gtin', 'packaging']);
         },
 
         unsetLanguageData: () => {
@@ -2473,6 +2497,55 @@
     };
 
     /**
+    * Generates a flat map of parameters for the MusicBrainz seeder from release data.
+    * @param {object} releaseData - The current release data.
+    * @returns {Map<string, string>}
+    */
+    function generateAllParameters(releaseData) {
+        const parameters = new Map();
+        const set = (name, value) => {
+            if (value !== undefined) {
+                parameters.set(name, value === null ? '' : String(value));
+            }
+        };
+
+        const getValueFromPath = (obj, path) => path.split('.').reduce((acc, part) => acc?.[part], obj);
+
+        for (const [key, config] of Object.entries(PARAMETER_GENERATORS)) {
+            const value = getValueFromPath(releaseData, key);
+            if (config.generator) {
+                config.generator(value, set);
+            } else if (config.paramName) {
+                set(config.paramName, value);
+            }
+        }
+        return parameters;
+    }
+
+    /**
+    * Filters parameters to only include those supported by the Seeding Helper userscript.
+    * This prevents wasting URL characters on fields that can't be processed.
+    * @param {Map<string, string>} parameters - The raw parameter map.
+    * @returns {Map<string, string>}
+    */
+    function filterSupportedParameters(parameters) {
+        const supported = new Map();
+        for (const [key, value] of parameters.entries()) {
+            const isSupported =
+                /^(name|barcode|status|packaging|language|script|comment|annotation|edit_note)$/.test(key) ||
+                /^labels\.\d+\.(name|mbid|catalog_number)$/.test(key) ||
+                /^artist_credit\.names\.\d+\.(name|mbid|join_phrase|artist\.name)$/.test(key) ||
+                /^events\.\d+\.(date\.(year|month|day)|country)$/.test(key) ||
+                /^urls\.\d+\.url$/.test(key);
+
+            if (isSupported) {
+                supported.set(key, value);
+            }
+        }
+        return supported;
+    }
+
+    /**
     * Builds or augments a seeder form with parameters from the release data.
     * This function operates in a "patch" mode by comparing the current
     * release data to the original data snapshot.
@@ -2485,21 +2558,16 @@
     function buildSeederParameters(form, releaseData, originalReleaseData, paramsToBuild = null) {
         if (!releaseData) return;
 
+        const parameters = generateAllParameters(releaseData);
         const desiredInputs = new Map();
-        const set = (name, value) => {
-            if (value !== undefined && value !== null) {
-                desiredInputs.set(name, String(value));
-            }
-        };
-        const getValueFromPath = (obj, path) => path.split('.').reduce((acc, part) => acc?.[part], obj);
 
+        const getValueFromPath = (obj, path) => path.split('.').reduce((acc, part) => acc?.[part], obj);
         const pathsToBuild = new Set(paramsToBuild || []);
 
         if (!paramsToBuild) {
             for (const key of Object.keys(PARAMETER_GENERATORS)) {
                 const newValue = getValueFromPath(releaseData, key);
                 const oldValue = getValueFromPath(originalReleaseData, key);
-
                 if (JSON.stringify(newValue) !== JSON.stringify(oldValue)) {
                     pathsToBuild.add(key);
                 }
@@ -2509,26 +2577,21 @@
         const generatorsToRun = [];
         for (const [key, config] of Object.entries(PARAMETER_GENERATORS)) {
             if (pathsToBuild.has(key)) {
-                generatorsToRun.push([key, config]);
+                generatorsToRun.push(config);
             }
         }
 
-        const prefixesToClear = generatorsToRun.map(([, config]) => config.cleanupPrefix);
+        const prefixesToClear = generatorsToRun.map((config) => config.cleanupPrefix);
         form.querySelectorAll('input[type="hidden"]').forEach(input => {
             if (prefixesToClear.some(prefix => input.name.startsWith(prefix))) {
                 input.remove();
             }
         });
 
-        for (const [key, config] of generatorsToRun) {
-            const value = getValueFromPath(releaseData, key);
-
-            if ((value != null) || config.generator || config.paramName) {
-                if (config.generator) {
-                    config.generator(value, set);
-                } else if (config.paramName) {
-                    set(config.paramName, value);
-                }
+        // Filter the generated parameters map to only include the ones we actually want to build
+        for (const [name, value] of parameters.entries()) {
+            if (prefixesToClear.some(prefix => name.startsWith(prefix)) || pathsToBuild.has(name)) {
+                desiredInputs.set(name, value);
             }
         }
 
@@ -2560,17 +2623,55 @@
 
         const formName = form.getAttribute('name');
 
+        // 1. Run all relevant submit-time enhancements first (to clean/modify data)
         for (const [funcName, config] of Object.entries(SETTINGS_CONFIG)) {
-            if (config.runAt !== 'submit' || config.formName !== formName || !enhancements[funcName]) {
+            if (config.runAt !== 'submit' || !enhancements[funcName]) {
                 continue;
             }
-            const valueMatch = config.value ? AppState.settings[config.key] === config.value : AppState.settings[config.key];
 
+            const isRelevantForm = config.formNames
+                ? config.formNames.includes(formName)
+                : config.formName === formName;
+
+            if (!isRelevantForm) {
+                continue;
+            }
+
+            const valueMatch = config.value ? AppState.settings[config.key] === config.value : AppState.settings[config.key];
             if (valueMatch) {
                 if (AppState.debug) {
                     log(`Running submit module: ${funcName}...`);
                 }
                 enhancements[funcName](form);
+            }
+        }
+
+        // 2. Check if we should perform full update seeding via URL parameters (redirection)
+        if (formName === 'release-update-seeder' && AppState.settings[SETTINGS_CONFIG.fullUpdateSeeding.key]) {
+            const rawParameters = generateAllParameters(AppState.data.release);
+            const parameters = filterSupportedParameters(rawParameters);
+
+            // Extract the full edit note from the hidden input (already includes permalink and sources)
+            let editNote = AppState.dom.updateSeederNoteInput?.value || '';
+            const attribution = 'Seeded from Harmony via Release Edit Seeding Helper';
+            if (!editNote.includes(attribution)) {
+                editNote = editNote ? `${editNote}\n\n${attribution}` : attribution;
+            }
+            parameters.set('edit_note', editNote);
+
+            const searchParams = new URLSearchParams();
+            for (const [key, value] of parameters.entries()) {
+                searchParams.append(key, value);
+            }
+
+            const action = form.getAttribute('action');
+            if (action) {
+                const separator = action.includes('?') ? '&' : '?';
+                const seederTarget = localStorage.getItem('seeder.target') || '_blank';
+                const redirectUrl = `${action}${separator}${searchParams.toString()}`;
+                log(`Redirecting to MusicBrainz with ${parameters.size} parameters for full seeding.`);
+                window.open(redirectUrl, seederTarget);
+                return;
             }
         }
 
@@ -2621,6 +2722,7 @@
             count: span.querySelectorAll('a').length,
             html: span.outerHTML,
         }));
+        AppState.dom.updateSeederNoteInput = document.querySelector('form[name="release-update-seeder"] input[name="edit_note"]');
 
         // Cache provider links — the <a> tags inside the Providers table row
         const providersRow = AppState.dom.releaseInfoRowsByHeader?.get('Providers');
