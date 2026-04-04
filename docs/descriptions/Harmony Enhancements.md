@@ -16,7 +16,7 @@ A comprehensive userscript for **[Harmony](http://harmony.pulsewidth.org.uk/)** 
 - **Customizable Settings:** Offers a dedicated settings panel to control detection mode (browser, Harmony, or none) and fine-tune **confidence thresholds** for applying changes.
 
 #### Seeder Behavior
-- **Include GTIN and Packaging on Update**: Adds an option to include GTIN (barcode) and set packaging when updating existing releases.
+- **Full Metadata Seeding for Updates**: Seeds all available metadata (labels, artists, dates, barcodes, etc.) via URL parameters when updating existing releases. Requires the **[MB Release Edit Seeding Helper](https://github.com/Lioncat6/MusicBrainz-UserScripts?tab=readme-ov-file#mb-release-edit-seeding-helper)** userscript.
 - **Drop Artist Names as credited from Seed:** When an MBID is available, this option removes the artist's name from the seed data.
 - **MusicBrainz Server Selection:** Allows choosing between the main server (**musicbrainz.org**), the beta server, or the mirror (**musicbrainz.eu**) for all links and seeding actions.
 
