@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ListenBrainz: Extended Controls
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      1.2.4
+// @version      1.2.5
 // @tag          ai-created
 // @description  Allows customizing which actions are shown in listen controls cards, moving "Open in Music Service" links to the main controls area, displaying source info, and auto-copying text in the "Link Listen" modal.
 // @author       chaban
@@ -40,6 +40,7 @@
             },
             ampcast: 'https://raw.githubusercontent.com/rekkyrosso/ampcast/refs/heads/main/app/www/favicon.svg',
             audacious: 'https://github.com/audacious-media-player/audacious/raw/master/images/audacious.png',
+            audion: 'https://github.com/dupitydumb/Audion/raw/master/static/logo.png',
             auxio: 'https://github.com/OxygenCobalt/Auxio/raw/dev/fastlane/metadata/android/en-US/images/icon.png',
             bandcamp: 'https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/bandcamp.svg',
             'booming music': 'https://github.com/mardous/BoomingMusic/raw/master/metadata/en-US/images/icon.png',
