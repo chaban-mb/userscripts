@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name           MusicBrainz: Release day of the week
 // @namespace      https://musicbrainz.org/user/chaban
-// @version        1.0.3
+// @version        1.0.4
 // @description    Display the day of the week for release events.
 // @tag            ai-created
 // @author         Jugdish, SultS, chaban
@@ -114,10 +114,12 @@
                     if (!match) continue;
 
                     const dateStr = match[1];
-                    const date = new Date(dateStr);
+                    // Append T00:00 to force the browser to treat this as local time, not UTC
+                    const date = new Date(dateStr + 'T00:00:00');
                     if (isNaN(date.getTime())) continue;
 
-                    const dayOfWeek = date.getUTCDay();
+                    // Use getDay() instead of getUTCDay() if treating as local time
+                    const dayOfWeek = date.getDay();
                     const dayName = dayNames.format(date);
 
                     let country = null;
