@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name           MusicBrainz: Release day of the week
 // @namespace      https://musicbrainz.org/user/chaban
-// @version        1.0.2
+// @version        1.0.3
 // @description    Display the day of the week for release events.
 // @tag            ai-created
 // @author         Jugdish, SultS, chaban
@@ -37,6 +37,7 @@
     const COUNTRY_RULES = {
         'AU': { name: 'Australia', expectedDay: 1 },
         'FR': { name: 'France', expectedDay: 1 },
+        'CA': { name: 'Canada', expectedDay: (date) => (date >= new Date('2015-07-10') ? 5 : 2) },
         'DE': { name: 'Germany', expectedDay: (date) => (date < new Date('2005-09-01') ? 1 : 5) },
         'JP': { name: 'Japan', expectedDay: 3 },
         'NZ': { name: 'New Zealand', expectedDay: 1 },
