@@ -52,6 +52,19 @@
             runAt: 'submit',
             formName: 'release-seeder',
         },
+        musicbrainzServer: {
+            key: 'enhancements.musicbrainz.server',
+            label: 'MusicBrainz Server',
+            description: 'Choose which MusicBrainz server to use for links and seeding.',
+            defaultValue: 'musicbrainz.org',
+            section: 'Seeder Behavior',
+            type: 'radio',
+            options: [
+                { value: 'musicbrainz.org', label: 'Main (musicbrainz.org)' },
+                { value: 'beta.musicbrainz.org', label: 'Beta (beta.musicbrainz.org)' },
+                { value: 'musicbrainz.eu', label: 'Mirror (musicbrainz.eu)' },
+            ]
+        },
         // UI Settings
         hideDebugMessages: {
             key: 'enhancements.ui.hideDebugMessages',
@@ -278,6 +291,13 @@
             formName: 'release-seeder',
         },
 
+        // Target Server Cleanup
+        updateTargetServer: {
+            key: 'enhancements.musicbrainz.server',
+            runAt: 'load',
+            paths: [/^\/release/],
+        },
+
         // Internal, non-configurable features
         setupFormSubmitListener: {
             key: 'enhancements.internal.formListener',
@@ -445,6 +465,13 @@
         debug: false,
     };
 
+    const MB_DOMAINS = ['musicbrainz.org', 'beta.musicbrainz.org', 'musicbrainz.eu'];
+
+    /** @returns {string} The currently selected MusicBrainz domain (e.g. "musicbrainz.org"). */
+    function getMBServerDomain() {
+        return AppState.settings[SETTINGS_CONFIG.musicbrainzServer.key] || SETTINGS_CONFIG.musicbrainzServer.defaultValue;
+    }
+
     // --- UTILITY FUNCTIONS ---
 
     function log(message, ...args) {
@@ -503,7 +530,12 @@
     async function getSettings() {
         const settings = {};
         for (const config of Object.values(SETTINGS_CONFIG)) {
-            settings[config.key] = await GM_getValue(config.key, config.defaultValue);
+            if (!config.key) continue;
+            // Only populate setting if it's not already set, or if this config entry provides a default value.
+            // This prevents "headless" configs (routing/submit modules) from overwriting actual settings with undefined.
+            if (settings[config.key] === undefined || config.defaultValue !== undefined) {
+                settings[config.key] = await GM_getValue(config.key, config.defaultValue);
+            }
         }
         return settings;
     }
@@ -569,7 +601,7 @@
     function normalizeMbLink(input, entityType = 'mbid') {
         if (!input || typeof input !== 'string') return null;
         const match = input.match(MBID_REGEX);
-        return match ? `https://musicbrainz.org/${entityType}/${match[0].toLowerCase()}` : null;
+        return match ? `https://${getMBServerDomain()}/${entityType}/${match[0].toLowerCase()}` : null;
     }
 
     /**
@@ -726,7 +758,7 @@
                 mbIconSpan.innerHTML = `<svg class="icon" width="18" height="18" stroke-width="1.5"><use xlink:href="/icon-sprite.svg#brand-metabrainz"></use></svg>`;
 
                 const mbLink = document.createElement('a');
-                mbLink.href = `https://musicbrainz.org/label/${newMbid}`;
+                mbLink.href = `https://${getMBServerDomain()}/label/${newMbid}`;
                 mbLink.appendChild(mbIconSpan);
                 mbLink.appendChild(document.createTextNode(newLabelName));
                 labelListElement.appendChild(mbLink);
@@ -2305,6 +2337,51 @@
                     cell.textContent = '';
                     cell.appendChild(removedSpan);
                 }
+            });
+        },
+
+        updateTargetServer: () => {
+            const domain = getMBServerDomain();
+            if (domain === SETTINGS_CONFIG.musicbrainzServer.defaultValue) return;
+
+            const rewriteUrl = (urlStr) => {
+                if (!urlStr) return null;
+                try {
+                    const url = new URL(urlStr, window.location.origin);
+                    if (MB_DOMAINS.includes(url.hostname) && url.hostname !== domain) {
+                        url.hostname = domain;
+                        return url.toString();
+                    }
+                } catch (e) {
+                    // Ignore invalid URLs
+                }
+                return null;
+            };
+
+            const handleIntercept = (event) => {
+                // Handle link clicks
+                const link = event.target.closest('a');
+                if (link && link.href) {
+                    const newUrl = rewriteUrl(link.href);
+                    if (newUrl) {
+                        link.href = newUrl;
+                    }
+                }
+
+                // Handle form submissions
+                const form = event.target.closest('form');
+                if (form && form.action) {
+                    const newAction = rewriteUrl(form.action);
+                    if (newAction) {
+                        form.action = newAction;
+                    }
+                }
+            };
+
+            // Use capturing listeners to ensure we run before other handlers or navigation.
+            // Using mousedown and auxclick to catch middle-clicks and right-clicks.
+            ['mousedown', 'auxclick', 'click', 'submit'].forEach(eventType => {
+                document.addEventListener(eventType, handleIntercept, true);
             });
         },
 
