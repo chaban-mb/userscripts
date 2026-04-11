@@ -53,7 +53,7 @@
         'music video', 'super sped up', 'low pitched', 'slowed down'
     ];
 
-    const JOIN_PHRASE_PATTERN = /\s*\b(?:featuring|feat|ft|vs)\.?\b\s*|\s*(?:[,，、&・×/])\s*|\s+(?:and|x)\s+/gi;
+    const JOIN_PHRASE_PATTERN = /\s*\b(?:featuring|feat|ft|vs)\b\.?\s*|\s*(?:[,，、&・×/])\s*|\s+(?:and|x)\s+/gi;
 
     log('User configuration loaded.');
 
@@ -117,15 +117,18 @@
         // Priority 2: Main artist credit editor (Standalone Recording, Release Editor global AC)
         const artistCreditEditor = document.getElementById('artist-credit-editor');
         if (artistCreditEditor) {
-            // The hidden inputs hold the definitive state of the AC
-            const nameInputs = artistCreditEditor.querySelectorAll('input[name$=".artist.name"]');
+            // The hidden inputs hold the definitive state of the AC.
+            // We target both the canonical artist name (.artist.name) and the "credited as" name (.name).
+            // The credited name is crucial for matching what's usually in the title.
+            const nameInputs = artistCreditEditor.querySelectorAll('input[name*=".artist_credit.names."][name$=".name"]');
             const names = Array.from(nameInputs)
-                .map(input => input.value.trim().toLowerCase())
+                .flatMap(input => parseArtistNamesFromString(input.value))
                 .filter(Boolean);
 
-            if (names.length > 0) {
-                log('Found artist(s) from AC editor hidden inputs:', names.join('; '));
-                return names;
+            const uniqueNames = [...new Set(names)];
+            if (uniqueNames.length > 0) {
+                log('Found artist(s) from AC editor hidden inputs:', uniqueNames.join('; '));
+                return uniqueNames;
             }
 
             // Fallback for single-artist AC on standalone recording page before full editor is opened
@@ -142,10 +145,15 @@
                 window?.__MB__?.$c?.stash?.source_entity?.artistCredit?.names;
 
             if (namesData?.length > 0) {
-                const names = namesData.map(part => part.name?.trim().toLowerCase()).filter(Boolean);
-                if (names.length > 0) {
-                    log('Found artist(s) from __MB__ stash:', names.join('; '));
-                    return names;
+                const names = namesData.flatMap(part => [
+                    ...(parseArtistNamesFromString(part.name)),
+                    ...(parseArtistNamesFromString(part.artist?.name))
+                ]).filter(Boolean);
+
+                const uniqueNames = [...new Set(names)];
+                if (uniqueNames.length > 0) {
+                    log('Found artist(s) from __MB__ stash:', uniqueNames.join('; '));
+                    return uniqueNames;
                 }
             }
         } catch (e) {
@@ -160,7 +168,7 @@
     function parseArtistNamesFromString(artistString) {
         if (!artistString) return [];
         return artistString.split(JOIN_PHRASE_PATTERN)
-            .map(name => name.trim().toLowerCase())
+            .map(name => name.trim().replace(/^\.+|\.+$/g, '').toLowerCase())
             .filter(Boolean);
     }
 
@@ -201,10 +209,21 @@
         let trailingEti = '';
         const etiMatch = newText.match(/\s*(\[[^\]]+\]|\([^)]+\))$/);
         if (etiMatch) {
-            trailingEti = etiMatch[1];
-            newText = newText.substring(0, newText.lastIndexOf(trailingEti)).trim();
-            log(`Found ETI: "${trailingEti}"`);
-            log(`Text after ETI removal: "${newText}"`);
+            const potentialEti = etiMatch[1];
+            // Check if the native script made a mess by wrapping the title in "feat." parens
+            const etiContent = potentialEti.slice(1, -1).trim();
+            const hasSeparator = etiContent.match(/\s+[-–]\s+/);
+            const isFeat = etiContent.match(/^(?:feat|ft|featuring)\.?\s+/i);
+
+            if (hasSeparator && isFeat) {
+                log(`Detected likely native MB mis-guess in ETI: "${potentialEti}". Flattening for reprocessing.`);
+                newText = newText.substring(0, newText.lastIndexOf(potentialEti)).trim() + ' ' + etiContent;
+            } else {
+                trailingEti = potentialEti;
+                newText = newText.substring(0, newText.lastIndexOf(trailingEti)).trim();
+                log(`Found ETI: "${trailingEti}"`);
+                log(`Text after ETI removal: "${newText}"`);
+            }
         } else {
             log('No ETI found.');
         }
