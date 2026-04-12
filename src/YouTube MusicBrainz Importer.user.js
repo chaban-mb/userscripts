@@ -355,6 +355,14 @@
                 { // Format: (Timestamp): Artist - Title
                     regex: /^\(((?:\d+:)?\d+:\d+)\):?\s+(.+?)\s*[-–—]\s*(.+)$/,
                     map: (match) => ({ timestampStr: match[1], artist: match[2], title: match[3] })
+                },
+                { // Format: Title StartTime - EndTime OR Artist - Title StartTime - EndTime
+                    regex: /^(.+?)(?:\s*[-–—]\s*(.+?))?\s+((?:\d+:)?\d+:\d+)\s*[-–—]\s*(?:\d+:)?\d+:\d+$/,
+                    map: (match) => ({
+                        timestampStr: match[3],
+                        artist: match[2] ? match[1] : '',
+                        title: match[2] || match[1]
+                    })
                 }
             ];
 
@@ -376,8 +384,11 @@
                             timestampSeconds = timeParts[0] * 3600 + timeParts[1] * 60 + timeParts[2];
                         }
 
+                        // Use the matched artist, or the fallback channel name if missing
+                        const finalArtist = artist ? artist.trim() : fallbackArtist.trim();
+
                         parsedTracks.push({
-                            artist: artist.trim(),
+                            artist: finalArtist,
                             title: title.trim(),
                             timestamp: timestampStr.trim(),
                             timestampSeconds,
@@ -385,7 +396,7 @@
                         });
 
                         matched = true;
-                        break; // Pattern matched, move to the next line
+                        break;
                     }
                 }
                 if (!matched) {
@@ -816,7 +827,7 @@
             this._addField('edit-recording.url.0.text', canonicalYtUrl);
             this._addField('edit-recording.url.0.link_type_id', Config.MUSICBRAINZ_FREE_STREAMING_LINK_TYPE_ID);
             const scriptInfo = GM_info.script;
-            const editNote = `${document.location.href}\n—\n${scriptInfo.name} (v${scriptInfo.version})`;
+            const editNote = `${canonicalYtUrl}\n—\n${scriptInfo.name} (v${scriptInfo.version})`;
             this._addField('edit-recording.edit_note', editNote);
 
             this._textElement.innerText = L10n.getString('addRecording');
@@ -841,8 +852,9 @@
          * @param {Array} allRelevantRecordingRelations - An array of recording relations.
          * @param {string} urlEntityId - The MusicBrainz URL entity ID.
          * @param {Object} youtubeVideoData - The minimalist YouTube video data.
+         * @param {string} canonicalYtUrl - The canonical YouTube URL.
          */
-        displayExistingButton: function (allRelevantRecordingRelations, urlEntityId, youtubeVideoData) {
+        displayExistingButton: function (allRelevantRecordingRelations, urlEntityId, youtubeVideoData, canonicalYtUrl) {
             this._form.style.display = 'none';
             const link = document.createElement('a');
             link.style.textDecoration = 'none';
@@ -864,7 +876,7 @@
                 if (!hasLength && ytHasLength) {
                     const lengthInMs = Utils.ISO8601toMilliSeconds(youtubeVideoData.contentDetails.duration);
                     const scriptInfo = GM_info.script;
-                    const editNote = `${document.location.href}\n—\n${scriptInfo.name} (v${scriptInfo.version})`;
+                    const editNote = `${canonicalYtUrl}\n—\n${scriptInfo.name} (v${scriptInfo.version})`;
                     const encodedEditNote = encodeURIComponent(editNote);
                     link.href = `//musicbrainz.org/recording/${recordingMBID}/edit?edit-recording.length=${lengthInMs}&edit-recording.edit_note=${encodedEditNote}`;
                     link.title = L10n.getString('updateLengthTitle', {
@@ -1102,7 +1114,7 @@
         },
 
         async _processTracklist(description, progressCallback) {
-            const { parsedTracks, unparsedLines } = Utils.parseTracklist(description);
+            const { parsedTracks, unparsedLines } = Utils.parseTracklist(description, fallbackArtist);
             if (parsedTracks.length === 0) {
                 return { foundTracks: [], notFoundTracks: [], unparsedLines };
             }
@@ -1234,9 +1246,13 @@
 
             PlaylistButtonManager.setStateInProgress('Processing...');
             try {
-                const { foundTracks, notFoundTracks, unparsedLines } = await this._processTracklist(ytData.snippet.description, (current, total) => {
-                    PlaylistButtonManager.setStateInProgress(`Looking up: ${current}/${total}`);
-                });
+                const { foundTracks, notFoundTracks, unparsedLines } = await this._processTracklist(
+                    ytData.snippet.description,
+                    ytData.snippet.channelTitle,
+                    (current, total) => {
+                        PlaylistButtonManager.setStateInProgress(`Looking up: ${current}/${total}`);
+                    }
+                );
 
                 if (foundTracks.length === 0) {
                     PlaylistButtonManager.displayError('No tracks found');
@@ -1300,9 +1316,13 @@
                 const oldTracks = existingPlaylist.track || [];
                 const oldMbids = oldTracks.map(t => t.identifier[0].split('/').pop());
 
-                const { foundTracks: newTracks, notFoundTracks, unparsedLines } = await this._processTracklist(ytData.snippet.description, (current, total) => {
-                    PlaylistButtonManager.setStateInProgress(`Looking up: ${current}/${total}`);
-                });
+                const { foundTracks: newTracks, notFoundTracks, unparsedLines } = await this._processTracklist(
+                    ytData.snippet.description,
+                    ytData.snippet.channelTitle,
+                    (current, total) => {
+                        PlaylistButtonManager.setStateInProgress(`Looking up: ${current}/${total}`);
+                    }
+                );
                 const newMbids = newTracks.map(t => t.identifier.split('/').pop());
 
                 // Steps 2 & 3: Calculate and perform deletions and additions
@@ -1743,7 +1763,7 @@
                     );
 
                     if (allRelevantRecordingRelations.length > 0) {
-                        RecordingButtonManager.displayExistingButton(allRelevantRecordingRelations, mbVideoUrlEntity.id, ytData);
+                        RecordingButtonManager.displayExistingButton(allRelevantRecordingRelations, mbVideoUrlEntity.id, ytData, canonicalYtUrl);
                     } else {
                         RecordingButtonManager.prepareAddButton(ytData, canonicalYtUrl, artistMbid, ytData.id);
                     }
