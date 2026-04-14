@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Harmony: Enhancements
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      1.26.0
+// @version      1.27.0
 // @tag          ai-created
 // @description  Adds some convenience features, various UI and behavior settings, as well as an improved language detection to Harmony.
 // @author       chaban
@@ -117,6 +117,16 @@
             type: 'checkbox',
             runAt: 'load',
             paths: [/^\/$/, /^\/release(?!\/actions)/],
+        },
+        addProviderRelookupButtons: {
+            key: 'enhancements.ui.providerRelookup',
+            label: 'Add re-lookup buttons next to provider URLs',
+            description: 'Adds a small ⟳ button next to each secondary provider URL in the Providers section, to redo the lookup using that provider as the primary source.',
+            defaultValue: true,
+            section: 'Convenience Features',
+            type: 'checkbox',
+            runAt: 'load',
+            paths: [/^\/release(?!\/actions)/],
         },
 
         // Release Data
@@ -1429,6 +1439,40 @@
             });
         },
 
+        addProviderRelookupButtons: () => {
+            const { providerLinks } = AppState.dom;
+            if (!providerLinks?.length) return;
+
+            const currentURL = new URLSearchParams(window.location.search).get('url') || '';
+
+            providerLinks.forEach(link => {
+                const href = link.href;
+
+                // Only act on known provider URLs
+                const isKnownProvider = URL_CONFIG.some(config => config.pattern.exec(href));
+                if (!isKnownProvider) return;
+
+                // Skip the one already used as the primary lookup
+                if (href === currentURL) return;
+
+                // Don't double-add
+                if (link.nextElementSibling?.classList.contains('he-provider-relookup')) return;
+
+                const btn = document.createElement('button');
+                btn.textContent = '⟳';
+                btn.title = 'Re-lookup using this URL as primary';
+                btn.className = 'he-provider-relookup';
+                btn.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    const params = new URLSearchParams(window.location.search);
+                    params.set('url', href);
+                    window.location.href = '/release?' + params.toString();
+                });
+
+                link.insertAdjacentElement('afterend', btn);
+            });
+        },
+
         makePermalinkCopyable: () => {
             const { permaLink } = AppState.dom;
             if (!permaLink || permaLink.hasAttribute(DATA_ATTRIBUTE_APPLIED)) return;
@@ -2545,7 +2589,14 @@
             count: span.querySelectorAll('a').length,
             html: span.outerHTML,
         }));
+
+        // Cache provider links — the <a> tags inside the Providers table row
+        const providersRow = AppState.dom.releaseInfoRowsByHeader?.get('Providers');
+        AppState.dom.providerLinks = providersRow
+            ? Array.from(providersRow.querySelectorAll('a[href]'))
+            : [];
     }
+
     /** Caches DOM elements for the release actions page. */
     function cacheReleaseActionsPageDOM() {
         AppState.dom.releaseArtistNode = document.querySelector('.release-artist');
@@ -2679,6 +2730,22 @@
                 font-family: monospace;
                 z-index: 10001;
                 cursor: help;
+            }
+            .he-provider-relookup {
+                margin-left: 4px;
+                padding: 1px 5px;
+                font-size: 11px;
+                cursor: pointer;
+                border: 1px solid #555;
+                border-radius: 3px;
+                background: var(--input-fill, #333);
+                color: var(--text, #ccc);
+                vertical-align: middle;
+                line-height: 1.4;
+            }
+            .he-provider-relookup:hover {
+                border-color: #aaa;
+                color: var(--text);
             }
         `;
         GM_addStyle(css);
