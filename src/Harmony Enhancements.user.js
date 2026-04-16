@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Harmony: Enhancements
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      1.27.0
+// @version      1.27.1
 // @tag          ai-created
 // @description  Adds some convenience features, various UI and behavior settings, as well as an improved language detection to Harmony.
 // @author       chaban
@@ -2132,6 +2132,8 @@
 
         removeBarcodeCatalogNumbers: () => {
             const releaseData = getReleaseDataFromJSON();
+            if (!releaseData) return;
+
             const { gtin, labels } = releaseData;
 
             if (!gtin || !labels || labels.length === 0) return;
