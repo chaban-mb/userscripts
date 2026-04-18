@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ISRC Hunt: Hide a-tisket links, normalize link style
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      1.1
+// @version      1.1.1
 // @description  Hides a-tisket links on ISRC Hunt and normalizes link style
 // @tag          ai-created
 // @author       chaban
@@ -12,7 +12,7 @@
 // @downloadURL  https://github.com/chaban-mb/userscripts/raw/main/src/ISRC%20Hunt%20Hide%20a-tisket%20links,%20normalize%20link%20style.user.js
 // ==/UserScript==
 
-(function() {
+(function () {
     'use strict';
 
     function addGlobalStyle(css) {
@@ -51,14 +51,13 @@
             document.body,
             NodeFilter.SHOW_TEXT,
             {
-                acceptNode: function(node) {
+                acceptNode: (node) => {
                     if (node.nodeValue.trim() !== '' && textToFindRegex.test(node.nodeValue)) {
                         return NodeFilter.FILTER_ACCEPT;
                     }
                     return NodeFilter.FILTER_SKIP;
                 }
-            },
-            false
+            }
         );
 
         let node;

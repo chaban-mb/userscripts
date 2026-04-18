@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        Discourse: Disable Touch Detection
 // @namespace   https://musicbrainz.org/user/chaban
-// @version     1.1
+// @version     1.1.1
 // @description Overrides browser APIs to disable touch-based UI adjustments in Discourse forums.
 // @tag         ai-created
 // @author      chaban
@@ -13,10 +13,10 @@
 // @downloadURL  https://github.com/chaban-mb/userscripts/raw/main/src/Discourse%20Disable%20Touch%20Detection.user.js
 // ==/UserScript==
 
-const SCRIPT_NAME = GM.info.script.name;
-
-(function() {
+(function () {
     'use strict';
+
+    const SCRIPT_NAME = GM.info.script.name;
 
     // --- Shim 1: Modern Touch Detection (any-pointer: coarse) ---
     // This is the primary method used in recent Discourse versions.
@@ -24,20 +24,20 @@ const SCRIPT_NAME = GM.info.script.name;
     const TARGETED_QUERY = '(any-pointer: coarse)';
     const originalMatchMedia = window.matchMedia;
 
-    window.matchMedia = function(query) {
+    window.matchMedia = (query) => {
         if (query === TARGETED_QUERY) {
             console.log(`[${SCRIPT_NAME}] Spoofing result for modern touch query: '${query}'`);
             return {
                 matches: false,
                 media: query,
-                addListener: () => {},
-                removeListener: () => {},
-                addEventListener: () => {},
-                removeEventListener: () => {},
+                addListener: () => { },
+                removeListener: () => { },
+                addEventListener: () => { },
+                removeEventListener: () => { },
                 dispatchEvent: () => true,
             };
         }
-        return originalMatchMedia.call(this, query);
+        return originalMatchMedia.call(window, query);
     };
 
     // --- Shim 2: Legacy Touch Detection (maxTouchPoints & ontouchstart) ---
