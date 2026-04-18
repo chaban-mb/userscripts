@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MusicBrainz: Guess Case Improver
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      0.6.0
+// @version      0.6.3
 // @tag          ai-created
 // @description  Improves the native "Guess Case" for release, recording and track titles with advanced artist and ETI parsing. Also removes duplicate artists after using "Guess feat. artists" on tracklists.
 // @author       chaban
@@ -286,75 +286,153 @@
         return newText.trim();
     }
 
-    async function deduplicateAC(openBubbleButton) {
-        if (!openBubbleButton) return;
+    /**
+     * Deduplicates an artist credit by reading and writing directly to a
+     * Knockout observable — no DOM bubble needed.
+     *
+     * After MB's native guessFeat appends feat. artists, the resulting names
+     * array may contain duplicates of artists already in the AC.
+     * This function removes those duplicates and repairs the join phrase at
+     * the boundary so it reflects the feat. join phrase rather than the
+     * original one (e.g. ", " → " feat. ").
+     *
+     * @param {ko.Observable} acObservable - The entity.artistCredit ko.observable.
+     */
+    function deduplicateACFromObservable(acObservable) {
+        if (typeof acObservable !== 'function') return;
 
-        const editor = new ArtistCreditsEditor();
-        const bubbleOpened = await editor.open(openBubbleButton);
+        const ac = acObservable();
+        if (!ac?.names?.length) return;
 
-        if (bubbleOpened) {
-            const artistRows = editor.getArtistRows();
-            const seenArtists = new Map();
-            const rowsToRemove = [];
-            const joinPhraseUpdates = [];
+        const names = ac.names;
+        const fmtAC = (arr) => arr.map(n => ({ name: n.name, join: n.joinPhrase, gid: n.artist?.gid ?? null }));
+        log('deduplicateACFromObservable: names before dedup:', fmtAC(names));
 
-            for (let i = 0; i < artistRows.length; i++) {
-                const row = artistRows[i];
-                const artistInput = row.querySelector('div.autocomplete2 input[type="text"]');
-                if (artistInput) {
-                    const artistName = artistInput.value.trim().toLowerCase();
-                    if (artistName && seenArtists.has(artistName)) {
-                        rowsToRemove.push(row);
+        // Always key by lowercased name for dedup purposes.
+        // guessFeat appends entries via expandCredit with artist:null when
+        // no relatedArtists are available, even if the original seeded entry
+        // has a linked MBID. Keying by MBID would miss those cross-MBID/no-MBID
+        // duplicates. The first occurrence (which may carry the MBID) is always
+        // kept, so linked entity data is preserved.
+        const getKey = (entry) => entry.name.trim().toLowerCase();
 
-                        const existingIdx = seenArtists.get(artistName);
-                        const prevRow = artistRows[i - 1];
-                        const prevJoinInput = prevRow?.querySelector('td:nth-child(3) input[type="text"]');
-                        const customJoinPhrase = prevJoinInput ? prevJoinInput.value : '';
+        const seenKeys = new Map(); // key → index of first occurrence
+        const toRemove = new Set();
 
-                        if (existingIdx > 0 && customJoinPhrase && customJoinPhrase.trim().match(/feat|ft|vs/i)) {
-                            joinPhraseUpdates.push({
-                                targetIdx: existingIdx - 1,
-                                newPhrase: customJoinPhrase
-                            });
-                        }
-                    } else if (artistName) {
-                        seenArtists.set(artistName, i);
+        // Identify duplicates and collect the feat join phrase.
+        // guessFeat sets the feat join phrase on the LAST entry of the original
+        // AC (the entry just before the first appended artist). We read it there.
+        let featJoinPhrase = null;
+
+        for (let i = 0; i < names.length; i++) {
+            const key = getKey(names[i]);
+            if (!key) continue;
+
+            if (seenKeys.has(key)) {
+                // Capture the feat join phrase from the entry immediately before
+                // the first appended duplicate — that's where guessFeat placed it.
+                if (featJoinPhrase === null && i > 0) {
+                    const prevPhrase = names[i - 1].joinPhrase ?? '';
+                    if (/feat|ft/i.test(prevPhrase)) {
+                        featJoinPhrase = prevPhrase;
                     }
                 }
-            }
-
-            for (const update of joinPhraseUpdates) {
-                const targetRow = artistRows[update.targetIdx];
-                const joinInput = targetRow?.querySelector('td:nth-child(3) input[type="text"]');
-                if (joinInput) {
-                    log(`Updating join phrase for row ${update.targetIdx} to "${update.newPhrase}"`);
-                    setReactValue(joinInput, update.newPhrase);
-                }
-            }
-
-            if (rowsToRemove.length > 0) {
-                log(`Found ${rowsToRemove.length} duplicate artist row(s) to remove.`);
-                for (const row of rowsToRemove) {
-                    row.querySelector('.remove-artist-credit')?.click();
-                    await new Promise(resolve => setTimeout(resolve, 50));
-                }
+                toRemove.add(i);
             } else {
-                log('No duplicate artists found in the editor.');
+                seenKeys.set(key, i);
             }
-
-            editor.close();
-            log('De-duplication check complete.');
-        } else {
-            log('Failed to open AC bubble.');
         }
+
+        if (toRemove.size === 0) {
+            log('deduplicateACFromObservable: No duplicates found.');
+            return;
+        }
+
+        log(`deduplicateACFromObservable: Removing ${toRemove.size} duplicate(s). Feat join phrase: "${featJoinPhrase}"`);
+
+        const dedupedNames = names.filter((_, i) => !toRemove.has(i));
+
+        // Repair the join phrase at the true feat boundary.
+        // guessFeat.concat() appended copies of artists already in the AC.
+        // The feat block in the deduplicated result starts at the EARLIEST
+        // first-occurrence index of any removed duplicate — e.g. if KASANE TETO
+        // (a dup of index-1 Kasane Teto) and Una Otomachi (dup of index-2) were
+        // removed, the feat block starts at index 1, so the boundary entry that
+        // needs the feat join phrase is at index 0 (Dada).
+        if (featJoinPhrase !== null) {
+            let firstFeatIdx = Infinity;
+            for (const dupIdx of toRemove) {
+                const firstOccIdx = seenKeys.get(getKey(names[dupIdx]));
+                if (firstOccIdx !== undefined && firstOccIdx < firstFeatIdx) {
+                    firstFeatIdx = firstOccIdx;
+                }
+            }
+            const boundaryIdx = firstFeatIdx - 1;
+            if (boundaryIdx >= 0 && boundaryIdx < dedupedNames.length) {
+                const current = dedupedNames[boundaryIdx].joinPhrase ?? '';
+                if (current !== featJoinPhrase) {
+                    log(`Repairing join phrase at index ${boundaryIdx}: "${current}" → "${featJoinPhrase}"`);
+                    dedupedNames[boundaryIdx] = { ...dedupedNames[boundaryIdx], joinPhrase: featJoinPhrase };
+                }
+            }
+        }
+
+        // Ensure the last entry always has an empty join phrase.
+        const last = dedupedNames.length - 1;
+        if (dedupedNames[last]?.joinPhrase) {
+            dedupedNames[last] = { ...dedupedNames[last], joinPhrase: '' };
+        }
+
+        acObservable({ ...ac, names: dedupedNames });
+        log('deduplicateACFromObservable: Done.', fmtAC(dedupedNames));
     }
 
-    async function deduplicateTrackAC(trackRow) {
+    /**
+     * Returns the Knockout track model for a given tr.track DOM element.
+     * Uses the element's id ("track-row-{uniqueID}") to match against
+     * the MB._releaseEditor model tree.
+     */
+    function getTrackModel(trackRow) {
+        const id = trackRow?.id; // e.g. "track-row-abc123"
+        if (!id) return null;
+        const release = window.MB?._releaseEditor?.rootField?.release?.();
+        if (!release) return null;
+        for (const medium of release.mediums?.() ?? []) {
+            for (const track of medium.tracks?.() ?? []) {
+                if (track.elementID === id) return track;
+            }
+        }
+        return null;
+    }
+
+    function deduplicateTrackAC(trackRow) {
+        // Try model-level dedup first (fast, no DOM/timing issues).
+        const track = getTrackModel(trackRow);
+        if (track) {
+            deduplicateACFromObservable(track.artistCredit);
+            return;
+        }
+        // Fallback: DOM bubble (standalone recording page, no release editor model).
+        log('No track model found for row, falling back to bubble dedup.', trackRow);
         const openBubbleButton = trackRow.querySelector('.artist .open-ac');
-        await deduplicateAC(openBubbleButton);
-        // Wait for React to completely unmount the bubble and flush track state
-        // before the medium-loop sweeps to the very next track
-        await new Promise(resolve => setTimeout(resolve, 300));
+        if (!openBubbleButton) return;
+        const editor = new ArtistCreditsEditor();
+        editor.open(openBubbleButton).then(opened => {
+            if (!opened) { log('Failed to open AC bubble (fallback).'); return; }
+            // Minimal bubble dedup for the fallback path.
+            const rows = editor.getArtistRows();
+            const seen = new Set();
+            for (const row of rows) {
+                const inp = row.querySelector('div.autocomplete2 input[type="text"]');
+                const name = inp?.value.trim().toLowerCase();
+                if (name && seen.has(name)) {
+                    row.querySelector('.remove-artist-credit')?.click();
+                } else if (name) {
+                    seen.add(name);
+                }
+            }
+            editor.close();
+        });
     }
 
     function enhanceTrackGuessFeat(button) {
@@ -377,15 +455,12 @@
 
         button.addEventListener('click', () => {
             log('Medium-wide "Guess Feat." clicked. Allowing native script to run first.');
-            setTimeout(async () => {
+            setTimeout(() => {
                 const medium = button.closest('fieldset.advanced-medium');
                 if (!medium) return;
 
                 log('Applying de-duplication to all tracks in this medium.');
-                const tracks = medium.querySelectorAll('tr.track');
-                for (const trackRow of tracks) {
-                    await deduplicateTrackAC(trackRow);
-                }
+                medium.querySelectorAll('tr.track').forEach(deduplicateTrackAC);
                 log('De-duplication sweep complete for medium.');
             }, 100);
         }, true);
@@ -409,15 +484,26 @@
                 }, 100);
             }
 
-            // Deduplicate the global artist credit editor by opening its bubble
-            setTimeout(async () => {
-                const openBubbleButton = document.querySelector('.release-artist .open-ac, #artist-credit-editor .open-ac');
-                if (!openBubbleButton) {
-                    log('No open-ac button found for release/recording AC editor.');
+            // After guessFeat updates the Knockout observable synchronously,
+            // we can read/write it directly — no bubble needed.
+            setTimeout(() => {
+                // Release editor (tracklist page): release.artistCredit
+                const release = window.MB?._releaseEditor?.rootField?.release?.();
+                if (release?.artistCredit) {
+                    log('Deduplicating release AC via Knockout model.');
+                    deduplicateACFromObservable(release.artistCredit);
                     return;
                 }
-                await deduplicateAC(openBubbleButton);
-            }, 100);
+                // Standalone recording/entity page: source entity via forms.js
+                // The AC observable is on the source entity.
+                const source = window.MB?.getSourceEntityInstance?.();
+                if (source?.artistCredit) {
+                    log('Deduplicating standalone entity AC via Knockout model.');
+                    deduplicateACFromObservable(source.artistCredit);
+                    return;
+                }
+                log('No Knockout AC observable found for release/recording dedup.');
+            }, 50);
         }, true);
 
         button.dataset.enhanced = 'true';
