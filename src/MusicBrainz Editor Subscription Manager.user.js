@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MusicBrainz: Editor Subscription Manager
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      0.2.3
+// @version      0.3.0
 // @tag          ai-created
 // @description  Manages subscriptions, tracks name changes and detects deleted users.
 // @author       chaban
@@ -11,6 +11,9 @@
 // @connect      self
 // @grant        GM_xmlhttpRequest
 // @grant        GM_addStyle
+// @grant        GM_getValue
+// @grant        GM_setValue
+// @grant        GM_deleteValue
 // @updateURL    https://github.com/chaban-mb/userscripts/raw/main/src/MusicBrainz%20Editor%20Subscription%20Manager.user.js
 // @downloadURL  https://github.com/chaban-mb/userscripts/raw/main/src/MusicBrainz%20Editor%20Subscription%20Manager.user.js
 // ==/UserScript==
@@ -42,7 +45,7 @@
             header: 'Name',
             getValue: (e) => e.name.toLowerCase(),
             render: (e) => {
-                let html = `<a href="${e.profileUrl}" target="_blank"><b>${e.name}</b></a>`;
+                let html = `<a href="${getProfileUrl(e.name)}" target="_blank"><b>${e.name}</b></a>`;
                 if (e.previousNames?.length) {
                     html += `<br><span class="esm-aka" title="Known aliases">aka: ${e.previousNames.join(', ')}</span>`;
                 }
@@ -173,6 +176,10 @@
         return text ? parseInt(text.replace(/,/g, '').match(/^(-?\d+)/)?.[1] || 0, 10) : 0;
     }
 
+    function getProfileUrl(name) {
+        return `/user/${encodeURIComponent(name)}`;
+    }
+
     function scrapeStats(doc) {
         const stats = { edits: {}, votes: {}, added: {}, secondary: {} };
         doc.querySelectorAll('table.statistics').forEach(table => {
@@ -207,7 +214,6 @@
 
         const editor = {
             id, name,
-            profileUrl: url,
             isSpammer: pageText.includes(SPAMMER_TEXT),
             isDeleted: isDeleted,
             isSubscribed: hasUnsubLink,
@@ -266,7 +272,8 @@
 
     async function fetchEditorFull(basicInfo) {
         try {
-            const { status, doc, finalUrl } = await request('GET', basicInfo.profileUrl);
+            const profileUrl = getProfileUrl(basicInfo.name);
+            const { status, doc, finalUrl } = await request('GET', profileUrl);
 
             if (status === 404) {
                 const recovered = await tryResolveEditorById(basicInfo.id);
@@ -274,7 +281,7 @@
                 return { ...basicInfo, isDeleted: true, error: 'Page 404', lastUpdated: Date.now() };
             }
 
-            const effectiveUrl = finalUrl || basicInfo.profileUrl;
+            const effectiveUrl = finalUrl || profileUrl;
             const data = parseProfile(doc, effectiveUrl, basicInfo.id);
 
             if (data.error || data.isSpammer || data.isDeleted) return data;
@@ -298,7 +305,7 @@
             if (!doc) return null;
             const userLink = doc.querySelector('.edit-list .subheader a[href^="/user/"]');
             if (userLink) {
-                return { id, name: userLink.textContent.trim(), profileUrl: userLink.href };
+                return { id, name: userLink.textContent.trim() };
             }
         } catch (e) { error(`Resolve ID failed:`, e); }
         return null;
@@ -314,29 +321,95 @@
 
     // #region Cache & Storage
     const storage = {
-        getSettings: () => { try { return { showVisited: false, ...JSON.parse(localStorage.getItem(SETTINGS_KEY)) }; } catch { return { showVisited: false }; } },
-        saveSettings: (s) => localStorage.setItem(SETTINGS_KEY, JSON.stringify(s)),
-        getCache: () => { try { return JSON.parse(localStorage.getItem(CACHE_KEY)) || {}; } catch { return {}; } },
+        getSettings: () => ({ showVisited: false, ...GM_getValue(SETTINGS_KEY) }),
+        saveSettings: (s) => GM_setValue(SETTINGS_KEY, s),
+        getCache: () => GM_getValue(CACHE_KEY) || {},
         saveEditor: (e) => {
             const cache = storage.getCache();
             const prev = cache[e.id];
+
+            // Normalize: don't store profileUrl
+            const { profileUrl, ...editorData } = e;
+
             if (prev?.name && prev.name !== e.name) {
-                e.previousNames = [...(prev.previousNames || []), prev.name];
+                editorData.previousNames = [...(prev.previousNames || []), prev.name];
             } else if (prev?.previousNames) {
-                e.previousNames = prev.previousNames;
+                editorData.previousNames = prev.previousNames;
             }
             // Preserve subscribed status if not explicitly set in the new object
-            if (e.isSubscribed === undefined && prev) e.isSubscribed = prev.isSubscribed;
+            if (editorData.isSubscribed === undefined && prev) editorData.isSubscribed = prev.isSubscribed;
 
-            cache[e.id] = { ...prev, ...e, lastUpdated: Date.now() };
-            localStorage.setItem(CACHE_KEY, JSON.stringify(cache));
+            cache[e.id] = { ...prev, ...editorData, lastUpdated: Date.now() };
+            GM_setValue(CACHE_KEY, cache);
         },
         remove: (ids) => {
             const cache = storage.getCache();
             ids.forEach(id => delete cache[id]);
-            localStorage.setItem(CACHE_KEY, JSON.stringify(cache));
+            GM_setValue(CACHE_KEY, cache);
         }
     };
+
+    async function migrateStorage() {
+        const keys = [CACHE_KEY, SETTINGS_KEY];
+        for (const key of keys) {
+            const localData = localStorage.getItem(key);
+            if (!localData) continue;
+
+            try {
+                const localParsed = JSON.parse(localData);
+                const gmData = GM_getValue(key);
+
+                if (key === CACHE_KEY) {
+                    // Merge caches: combine objects, keep latest lastUpdated per ID
+                    const merged = { ...(gmData || {}) };
+                    for (const id in localParsed) {
+                        const localItem = localParsed[id];
+                        const gmItem = merged[id];
+                        delete localItem.profileUrl; // Normalize
+
+                        if (gmItem) {
+                            // Merge name history
+                            const allNames = new Set([
+                                ...(gmItem.previousNames || []),
+                                ...(localItem.previousNames || [])
+                            ]);
+
+                            // If current names differ, the older one is a previous name
+                            if (gmItem.name !== localItem.name) {
+                                const olderName = (localItem.lastUpdated || 0) < (gmItem.lastUpdated || 0) ? localItem.name : gmItem.name;
+                                allNames.add(olderName);
+                            }
+
+                            const history = [...allNames].filter(n => n !== (localItem.lastUpdated > gmItem.lastUpdated ? localItem.name : gmItem.name));
+
+                            if (localItem.lastUpdated > (gmItem.lastUpdated || 0)) {
+                                merged[id] = { ...gmItem, ...localItem };
+                            }
+
+                            if (history.length > 0) {
+                                merged[id].previousNames = history;
+                            } else {
+                                delete merged[id].previousNames;
+                            }
+                        } else {
+                            merged[id] = localItem;
+                            // Ensure we don't store empty arrays from local storage either
+                            if (!merged[id].previousNames?.length) delete merged[id].previousNames;
+                        }
+                    }
+                    GM_setValue(key, merged);
+                } else if (key === SETTINGS_KEY) {
+                    // For settings, only migrate if not already set in GM to avoid overwriting newer user preferences
+                    if (!gmData) GM_setValue(key, localParsed);
+                }
+
+                localStorage.removeItem(key);
+                log(`Migrated and merged ${key} to script storage.`);
+            } catch (e) {
+                error(`Failed to migrate ${key}:`, e);
+            }
+        }
+    }
     // #endregion
 
     // #region UI Rendering
@@ -561,6 +634,8 @@
     async function runManager(mode = 'open') {
         const btnFn = (dis) => document.querySelectorAll('#esm-report-ui button').forEach(b => b.disabled = dis);
 
+        await migrateStorage();
+
         // MODE: OPEN - Just Render Cache
         if (mode === 'open') {
             allEditorData = Object.values(storage.getCache());
@@ -582,7 +657,6 @@
             const scrapeList = (doc) => [...doc.querySelectorAll('form tbody tr')].map(tr => ({
                 id: tr.querySelector('input')?.value,
                 name: tr.querySelector('a')?.textContent.trim(),
-                profileUrl: tr.querySelector('a')?.href,
                 isSubscribed: true
             })).filter(x => x.id);
 
@@ -698,6 +772,7 @@
         const id = getEditorId(document);
 
         log(`Passive Scraper: ID=${id}, URL=${location.href}`);
+        await migrateStorage();
 
         if (!id) return;
 
@@ -811,7 +886,8 @@
     }
     // #endregion
 
-    function init() {
+    async function init() {
+        await migrateStorage();
         const path = location.pathname;
 
         // 1. Subscription Management Page
@@ -837,5 +913,5 @@
         }
     }
 
-    init();
+    init().catch(error);
 })();
