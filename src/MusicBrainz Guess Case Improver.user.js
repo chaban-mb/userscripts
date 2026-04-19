@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         MusicBrainz: Guess Case Improver
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      0.6.3
+// @version      0.6.4
 // @tag          ai-created
-// @description  Improves the native "Guess Case" for release, recording and track titles with advanced artist and ETI parsing. Also removes duplicate artists after using "Guess feat. artists" on tracklists.
+// @description  Improves the native "Guess Case" for release, recording and track titles with advanced artist and ETI parsing. Also removes artist from title and duplicate artists after using "Guess feat. artists" on tracklists.
 // @author       chaban
 // @license      MIT
 // @match        https://*.musicbrainz.org/recording/create*
@@ -201,6 +201,50 @@
     // --- Enhancement Logic
     // ====================================================================================
 
+    function removeArtistFromTitle(input, button) {
+        if (!input || !button) return;
+        let newText = input.value;
+
+        // Handle native MB mis-guess in ETI (flattening)
+        // This ensures the separator split can correctly identify the artist part
+        const etiMatch = newText.match(/\s*(\[[^\]]+\]|\([^)]+\))$/);
+        if (etiMatch) {
+            const potentialEti = etiMatch[1];
+            const etiContent = potentialEti.slice(1, -1).trim();
+            if (etiContent.match(/\s+[-–]\s+/) && etiContent.match(/^(?:feat|ft|featuring)\.?\s+/i)) {
+                newText = newText.substring(0, newText.lastIndexOf(potentialEti)).trim() + ' ' + etiContent;
+            }
+        }
+
+        const separator = ' - ';
+        const normalizedForSeparatorSearch = newText.replace(/\s+[-–]\s+/g, separator);
+        const parts = normalizedForSeparatorSearch.split(separator);
+
+        if (parts.length > 1) {
+            const artistsInEditor = getCurrentArtistNames(button);
+            let artistPartIndex = -1;
+            for (let i = 0; i < parts.length; i++) {
+                const currentPart = parts[i];
+                const partNameLower = currentPart.trim().toLowerCase();
+                const artistsInPart = parseArtistNamesFromString(currentPart);
+
+                const fullPartMatch = artistsInEditor.includes(partNameLower);
+                const hasArtists = artistsInPart.length > 0 && artistsInEditor.length > 0;
+                const allArtistsMatch = fullPartMatch || (hasArtists && artistsInPart.every(a => artistsInEditor.includes(a)));
+
+                if (allArtistsMatch) {
+                    artistPartIndex = i;
+                    break;
+                }
+            }
+            if (artistPartIndex !== -1) {
+                newText = parts.filter((_, index) => index !== artistPartIndex).join(separator);
+                log(`Removed artist part from title: "${input.value}" -> "${newText}"`);
+                setReactValue(input, newText.trim());
+            }
+        }
+    }
+
     function applyAdvancedRules(text, button) {
         log('--- applyAdvancedRules START ---');
         let newText = text;
@@ -228,41 +272,7 @@
             log('No ETI found.');
         }
 
-        const separator = ' - ';
-        const normalizedForSeparatorSearch = newText.replace(/\s+[-–]\s+/g, separator);
-        const parts = normalizedForSeparatorSearch.split(separator);
-        log(`Split text into parts:`, parts);
-
-        if (parts.length > 1) {
-            const artistsInEditor = getCurrentArtistNames(button);
-            log(`Artists from editor:`, artistsInEditor);
-            let artistPartIndex = -1;
-            for (let i = 0; i < parts.length; i++) {
-                const currentPart = parts[i];
-                const partNameLower = currentPart.trim().toLowerCase();
-                const artistsInPart = parseArtistNamesFromString(currentPart);
-                log(`Checking part ${i} ("${currentPart}") -> artists:`, artistsInPart);
-
-                // Check if the full unsplit part matches an artist (e.g. "Pete & Bas")
-                const fullPartMatch = artistsInEditor.includes(partNameLower);
-                const hasArtists = artistsInPart.length > 0 && artistsInEditor.length > 0;
-                const allArtistsMatch = fullPartMatch || (hasArtists && artistsInPart.every(a => artistsInEditor.includes(a)));
-
-                log(`Part ${i} match? ${allArtistsMatch}`);
-
-                if (allArtistsMatch) {
-                    artistPartIndex = i;
-                    log(`Part ${i} is a match. Breaking loop.`);
-                    break;
-                }
-            }
-            if (artistPartIndex !== -1) {
-                newText = parts.filter((_, index) => index !== artistPartIndex).join(separator);
-                log(`Removed artist part. New text: "${newText}"`);
-            } else {
-                log('No artist part was found in title.');
-            }
-        }
+        log(`Text for ETI processing: "${newText}"`);
 
         if (trailingEti) {
             newText += ` ${trailingEti}`;
@@ -443,7 +453,11 @@
 
         button.addEventListener('click', () => {
             log(`'Guess Feat.' click detected for track. Allowing native script to run first.`);
-            setTimeout(() => deduplicateTrackAC(trackRow), 100);
+            setTimeout(() => {
+                deduplicateTrackAC(trackRow);
+                const input = trackRow.querySelector('input.track-name');
+                if (input) removeArtistFromTitle(input, button);
+            }, 100);
         }, true);
 
         button.dataset.enhanced = 'true';
@@ -459,9 +473,13 @@
                 const medium = button.closest('fieldset.advanced-medium');
                 if (!medium) return;
 
-                log('Applying de-duplication to all tracks in this medium.');
-                medium.querySelectorAll('tr.track').forEach(deduplicateTrackAC);
-                log('De-duplication sweep complete for medium.');
+                log('Applying de-duplication and title cleanup to all tracks in this medium.');
+                medium.querySelectorAll('tr.track').forEach(trackRow => {
+                    deduplicateTrackAC(trackRow);
+                    const input = trackRow.querySelector('input.track-name');
+                    if (input) removeArtistFromTitle(input, button);
+                });
+                log('De-duplication and title sweep complete for medium.');
             }, 100);
         }, true);
 
@@ -475,35 +493,32 @@
         button.addEventListener('click', () => {
             log(`'Guess Feat.' click detected for release/recording. Allowing native script to run first.`);
 
-            // Fix the pristine value state for the guesscase button
-            const input = findAssociatedInput(button);
-            if (input) {
-                setTimeout(() => {
-                    pristineValues.set(input, input.value);
-                    log(`Updated pristine value for ${input.name || input.id} after Guess Feat click: "${input.value}"`);
-                }, 100);
-            }
-
-            // After guessFeat updates the Knockout observable synchronously,
-            // we can read/write it directly — no bubble needed.
+            // Deduplicate the global artist credit editor and clean up title
             setTimeout(() => {
                 // Release editor (tracklist page): release.artistCredit
                 const release = window.MB?._releaseEditor?.rootField?.release?.();
                 if (release?.artistCredit) {
                     log('Deduplicating release AC via Knockout model.');
                     deduplicateACFromObservable(release.artistCredit);
-                    return;
+                } else {
+                    // Standalone recording/entity page: source entity via forms.js
+                    const source = window.MB?.getSourceEntityInstance?.();
+                    if (source?.artistCredit) {
+                        log('Deduplicating standalone entity AC via Knockout model.');
+                        deduplicateACFromObservable(source.artistCredit);
+                    } else {
+                        log('No Knockout AC observable found for release/recording dedup.');
+                    }
                 }
-                // Standalone recording/entity page: source entity via forms.js
-                // The AC observable is on the source entity.
-                const source = window.MB?.getSourceEntityInstance?.();
-                if (source?.artistCredit) {
-                    log('Deduplicating standalone entity AC via Knockout model.');
-                    deduplicateACFromObservable(source.artistCredit);
-                    return;
+
+                const input = findAssociatedInput(button);
+                if (input) {
+                    removeArtistFromTitle(input, button);
+                    // Update pristine value state for the guesscase button
+                    pristineValues.set(input, input.value);
+                    log(`Updated pristine value for ${input.name || input.id} after Guess Feat cleanup: "${input.value}"`);
                 }
-                log('No Knockout AC observable found for release/recording dedup.');
-            }, 50);
+            }, 100);
         }, true);
 
         button.dataset.enhanced = 'true';
