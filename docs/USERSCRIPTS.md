@@ -145,9 +145,11 @@ A comprehensive userscript for **[Harmony](http://harmony.pulsewidth.org.uk/)** 
 #### Seeder Behavior
 - **Include GTIN and Packaging on Update**: Adds an option to include GTIN (barcode) and set packaging when updating existing releases.
 - **Drop Artist Names as credited from Seed:** When an MBID is available, this option removes the artist's name from the seed data.
+- **MusicBrainz Server Selection:** Allows choosing between the main server (**musicbrainz.org**), the beta server, or the mirror (**musicbrainz.eu**) for all links and seeding actions.
 
 #### UI & Workflow
 - **Clipboard Re-Lookup:** Adds a **"Re-Lookup from Clipboard"** button to the lookup form for quickly starting a new lookup or extending an existing one using a supported source URL found in your clipboard.
+- **Provider Re-Lookup Buttons:** Adds a small **⟳** button next to each secondary provider URL in the "Providers" section, allowing you to quickly redo the lookup using that provider as the primary source.
 - **External Search Links:** Adds quick search links for yet unsupported providers (Qobuz, YouTube Music, Beatsource, etc.).
 - **Minor Tweaks:** Enables **copying the permalink URL** on click and provides options to **hide verbose/redundant info sections** for a cleaner UI.
 
