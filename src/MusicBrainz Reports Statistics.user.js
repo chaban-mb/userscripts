@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        MusicBrainz: Reports Statistics
 // @namespace   https://musicbrainz.org/user/chaban
-// @version     2.0.6
+// @version     2.1.0
 // @description Indicates report changes since the last visit and hides reports without items.
 // @tag         ai-created
 // @author      chaban
@@ -10,6 +10,8 @@
 // @connect     self
 // @icon        https://musicbrainz.org/static/images/favicons/android-chrome-512x512.png
 // @grant       GM_xmlhttpRequest
+// @grant       GM_getValue
+// @grant       GM_setValue
 // @updateURL    https://github.com/chaban-mb/userscripts/raw/main/src/MusicBrainz%20Reports%20Statistics.user.js
 // @downloadURL  https://github.com/chaban-mb/userscripts/raw/main/src/MusicBrainz%20Reports%20Statistics.user.js
 // ==/UserScript==
@@ -361,6 +363,93 @@
         }
     }
 
+    /**
+     * Migrates data from localStorage to GM script storage.
+     * Merges report history by deduplicating entries with the same mbGeneratedTimestamp.
+     */
+    async function migrateStorage() {
+        try {
+            const localData = localStorage.getItem(CENTRAL_CACHE_KEY);
+            if (!localData) return;
+
+            let localParsed = JSON.parse(localData);
+            let gmData = GM_getValue(CENTRAL_CACHE_KEY);
+
+            /**
+             * Normalizes cache data from version 1.5 (flat) to version 2.0 (nested).
+             * @param {object} cache The cache object to normalize.
+             */
+            const normalizeCache = (cache) => {
+                if (cache.cache_version === '1.5' && cache.reports) {
+                    for (const reportName in cache.reports) {
+                        const report = cache.reports[reportName];
+                        if (report && !report.all && !report.subscribed) {
+                            cache.reports[reportName] = {
+                                all: report
+                            };
+                        }
+                    }
+                    cache.cache_version = '2.0';
+                }
+            };
+
+            // Normalize both sources to version 2.0 structure
+            normalizeCache(localParsed);
+            if (gmData) normalizeCache(gmData);
+
+            if (!gmData) {
+                GM_setValue(CENTRAL_CACHE_KEY, localParsed);
+                log("Initial migration from localStorage to script storage completed.");
+            } else {
+                // Merge logic
+                const mergedReports = { ...gmData.reports };
+
+                for (const [reportName, localReportModes] of Object.entries(localParsed.reports || {})) {
+                    if (!mergedReports[reportName]) {
+                        mergedReports[reportName] = localReportModes;
+                        continue;
+                    }
+
+                    for (const [mode, localData] of Object.entries(localReportModes)) {
+                        if (!mergedReports[reportName][mode]) {
+                            mergedReports[reportName][mode] = localData;
+                            continue;
+                        }
+
+                        const gmReport = mergedReports[reportName][mode];
+                        // Merge history
+                        const historyMap = new Map();
+                        [...(gmReport.history || []), ...(localData.history || [])].forEach(entry => {
+                            const key = entry.mbGeneratedTimestamp || entry.lastFetchedTimestamp;
+                            const existing = historyMap.get(key);
+                            if (!existing || (entry.itemCount !== -1 && existing.itemCount === -1)) {
+                                historyMap.set(key, entry);
+                            }
+                        });
+
+                        gmReport.history = Array.from(historyMap.values())
+                            .sort((a, b) => (a.mbGeneratedTimestamp || a.lastFetchedTimestamp) - (b.mbGeneratedTimestamp || b.lastFetchedTimestamp))
+                            .slice(-HISTORY_MAX_DAYS);
+
+                        gmReport.lastFetchedTimestamp = Math.max(gmReport.lastFetchedTimestamp || 0, localData.lastFetchedTimestamp || 0);
+                        gmReport.unsupported = gmReport.unsupported || localData.unsupported;
+                    }
+                }
+
+                GM_setValue(CENTRAL_CACHE_KEY, {
+                    ...gmData,
+                    reports: mergedReports,
+                    script_version: currentScriptVersion,
+                    cache_version: CURRENT_CACHE_VERSION
+                });
+                log("Merged localStorage data into script storage.");
+            }
+
+            localStorage.removeItem(CENTRAL_CACHE_KEY);
+        } catch (e) {
+            error("Storage migration failed:", e);
+        }
+    }
 
     /**
      * Main execution function to scan, manage cache, and process reports.
@@ -370,6 +459,8 @@
 
         currentFilterMode = getFilterModeFromUrl();
         log(`Current filter mode: ${currentFilterMode}.`);
+
+        await migrateStorage();
 
         const currentReportLinks = Array.from(document.querySelectorAll('#content ul li a[href*="/report/"]'));
         if (currentReportLinks.length === 0) {
@@ -385,9 +476,9 @@
         let forceAllFetchesDueToStructureChange = false;
 
         try {
-            const cachedData = localStorage.getItem(CENTRAL_CACHE_KEY);
+            const cachedData = GM_getValue(CENTRAL_CACHE_KEY);
             if (cachedData) {
-                parsedCache = JSON.parse(cachedData);
+                parsedCache = cachedData;
                 currentCacheVersion = parsedCache.cache_version;
                 currentScriptVersionInCache = parsedCache.script_version;
                 log(`Cache loaded (Cache version ${currentCacheVersion || 'none'}, Script version ${currentScriptVersionInCache || 'none'}).`);
@@ -517,11 +608,11 @@
         if (totalLinksToFetch === 0) {
             log('All reports for current mode cached. No fetches needed.');
             hideProgressBar();
-            localStorage.setItem(CENTRAL_CACHE_KEY, JSON.stringify({
+            GM_setValue(CENTRAL_CACHE_KEY, {
                 script_version: currentScriptVersion,
                 cache_version: CURRENT_CACHE_VERSION,
                 reports: newReportCache
-            }));
+            });
             displayFilterModeOnPage();
             return;
         }
@@ -617,14 +708,14 @@
         }
 
         try {
-            localStorage.setItem(CENTRAL_CACHE_KEY, JSON.stringify({
+            GM_setValue(CENTRAL_CACHE_KEY, {
                 script_version: currentScriptVersion,
                 cache_version: CURRENT_CACHE_VERSION,
                 reports: newReportCache
-            }));
-            log("Cache updated in localStorage.");
+            });
+            log("Cache updated in script storage.");
         } catch (e) {
-            error("Error saving cache to localStorage:", e);
+            error("Error saving cache to script storage:", e);
         }
 
         progressBar.style.width = '100%';
