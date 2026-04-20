@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Click buttons across tabs
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      4.9.0
+// @version      4.9.1
 // @tag          ai-created
 // @description  Clicks specified buttons across tabs using the Broadcast Channel API and closes tabs after successful submission.
 // @author       chaban
@@ -56,6 +56,10 @@
      */
     async function setupThrottlingBypass() {
         if (activeKeepAlives.length > 0) return;
+        if (typeof RTCPeerConnection === 'undefined') {
+            debugLog('WebRTC is undefined. Skipping throttling bypass.', 'orange');
+            return;
+        }
         debugLog('Initializing WebRTC loopback to bypass Intensive Throttling.', 'green');
         const pc1 = new RTCPeerConnection(), pc2 = new RTCPeerConnection();
         pc1.createDataChannel("keep-alive");

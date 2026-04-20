@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MusicBrainz: Artwork Uploader Turbo
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      3.3.0
+// @version      3.3.1
 // @tag          ai-created
 // @description  Allows for multiple artwork images to be uploaded simultaneously and recursively upload directories.
 // @author       chaban
@@ -50,6 +50,10 @@
         // --- WEB RTC THROTTLING BYPASS ---
         async setupThrottlingBypass() {
             if (ArtworkUploaderTurbo.state.antiThrottlingPCs) return;
+            if (typeof RTCPeerConnection === 'undefined') {
+                ArtworkUploaderTurbo.logger.warn('WebRTC not supported or disabled. Intensive throttling bypass skipped.');
+                return;
+            }
             ArtworkUploaderTurbo.logger.log('Initializing WebRTC loopback to bypass Intensive Throttling...');
             const pc1 = new RTCPeerConnection(), pc2 = new RTCPeerConnection();
             pc1.createDataChannel("keep-alive");
@@ -317,7 +321,7 @@
                         const match = error[0].match(/error (?:creating edit|obtaining signature|uploading image):.*?(\d{3})/i) || error[0].match(/(\d{3})/);
                         if (match) httpStatus = parseInt(match[1], 10);
                     }
-                    
+
                     ArtworkUploaderTurbo.logger.error(`[DEBUG] _handleRetry called for file ${file.name}. Raw error object:`, error);
                     ArtworkUploaderTurbo.logger.error(`[DEBUG] Parsed HTTP Status code:`, httpStatus);
 
