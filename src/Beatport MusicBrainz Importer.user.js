@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        Beatport: MusicBrainz Importer
 // @namespace   https://musicbrainz.org/user/chaban
-// @version     2.6.1
+// @version     2.6.2
 // @description Adds MusicBrainz status icons to Beatport releases and allows importing them with Harmony
 // @tag         ai-created
 // @author      RustyNova, chaban
@@ -477,27 +477,32 @@
      * @returns {Array<{url: string, element: HTMLElement}>} An array of objects, each containing
      * a release URL and its DOM element.
      */
-    getReleasesToProcess: function () {
-      const releases = document.querySelectorAll(Config.SELECTORS.RELEASE_ROW);
-      const unprocessedReleases = [];
+      getReleasesToProcess: function () {
+          const releases = document.querySelectorAll(Config.SELECTORS.RELEASE_ROW);
+          const unprocessedReleases = [];
 
-      for (const releaseRow of releases) {
-        const releaseLinkElement = releaseRow.querySelector(Config.SELECTORS.RELEASE_LINK);
-        if (releaseLinkElement && releaseLinkElement.href) {
-          const url = releaseLinkElement.href;
-          // Check if we already processed THIS specific URL for this row
-          const lastProcessed = BeatportMusicBrainzImporter._processedRows.get(releaseRow);
-          if (lastProcessed !== url) {
+          for (const releaseRow of releases) {
+              const releaseLinkElement = releaseRow.querySelector(Config.SELECTORS.RELEASE_LINK);
+              if (releaseLinkElement && releaseLinkElement.href) {
+                  const url = releaseLinkElement.href;
 
-            unprocessedReleases.push({
-              url: url,
-              element: releaseRow
-            });
+                  // Normalize the URL before checking the Map
+                  const parsedUrl = new URL(url);
+                  const normalizedPathname = Utils._getBasePathname(parsedUrl.pathname);
+                  const normalizedUrl = `${parsedUrl.origin}${normalizedPathname}${parsedUrl.search}`;
+
+                  const lastProcessed = BeatportMusicBrainzImporter._processedRows.get(releaseRow);
+
+                  if (lastProcessed !== normalizedUrl) {
+                      unprocessedReleases.push({
+                          url: url,
+                          element: releaseRow
+                      });
+                  }
+              }
           }
-        }
+          return unprocessedReleases;
       }
-      return unprocessedReleases;
-    }
   };
 
   /**
