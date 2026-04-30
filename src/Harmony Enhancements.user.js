@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Harmony: Enhancements
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      1.27.1
+// @version      1.27.2
 // @tag          ai-created
 // @description  Adds some convenience features, various UI and behavior settings, as well as an improved language detection to Harmony.
 // @author       chaban
@@ -2222,8 +2222,17 @@
 
                 for (const name of namesToTry) {
                     if (labelMap.has(name)) {
+                        const url = labelMap.get(name);
+                        const mbid = url.split('/').pop();
+
+                        // Do not map to [no label] unless it's the primary label name chosen by Harmony.
+                        // This prevents alternative distributor names from overwriting valid primary labels.
+                        if (mbid === NO_LABEL.mbid && name !== currentLabelName) {
+                            continue;
+                        }
+
                         matchedName = name;
-                        matchedUrl = labelMap.get(name);
+                        matchedUrl = url;
                         break;
                     }
                 }
