@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name           MusicBrainz: Release day of the week
 // @namespace      https://musicbrainz.org/user/chaban
-// @version        1.0.4
+// @version        1.1.0
 // @description    Display the day of the week for release events.
 // @tag            ai-created
 // @author         Jugdish, SultS, chaban
@@ -34,16 +34,19 @@
     const fullDayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
     const dateRegex = /\b(\d{4}-\d{2}-\d{2})\b/;
 
+    const SWITCH_DATE_2015 = new Date('2015-07-10T00:00:00');
+    const SWITCH_DATE_DE = new Date('2005-09-23T00:00:00');
+
     const COUNTRY_RULES = {
-        'AU': { name: 'Australia', expectedDay: 1 },
-        'FR': { name: 'France', expectedDay: 1 },
-        'CA': { name: 'Canada', expectedDay: (date) => (date >= new Date('2015-07-10') ? 5 : 2) },
-        'DE': { name: 'Germany', expectedDay: (date) => (date < new Date('2005-09-01') ? 1 : 5) },
+        'AU': { name: 'Australia', expectedDay: 5 },
+        'FR': { name: 'France', expectedDay: (date) => (date >= SWITCH_DATE_2015 ? 5 : 1) },
+        'CA': { name: 'Canada', expectedDay: (date) => (date >= SWITCH_DATE_2015 ? 5 : 2) },
+        'DE': { name: 'Germany', expectedDay: (date) => (date < SWITCH_DATE_DE ? 1 : 5) },
         'JP': { name: 'Japan', expectedDay: 3 },
-        'NZ': { name: 'New Zealand', expectedDay: 1 },
-        'GB': { name: 'United Kingdom', expectedDay: 1 },
-        'US': { name: 'United States', expectedDay: 2 },
-        'XW': { name: 'Worldwide', expectedDay: (date) => (date >= new Date('2015-07-10') ? 5 : null) }
+        'NZ': { name: 'New Zealand', expectedDay: (date) => (date >= SWITCH_DATE_2015 ? 5 : 1) },
+        'GB': { name: 'United Kingdom', expectedDay: (date) => (date >= SWITCH_DATE_2015 ? 5 : 1) },
+        'US': { name: 'United States', expectedDay: (date) => (date >= SWITCH_DATE_2015 ? 5 : 2) },
+        'XW': { name: 'Worldwide', expectedDay: (date) => (date >= SWITCH_DATE_2015 ? 5 : null) }
     };
 
     const COUNTRY_MAP = new Map();
