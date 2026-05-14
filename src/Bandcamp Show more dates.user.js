@@ -1,13 +1,14 @@
 // ==UserScript==
 // @name        Bandcamp: Show more dates
 // @namespace   https://musicbrainz.org/user/chaban
-// @version     2.1
+// @version     2.1.1
 // @description Shows Bandcamp releases' real "publish date" below the listed release date
 // @tag         ai-created
 // @author      w_biggs (~joks), chaban
 // @license     MIT
 // @match       https://*.bandcamp.com/track/*
 // @match       https://*.bandcamp.com/album/*
+// @match       https://bandcamp.com/private/*
 // @include     /^https?://web\.archive\.org/web/\d+/https?://[^/]+/(?:album|track)/[^/]+\/?$/
 // @grant       none
 // @updateURL    https://github.com/chaban-mb/userscripts/raw/main/src/Bandcamp%20Show%20more%20dates.user.js
