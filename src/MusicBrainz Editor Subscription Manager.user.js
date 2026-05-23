@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MusicBrainz: Editor Subscription Manager
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      0.3.0
+// @version      0.3.1
 // @tag          ai-created
 // @description  Manages subscriptions, tracks name changes and detects deleted users.
 // @author       chaban
@@ -413,23 +413,31 @@
     // #endregion
 
     // #region UI Rendering
-    function updateReportStats() {
-        let years = parseInt(document.getElementById('esm-inactive-years')?.value, 10);
+    function getInactiveSettings() {
+        const input = document.getElementById('esm-inactive-years');
+        let years = parseInt(input?.value, 10);
         if (isNaN(years) || years < 1) {
             years = 1;
-            const input = document.getElementById('esm-inactive-years');
             if (input) input.value = 1;
         }
-
         const cutoff = new Date();
         cutoff.setFullYear(cutoff.getFullYear() - years);
+        return { cutoff, years };
+    }
+
+    function isInactive(e, cutoff) {
+        return e.isSubscribed && !e.isLost && !e.isSpammer && !e.isDeleted && !e.error && (!e.lastEditDate || new Date(e.lastEditDate) < cutoff);
+    }
+
+    function updateReportStats() {
+        const { cutoff, years } = getInactiveSettings();
 
         const stats = {
             total: allEditorData.length,
             visited: allEditorData.filter(e => !e.isSubscribed).length,
             spammers: allEditorData.filter(e => e.isSpammer).length,
             highRejection: allEditorData.filter(e => (e.rejectionRate || 0) > 10).length,
-            inactive: allEditorData.filter(e => e.isSubscribed && !e.isLost && !e.isSpammer && !e.error && (!e.lastEditDate || new Date(e.lastEditDate) < cutoff)).length,
+            inactive: allEditorData.filter(e => isInactive(e, cutoff)).length,
             lost: allEditorData.filter(e => e.isLost).length,
             deleted: allEditorData.filter(e => e.isDeleted).length
         };
@@ -456,6 +464,7 @@
         if (!tbody) return;
 
         const settings = storage.getSettings();
+        const { cutoff } = getInactiveSettings();
         let displayData = settings.showVisited ? allEditorData : allEditorData.filter(e => e.isSubscribed);
 
         const { key, asc } = sortState;
@@ -490,7 +499,13 @@
         });
 
         tbody.innerHTML = displayData.map(e => {
-            const rowClass = e.isDeleted ? 'esm-row-deleted' : e.isLost ? 'esm-row-lost' : e.isSpammer ? 'esm-row-spam' : !e.isSubscribed ? 'esm-row-visited' : '';
+            let rowClass = '';
+            if (e.isDeleted) rowClass = 'esm-row-deleted';
+            else if (e.isLost) rowClass = 'esm-row-lost';
+            else if (e.isSpammer) rowClass = 'esm-row-spam';
+            else if (isInactive(e, cutoff)) rowClass = 'esm-row-inactive';
+            else if (!e.isSubscribed) rowClass = 'esm-row-visited';
+
             const cells = COLUMNS.map(col => `<td class="${col.className || ''}">${col.render(e)}</td>`).join('');
             return `<tr class="${rowClass}">${cells}</tr>`;
         }).join('');
@@ -562,7 +577,10 @@
             storage.saveSettings({ ...currentSettings, showVisited: e.target.checked });
             renderReportTable();
         };
-        getEl('esm-inactive-years').oninput = updateReportStats;
+        getEl('esm-inactive-years').oninput = () => {
+            updateReportStats();
+            renderReportTable();
+        };
 
         getEl('esm-report-table').querySelector('thead').onclick = (e) => {
             const th = e.target.closest('th.esm-sortable');
@@ -674,6 +692,7 @@
             // 2. Prepare Cache & Queue
             let cache = storage.getCache();
             const queue = [];
+            const settings = storage.getSettings();
 
             // Add subscribed stubs to processing queue or update status
             uniqueStubs.forEach(stub => {
@@ -706,7 +725,7 @@
                 }
                 else if (!isSubscribedOnPage) { // Visited/Unsubscribed profiles
                     const isStale = age > CACHE_TTL_DAYS;
-                    if (mode === 'refresh' || (mode === 'scan' && (isStale || e.error))) {
+                    if (mode === 'refresh' || (mode === 'scan' && settings.showVisited && (isStale || e.error))) {
                         queue.push({ ...e, reason: 'update_visited' });
                     }
                 }
@@ -881,6 +900,7 @@
             .esm-aka { font-size: 0.85em; color: #666; font-style: italic; display:block; margin-top:2px; }
             .esm-row-deleted { background-color: #ffe6e6; opacity: 0.7; }
             .esm-row-lost { background-color: #fff9e6; }
+            .esm-row-inactive { background-color: #f0f4ff; }
             .esm-row-visited { background-color: #f7f7f7; color: #666; }
         `);
     }
