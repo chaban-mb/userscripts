@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Harmony: Enhancements
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      1.27.2
+// @version      1.27.3
 // @tag          ai-created
 // @description  Adds some convenience features, various UI and behavior settings, as well as an improved language detection to Harmony.
 // @author       chaban
@@ -90,7 +90,7 @@
         // Convenience Features
         addSearchLinks: {
             key: 'enhancements.ui.addSearchLinks',
-            label: 'Add external search links (Qobuz, YouTube Music, etc.)',
+            label: 'Add external search links (YouTube Music, Bandcamp, mora, etc.)',
             description: 'Adds quick search links for the release on various external sites.',
             defaultValue: false,
             section: 'Convenience Features',
@@ -1502,26 +1502,6 @@
             const encodedTitle = encodeURIComponent(releaseTitle);
 
             const searchLinks = [];
-
-            const { regionInput } = AppState.dom;
-            const currentRegion = regionInput ? regionInput.value.toLowerCase() : '';
-            const defaultQbzRegion = 'us-en';
-            const regionMap = new Map([
-                ['ar', 'ar-es'], ['au', 'au-en'], ['at', 'at-de'], ['be', 'be-nl'], ['br', 'br-pt'],
-                ['ca', 'ca-en'], ['cl', 'cl-es'], ['co', 'co-es'], ['dk', 'dk-en'], ['fi', 'fi-en'],
-                ['fr', 'fr-fr'], ['de', 'de-de'], ['ie', 'ie-en'], ['it', 'it-it'], ['jp', 'jp-ja'],
-                ['lu', 'lu-de'], ['mx', 'mx-es'], ['nl', 'nl-nl'], ['nz', 'nz-en'], ['no', 'no-en'],
-                ['pt', 'pt-pt'], ['es', 'es-es'], ['se', 'se-en'], ['ch', 'ch-de'], ['gb', 'gb-en'],
-                ['us', 'us-en'],
-            ]);
-
-            const regionKey = currentRegion.split(',').map(code => code.trim()).find(code => regionMap.has(code));
-            const qbzRegion = regionMap.get(regionKey) || defaultQbzRegion;
-
-            searchLinks.push({
-                name: 'Search Qobuz',
-                url: `https://www.qobuz.com/${qbzRegion}/search?q=${encodedArtist}%20${encodedTitle}&type=album`
-            });
 
             if (releaseData.gtin) {
                 const barcode = releaseData.gtin.replace(/^0+/, '');
