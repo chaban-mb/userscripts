@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MusicBrainz: Guess Case Improver
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      0.6.4
+// @version      0.6.5
 // @tag          ai-created
 // @description  Improves the native "Guess Case" for release, recording and track titles with advanced artist and ETI parsing. Also removes artist from title and duplicate artists after using "Guess feat. artists" on tracklists.
 // @author       chaban
@@ -250,6 +250,15 @@
         let newText = text;
         const keepUpperCase = getBooleanCookie('guesscase_keepuppercase');
 
+        // Preserve MusicBrainz special track titles in square brackets and convert them to lowercase
+        const bracketExceptions = [];
+        const exceptionPattern = /\[(untitled|unknown|data track)\]/gi;
+        newText = newText.replace(exceptionPattern, (match, p1) => {
+            const index = bracketExceptions.length;
+            bracketExceptions.push(`[${p1.toLowerCase()}]`);
+            return `___MB_GUESS_CASE_EXCEPTION_${index}___`;
+        });
+
         let trailingEti = '';
         const etiMatch = newText.match(/\s*(\[[^\]]+\]|\([^)]+\))$/);
         if (etiMatch) {
@@ -290,6 +299,11 @@
                 });
             }
             return `(${processedEti})`;
+        });
+
+        // Restore square bracket exceptions
+        bracketExceptions.forEach((val, index) => {
+            newText = newText.replace(`___MB_GUESS_CASE_EXCEPTION_${index}___`, val);
         });
 
         log('--- applyAdvancedRules END ---');
