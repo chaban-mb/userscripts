@@ -24,7 +24,7 @@
     class VolumoMusicBrainzImporter {
         static SCRIPT_NAME = GM.info.script.name;
         static SELECTORS = {
-            ACTION_BAR: 'div[class*="ActionButtons_root"]',
+            RANDOM_HINT: '[class*="RandomHint_root"]',
         };
         static URLS = {
             MUSICBRAINZ_BASE: 'https://musicbrainz.org',
@@ -72,10 +72,10 @@
             }
 
             try {
-                const actionBar = await this.#waitForElement(VolumoMusicBrainzImporter.SELECTORS.ACTION_BAR, 10000);
+                const hintRoot = await this.#waitForElement(VolumoMusicBrainzImporter.SELECTORS.RANDOM_HINT, 10000);
                 if (this.#runId !== runId) return;
 
-                this.#createButtonContainer(actionBar);
+                this.#createButtonContainer(hintRoot);
 
                 const normalizedUrl = this.#normalizeUrl(urlForThisRun);
                 this.#setupLoadingState();
@@ -203,14 +203,21 @@
         }
 
         #cleanup() {
+            // Restore the hint text we hid when injecting buttons
+            const hint = document.querySelector('[class*="RandomHint_hint"]');
+            if (hint) hint.style.display = '';
             document.getElementById('mb-volumo-button-container')?.remove();
             this.#container = null;
         }
 
-        #createButtonContainer(actionBar) {
+        #createButtonContainer(hintRoot) {
+            // Hide the rotating hint text and take over the slot
+            const hint = hintRoot.querySelector('[class*="RandomHint_hint"]');
+            if (hint) hint.style.display = 'none';
+
             this.#container = document.createElement('div');
             this.#container.id = 'mb-volumo-button-container';
-            actionBar.appendChild(this.#container);
+            hintRoot.appendChild(this.#container);
         }
 
         #setupLoadingState() {
@@ -247,7 +254,7 @@
                 this.#container.appendChild(importBtn);
             }
 
-            // Search in MB button
+            // Search in MB button (standard murdos pattern)
             const mbRelease = this.#mapToMbRelease(albumData, normalizedUrl, labelMbid);
             const searchWrapper = document.createElement('div');
             searchWrapper.innerHTML = MBImport.buildSearchButton(mbRelease);
@@ -386,7 +393,6 @@
                     display: flex;
                     align-items: center;
                     gap: 12px;
-                    margin-left: 12px;
                 }
                 .mb-btn {
                     display: inline-flex;
