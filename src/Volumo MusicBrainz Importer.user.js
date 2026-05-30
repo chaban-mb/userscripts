@@ -93,7 +93,17 @@
                 const mbInfo = await this.#fetchMusicBrainzInfo(normalizedUrl);
                 if (this.#runId !== runId) return;
 
-                this.#renderButtons(albumData, normalizedUrl, mbInfo);
+                // Check label lookup in MusicBrainz
+                let labelMbid = null;
+                if (albumData.recordlabel) {
+                    const labelUrl = this.#getLabelUrl(albumData.recordlabel);
+                    if (labelUrl) {
+                        labelMbid = await this.#fetchLabelMbid(labelUrl);
+                        if (this.#runId !== runId) return;
+                    }
+                }
+
+                this.#renderButtons(albumData, normalizedUrl, mbInfo, labelMbid);
 
             } catch (error) {
                 if (this.#runId !== runId) return;
@@ -169,6 +179,29 @@
             }
         }
 
+        #getLabelUrl(recordlabel) {
+            if (!recordlabel || !recordlabel.id) return null;
+            return `https://volumo.com/label/${recordlabel.id}`;
+        }
+
+        async #fetchLabelMbid(labelUrl) {
+            try {
+                const urlData = await this.#mbApi.lookupUrl(labelUrl, ['label-rels']);
+                if (!urlData || !Array.isArray(urlData.relations)) return null;
+
+                const relation = urlData.relations.find(rel =>
+                    rel['target-type'] === 'label' && rel.label
+                );
+
+                return relation ? relation.label.id : null;
+            } catch (error) {
+                if (!error.message || !error.message.includes('404')) {
+                    console.error('[Volumo Importer] Label lookup failed', error);
+                }
+                return null;
+            }
+        }
+
         #cleanup() {
             document.getElementById('mb-volumo-button-container')?.remove();
             this.#container = null;
@@ -190,7 +223,7 @@
             this.#container.innerHTML = `<span class="mb-error-message" title="${message}">Error</span>`;
         }
 
-        #renderButtons(albumData, normalizedUrl, mbInfo) {
+        #renderButtons(albumData, normalizedUrl, mbInfo, labelMbid) {
             if (!this.#container) return;
             this.#container.innerHTML = '';
 
@@ -209,7 +242,7 @@
                 importBtn.textContent = 'Import into MB';
                 importBtn.addEventListener('click', (e) => {
                     e.preventDefault();
-                    this.#submitImportForm(albumData, normalizedUrl);
+                    this.#submitImportForm(albumData, normalizedUrl, labelMbid);
                 });
                 this.#container.appendChild(importBtn);
             }
@@ -232,8 +265,8 @@
             this.#container.appendChild(harmonyLink);
         }
 
-        #submitImportForm(albumData, normalizedUrl) {
-            const release = this.#mapToMbRelease(albumData, normalizedUrl);
+        #submitImportForm(albumData, normalizedUrl, labelMbid) {
+            const release = this.#mapToMbRelease(albumData, normalizedUrl, labelMbid);
             const editNote = MBImport.makeEditNote(
                 normalizedUrl,
                 VolumoMusicBrainzImporter.SCRIPT_NAME,
@@ -256,10 +289,22 @@
             setTimeout(() => tempDiv.remove(), 1000);
         }
 
-        #mapToMbRelease(albumData, normalizedUrl) {
+        #mapToMbRelease(albumData, normalizedUrl, labelMbid) {
             const releaseDate = this.#parseReleaseDate(albumData.original_release_date || albumData.release_start_at);
             const totalDuration = albumData.tracks.reduce((acc, t) => acc + (t.duration || 0), 0);
             const type = MBImport.guessReleaseType(albumData.title, albumData.tracks.length, totalDuration);
+
+            const labels = [];
+            if (albumData.recordlabel) {
+                const labelInfo = {
+                    name: albumData.recordlabel.name,
+                    catno: albumData.catalog_number || 'none',
+                };
+                if (labelMbid) {
+                    labelInfo.mbid = labelMbid;
+                }
+                labels.push(labelInfo);
+            }
 
             return {
                 title: albumData.title,
@@ -274,12 +319,7 @@
                 year: releaseDate.year,
                 month: releaseDate.month,
                 day: releaseDate.day,
-                labels: albumData.recordlabel ? [
-                    {
-                        name: albumData.recordlabel.name,
-                        catno: albumData.catalog_number || 'none'
-                    }
-                ] : [],
+                labels,
                 urls: [
                     {
                         url: normalizedUrl,
