@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Volumo: MusicBrainz Importer
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      1.1.1
+// @version      1.1.2
 // @description  Allows importing releases from Volumo into MusicBrainz.
 // @tag          ai-created
 // @author       chaban
@@ -351,7 +351,7 @@
         }
 
         #mapToMbRelease(albumData, normalizedUrl, labelMbid, artistMbidMap) {
-            const releaseDate = this.#parseReleaseDate(albumData.original_release_date || albumData.release_start_at);
+            const releaseDate = this.#parseReleaseDate(albumData.release_start_at || albumData.original_release_date);
             const totalDuration = albumData.tracks.reduce((acc, t) => acc + (t.duration || 0), 0);
             const type = MBImport.guessReleaseType(albumData.title, albumData.tracks.length, totalDuration);
 
