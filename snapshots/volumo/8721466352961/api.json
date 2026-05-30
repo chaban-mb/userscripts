@@ -1,0 +1,486 @@
+{
+  "id": 1609368,
+  "hot": false,
+  "icpn": "8721466352961",
+  "price": 1043,
+  "title": "Montenero",
+  "genres": [
+    22
+  ],
+  "tracks": [
+    {
+      "id": 6114859,
+      "bpm": 71,
+      "isrc": "NLCK42604541",
+      "album": {
+        "id": 1609368,
+        "icpn": "8721466352961",
+        "title": "Montenero",
+        "exclusive": false,
+        "artwork_uuid": "b3f9f8dd-5197-42b4-8e8f-9332b9574d68",
+        "volumo_direct": false,
+        "catalog_number": "HYSEP67",
+        "release_start_at": "2026-04-09T21:00:00Z"
+      },
+      "genre": 22,
+      "price": 149,
+      "title": "Calma",
+      "artists": [
+        {
+          "id": 38586,
+          "name": "Oisel",
+          "type": "artist",
+          "followed": null
+        }
+      ],
+      "curated": true,
+      "formats": {
+        "mp3": {
+          "filesize": 11300891
+        },
+        "wav": {
+          "filesize": 49107586
+        },
+        "aiff": {
+          "filesize": 49107596
+        },
+        "flac": {
+          "filesize": 31623094
+        }
+      },
+      "keysign": "A♭ minor",
+      "version": null,
+      "duration": 277183.10000000003,
+      "featured": true,
+      "genre_id": 22,
+      "listened": false,
+      "remixers": [],
+      "purchased": false,
+      "album_only": false,
+      "downloaded": false,
+      "playlisted": 0,
+      "recordlabel": {
+        "id": 302480,
+        "name": "HAYES",
+        "type": "recordlabel",
+        "followed": null
+      },
+      "composed_title": "Calma",
+      "featured_artists": [],
+      "release_start_at": "2026-04-09T21:00:00Z"
+    },
+    {
+      "id": 6114860,
+      "bpm": 142,
+      "isrc": "NLCK42604542",
+      "album": {
+        "id": 1609368,
+        "icpn": "8721466352961",
+        "title": "Montenero",
+        "exclusive": false,
+        "artwork_uuid": "b3f9f8dd-5197-42b4-8e8f-9332b9574d68",
+        "volumo_direct": false,
+        "catalog_number": "HYSEP67",
+        "release_start_at": "2026-04-09T21:00:00Z"
+      },
+      "genre": 22,
+      "price": 149,
+      "title": "Semiretta",
+      "artists": [
+        {
+          "id": 38586,
+          "name": "Oisel",
+          "type": "artist",
+          "followed": null
+        }
+      ],
+      "curated": true,
+      "formats": {
+        "mp3": {
+          "filesize": 15087605
+        },
+        "wav": {
+          "filesize": 65803478
+        },
+        "aiff": {
+          "filesize": 65803488
+        },
+        "flac": {
+          "filesize": 44368301
+        }
+      },
+      "keysign": "G minor",
+      "version": null,
+      "duration": 371831,
+      "featured": true,
+      "genre_id": 22,
+      "listened": false,
+      "remixers": [],
+      "purchased": false,
+      "album_only": false,
+      "downloaded": false,
+      "playlisted": 0,
+      "recordlabel": {
+        "id": 302480,
+        "name": "HAYES",
+        "type": "recordlabel",
+        "followed": null
+      },
+      "composed_title": "Semiretta",
+      "featured_artists": [],
+      "release_start_at": "2026-04-09T21:00:00Z"
+    },
+    {
+      "id": 6114861,
+      "bpm": 143,
+      "isrc": "NLCK42604543",
+      "album": {
+        "id": 1609368,
+        "icpn": "8721466352961",
+        "title": "Montenero",
+        "exclusive": false,
+        "artwork_uuid": "b3f9f8dd-5197-42b4-8e8f-9332b9574d68",
+        "volumo_direct": false,
+        "catalog_number": "HYSEP67",
+        "release_start_at": "2026-04-09T21:00:00Z"
+      },
+      "genre": 22,
+      "price": 149,
+      "title": "SB",
+      "artists": [
+        {
+          "id": 38586,
+          "name": "Oisel",
+          "type": "artist",
+          "followed": null
+        }
+      ],
+      "curated": true,
+      "formats": {
+        "mp3": {
+          "filesize": 11223566
+        },
+        "wav": {
+          "filesize": 48765660
+        },
+        "aiff": {
+          "filesize": 48765670
+        },
+        "flac": {
+          "filesize": 33857112
+        }
+      },
+      "keysign": "E♭ minor",
+      "version": null,
+      "duration": 275244.75,
+      "featured": true,
+      "genre_id": 22,
+      "listened": false,
+      "remixers": [],
+      "purchased": false,
+      "album_only": false,
+      "downloaded": false,
+      "playlisted": 0,
+      "recordlabel": {
+        "id": 302480,
+        "name": "HAYES",
+        "type": "recordlabel",
+        "followed": null
+      },
+      "composed_title": "SB",
+      "featured_artists": [],
+      "release_start_at": "2026-04-09T21:00:00Z"
+    },
+    {
+      "id": 6114862,
+      "bpm": 140,
+      "isrc": "NLCK42604544",
+      "album": {
+        "id": 1609368,
+        "icpn": "8721466352961",
+        "title": "Montenero",
+        "exclusive": false,
+        "artwork_uuid": "b3f9f8dd-5197-42b4-8e8f-9332b9574d68",
+        "volumo_direct": false,
+        "catalog_number": "HYSEP67",
+        "release_start_at": "2026-04-09T21:00:00Z"
+      },
+      "genre": 22,
+      "price": 149,
+      "title": "533",
+      "artists": [
+        {
+          "id": 38586,
+          "name": "Oisel",
+          "type": "artist",
+          "followed": null
+        }
+      ],
+      "curated": true,
+      "formats": {
+        "mp3": {
+          "filesize": 13533836
+        },
+        "wav": {
+          "filesize": 58953684
+        },
+        "aiff": {
+          "filesize": 58953694
+        },
+        "flac": {
+          "filesize": 42243879
+        }
+      },
+      "keysign": "A♭ minor",
+      "version": null,
+      "duration": 333000,
+      "featured": true,
+      "genre_id": 22,
+      "listened": false,
+      "remixers": [],
+      "purchased": false,
+      "album_only": false,
+      "downloaded": false,
+      "playlisted": 0,
+      "recordlabel": {
+        "id": 302480,
+        "name": "HAYES",
+        "type": "recordlabel",
+        "followed": null
+      },
+      "composed_title": "533",
+      "featured_artists": [],
+      "release_start_at": "2026-04-09T21:00:00Z"
+    },
+    {
+      "id": 6114863,
+      "bpm": 145,
+      "isrc": "NLCK42604545",
+      "album": {
+        "id": 1609368,
+        "icpn": "8721466352961",
+        "title": "Montenero",
+        "exclusive": false,
+        "artwork_uuid": "b3f9f8dd-5197-42b4-8e8f-9332b9574d68",
+        "volumo_direct": false,
+        "catalog_number": "HYSEP67",
+        "release_start_at": "2026-04-09T21:00:00Z"
+      },
+      "genre": 22,
+      "price": 149,
+      "title": "Treq",
+      "artists": [
+        {
+          "id": 38586,
+          "name": "Oisel",
+          "type": "artist",
+          "followed": null
+        }
+      ],
+      "curated": true,
+      "formats": {
+        "mp3": {
+          "filesize": 10806652
+        },
+        "wav": {
+          "filesize": 46928072
+        },
+        "aiff": {
+          "filesize": 46928082
+        },
+        "flac": {
+          "filesize": 30259976
+        }
+      },
+      "keysign": "C minor",
+      "version": null,
+      "duration": 264827.60000000003,
+      "featured": true,
+      "genre_id": 22,
+      "listened": false,
+      "remixers": [],
+      "purchased": false,
+      "album_only": false,
+      "downloaded": false,
+      "playlisted": 0,
+      "recordlabel": {
+        "id": 302480,
+        "name": "HAYES",
+        "type": "recordlabel",
+        "followed": null
+      },
+      "composed_title": "Treq",
+      "featured_artists": [],
+      "release_start_at": "2026-04-09T21:00:00Z"
+    },
+    {
+      "id": 6114864,
+      "bpm": 70,
+      "isrc": "NLCK42604546",
+      "album": {
+        "id": 1609368,
+        "icpn": "8721466352961",
+        "title": "Montenero",
+        "exclusive": false,
+        "artwork_uuid": "b3f9f8dd-5197-42b4-8e8f-9332b9574d68",
+        "volumo_direct": false,
+        "catalog_number": "HYSEP67",
+        "release_start_at": "2026-04-09T21:00:00Z"
+      },
+      "genre": 22,
+      "price": 149,
+      "title": "4voci",
+      "artists": [
+        {
+          "id": 38586,
+          "name": "Oisel",
+          "type": "artist",
+          "followed": null
+        }
+      ],
+      "curated": true,
+      "formats": {
+        "mp3": {
+          "filesize": 12008287
+        },
+        "wav": {
+          "filesize": 52225286
+        },
+        "aiff": {
+          "filesize": 52225296
+        },
+        "flac": {
+          "filesize": 35926503
+        }
+      },
+      "keysign": "F♯ minor",
+      "version": null,
+      "duration": 294857.14999999997,
+      "featured": true,
+      "genre_id": 22,
+      "listened": false,
+      "remixers": [],
+      "purchased": false,
+      "album_only": false,
+      "downloaded": false,
+      "playlisted": 0,
+      "recordlabel": {
+        "id": 302480,
+        "name": "HAYES",
+        "type": "recordlabel",
+        "followed": null
+      },
+      "composed_title": "4voci",
+      "featured_artists": [],
+      "release_start_at": "2026-04-09T21:00:00Z"
+    },
+    {
+      "id": 6114865,
+      "bpm": 140,
+      "isrc": "NLCK42604547",
+      "album": {
+        "id": 1609368,
+        "icpn": "8721466352961",
+        "title": "Montenero",
+        "exclusive": false,
+        "artwork_uuid": "b3f9f8dd-5197-42b4-8e8f-9332b9574d68",
+        "volumo_direct": false,
+        "catalog_number": "HYSEP67",
+        "release_start_at": "2026-04-09T21:00:00Z"
+      },
+      "genre": 22,
+      "price": 149,
+      "title": "Ferro",
+      "artists": [
+        {
+          "id": 38586,
+          "name": "Oisel",
+          "type": "artist",
+          "followed": null
+        }
+      ],
+      "curated": true,
+      "formats": {
+        "mp3": {
+          "filesize": 11322834
+        },
+        "wav": {
+          "filesize": 49201286
+        },
+        "aiff": {
+          "filesize": 49201296
+        },
+        "flac": {
+          "filesize": 33731230
+        }
+      },
+      "keysign": "F minor",
+      "version": null,
+      "duration": 277714.3,
+      "featured": true,
+      "genre_id": 22,
+      "listened": false,
+      "remixers": [],
+      "purchased": false,
+      "album_only": false,
+      "downloaded": false,
+      "playlisted": 0,
+      "recordlabel": {
+        "id": 302480,
+        "name": "HAYES",
+        "type": "recordlabel",
+        "followed": null
+      },
+      "composed_title": "Ferro",
+      "featured_artists": [],
+      "release_start_at": "2026-04-09T21:00:00Z"
+    }
+  ],
+  "artists": [
+    {
+      "id": 38586,
+      "name": "Oisel",
+      "type": "artist",
+      "followed": null
+    }
+  ],
+  "charted": false,
+  "curated": true,
+  "formats": {
+    "mp3": {
+      "filesize": 85283671
+    },
+    "wav": {
+      "filesize": 370985052
+    },
+    "aiff": {
+      "filesize": 370985122
+    },
+    "flac": {
+      "filesize": 252010095
+    }
+  },
+  "duration": 2094657.9000000001,
+  "featured": true,
+  "exclusive": false,
+  "purchased": false,
+  "downloaded": false,
+  "first_live": "2026-04-09T21:14:16Z",
+  "genres_ids": [
+    22
+  ],
+  "description": "A jazz-leaning piece where Oisel twists non traditional rhythms into\nhis own singular language.",
+  "recordlabel": {
+    "id": 302480,
+    "name": "HAYES",
+    "type": "recordlabel",
+    "followed": null
+  },
+  "artwork_uuid": "b3f9f8dd-5197-42b4-8e8f-9332b9574d68",
+  "published_at": "2026-04-09T21:14:16Z",
+  "tracks_total": 7,
+  "volumo_direct": false,
+  "catalog_number": "HYSEP67",
+  "release_start_at": "2026-04-09T21:00:00Z",
+  "original_release_date": "2026-04-10"
+}
