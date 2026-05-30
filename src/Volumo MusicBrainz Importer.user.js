@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Volumo: MusicBrainz Importer
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      1.1.0
+// @version      1.1.1
 // @description  Allows importing releases from Volumo into MusicBrainz.
 // @tag          ai-created
 // @author       chaban
@@ -89,24 +89,72 @@
                     return;
                 }
 
-                // Check lookup status in MusicBrainz
-                const mbInfo = await this.#fetchMusicBrainzInfo(normalizedUrl);
+                // Collect all candidate URLs for MusicBrainz relationship lookup
+                const releaseUrl = normalizedUrl;
+                const labelUrl = albumData.recordlabel ? this.#getLabelUrl(albumData.recordlabel) : null;
+                const uniqueArtists = this.#collectArtists(albumData);
+                const artistUrls = uniqueArtists.map(a => this.#getArtistUrl(a)).filter(Boolean);
+
+                const allUrls = [releaseUrl];
+                if (labelUrl) allUrls.push(labelUrl);
+                allUrls.push(...artistUrls);
+
+                // Dynamically build the required inc parameters for uncached resources
+                const inc = [];
+                if (!this.#mbApi.cache.has(releaseUrl)) {
+                    inc.push('release-rels');
+                }
+                if (labelUrl && !this.#mbApi.cache.has(labelUrl)) {
+                    inc.push('label-rels');
+                }
+                const hasUncachedArtist = artistUrls.some(url => !this.#mbApi.cache.has(url));
+                if (hasUncachedArtist) {
+                    inc.push('artist-rels');
+                }
+
+                // Single batched lookup call!
+                const lookupResults = await this.#mbApi.lookupUrl(allUrls, inc);
                 if (this.#runId !== runId) return;
 
-                // Check label lookup in MusicBrainz
-                let labelMbid = null;
-                if (albumData.recordlabel) {
-                    const labelUrl = this.#getLabelUrl(albumData.recordlabel);
-                    if (labelUrl) {
-                        labelMbid = await this.#fetchLabelMbid(labelUrl);
-                        if (this.#runId !== runId) return;
+                // Extract release MBID
+                let mbInfo = null;
+                const releaseData = lookupResults.get(releaseUrl);
+                if (releaseData && Array.isArray(releaseData.relations)) {
+                    const relation = releaseData.relations.find(rel =>
+                        rel['target-type'] === 'release' && rel.release
+                    );
+                    if (relation) {
+                        mbInfo = { mbid: relation.release.id };
                     }
                 }
 
-                // Check artists lookup in MusicBrainz
-                const uniqueArtists = this.#collectArtists(albumData);
-                const artistMbidMap = await this.#fetchArtistMbids(uniqueArtists);
-                if (this.#runId !== runId) return;
+                // Extract label MBID
+                let labelMbid = null;
+                if (labelUrl) {
+                    const labelData = lookupResults.get(labelUrl);
+                    if (labelData && Array.isArray(labelData.relations)) {
+                        const relation = labelData.relations.find(rel =>
+                            rel['target-type'] === 'label' && rel.label
+                        );
+                        if (relation) {
+                            labelMbid = relation.label.id;
+                        }
+                    }
+                }
+
+                // Extract artist MBIDs
+                const artistMbidMap = new Map();
+                artistUrls.forEach(url => {
+                    const artistData = lookupResults.get(url);
+                    if (artistData && Array.isArray(artistData.relations)) {
+                        const relation = artistData.relations.find(rel =>
+                            rel['target-type'] === 'artist' && rel.artist
+                        );
+                        if (relation?.artist?.id) {
+                            artistMbidMap.set(url, relation.artist.id);
+                        }
+                    }
+                });
 
                 this.#renderButtons(albumData, normalizedUrl, mbInfo, labelMbid, artistMbidMap);
 
@@ -166,45 +214,9 @@
             }
         }
 
-        async #fetchMusicBrainzInfo(normalizedUrl) {
-            try {
-                const urlData = await this.#mbApi.lookupUrl(normalizedUrl, ['release-rels']);
-                if (!urlData || !Array.isArray(urlData.relations)) return null;
-
-                const relation = urlData.relations.find(rel =>
-                    rel['target-type'] === 'release' && rel.release
-                );
-
-                return relation ? { mbid: relation.release.id } : null;
-            } catch (error) {
-                if (!error.message || !error.message.includes('404')) {
-                    console.error('[Volumo Importer] MusicBrainz lookup failed', error);
-                }
-                return null;
-            }
-        }
-
         #getLabelUrl(recordlabel) {
             if (!recordlabel || !recordlabel.id) return null;
             return `https://volumo.com/label/${recordlabel.id}`;
-        }
-
-        async #fetchLabelMbid(labelUrl) {
-            try {
-                const urlData = await this.#mbApi.lookupUrl(labelUrl, ['label-rels']);
-                if (!urlData || !Array.isArray(urlData.relations)) return null;
-
-                const relation = urlData.relations.find(rel =>
-                    rel['target-type'] === 'label' && rel.label
-                );
-
-                return relation ? relation.label.id : null;
-            } catch (error) {
-                if (!error.message || !error.message.includes('404')) {
-                    console.error('[Volumo Importer] Label lookup failed', error);
-                }
-                return null;
-            }
         }
 
         #getArtistUrl(artist) {
@@ -234,37 +246,6 @@
                 });
             }
             return Array.from(artistsMap.values());
-        }
-
-        async #fetchArtistMbids(artists) {
-            const artistMbidMap = new Map();
-            const urls = artists
-                .map(a => this.#getArtistUrl(a))
-                .filter(Boolean);
-
-            if (urls.length === 0) return artistMbidMap;
-
-            try {
-                const lookupResults = await this.#mbApi.lookupUrl(urls, ['artist-rels']);
-                if (lookupResults instanceof Map) {
-                    for (const [url, urlData] of lookupResults) {
-                        if (urlData && Array.isArray(urlData.relations)) {
-                            const relation = urlData.relations.find(rel =>
-                                rel['target-type'] === 'artist' && rel.artist
-                            );
-                            if (relation?.artist?.id) {
-                                artistMbidMap.set(url, relation.artist.id);
-                            }
-                        }
-                    }
-                }
-            } catch (error) {
-                if (!error.message || !error.message.includes('404')) {
-                    console.error('[Volumo Importer] Artists lookup failed', error);
-                }
-            }
-
-            return artistMbidMap;
         }
 
         #cleanup() {
