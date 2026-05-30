@@ -1,0 +1,419 @@
+// ==UserScript==
+// @name         Volumo: MusicBrainz Importer
+// @namespace    https://musicbrainz.org/user/chaban
+// @version      1.0.0
+// @description  Allows importing releases from Volumo into MusicBrainz.
+// @tag          ai-created
+// @author       chaban
+// @license      MIT
+// @icon         https://volumo.com/favicon.ico
+// @match        *://*.volumo.com/*
+// @connect      musicbrainz.org
+// @grant        GM.xmlHttpRequest
+// @grant        GM.addStyle
+// @require      ../lib/MusicBrainzAPI.js
+// @require      https://raw.githubusercontent.com/murdos/musicbrainz-userscripts/master/lib/mbimport.js
+// @require      https://raw.githubusercontent.com/murdos/musicbrainz-userscripts/master/lib/mbimportstyle.js
+// @updateURL    https://github.com/chaban-mb/userscripts/raw/main/src/Volumo%20MusicBrainz%20Importer.user.js
+// @downloadURL  https://github.com/chaban-mb/userscripts/raw/main/src/Volumo%20MusicBrainz%20Importer.user.js
+// ==/UserScript==
+
+(function () {
+    'use strict';
+
+    class VolumoMusicBrainzImporter {
+        static SCRIPT_NAME = GM.info.script.name;
+        static SELECTORS = {
+            ACTION_BAR: 'div[class*="ActionButtons_root"]',
+        };
+        static URLS = {
+            MUSICBRAINZ_BASE: 'https://musicbrainz.org',
+            HARMONY_BASE: 'https://harmony.pulsewidth.org.uk/release',
+        };
+
+        #mbApi = null;
+        #currentUrl = '';
+        #observer = null;
+        #debounceTimer = null;
+        #runId = 0;
+        #container = null;
+
+        constructor() {
+            this.#mbApi = new MusicBrainzAPI({
+                user_agent: `${VolumoMusicBrainzImporter.SCRIPT_NAME}/${GM.info.script.version} ( ${GM_info.script.namespace} )`
+            });
+            this.#addStyles();
+            this.#currentUrl = window.location.href;
+            this.#initializeObserver();
+            this.#run();
+        }
+
+        #initializeObserver() {
+            this.#observer = new MutationObserver(() => {
+                if (window.location.href !== this.#currentUrl) {
+                    this.#currentUrl = window.location.href;
+                    clearTimeout(this.#debounceTimer);
+                    this.#debounceTimer = setTimeout(() => this.#run(), 500);
+                }
+            });
+            this.#observer.observe(document.body, { childList: true, subtree: true });
+        }
+
+        async #run() {
+            const runId = ++this.#runId;
+            const urlForThisRun = window.location.href;
+            console.debug(`[Volumo Importer] Starting run #${runId} for ${urlForThisRun}`);
+
+            this.#cleanup();
+
+            const barcode = this.#extractBarcodeFromUrl(urlForThisRun);
+            if (!barcode) {
+                return;
+            }
+
+            try {
+                const actionBar = await this.#waitForElement(VolumoMusicBrainzImporter.SELECTORS.ACTION_BAR, 10000);
+                if (this.#runId !== runId) return;
+
+                this.#createButtonContainer(actionBar);
+
+                const normalizedUrl = this.#normalizeUrl(urlForThisRun);
+                this.#setupLoadingState();
+
+                // Fetch metadata
+                const albumData = await this.#fetchAlbumData(barcode);
+                if (this.#runId !== runId) return;
+
+                if (!albumData) {
+                    this.#showErrorState('Failed to extract album data');
+                    return;
+                }
+
+                // Check lookup status in MusicBrainz
+                const mbInfo = await this.#fetchMusicBrainzInfo(normalizedUrl);
+                if (this.#runId !== runId) return;
+
+                this.#renderButtons(albumData, normalizedUrl, mbInfo);
+
+            } catch (error) {
+                if (this.#runId !== runId) return;
+                console.error('[Volumo Importer] Execution failed', error);
+                this.#showErrorState(error.message);
+            }
+        }
+
+        #extractBarcodeFromUrl(url) {
+            try {
+                const parsed = new URL(url);
+                const match = parsed.pathname.match(/\/(?:[a-z]{2}\/)?album\/(\d+)(?:-|$)/);
+                return match ? match[1] : null;
+            } catch (e) {
+                return null;
+            }
+        }
+
+        #normalizeUrl(url) {
+            const barcode = this.#extractBarcodeFromUrl(url);
+            return barcode ? `https://volumo.com/album/${barcode}` : url;
+        }
+
+        async #fetchAlbumData(barcode) {
+            // 1. Try __NEXT_DATA__
+            const nextDataScript = document.getElementById('__NEXT_DATA__');
+            if (nextDataScript?.textContent) {
+                try {
+                    const nextData = JSON.parse(nextDataScript.textContent);
+                    const queries = nextData.props?.pageProps?.dehydratedState?.queries || [];
+                    const albumQuery = queries.find(q =>
+                        q.queryKey && q.queryKey[0] && q.queryKey[0].scope === 'Album' &&
+                        (q.queryKey[0].albumIdOrIcpn === barcode || q.state?.data?.icpn === barcode)
+                    );
+                    if (albumQuery?.state?.data) {
+                        console.debug('[Volumo Importer] Successfully extracted metadata from __NEXT_DATA__');
+                        return albumQuery.state.data;
+                    }
+                } catch (e) {
+                    console.warn('[Volumo Importer] Failed to parse __NEXT_DATA__', e);
+                }
+            }
+
+            // 2. Fallback to API fetch
+            console.debug(`[Volumo Importer] Fetching metadata from API for barcode ${barcode}`);
+            try {
+                const response = await fetch(`/api/v1/album_by_icpn/${barcode}`);
+                if (!response.ok) {
+                    throw new Error(`API returned HTTP ${response.status}`);
+                }
+                return await response.json();
+            } catch (error) {
+                console.error('[Volumo Importer] API fetch failed', error);
+                return null;
+            }
+        }
+
+        async #fetchMusicBrainzInfo(normalizedUrl) {
+            try {
+                const urlData = await this.#mbApi.lookupUrl(normalizedUrl, ['release-rels']);
+                if (!urlData || !Array.isArray(urlData.relations)) return null;
+
+                const relation = urlData.relations.find(rel =>
+                    rel['target-type'] === 'release' && rel.release
+                );
+
+                return relation ? { mbid: relation.release.id } : null;
+            } catch (error) {
+                if (!error.message || !error.message.includes('404')) {
+                    console.error('[Volumo Importer] MusicBrainz lookup failed', error);
+                }
+                return null;
+            }
+        }
+
+        #cleanup() {
+            document.getElementById('mb-volumo-button-container')?.remove();
+            this.#container = null;
+        }
+
+        #createButtonContainer(actionBar) {
+            this.#container = document.createElement('div');
+            this.#container.id = 'mb-volumo-button-container';
+            actionBar.appendChild(this.#container);
+        }
+
+        #setupLoadingState() {
+            if (!this.#container) return;
+            this.#container.innerHTML = '<span class="mb-loading-spinner"></span>';
+        }
+
+        #showErrorState(message) {
+            if (!this.#container) return;
+            this.#container.innerHTML = `<span class="mb-error-message" title="${message}">Error</span>`;
+        }
+
+        #renderButtons(albumData, normalizedUrl, mbInfo) {
+            if (!this.#container) return;
+            this.#container.innerHTML = '';
+
+            if (mbInfo) {
+                // Open in MusicBrainz
+                const mbLink = document.createElement('a');
+                mbLink.href = `${VolumoMusicBrainzImporter.URLS.MUSICBRAINZ_BASE}/release/${mbInfo.mbid}`;
+                mbLink.target = '_blank';
+                mbLink.className = 'mb-btn mb-btn-open';
+                mbLink.textContent = 'Open in MusicBrainz';
+                this.#container.appendChild(mbLink);
+            } else {
+                // Import directly into MusicBrainz
+                const importBtn = document.createElement('button');
+                importBtn.className = 'mb-btn mb-btn-import';
+                importBtn.textContent = 'Import into MB';
+                importBtn.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    this.#submitImportForm(albumData, normalizedUrl);
+                });
+                this.#container.appendChild(importBtn);
+            }
+
+            // Import with Harmony button
+            const harmonyLink = document.createElement('a');
+            const harmonyParams = new URLSearchParams({
+                gtin: albumData.icpn || '',
+                url: normalizedUrl,
+                category: 'preferred',
+                musicbrainz: ''
+            });
+            harmonyLink.href = `${VolumoMusicBrainzImporter.URLS.HARMONY_BASE}?${harmonyParams.toString()}`;
+            harmonyLink.target = '_blank';
+            harmonyLink.className = 'mb-btn mb-btn-harmony';
+            harmonyLink.textContent = 'Import with Harmony';
+            harmonyLink.addEventListener('click', () => {
+                this.#mbApi.invalidateCacheForUrl(normalizedUrl);
+            });
+            this.#container.appendChild(harmonyLink);
+        }
+
+        #submitImportForm(albumData, normalizedUrl) {
+            const release = this.#mapToMbRelease(albumData, normalizedUrl);
+            const editNote = MBImport.makeEditNote(
+                normalizedUrl,
+                VolumoMusicBrainzImporter.SCRIPT_NAME,
+                '',
+                'https://github.com/chaban-mb/userscripts'
+            );
+            const parameters = MBImport.buildFormParameters(release, editNote);
+            const formHtml = MBImport.buildFormHTML(parameters);
+
+            const tempDiv = document.createElement('div');
+            tempDiv.style.display = 'none';
+            tempDiv.innerHTML = formHtml;
+            document.body.appendChild(tempDiv);
+
+            const form = tempDiv.querySelector('form');
+            if (form) {
+                form.submit();
+            }
+
+            setTimeout(() => tempDiv.remove(), 1000);
+        }
+
+        #mapToMbRelease(albumData, normalizedUrl) {
+            const releaseDate = this.#parseReleaseDate(albumData.original_release_date || albumData.release_start_at);
+            const totalDuration = albumData.tracks.reduce((acc, t) => acc + (t.duration || 0), 0);
+            const type = MBImport.guessReleaseType(albumData.title, albumData.tracks.length, totalDuration);
+
+            return {
+                title: albumData.title,
+                artist_credit: this.#getArtistCredits(albumData.artists, []),
+                type,
+                status: 'official',
+                packaging: 'none',
+                country: 'XW',
+                barcode: albumData.icpn || '',
+                comment: '',
+                annotation: '',
+                year: releaseDate.year,
+                month: releaseDate.month,
+                day: releaseDate.day,
+                labels: albumData.recordlabel ? [
+                    {
+                        name: albumData.recordlabel.name,
+                        catno: albumData.catalog_number || 'none'
+                    }
+                ] : [],
+                urls: [
+                    {
+                        url: normalizedUrl,
+                        link_type: MBImport.URL_TYPES.purchase_for_download
+                    }
+                ],
+                discs: [
+                    {
+                        title: '',
+                        format: 'Digital Media',
+                        tracks: albumData.tracks.map((track, index) => ({
+                            number: (index + 1).toString(),
+                            title: track.composed_title || track.title,
+                            duration: track.duration,
+                            artist_credit: this.#getArtistCredits(track.artists, track.featured_artists)
+                        }))
+                    }
+                ]
+            };
+        }
+
+        #getArtistCredits(artists, featured) {
+            if (!artists || artists.length === 0) {
+                return [MBImport.specialArtist('unknown')];
+            }
+            const primaryNames = artists.map(a => a.name);
+            const primaryCredits = MBImport.makeArtistCredits(primaryNames);
+
+            if (featured && featured.length > 0) {
+                const featuredNames = featured.map(a => a.name);
+                const featuredCredits = MBImport.makeArtistCredits(featuredNames);
+                if (primaryCredits.length > 0) {
+                    primaryCredits[primaryCredits.length - 1].joinphrase = ' feat. ';
+                }
+                return [...primaryCredits, ...featuredCredits];
+            }
+            return primaryCredits;
+        }
+
+        #parseReleaseDate(dateStr) {
+            if (!dateStr) return { year: 0, month: 0, day: 0 };
+            const dateParts = dateStr.substring(0, 10).split('-');
+            if (dateParts.length === 3) {
+                return {
+                    year: parseInt(dateParts[0], 10) || 0,
+                    month: parseInt(dateParts[1], 10) || 0,
+                    day: parseInt(dateParts[2], 10) || 0
+                };
+            }
+            return { year: 0, month: 0, day: 0 };
+        }
+
+        #addStyles() {
+            GM.addStyle(`
+                #mb-volumo-button-container {
+                    display: flex;
+                    align-items: center;
+                    gap: 12px;
+                    margin-left: 12px;
+                }
+                .mb-btn {
+                    display: inline-flex;
+                    align-items: center;
+                    justify-content: center;
+                    border: none;
+                    border-radius: 8px;
+                    padding: 8px 16px;
+                    font-family: inherit;
+                    font-size: 14px;
+                    font-weight: 600;
+                    color: #fff !important;
+                    cursor: pointer;
+                    text-decoration: none !important;
+                    transition: filter 0.2s ease, transform 0.1s ease;
+                }
+                .mb-btn:hover {
+                    filter: brightness(1.1);
+                    transform: scale(1.02);
+                }
+                .mb-btn:active {
+                    transform: scale(0.98);
+                }
+                .mb-btn-open {
+                    background-color: #BA478F;
+                }
+                .mb-btn-import {
+                    background-color: #BA478F;
+                }
+                .mb-btn-harmony {
+                    background-color: #c45555;
+                }
+                .mb-loading-spinner {
+                    width: 20px;
+                    height: 20px;
+                    border: 2px solid rgba(255, 255, 255, 0.2);
+                    border-top-color: #BA478F;
+                    border-radius: 50%;
+                    animation: mb-spin 0.8s linear infinite;
+                }
+                .mb-error-message {
+                    color: #ff4a4a;
+                    font-weight: 600;
+                    font-size: 14px;
+                }
+                @keyframes mb-spin {
+                    to { transform: rotate(360deg); }
+                }
+            `);
+        }
+
+        #waitForElement(selector, timeout = 10000) {
+            return new Promise((resolve, reject) => {
+                const element = document.querySelector(selector);
+                if (element) return resolve(element);
+
+                const observer = new MutationObserver(() => {
+                    const el = document.querySelector(selector);
+                    if (el) {
+                        observer.disconnect();
+                        clearTimeout(timer);
+                        resolve(el);
+                    }
+                });
+
+                const timer = setTimeout(() => {
+                    observer.disconnect();
+                    reject(new Error(`Timeout waiting for selector: ${selector}`));
+                }, timeout);
+
+                observer.observe(document.body, { childList: true, subtree: true });
+            });
+        }
+    }
+
+    // Initialize userscript
+    new VolumoMusicBrainzImporter();
+})();
