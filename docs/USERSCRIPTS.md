@@ -564,6 +564,18 @@ Based on the original script by RustyNova which can be found at https://github.c
 
 This version was reworked and notably adds buttons for [ISRC Hunt](https://isrchunt.com/), [ListenBrainz](https://listenbrainz.org/) and [SAMBL](https://github.com/Lioncat6/SAMBL-React). a-tisket was removed
 
+## Volumo: MusicBrainz Importer
+
+[![Install](https://img.shields.io/badge/Install-success.svg?style=for-the-badge&logo=tampermonkey)](https://github.com/chaban-mb/userscripts/raw/main/src/Volumo%20MusicBrainz%20Importer.user.js)
+[![Source](https://img.shields.io/badge/Source-grey.svg?style=for-the-badge&logo=github)](https://github.com/chaban-mb/userscripts/blob/main/src/Volumo%20MusicBrainz%20Importer.user.js)
+
+Allows importing releases from Volumo into MusicBrainz.
+
+### Features
+- **Direct Import**: Extracts release metadata (title, artists, tracks with durations, barcode, record label, and catalog number) from the page structure or API and seeds the MusicBrainz release editor.
+- **Harmony Integration**: Provides a link to import/seed the release via the Harmony platform.
+- **Quick Access**: If the release URL is already registered in MusicBrainz, displays a direct link to open the release on MusicBrainz.
+
 ## YouTube Music: Spotify Search
 
 [![Install](https://img.shields.io/badge/Install-success.svg?style=for-the-badge&logo=tampermonkey)](https://github.com/chaban-mb/userscripts/raw/main/src/YouTube%20Music%20Spotify%20Search.user.js)
