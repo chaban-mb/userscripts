@@ -247,14 +247,22 @@
                 this.#container.appendChild(importBtn);
             }
 
+            // Search in MB button
+            const mbRelease = this.#mapToMbRelease(albumData, normalizedUrl, labelMbid);
+            const searchWrapper = document.createElement('div');
+            searchWrapper.innerHTML = MBImport.buildSearchButton(mbRelease);
+            this.#container.appendChild(searchWrapper.firstChild);
+
             // Import with Harmony button
             const harmonyLink = document.createElement('a');
             const harmonyParams = new URLSearchParams({
                 gtin: albumData.icpn || '',
                 url: normalizedUrl,
                 category: 'preferred',
-                musicbrainz: ''
             });
+            if (mbInfo?.mbid) {
+                harmonyParams.set('musicbrainz', mbInfo.mbid);
+            }
             harmonyLink.href = `${VolumoMusicBrainzImporter.URLS.HARMONY_BASE}?${harmonyParams.toString()}`;
             harmonyLink.target = '_blank';
             harmonyLink.className = 'mb-btn mb-btn-harmony';
@@ -410,6 +418,33 @@
                 }
                 .mb-btn-harmony {
                     background-color: #c45555;
+                }
+                .musicbrainz_import_search {
+                    margin: 0;
+                    padding: 0;
+                    display: inline-flex;
+                }
+                .musicbrainz_import_search button {
+                    display: inline-flex;
+                    align-items: center;
+                    justify-content: center;
+                    border: none;
+                    border-radius: 8px;
+                    padding: 8px 16px;
+                    font-family: inherit;
+                    font-size: 14px;
+                    font-weight: 600;
+                    color: #fff;
+                    cursor: pointer;
+                    background-color: #5c6bc0;
+                    transition: filter 0.2s ease, transform 0.1s ease;
+                }
+                .musicbrainz_import_search button:hover {
+                    filter: brightness(1.1);
+                    transform: scale(1.02);
+                }
+                .musicbrainz_import_search button:active {
+                    transform: scale(0.98);
                 }
                 .mb-loading-spinner {
                     width: 20px;
