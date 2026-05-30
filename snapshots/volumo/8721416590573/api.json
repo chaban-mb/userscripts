@@ -1,0 +1,455 @@
+{
+  "id": 1614959,
+  "hot": false,
+  "icpn": "8721416590573",
+  "price": 894,
+  "title": "Neon Signs EP",
+  "genres": [
+    22
+  ],
+  "tracks": [
+    {
+      "id": 6129457,
+      "bpm": 145,
+      "isrc": "NL3M12517618",
+      "album": {
+        "id": 1614959,
+        "icpn": "8721416590573",
+        "title": "Neon Signs EP",
+        "exclusive": false,
+        "artwork_uuid": "54969ae1-986e-4fc3-8549-66e0c8b1b56e",
+        "volumo_direct": false,
+        "catalog_number": "DUBWARS014",
+        "release_start_at": "2026-05-14T21:00:00Z"
+      },
+      "genre": 22,
+      "price": 149,
+      "title": "Nelix",
+      "artists": [
+        {
+          "id": 22451,
+          "name": "Alessandro Grops",
+          "type": "artist",
+          "followed": null
+        }
+      ],
+      "curated": true,
+      "formats": {
+        "mp3": {
+          "filesize": 12080880
+        },
+        "wav": {
+          "filesize": 52373796
+        },
+        "aiff": {
+          "filesize": 52373806
+        },
+        "flac": {
+          "filesize": 29822710
+        }
+      },
+      "keysign": "F minor",
+      "version": null,
+      "duration": 295411.9,
+      "featured": true,
+      "genre_id": 22,
+      "listened": false,
+      "remixers": [],
+      "purchased": false,
+      "album_only": false,
+      "downloaded": false,
+      "playlisted": 0,
+      "recordlabel": {
+        "id": 302343,
+        "name": "Planet Rhythm",
+        "type": "recordlabel",
+        "followed": null
+      },
+      "composed_title": "Nelix",
+      "featured_artists": [],
+      "release_start_at": "2026-05-14T21:00:00Z"
+    },
+    {
+      "id": 6129458,
+      "bpm": 144,
+      "isrc": "NL3M12517619",
+      "album": {
+        "id": 1614959,
+        "icpn": "8721416590573",
+        "title": "Neon Signs EP",
+        "exclusive": false,
+        "artwork_uuid": "54969ae1-986e-4fc3-8549-66e0c8b1b56e",
+        "volumo_direct": false,
+        "catalog_number": "DUBWARS014",
+        "release_start_at": "2026-05-14T21:00:00Z"
+      },
+      "genre": 22,
+      "price": 149,
+      "title": "Jade",
+      "artists": [
+        {
+          "id": 654209,
+          "name": "Arktic",
+          "type": "artist",
+          "followed": null
+        }
+      ],
+      "curated": true,
+      "formats": {
+        "mp3": {
+          "filesize": 11696347
+        },
+        "wav": {
+          "filesize": 50675494
+        },
+        "aiff": {
+          "filesize": 50675504
+        },
+        "flac": {
+          "filesize": 30185304
+        }
+      },
+      "keysign": "F♯ minor",
+      "version": null,
+      "duration": 285784.4,
+      "featured": true,
+      "genre_id": 22,
+      "listened": false,
+      "remixers": [],
+      "purchased": false,
+      "album_only": false,
+      "downloaded": false,
+      "playlisted": 0,
+      "recordlabel": {
+        "id": 302343,
+        "name": "Planet Rhythm",
+        "type": "recordlabel",
+        "followed": null
+      },
+      "composed_title": "Jade",
+      "featured_artists": [],
+      "release_start_at": "2026-05-14T21:00:00Z"
+    },
+    {
+      "id": 6129459,
+      "bpm": 140,
+      "isrc": "NL3M12517620",
+      "album": {
+        "id": 1614959,
+        "icpn": "8721416590573",
+        "title": "Neon Signs EP",
+        "exclusive": false,
+        "artwork_uuid": "54969ae1-986e-4fc3-8549-66e0c8b1b56e",
+        "volumo_direct": false,
+        "catalog_number": "DUBWARS014",
+        "release_start_at": "2026-05-14T21:00:00Z"
+      },
+      "genre": 22,
+      "price": 149,
+      "title": "Zoned Out",
+      "artists": [
+        {
+          "id": 725728,
+          "name": "Plug Trax",
+          "type": "artist",
+          "followed": null
+        }
+      ],
+      "curated": true,
+      "formats": {
+        "mp3": {
+          "filesize": 12075651
+        },
+        "wav": {
+          "filesize": 52348156
+        },
+        "aiff": {
+          "filesize": 52348166
+        },
+        "flac": {
+          "filesize": 31195106
+        }
+      },
+      "keysign": "G minor",
+      "version": null,
+      "duration": 295266.57,
+      "featured": true,
+      "genre_id": 22,
+      "listened": false,
+      "remixers": [],
+      "purchased": false,
+      "album_only": false,
+      "downloaded": false,
+      "playlisted": 0,
+      "recordlabel": {
+        "id": 302343,
+        "name": "Planet Rhythm",
+        "type": "recordlabel",
+        "followed": null
+      },
+      "composed_title": "Zoned Out",
+      "featured_artists": [],
+      "release_start_at": "2026-05-14T21:00:00Z"
+    },
+    {
+      "id": 6129460,
+      "bpm": 142,
+      "isrc": "NL3M12517621",
+      "album": {
+        "id": 1614959,
+        "icpn": "8721416590573",
+        "title": "Neon Signs EP",
+        "exclusive": false,
+        "artwork_uuid": "54969ae1-986e-4fc3-8549-66e0c8b1b56e",
+        "volumo_direct": false,
+        "catalog_number": "DUBWARS014",
+        "release_start_at": "2026-05-14T21:00:00Z"
+      },
+      "genre": 22,
+      "price": 149,
+      "title": "Neon Signs",
+      "artists": [
+        {
+          "id": 27619,
+          "name": "Yan Cook",
+          "type": "artist",
+          "followed": null
+        }
+      ],
+      "curated": true,
+      "formats": {
+        "mp3": {
+          "filesize": 13954378
+        },
+        "wav": {
+          "filesize": 60636656
+        },
+        "aiff": {
+          "filesize": 60636666
+        },
+        "flac": {
+          "filesize": 38133723
+        }
+      },
+      "keysign": "G minor",
+      "version": null,
+      "duration": 342253.54,
+      "featured": true,
+      "genre_id": 22,
+      "listened": false,
+      "remixers": [],
+      "purchased": false,
+      "album_only": false,
+      "downloaded": false,
+      "playlisted": 0,
+      "recordlabel": {
+        "id": 302343,
+        "name": "Planet Rhythm",
+        "type": "recordlabel",
+        "followed": null
+      },
+      "composed_title": "Neon Signs",
+      "featured_artists": [],
+      "release_start_at": "2026-05-14T21:00:00Z"
+    },
+    {
+      "id": 6129461,
+      "bpm": 138,
+      "isrc": "NL3M12517622",
+      "album": {
+        "id": 1614959,
+        "icpn": "8721416590573",
+        "title": "Neon Signs EP",
+        "exclusive": false,
+        "artwork_uuid": "54969ae1-986e-4fc3-8549-66e0c8b1b56e",
+        "volumo_direct": false,
+        "catalog_number": "DUBWARS014",
+        "release_start_at": "2026-05-14T21:00:00Z"
+      },
+      "genre": 22,
+      "price": 149,
+      "title": "Mononykus",
+      "artists": [
+        {
+          "id": 105976,
+          "name": "Luca Accardi",
+          "type": "artist",
+          "followed": null
+        }
+      ],
+      "curated": true,
+      "formats": {
+        "mp3": {
+          "filesize": 12283590
+        },
+        "wav": {
+          "filesize": 53265464
+        },
+        "aiff": {
+          "filesize": 53265474
+        },
+        "flac": {
+          "filesize": 30602117
+        }
+      },
+      "keysign": "C♯ minor",
+      "version": null,
+      "duration": 300466.7,
+      "featured": true,
+      "genre_id": 22,
+      "listened": false,
+      "remixers": [],
+      "purchased": false,
+      "album_only": false,
+      "downloaded": false,
+      "playlisted": 0,
+      "recordlabel": {
+        "id": 302343,
+        "name": "Planet Rhythm",
+        "type": "recordlabel",
+        "followed": null
+      },
+      "composed_title": "Mononykus",
+      "featured_artists": [],
+      "release_start_at": "2026-05-14T21:00:00Z"
+    },
+    {
+      "id": 6129462,
+      "bpm": 80,
+      "isrc": "NL3M12517624",
+      "album": {
+        "id": 1614959,
+        "icpn": "8721416590573",
+        "title": "Neon Signs EP",
+        "exclusive": false,
+        "artwork_uuid": "54969ae1-986e-4fc3-8549-66e0c8b1b56e",
+        "volumo_direct": false,
+        "catalog_number": "DUBWARS014",
+        "release_start_at": "2026-05-14T21:00:00Z"
+      },
+      "genre": 22,
+      "price": 149,
+      "title": "Hyperloop",
+      "artists": [
+        {
+          "id": 1054419,
+          "name": "M29",
+          "type": "artist",
+          "followed": null
+        }
+      ],
+      "curated": true,
+      "formats": {
+        "mp3": {
+          "filesize": 11627384
+        },
+        "wav": {
+          "filesize": 50371714
+        },
+        "aiff": {
+          "filesize": 50371724
+        },
+        "flac": {
+          "filesize": 31081750
+        }
+      },
+      "keysign": "A minor",
+      "version": null,
+      "duration": 284062.3,
+      "featured": true,
+      "genre_id": 22,
+      "listened": false,
+      "remixers": [],
+      "purchased": false,
+      "album_only": false,
+      "downloaded": false,
+      "playlisted": 0,
+      "recordlabel": {
+        "id": 302343,
+        "name": "Planet Rhythm",
+        "type": "recordlabel",
+        "followed": null
+      },
+      "composed_title": "Hyperloop",
+      "featured_artists": [],
+      "release_start_at": "2026-05-14T21:00:00Z"
+    }
+  ],
+  "artists": [
+    {
+      "id": 22451,
+      "name": "Alessandro Grops",
+      "type": "artist",
+      "followed": null
+    },
+    {
+      "id": 27619,
+      "name": "Yan Cook",
+      "type": "artist",
+      "followed": null
+    },
+    {
+      "id": 105976,
+      "name": "Luca Accardi",
+      "type": "artist",
+      "followed": null
+    },
+    {
+      "id": 654209,
+      "name": "Arktic",
+      "type": "artist",
+      "followed": null
+    },
+    {
+      "id": 725728,
+      "name": "Plug Trax",
+      "type": "artist",
+      "followed": null
+    },
+    {
+      "id": 1054419,
+      "name": "M29",
+      "type": "artist",
+      "followed": null
+    }
+  ],
+  "charted": false,
+  "curated": true,
+  "formats": {
+    "mp3": {
+      "filesize": 73718230
+    },
+    "wav": {
+      "filesize": 319671280
+    },
+    "aiff": {
+      "filesize": 319671340
+    },
+    "flac": {
+      "filesize": 191020710
+    }
+  },
+  "duration": 1803245.4100000001,
+  "featured": true,
+  "exclusive": false,
+  "purchased": false,
+  "downloaded": false,
+  "first_live": "2026-05-14T21:03:23Z",
+  "genres_ids": [
+    22
+  ],
+  "description": "",
+  "recordlabel": {
+    "id": 302343,
+    "name": "Planet Rhythm",
+    "type": "recordlabel",
+    "followed": null
+  },
+  "artwork_uuid": "54969ae1-986e-4fc3-8549-66e0c8b1b56e",
+  "published_at": "2026-05-14T21:03:23Z",
+  "tracks_total": 6,
+  "volumo_direct": false,
+  "catalog_number": "DUBWARS014",
+  "release_start_at": "2026-05-14T21:00:00Z",
+  "original_release_date": "2026-05-01"
+}

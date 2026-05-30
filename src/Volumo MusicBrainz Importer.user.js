@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Volumo: MusicBrainz Importer
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      1.0.0
+// @version      1.1.0
 // @description  Allows importing releases from Volumo into MusicBrainz.
 // @tag          ai-created
 // @author       chaban
@@ -103,7 +103,12 @@
                     }
                 }
 
-                this.#renderButtons(albumData, normalizedUrl, mbInfo, labelMbid);
+                // Check artists lookup in MusicBrainz
+                const uniqueArtists = this.#collectArtists(albumData);
+                const artistMbidMap = await this.#fetchArtistMbids(uniqueArtists);
+                if (this.#runId !== runId) return;
+
+                this.#renderButtons(albumData, normalizedUrl, mbInfo, labelMbid, artistMbidMap);
 
             } catch (error) {
                 if (this.#runId !== runId) return;
@@ -202,6 +207,66 @@
             }
         }
 
+        #getArtistUrl(artist) {
+            if (!artist || !artist.id) return null;
+            return `https://volumo.com/artist/${artist.id}`;
+        }
+
+        #collectArtists(albumData) {
+            const artistsMap = new Map();
+            if (Array.isArray(albumData.artists)) {
+                albumData.artists.forEach(a => {
+                    if (a && a.id) artistsMap.set(a.id, a);
+                });
+            }
+            if (Array.isArray(albumData.tracks)) {
+                albumData.tracks.forEach(track => {
+                    if (Array.isArray(track.artists)) {
+                        track.artists.forEach(a => {
+                            if (a && a.id) artistsMap.set(a.id, a);
+                        });
+                    }
+                    if (Array.isArray(track.featured_artists)) {
+                        track.featured_artists.forEach(a => {
+                            if (a && a.id) artistsMap.set(a.id, a);
+                        });
+                    }
+                });
+            }
+            return Array.from(artistsMap.values());
+        }
+
+        async #fetchArtistMbids(artists) {
+            const artistMbidMap = new Map();
+            const urls = artists
+                .map(a => this.#getArtistUrl(a))
+                .filter(Boolean);
+
+            if (urls.length === 0) return artistMbidMap;
+
+            try {
+                const lookupResults = await this.#mbApi.lookupUrl(urls, ['artist-rels']);
+                if (lookupResults instanceof Map) {
+                    for (const [url, urlData] of lookupResults) {
+                        if (urlData && Array.isArray(urlData.relations)) {
+                            const relation = urlData.relations.find(rel =>
+                                rel['target-type'] === 'artist' && rel.artist
+                            );
+                            if (relation?.artist?.id) {
+                                artistMbidMap.set(url, relation.artist.id);
+                            }
+                        }
+                    }
+                }
+            } catch (error) {
+                if (!error.message || !error.message.includes('404')) {
+                    console.error('[Volumo Importer] Artists lookup failed', error);
+                }
+            }
+
+            return artistMbidMap;
+        }
+
         #cleanup() {
             // Restore the hint text we hid when injecting buttons
             const hint = document.querySelector('[class*="RandomHint_hint"]');
@@ -230,7 +295,7 @@
             this.#container.innerHTML = `<span class="mb-error-message" title="${message}">Error</span>`;
         }
 
-        #renderButtons(albumData, normalizedUrl, mbInfo, labelMbid) {
+        #renderButtons(albumData, normalizedUrl, mbInfo, labelMbid, artistMbidMap) {
             if (!this.#container) return;
             this.#container.innerHTML = '';
 
@@ -249,13 +314,13 @@
                 importBtn.textContent = 'Import into MB';
                 importBtn.addEventListener('click', (e) => {
                     e.preventDefault();
-                    this.#submitImportForm(albumData, normalizedUrl, labelMbid);
+                    this.#submitImportForm(albumData, normalizedUrl, labelMbid, artistMbidMap);
                 });
                 this.#container.appendChild(importBtn);
             }
 
             // Search in MB button (standard murdos pattern)
-            const mbRelease = this.#mapToMbRelease(albumData, normalizedUrl, labelMbid);
+            const mbRelease = this.#mapToMbRelease(albumData, normalizedUrl, labelMbid, artistMbidMap);
             const searchWrapper = document.createElement('div');
             searchWrapper.innerHTML = MBImport.buildSearchButton(mbRelease);
             this.#container.appendChild(searchWrapper.firstChild);
@@ -280,8 +345,8 @@
             this.#container.appendChild(harmonyLink);
         }
 
-        #submitImportForm(albumData, normalizedUrl, labelMbid) {
-            const release = this.#mapToMbRelease(albumData, normalizedUrl, labelMbid);
+        #submitImportForm(albumData, normalizedUrl, labelMbid, artistMbidMap) {
+            const release = this.#mapToMbRelease(albumData, normalizedUrl, labelMbid, artistMbidMap);
             const editNote = MBImport.makeEditNote(
                 normalizedUrl,
                 VolumoMusicBrainzImporter.SCRIPT_NAME,
@@ -304,7 +369,7 @@
             setTimeout(() => tempDiv.remove(), 1000);
         }
 
-        #mapToMbRelease(albumData, normalizedUrl, labelMbid) {
+        #mapToMbRelease(albumData, normalizedUrl, labelMbid, artistMbidMap) {
             const releaseDate = this.#parseReleaseDate(albumData.original_release_date || albumData.release_start_at);
             const totalDuration = albumData.tracks.reduce((acc, t) => acc + (t.duration || 0), 0);
             const type = MBImport.guessReleaseType(albumData.title, albumData.tracks.length, totalDuration);
@@ -323,7 +388,7 @@
 
             return {
                 title: albumData.title,
-                artist_credit: this.#getArtistCredits(albumData.artists, []),
+                artist_credit: this.#getArtistCredits(albumData.artists, [], artistMbidMap),
                 type,
                 status: 'official',
                 packaging: 'none',
@@ -349,29 +414,46 @@
                             number: (index + 1).toString(),
                             title: track.composed_title || track.title,
                             duration: track.duration,
-                            artist_credit: this.#getArtistCredits(track.artists, track.featured_artists)
+                            artist_credit: this.#getArtistCredits(track.artists, track.featured_artists, artistMbidMap)
                         }))
                     }
                 ]
             };
         }
 
-        #getArtistCredits(artists, featured) {
+        #getArtistCredits(artists, featured, artistMbidMap) {
             if (!artists || artists.length === 0) {
                 return [MBImport.specialArtist('unknown')];
             }
-            const primaryNames = artists.map(a => a.name);
-            const primaryCredits = MBImport.makeArtistCredits(primaryNames);
+            const primaryCredits = this.#makeArtistCreditsWithMbids(artists, artistMbidMap);
 
             if (featured && featured.length > 0) {
-                const featuredNames = featured.map(a => a.name);
-                const featuredCredits = MBImport.makeArtistCredits(featuredNames);
+                const featuredCredits = this.#makeArtistCreditsWithMbids(featured, artistMbidMap);
                 if (primaryCredits.length > 0) {
                     primaryCredits[primaryCredits.length - 1].joinphrase = ' feat. ';
                 }
                 return [...primaryCredits, ...featuredCredits];
             }
             return primaryCredits;
+        }
+
+        #makeArtistCreditsWithMbids(artists, artistMbidMap) {
+            const names = artists.map(a => a.name);
+            const credits = MBImport.makeArtistCredits(names);
+
+            if (artistMbidMap) {
+                credits.forEach(credit => {
+                    const artist = artists.find(a => a.name.toLowerCase() === credit.artist_name.toLowerCase());
+                    if (artist) {
+                        const artistUrl = this.#getArtistUrl(artist);
+                        const mbid = artistMbidMap.get(artistUrl);
+                        if (mbid) {
+                            credit.mbid = mbid;
+                        }
+                    }
+                });
+            }
+            return credits;
         }
 
         #parseReleaseDate(dateStr) {
