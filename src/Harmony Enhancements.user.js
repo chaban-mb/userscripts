@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Harmony: Enhancements
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      1.27.3
+// @version      1.27.4
 // @tag          ai-created
 // @description  Adds some convenience features, various UI and behavior settings, as well as an improved language detection to Harmony.
 // @author       chaban
@@ -2418,6 +2418,21 @@
             ['mousedown', 'auxclick', 'click', 'submit'].forEach(eventType => {
                 document.addEventListener(eventType, handleIntercept, true);
             });
+
+            // Intercept programmatic window.open calls (e.g. from "Open all links" button)
+            if (typeof unsafeWindow !== 'undefined' && unsafeWindow.open) {
+                const originalOpen = unsafeWindow.open;
+                unsafeWindow.open = function (url, name, specs) {
+                    if (url) {
+                        const urlStr = typeof url === 'string' ? url : url.toString();
+                        const newUrl = rewriteUrl(urlStr);
+                        if (newUrl) {
+                            url = newUrl;
+                        }
+                    }
+                    return originalOpen.call(this, url, name, specs);
+                };
+            }
         },
 
         setupFormSubmitListener: () => {
