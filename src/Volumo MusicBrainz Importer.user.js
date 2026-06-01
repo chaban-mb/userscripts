@@ -423,12 +423,22 @@
                     {
                         title: '',
                         format: 'Digital Media',
-                        tracks: albumData.tracks.map((track, index) => ({
-                            number: (index + 1).toString(),
-                            title: track.composed_title || track.title,
-                            duration: track.duration,
-                            artist_credit: this.#getArtistCredits(track.artists, track.featured_artists, artistMbidMap)
-                        }))
+                        tracks: albumData.tracks.map((track, index) => {
+                            let title = track.composed_title || track.title;
+                            if (track.version) {
+                                const version = track.version.trim();
+                                const isOriginalMix = version.toLowerCase() === 'original mix';
+                                if (version && !isOriginalMix && !title.toLowerCase().includes(`(${version.toLowerCase()})`)) {
+                                    title = `${title} (${version})`;
+                                }
+                            }
+                            return {
+                                number: (index + 1).toString(),
+                                title,
+                                duration: track.duration,
+                                artist_credit: this.#getArtistCredits(track.artists, track.featured_artists, artistMbidMap)
+                            };
+                        })
                     }
                 ]
             };

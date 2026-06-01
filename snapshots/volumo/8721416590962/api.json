@@ -1,0 +1,419 @@
+{
+  "id": 1622745,
+  "hot": false,
+  "icpn": "8721416590962",
+  "price": 745,
+  "title": "Humanoid EP",
+  "genres": [
+    27
+  ],
+  "tracks": [
+    {
+      "id": 6159930,
+      "bpm": 135,
+      "isrc": "NL3M12517665",
+      "album": {
+        "id": 1622745,
+        "icpn": "8721416590962",
+        "title": "Humanoid EP",
+        "exclusive": false,
+        "artwork_uuid": "20d8e205-19ff-439e-91a8-7a8c70df5e77",
+        "volumo_direct": false,
+        "catalog_number": "ELECTRO004",
+        "release_start_at": "2026-05-28T21:00:00Z"
+      },
+      "genre": 27,
+      "price": 149,
+      "title": "Humanoid",
+      "artists": [
+        {
+          "id": 49845,
+          "name": "Kodama",
+          "type": "artist",
+          "followed": null
+        }
+      ],
+      "curated": true,
+      "formats": {
+        "mp3": {
+          "filesize": 19346305
+        },
+        "wav": {
+          "filesize": 84642892
+        },
+        "aiff": {
+          "filesize": 84642902
+        },
+        "flac": {
+          "filesize": 50532384
+        }
+      },
+      "keysign": "D minor",
+      "version": null,
+      "duration": 478726.9,
+      "featured": true,
+      "genre_id": 27,
+      "listened": false,
+      "remixers": [],
+      "purchased": false,
+      "album_only": false,
+      "downloaded": false,
+      "playlisted": 0,
+      "recordlabel": {
+        "id": 302343,
+        "name": "Planet Rhythm",
+        "type": "recordlabel",
+        "followed": null
+      },
+      "composed_title": "Humanoid",
+      "featured_artists": [],
+      "release_start_at": "2026-05-28T21:00:00Z"
+    },
+    {
+      "id": 6159931,
+      "bpm": 93,
+      "isrc": "NL3M12517666",
+      "album": {
+        "id": 1622745,
+        "icpn": "8721416590962",
+        "title": "Humanoid EP",
+        "exclusive": false,
+        "artwork_uuid": "20d8e205-19ff-439e-91a8-7a8c70df5e77",
+        "volumo_direct": false,
+        "catalog_number": "ELECTRO004",
+        "release_start_at": "2026-05-28T21:00:00Z"
+      },
+      "genre": 27,
+      "price": 149,
+      "title": "Spring Tube",
+      "artists": [
+        {
+          "id": 34259,
+          "name": "Dawn Razor",
+          "type": "artist",
+          "followed": null
+        },
+        {
+          "id": 36780,
+          "name": "Confluence",
+          "type": "artist",
+          "followed": null
+        }
+      ],
+      "curated": true,
+      "formats": {
+        "mp3": {
+          "filesize": 13036185
+        },
+        "wav": {
+          "filesize": 56817038
+        },
+        "aiff": {
+          "filesize": 56817048
+        },
+        "flac": {
+          "filesize": 38915303
+        }
+      },
+      "keysign": "G major",
+      "version": null,
+      "duration": 320983.86,
+      "featured": true,
+      "genre_id": 27,
+      "listened": false,
+      "remixers": [],
+      "purchased": false,
+      "album_only": false,
+      "downloaded": false,
+      "playlisted": 0,
+      "recordlabel": {
+        "id": 302343,
+        "name": "Planet Rhythm",
+        "type": "recordlabel",
+        "followed": null
+      },
+      "composed_title": "Spring Tube",
+      "featured_artists": [],
+      "release_start_at": "2026-05-28T21:00:00Z"
+    },
+    {
+      "id": 6159932,
+      "bpm": 136,
+      "isrc": "NL3M12517667",
+      "album": {
+        "id": 1622745,
+        "icpn": "8721416590962",
+        "title": "Humanoid EP",
+        "exclusive": false,
+        "artwork_uuid": "20d8e205-19ff-439e-91a8-7a8c70df5e77",
+        "volumo_direct": false,
+        "catalog_number": "ELECTRO004",
+        "release_start_at": "2026-05-28T21:00:00Z"
+      },
+      "genre": 27,
+      "price": 149,
+      "title": "Humanoid",
+      "artists": [
+        {
+          "id": 49845,
+          "name": "Kodama",
+          "type": "artist",
+          "followed": null
+        },
+        {
+          "id": 70975,
+          "name": "JSPRV35",
+          "type": "artist",
+          "followed": null
+        }
+      ],
+      "curated": true,
+      "formats": {
+        "mp3": {
+          "filesize": 12216993
+        },
+        "wav": {
+          "filesize": 53203690
+        },
+        "aiff": {
+          "filesize": 53203700
+        },
+        "flac": {
+          "filesize": 38053120
+        }
+      },
+      "keysign": "D minor",
+      "version": "JSPRV35 Remix",
+      "duration": 300499.97000000003,
+      "featured": true,
+      "genre_id": 27,
+      "listened": false,
+      "remixers": [
+        {
+          "id": 70975,
+          "name": "JSPRV35",
+          "type": "artist",
+          "followed": null
+        }
+      ],
+      "purchased": false,
+      "album_only": false,
+      "downloaded": false,
+      "playlisted": 0,
+      "recordlabel": {
+        "id": 302343,
+        "name": "Planet Rhythm",
+        "type": "recordlabel",
+        "followed": null
+      },
+      "composed_title": "Humanoid",
+      "featured_artists": [],
+      "release_start_at": "2026-05-28T21:00:00Z"
+    },
+    {
+      "id": 6159933,
+      "bpm": 68,
+      "isrc": "NL3M12517668",
+      "album": {
+        "id": 1622745,
+        "icpn": "8721416590962",
+        "title": "Humanoid EP",
+        "exclusive": false,
+        "artwork_uuid": "20d8e205-19ff-439e-91a8-7a8c70df5e77",
+        "volumo_direct": false,
+        "catalog_number": "ELECTRO004",
+        "release_start_at": "2026-05-28T21:00:00Z"
+      },
+      "genre": 27,
+      "price": 149,
+      "title": "The Light Was Silent",
+      "artists": [
+        {
+          "id": 929,
+          "name": "Marco Effe",
+          "type": "artist",
+          "followed": null
+        },
+        {
+          "id": 35277,
+          "name": "Dario Mass",
+          "type": "artist",
+          "followed": null
+        }
+      ],
+      "curated": true,
+      "formats": {
+        "mp3": {
+          "filesize": 10395737
+        },
+        "wav": {
+          "filesize": 45172440
+        },
+        "aiff": {
+          "filesize": 45172450
+        },
+        "flac": {
+          "filesize": 31732060
+        }
+      },
+      "keysign": "F minor",
+      "version": null,
+      "duration": 254971.34,
+      "featured": true,
+      "genre_id": 27,
+      "listened": false,
+      "remixers": [],
+      "purchased": false,
+      "album_only": false,
+      "downloaded": false,
+      "playlisted": 0,
+      "recordlabel": {
+        "id": 302343,
+        "name": "Planet Rhythm",
+        "type": "recordlabel",
+        "followed": null
+      },
+      "composed_title": "The Light Was Silent",
+      "featured_artists": [],
+      "release_start_at": "2026-05-28T21:00:00Z"
+    },
+    {
+      "id": 6159934,
+      "bpm": 69,
+      "isrc": "NL3M12517669",
+      "album": {
+        "id": 1622745,
+        "icpn": "8721416590962",
+        "title": "Humanoid EP",
+        "exclusive": false,
+        "artwork_uuid": "20d8e205-19ff-439e-91a8-7a8c70df5e77",
+        "volumo_direct": false,
+        "catalog_number": "ELECTRO004",
+        "release_start_at": "2026-05-28T21:00:00Z"
+      },
+      "genre": 27,
+      "price": 149,
+      "title": "Scarf",
+      "artists": [
+        {
+          "id": 70975,
+          "name": "JSPRV35",
+          "type": "artist",
+          "followed": null
+        }
+      ],
+      "curated": true,
+      "formats": {
+        "mp3": {
+          "filesize": 12007985
+        },
+        "wav": {
+          "filesize": 52283322
+        },
+        "aiff": {
+          "filesize": 52283332
+        },
+        "flac": {
+          "filesize": 33114293
+        }
+      },
+      "keysign": "C minor",
+      "version": null,
+      "duration": 295282.62,
+      "featured": true,
+      "genre_id": 27,
+      "listened": false,
+      "remixers": [],
+      "purchased": false,
+      "album_only": false,
+      "downloaded": false,
+      "playlisted": 0,
+      "recordlabel": {
+        "id": 302343,
+        "name": "Planet Rhythm",
+        "type": "recordlabel",
+        "followed": null
+      },
+      "composed_title": "Scarf",
+      "featured_artists": [],
+      "release_start_at": "2026-05-28T21:00:00Z"
+    }
+  ],
+  "artists": [
+    {
+      "id": 929,
+      "name": "Marco Effe",
+      "type": "artist",
+      "followed": null
+    },
+    {
+      "id": 34259,
+      "name": "Dawn Razor",
+      "type": "artist",
+      "followed": null
+    },
+    {
+      "id": 35277,
+      "name": "Dario Mass",
+      "type": "artist",
+      "followed": null
+    },
+    {
+      "id": 36780,
+      "name": "Confluence",
+      "type": "artist",
+      "followed": null
+    },
+    {
+      "id": 49845,
+      "name": "Kodama",
+      "type": "artist",
+      "followed": null
+    },
+    {
+      "id": 70975,
+      "name": "JSPRV35",
+      "type": "artist",
+      "followed": null
+    }
+  ],
+  "charted": false,
+  "curated": true,
+  "formats": {
+    "mp3": {
+      "filesize": 67003205
+    },
+    "wav": {
+      "filesize": 292119382
+    },
+    "aiff": {
+      "filesize": 292119432
+    },
+    "flac": {
+      "filesize": 192347160
+    }
+  },
+  "duration": 1650464.69,
+  "featured": true,
+  "exclusive": false,
+  "purchased": false,
+  "downloaded": false,
+  "first_live": "2026-05-28T21:01:19Z",
+  "genres_ids": [
+    27
+  ],
+  "description": "",
+  "recordlabel": {
+    "id": 302343,
+    "name": "Planet Rhythm",
+    "type": "recordlabel",
+    "followed": null
+  },
+  "artwork_uuid": "20d8e205-19ff-439e-91a8-7a8c70df5e77",
+  "published_at": "2026-05-28T21:01:19Z",
+  "tracks_total": 5,
+  "volumo_direct": false,
+  "catalog_number": "ELECTRO004",
+  "release_start_at": "2026-05-28T21:00:00Z",
+  "original_release_date": "2026-05-15"
+}
