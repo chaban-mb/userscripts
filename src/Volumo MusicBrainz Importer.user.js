@@ -34,9 +34,9 @@
         #mbApi = null;
         #currentUrl = '';
         #observer = null;
-        #debounceTimer = null;
         #runId = 0;
         #container = null;
+        #lastRenderArgs = null;
 
         constructor() {
             this.#mbApi = new MusicBrainzAPI({
@@ -45,15 +45,27 @@
             this.#addStyles();
             this.#currentUrl = window.location.href;
             this.#initializeObserver();
-            this.#run();
+            
+            if (document.readyState === 'complete') {
+                this.#run();
+            } else {
+                window.addEventListener('load', () => this.#run(), { once: true });
+            }
         }
 
         #initializeObserver() {
             this.#observer = new MutationObserver(() => {
-                if (window.location.href !== this.#currentUrl) {
-                    this.#currentUrl = window.location.href;
-                    clearTimeout(this.#debounceTimer);
-                    this.#debounceTimer = setTimeout(() => this.#run(), 500);
+                const url = window.location.href;
+                if (url !== this.#currentUrl) {
+                    this.#currentUrl = url;
+                    this.#run();
+                } else {
+                    const barcode = this.#extractBarcodeFromUrl(url);
+                    const containerExists = document.getElementById('mb-volumo-button-container');
+                    
+                    if (barcode && !containerExists) {
+                        this.#handleDomRecreation();
+                    }
                 }
             });
             this.#observer.observe(document.body, { childList: true, subtree: true });
@@ -249,6 +261,7 @@
         }
 
         #cleanup() {
+            this.#lastRenderArgs = null;
             // Restore the hint text we hid when injecting buttons
             const hint = document.querySelector('[class*="RandomHint_hint"]');
             if (hint) hint.style.display = '';
@@ -266,6 +279,23 @@
             hintRoot.appendChild(this.#container);
         }
 
+        #handleDomRecreation() {
+            const args = this.#lastRenderArgs;
+            if (!args) {
+                this.#run();
+                return;
+            }
+
+            const hintRoot = document.querySelector(VolumoMusicBrainzImporter.SELECTORS.RANDOM_HINT);
+            if (!hintRoot) return;
+
+            this.#createButtonContainer(hintRoot);
+
+            const { albumData, normalizedUrl, mbInfo, labelMbid, artistMbidMap } = args;
+            this.#renderButtons(albumData, normalizedUrl, mbInfo, labelMbid, artistMbidMap);
+            console.debug('[Volumo Importer] Re-injected buttons into new DOM element');
+        }
+
         #setupLoadingState() {
             if (!this.#container) return;
             this.#container.innerHTML = '<span class="mb-loading-spinner"></span>';
@@ -278,6 +308,8 @@
 
         #renderButtons(albumData, normalizedUrl, mbInfo, labelMbid, artistMbidMap) {
             if (!this.#container) return;
+            // Persist args so we can re-inject after a React remount
+            this.#lastRenderArgs = { albumData, normalizedUrl, mbInfo, labelMbid, artistMbidMap };
             this.#container.innerHTML = '';
 
             if (mbInfo) {
