@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Volumo: MusicBrainz Importer
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      1.1.2
+// @version      1.2.0
 // @description  Allows importing releases from Volumo into MusicBrainz.
 // @tag          ai-created
 // @author       chaban
@@ -387,6 +387,39 @@
             const totalDuration = albumData.tracks.reduce((acc, t) => acc + (t.duration || 0), 0);
             const type = MBImport.guessReleaseType(albumData.title, albumData.tracks.length, totalDuration);
 
+            // Collect regular track artists and remixers to filter out pure remixers from the release level
+            const allRegularArtistIds = new Set();
+            const allRegularArtistNames = new Set();
+            const allRemixerIds = new Set();
+            const allRemixerNames = new Set();
+
+            albumData.tracks.forEach(track => {
+                const trackRemixers = track.remixers || [];
+                trackRemixers.forEach(r => {
+                    if (r.id) allRemixerIds.add(r.id);
+                    if (r.name) allRemixerNames.add(r.name.toLowerCase());
+                });
+
+                const trackRemixerIds = new Set(trackRemixers.map(r => r.id).filter(Boolean));
+                const trackRemixerNames = new Set(trackRemixers.map(r => r.name?.toLowerCase()).filter(Boolean));
+
+                const trackArtists = track.artists || [];
+                trackArtists.forEach(a => {
+                    const isRemixer = trackRemixerIds.has(a.id) || trackRemixerNames.has(a.name?.toLowerCase());
+                    if (!isRemixer) {
+                        if (a.id) allRegularArtistIds.add(a.id);
+                        if (a.name) allRegularArtistNames.add(a.name.toLowerCase());
+                    }
+                });
+            });
+
+            const pureRemixerIds = new Set([...allRemixerIds].filter(id => !allRegularArtistIds.has(id)));
+            const pureRemixerNames = new Set([...allRemixerNames].filter(name => !allRegularArtistNames.has(name)));
+
+            const releaseArtists = (albumData.artists || []).filter(a =>
+                !pureRemixerIds.has(a.id) && !pureRemixerNames.has(a.name?.toLowerCase())
+            );
+
             const labels = [];
             if (albumData.recordlabel) {
                 const labelInfo = {
@@ -401,7 +434,7 @@
 
             return {
                 title: albumData.title,
-                artist_credit: this.#getArtistCredits(albumData.artists, [], artistMbidMap),
+                artist_credit: this.#getArtistCredits(releaseArtists, [], artistMbidMap),
                 type,
                 status: 'official',
                 packaging: 'none',

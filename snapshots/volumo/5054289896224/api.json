@@ -1,0 +1,336 @@
+{
+  "id": 1668389,
+  "hot": false,
+  "icpn": "5054289896224",
+  "price": 596,
+  "title": "WE ARE WARRIOR",
+  "genres": [
+    11
+  ],
+  "tracks": [
+    {
+      "id": 6293736,
+      "bpm": 77,
+      "isrc": "GBKQU2645482",
+      "album": {
+        "id": 1668389,
+        "icpn": "5054289896224",
+        "title": "WE ARE WARRIOR",
+        "exclusive": false,
+        "artwork_uuid": "9103a7ca-9721-419e-8dc3-1f15f62e5e77",
+        "volumo_direct": false,
+        "catalog_number": "DM500",
+        "release_start_at": "2026-05-28T21:00:00Z"
+      },
+      "genre": 11,
+      "price": 149,
+      "title": "WE ARE WARRIOR",
+      "artists": [
+        {
+          "id": 39863,
+          "name": "H! Dude",
+          "type": "artist",
+          "followed": null
+        }
+      ],
+      "curated": true,
+      "formats": {
+        "mp3": {
+          "filesize": 10638856
+        },
+        "wav": {
+          "filesize": 46129578
+        },
+        "aiff": {
+          "filesize": 46129588
+        },
+        "flac": {
+          "filesize": 38540765
+        }
+      },
+      "keysign": "F minor",
+      "version": "Original Mix",
+      "duration": 260209.7,
+      "featured": true,
+      "genre_id": 11,
+      "listened": false,
+      "remixers": [],
+      "purchased": false,
+      "album_only": false,
+      "downloaded": false,
+      "playlisted": 0,
+      "recordlabel": {
+        "id": 340996,
+        "name": "Dolma Records",
+        "type": "recordlabel",
+        "followed": null
+      },
+      "composed_title": "WE ARE WARRIOR",
+      "featured_artists": [],
+      "release_start_at": "2026-05-28T21:00:00Z"
+    },
+    {
+      "id": 6293737,
+      "bpm": 80,
+      "isrc": "GBKQU2645483",
+      "album": {
+        "id": 1668389,
+        "icpn": "5054289896224",
+        "title": "WE ARE WARRIOR",
+        "exclusive": false,
+        "artwork_uuid": "9103a7ca-9721-419e-8dc3-1f15f62e5e77",
+        "volumo_direct": false,
+        "catalog_number": "DM500",
+        "release_start_at": "2026-05-28T21:00:00Z"
+      },
+      "genre": 11,
+      "price": 149,
+      "title": "WE ARE WARRIOR",
+      "artists": [
+        {
+          "id": 39863,
+          "name": "H! Dude",
+          "type": "artist",
+          "followed": null
+        }
+      ],
+      "curated": true,
+      "formats": {
+        "mp3": {
+          "filesize": 9410058
+        },
+        "wav": {
+          "filesize": 40712392
+        },
+        "aiff": {
+          "filesize": 40712402
+        },
+        "flac": {
+          "filesize": 34967558
+        }
+      },
+      "keysign": "A♭ major",
+      "version": "AnGy KoRe Remix",
+      "duration": 229500,
+      "featured": true,
+      "genre_id": 11,
+      "listened": false,
+      "remixers": [
+        {
+          "id": 4556,
+          "name": "AnGy KoRe",
+          "type": "artist",
+          "followed": null
+        }
+      ],
+      "purchased": false,
+      "album_only": false,
+      "downloaded": false,
+      "playlisted": 0,
+      "recordlabel": {
+        "id": 340996,
+        "name": "Dolma Records",
+        "type": "recordlabel",
+        "followed": null
+      },
+      "composed_title": "WE ARE WARRIOR",
+      "featured_artists": [],
+      "release_start_at": "2026-05-28T21:00:00Z"
+    },
+    {
+      "id": 6293738,
+      "bpm": 80,
+      "isrc": "GBKQU2645484",
+      "album": {
+        "id": 1668389,
+        "icpn": "5054289896224",
+        "title": "WE ARE WARRIOR",
+        "exclusive": false,
+        "artwork_uuid": "9103a7ca-9721-419e-8dc3-1f15f62e5e77",
+        "volumo_direct": false,
+        "catalog_number": "DM500",
+        "release_start_at": "2026-05-28T21:00:00Z"
+      },
+      "genre": 11,
+      "price": 149,
+      "title": "WE ARE WARRIOR",
+      "artists": [
+        {
+          "id": 39863,
+          "name": "H! Dude",
+          "type": "artist",
+          "followed": null
+        }
+      ],
+      "curated": true,
+      "formats": {
+        "mp3": {
+          "filesize": 12470562
+        },
+        "wav": {
+          "filesize": 54206990
+        },
+        "aiff": {
+          "filesize": 54207000
+        },
+        "flac": {
+          "filesize": 42652317
+        }
+      },
+      "keysign": "D minor",
+      "version": "SCHRANZ REMIX",
+      "duration": 306000,
+      "featured": true,
+      "genre_id": 11,
+      "listened": false,
+      "remixers": [
+        {
+          "id": 437133,
+          "name": "Ortiz Karev",
+          "type": "artist",
+          "followed": null
+        }
+      ],
+      "purchased": false,
+      "album_only": false,
+      "downloaded": false,
+      "playlisted": 0,
+      "recordlabel": {
+        "id": 340996,
+        "name": "Dolma Records",
+        "type": "recordlabel",
+        "followed": null
+      },
+      "composed_title": "WE ARE WARRIOR",
+      "featured_artists": [],
+      "release_start_at": "2026-05-28T21:00:00Z"
+    },
+    {
+      "id": 6293739,
+      "bpm": 82,
+      "isrc": "GBKQU2645485",
+      "album": {
+        "id": 1668389,
+        "icpn": "5054289896224",
+        "title": "WE ARE WARRIOR",
+        "exclusive": false,
+        "artwork_uuid": "9103a7ca-9721-419e-8dc3-1f15f62e5e77",
+        "volumo_direct": false,
+        "catalog_number": "DM500",
+        "release_start_at": "2026-05-28T21:00:00Z"
+      },
+      "genre": 11,
+      "price": 149,
+      "title": "WE ARE WARRIOR",
+      "artists": [
+        {
+          "id": 39863,
+          "name": "H! Dude",
+          "type": "artist",
+          "followed": null
+        }
+      ],
+      "curated": true,
+      "formats": {
+        "mp3": {
+          "filesize": 13175872
+        },
+        "wav": {
+          "filesize": 57318050
+        },
+        "aiff": {
+          "filesize": 57318060
+        },
+        "flac": {
+          "filesize": 43651168
+        }
+      },
+      "keysign": "G minor",
+      "version": "INDUSTRIAL REMIX",
+      "duration": 323636.37999999995,
+      "featured": true,
+      "genre_id": 11,
+      "listened": false,
+      "remixers": [
+        {
+          "id": 437133,
+          "name": "Ortiz Karev",
+          "type": "artist",
+          "followed": null
+        }
+      ],
+      "purchased": false,
+      "album_only": false,
+      "downloaded": false,
+      "playlisted": 0,
+      "recordlabel": {
+        "id": 340996,
+        "name": "Dolma Records",
+        "type": "recordlabel",
+        "followed": null
+      },
+      "composed_title": "WE ARE WARRIOR",
+      "featured_artists": [],
+      "release_start_at": "2026-05-28T21:00:00Z"
+    }
+  ],
+  "artists": [
+    {
+      "id": 4556,
+      "name": "AnGy KoRe",
+      "type": "artist",
+      "followed": null
+    },
+    {
+      "id": 39863,
+      "name": "H! Dude",
+      "type": "artist",
+      "followed": null
+    },
+    {
+      "id": 437133,
+      "name": "Ortiz Karev",
+      "type": "artist",
+      "followed": null
+    }
+  ],
+  "charted": false,
+  "curated": true,
+  "formats": {
+    "mp3": {
+      "filesize": 45695348
+    },
+    "wav": {
+      "filesize": 198367010
+    },
+    "aiff": {
+      "filesize": 198367050
+    },
+    "flac": {
+      "filesize": 159811808
+    }
+  },
+  "duration": 1119346.0799999998,
+  "featured": true,
+  "exclusive": false,
+  "purchased": false,
+  "downloaded": false,
+  "first_live": "2026-05-28T21:03:41Z",
+  "genres_ids": [
+    11
+  ],
+  "description": "",
+  "recordlabel": {
+    "id": 340996,
+    "name": "Dolma Records",
+    "type": "recordlabel",
+    "followed": null
+  },
+  "artwork_uuid": "9103a7ca-9721-419e-8dc3-1f15f62e5e77",
+  "published_at": "2026-05-28T21:03:41Z",
+  "tracks_total": 4,
+  "volumo_direct": false,
+  "catalog_number": "DM500",
+  "release_start_at": "2026-05-28T21:00:00Z",
+  "original_release_date": "2026-05-29"
+}

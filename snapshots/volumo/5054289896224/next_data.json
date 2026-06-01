@@ -1,0 +1,986 @@
+{
+  "props": {
+    "pageProps": {
+      "abTestValues": {
+        "ILoveVolumoTest": 0
+      },
+      "clientInfo": {
+        "client": {
+          "type": "browser",
+          "name": "Chrome",
+          "version": "125.0",
+          "engine": "Blink",
+          "engineVersion": ""
+        },
+        "os": {
+          "name": "Windows",
+          "version": "10.0",
+          "platform": "x64"
+        },
+        "device": {
+          "type": "desktop",
+          "brand": "",
+          "model": ""
+        },
+        "bot": null,
+        "ipAddress": "10.1.17.125",
+        "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
+      },
+      "cookieData": {
+        "autoplay": true,
+        "hasSecretSet": false,
+        "isImpersonated": false
+      },
+      "dehydratedState": {
+        "mutations": [],
+        "queries": [
+          {
+            "dehydratedAt": 1780335480010,
+            "state": {
+              "data": [
+                {
+                  "id": 1,
+                  "name": "Afro House",
+                  "slug": "afro-house",
+                  "featured": true,
+                  "description": "Afro House is a sub-genre of house music that originated in South Africa and incorporates African elements and rhythms into the electronic dance music framework. Sub-genres: Afro Tech, Afro Deep, Afro Soulful, Afro Tribal, Afro Funk, Afro Latin, Kwaito, Gqom, Amapiano. In 2026, you can buy and download the latest Afro House tracks on Volumo in high-quality MP3, WAV, AIFF, and FLAC formats.",
+                  "focus_banner_bg_color": "#09E017",
+                  "focus_banner_fg_color": "#11300A",
+                  "rotation_banner_bg_color": "#3D0603",
+                  "rotation_banner_fg_color": "#F1FF00"
+                },
+                {
+                  "id": 33,
+                  "name": "Amapiano",
+                  "slug": "amapiano",
+                  "featured": false,
+                  "description": "Amapiano is a sub-genre of house music that emerged in South Africa in the mid-2010s, characterized by its signature \"log drum\" basslines, soulful synths, and percussive melodies. In 2026, you can buy and download the latest Amapiano tracks on Volumo in high-quality MP3, WAV, AIFF, and FLAC formats.",
+                  "focus_banner_bg_color": null,
+                  "focus_banner_fg_color": null,
+                  "rotation_banner_bg_color": null,
+                  "rotation_banner_fg_color": null
+                },
+                {
+                  "id": 2,
+                  "name": "Bass House / Future House",
+                  "slug": "bass-house-future-house",
+                  "featured": true,
+                  "description": "Bass House and Future House are dynamic sub-genres of house music that emphasize heavy basslines, metallic synths, and hard-hitting beats. This selection includes UK Bass, Future House, Wobble, and Garage House styles. In 2026, you can buy and download these tracks on Volumo in high-quality MP3, WAV, AIFF, and FLAC formats.",
+                  "focus_banner_bg_color": "#061F69",
+                  "focus_banner_fg_color": "#0A4BFF",
+                  "rotation_banner_bg_color": null,
+                  "rotation_banner_fg_color": null
+                },
+                {
+                  "id": 3,
+                  "name": "Breaks / Breakbeat",
+                  "slug": "breaks-breakbeat",
+                  "featured": true,
+                  "description": "Breaks and Breakbeat are rhythmic, beat-driven genres of electronic music defined by syncopated patterns. This collection includes Big Beat, Nu Skool, Progressive, Florida, and Atmospheric Breaks. In 2026, you can buy and download the best Breakbeat tracks on Volumo in high-quality MP3, WAV, AIFF, and FLAC formats.",
+                  "focus_banner_bg_color": "#DD0000",
+                  "focus_banner_fg_color": "#04070A",
+                  "rotation_banner_bg_color": null,
+                  "rotation_banner_fg_color": null
+                },
+                {
+                  "id": 35,
+                  "name": "Dance / Pop",
+                  "slug": "dance-pop",
+                  "featured": false,
+                  "description": "",
+                  "focus_banner_bg_color": null,
+                  "focus_banner_fg_color": null,
+                  "rotation_banner_bg_color": null,
+                  "rotation_banner_fg_color": null
+                },
+                {
+                  "id": 4,
+                  "name": "Deep House",
+                  "slug": "deep-house",
+                  "featured": true,
+                  "description": "Deep House is a soulful, melodic variant of house music characterized by smooth chords, atmospheric pads, and sophisticated grooves. This selection includes Tribal, Afro Deep, and Deep Tech House. In 2026, you can buy and download these tracks on Volumo in high-quality MP3, WAV, AIFF, and FLAC formats.",
+                  "focus_banner_bg_color": "#2C0D7D",
+                  "focus_banner_fg_color": "#5800EB",
+                  "rotation_banner_bg_color": "#5800EB",
+                  "rotation_banner_fg_color": "#FAE3E2"
+                },
+                {
+                  "id": 5,
+                  "name": "DJ Tools",
+                  "slug": "dj-tools",
+                  "featured": false,
+                  "description": "Tracks or elements designed for DJs to use in live performances. Acapellas, Loops, Samples, DJ Intros/Outros.",
+                  "focus_banner_bg_color": null,
+                  "focus_banner_fg_color": null,
+                  "rotation_banner_bg_color": null,
+                  "rotation_banner_fg_color": null
+                },
+                {
+                  "id": 6,
+                  "name": "Drum and Bass",
+                  "slug": "drum-and-bass",
+                  "featured": true,
+                  "description": "Drum & Bass is fast-paced electronic music defined by complex breakbeats and heavy basslines. This collection includes Liquid, Neurofunk, Jump Up, Jungle, Techstep, Darkstep, Drumfunk, and Atmospheric DnB. In 2026, you can buy and download the latest D&B tracks on Volumo in high-quality MP3, WAV, AIFF, and FLAC formats.",
+                  "focus_banner_bg_color": "#0D282C",
+                  "focus_banner_fg_color": "#00E5FF",
+                  "rotation_banner_bg_color": "#E3FDB1",
+                  "rotation_banner_fg_color": "#5800EB"
+                },
+                {
+                  "id": 7,
+                  "name": "Dubstep / Bass / Grime",
+                  "slug": "dubstep-bass-grime",
+                  "featured": true,
+                  "description": "Dubstep, Bass, and Grime are genres of electronic music defined by heavy basslines, sub-bass frequencies, and syncopated rhythms. This selection includes Brostep, Riddim, Chillstep, Melodic, Wonky, Deathstep, Glitchstep, and Deep Dubstep. In 2026, you can buy and download these tracks on Volumo in high-quality MP3, WAV, AIFF, and FLAC formats.",
+                  "focus_banner_bg_color": "#511D08",
+                  "focus_banner_fg_color": "#FF5714",
+                  "rotation_banner_bg_color": null,
+                  "rotation_banner_fg_color": null
+                },
+                {
+                  "id": 27,
+                  "name": "Electro (Classic / Detroit)",
+                  "slug": "electro-classic-detroit",
+                  "featured": true,
+                  "description": "Electro and Classic Detroit are early forms of electronic dance music defined by futuristic themes, robotic funk, and synthesized breakbeats. This selection includes Detroit Techno, Electro Funk, Electro Breaks, and Electroclash. In 2026, you can buy and download these timeless tracks on Volumo in high-quality MP3, WAV, AIFF, and FLAC formats.",
+                  "focus_banner_bg_color": "#F1FF00",
+                  "focus_banner_fg_color": "#04070A",
+                  "rotation_banner_bg_color": null,
+                  "rotation_banner_fg_color": null
+                },
+                {
+                  "id": 9,
+                  "name": "Electro House / Big Room",
+                  "slug": "electro-house-big-room",
+                  "featured": false,
+                  "description": "Electro House and Big Room are energetic, hard-hitting genres of dance music defined by heavy basslines and high-octane drops. This selection includes Progressive Electro House, Complextro, Dutch House, Fidget, Dirty Dutch, and Melbourne Bounce. In 2026, you can buy and download these festival anthems on Volumo in high-quality MP3, WAV, AIFF, and FLAC formats.",
+                  "focus_banner_bg_color": "#CED1D6",
+                  "focus_banner_fg_color": "#04070A",
+                  "rotation_banner_bg_color": null,
+                  "rotation_banner_fg_color": null
+                },
+                {
+                  "id": 8,
+                  "name": "Electronica",
+                  "slug": "electronica",
+                  "featured": true,
+                  "description": "Electronica is a diverse, experimental genre of electronic music defined by intricate textures and wide-ranging influences. This selection includes IDM, Ambient, Downtempo, Glitch, Trip Hop, Breakcore, and cinematic Soundscapes. In 2026, you can buy and download these experimental tracks on Volumo in high-quality MP3, WAV, AIFF, and FLAC formats.",
+                  "focus_banner_bg_color": "#00A242",
+                  "focus_banner_fg_color": "#0F2D16",
+                  "rotation_banner_bg_color": null,
+                  "rotation_banner_fg_color": null
+                },
+                {
+                  "id": 10,
+                  "name": "Funky / Jackin' House",
+                  "slug": "funky-jackin-house",
+                  "featured": true,
+                  "description": "Funky and Jackin' House is upbeat electronic music infused with disco, funk, and soul elements, known for its infectious grooves and swing rhythms. This selection features Disco House, French House, Filter House, Glitch, and Chicago House. In 2026, you can buy and download these groovy tracks on Volumo in high-quality MP3, WAV, AIFF, and FLAC formats.",
+                  "focus_banner_bg_color": "#09E017",
+                  "focus_banner_fg_color": "#11300A",
+                  "rotation_banner_bg_color": null,
+                  "rotation_banner_fg_color": null
+                },
+                {
+                  "id": 28,
+                  "name": "Hardcore / Hard Dance",
+                  "slug": "hardcore-hard-dance",
+                  "featured": true,
+                  "description": "Hardcore and Hard Dance are high-energy genres of electronic music defined by fast tempos, distorted kicks, and intense synth melodies. This selection features UK Hardcore, Gabber, Frenchcore, Happy Hardcore, and Hardstyle. In 2026, you can buy and download the hardest tracks on Volumo in high-quality MP3, WAV, AIFF, and FLAC formats.",
+                  "focus_banner_bg_color": "#04070A",
+                  "focus_banner_fg_color": "#CED1D6",
+                  "rotation_banner_bg_color": null,
+                  "rotation_banner_fg_color": null
+                },
+                {
+                  "id": 11,
+                  "name": "Hard Techno",
+                  "slug": "hard-techno",
+                  "featured": true,
+                  "description": "Hard Techno is an intense, high-tempo sub-genre of techno characterized by industrial sounds, distorted percussion, and driving acid basslines. This selection includes Industrial Techno, Schranz, Dark Techno, and Peak Time Hard Techno. In 2026, you can buy and download the most powerful Hard Techno tracks on Volumo in high-quality MP3, WAV, AIFF, and FLAC formats.",
+                  "focus_banner_bg_color": "#DD0000",
+                  "focus_banner_fg_color": "#04070A",
+                  "rotation_banner_bg_color": null,
+                  "rotation_banner_fg_color": null
+                },
+                {
+                  "id": 12,
+                  "name": "House",
+                  "slug": "house",
+                  "featured": true,
+                  "description": "House is a foundational genre of electronic dance music characterized by its repetitive 4/4 beat, soulful melodies, and iconic basslines. This extensive collection spans Deep House, Tech House, Progressive, Funky, and Soulful House. In 2026, you can buy and download the latest House tracks on Volumo in high-quality MP3, WAV, AIFF, and FLAC formats.",
+                  "focus_banner_bg_color": "#5800EB",
+                  "focus_banner_fg_color": "#2C0D7D",
+                  "rotation_banner_bg_color": "#FAE5DB",
+                  "rotation_banner_fg_color": "#1E0756"
+                },
+                {
+                  "id": 13,
+                  "name": "Indie Dance / Dark Disco",
+                  "slug": "indie-dance-dark-disco",
+                  "featured": true,
+                  "description": "Indie Dance and Dark Disco are atmospheric genres that blend 80s synth-pop aesthetics with modern club grooves and hypnotic basslines. This collection features Nu-Disco, Italo Disco, Synthwave, and Post-Punk influenced electronic music. In 2026, you can buy and download these curated tracks on Volumo in high-quality MP3, WAV, AIFF, and FLAC formats.",
+                  "focus_banner_bg_color": "#99FF00",
+                  "focus_banner_fg_color": "#04070A",
+                  "rotation_banner_bg_color": "#092005",
+                  "rotation_banner_fg_color": "#FAE5DB"
+                },
+                {
+                  "id": 30,
+                  "name": "Leftfield",
+                  "slug": "leftfield",
+                  "featured": false,
+                  "description": "Leftfield is experimental and unconventional electronic music that defies traditional genre boundaries through innovative sound design. This collection includes Leftfield Bass, House & Techno, Avant-garde, Musique Concrète, and Drone Music. In 2026, you can buy and download these boundary-pushing tracks on Volumo in high-quality MP3, WAV, AIFF, and FLAC formats.",
+                  "focus_banner_bg_color": null,
+                  "focus_banner_fg_color": null,
+                  "rotation_banner_bg_color": null,
+                  "rotation_banner_fg_color": null
+                },
+                {
+                  "id": 14,
+                  "name": "Lounge / Chill Out",
+                  "slug": "lounge-chill-out",
+                  "featured": false,
+                  "description": "Lounge and Chill Out are relaxing, downtempo genres of electronic music characterized by smooth atmospheric pads, organic textures, and mellow rhythms. This selection features Balearic, Ambient, Chill-hop, and Easy Listening styles. In 2026, you can buy and download these high-quality tracks on Volumo in MP3, WAV, AIFF, and FLAC formats for the ultimate listening experience.",
+                  "focus_banner_bg_color": null,
+                  "focus_banner_fg_color": null,
+                  "rotation_banner_bg_color": null,
+                  "rotation_banner_fg_color": null
+                },
+                {
+                  "id": 15,
+                  "name": "Melodic House / Techno",
+                  "slug": "melodic-house-techno",
+                  "featured": true,
+                  "description": "Melodic House & Techno are emotive sub-genres of electronic music characterized by driving rhythms, harmonic synth layers, and atmospheric soundscapes. This selection includes Progressive, Peak Time Melodic, and Etherial Techno styles. In 2026, you can buy and download the latest tracks on Volumo in high-quality MP3, WAV, AIFF, and FLAC formats.",
+                  "focus_banner_bg_color": "#0A4BFF",
+                  "focus_banner_fg_color": "#061F69",
+                  "rotation_banner_bg_color": "#092005",
+                  "rotation_banner_fg_color": "#00E5FF"
+                },
+                {
+                  "id": 26,
+                  "name": "Microhouse / Rominimal",
+                  "slug": "microhouse",
+                  "featured": true,
+                  "description": "Microhouse and Rominimal are sophisticated sub-genres of electronic music characterized by subtle glitchy textures, organic percussion, and stripped-back hypnotic grooves. This selection features Minimal House, Romanian Techno, and Glitch-influenced electronic music. In 2026, you can buy and download these refined tracks on Volumo in high-quality MP3, WAV, AIFF, and FLAC formats.",
+                  "focus_banner_bg_color": "#CED1D6",
+                  "focus_banner_fg_color": "#04070A",
+                  "rotation_banner_bg_color": null,
+                  "rotation_banner_fg_color": null
+                },
+                {
+                  "id": 16,
+                  "name": "Minimal / Deep Tech",
+                  "slug": "minimal-deep-tech",
+                  "featured": true,
+                  "description": "Minimal and Deep Tech are sophisticated genres of house music defined by stripped-back arrangements, intricate percussion, and deep, rolling basslines. This selection includes Minimal Techno, Deep Tech House, and Dub-influenced Minimal. In 2026, you can buy and download these essential club tracks on Volumo in high-quality MP3, WAV, AIFF, and FLAC formats.",
+                  "focus_banner_bg_color": "#CED1D6",
+                  "focus_banner_fg_color": "#04070A",
+                  "rotation_banner_bg_color": "#E5EBFD",
+                  "rotation_banner_fg_color": "#0A4BFF"
+                },
+                {
+                  "id": 17,
+                  "name": "Nu-Disco / Soul / Funk",
+                  "slug": "nudisco-soul-funk",
+                  "featured": true,
+                  "description": "Nu-Disco, Soul, and Funk are vibrant genres that blend vintage grooves with modern electronic production, featuring soulful vocals, live basslines, and shimmering synthesizers. This selection includes Disco Edit, Funky House, Neo-Soul, and Boogie-influenced tracks. In 2026, you can buy and download these high-fidelity tracks on Volumo in MP3, WAV, AIFF, and FLAC formats.",
+                  "focus_banner_bg_color": "#FF5714",
+                  "focus_banner_fg_color": "#391504",
+                  "rotation_banner_bg_color": null,
+                  "rotation_banner_fg_color": null
+                },
+                {
+                  "id": 18,
+                  "name": "Organic House / Downtempo",
+                  "slug": "organic-house",
+                  "featured": true,
+                  "description": "Organic House and Downtempo are soulful, melodic genres characterized by acoustic instruments, tribal rhythms, and lush natural soundscapes. This collection features Afro House, Spiritual Downtempo, Deep Organic, and Folktronica. In 2026, you can buy and download these evocative tracks on Volumo in high-quality MP3, WAV, AIFF, and FLAC formats for a truly immersive listening experience.",
+                  "focus_banner_bg_color": "#09E017",
+                  "focus_banner_fg_color": "#11300A",
+                  "rotation_banner_bg_color": "#092005",
+                  "rotation_banner_fg_color": "#09E017"
+                },
+                {
+                  "id": 19,
+                  "name": "Progressive House",
+                  "slug": "progressive-house",
+                  "featured": true,
+                  "description": "Progressive House is a melodic and atmospheric genre of electronic music known for its long builds, driving basslines, and euphoric breakdowns. This selection includes Melodic Progressive, Peak Time, and Deep Progressive styles. In 2026, you can buy and download these top-tier tracks on Volumo in high-quality MP3, WAV, AIFF, and FLAC formats.",
+                  "focus_banner_bg_color": "#F1FF00",
+                  "focus_banner_fg_color": "#04070A",
+                  "rotation_banner_bg_color": "#DD0000",
+                  "rotation_banner_fg_color": "#E3FDB1"
+                },
+                {
+                  "id": 32,
+                  "name": "Psy-Trance",
+                  "slug": "psy-trance",
+                  "featured": true,
+                  "description": "Psy-Trance is a high-energy, psychedelic sub-genre of trance music defined by hypnotic arrangements, driving basslines, and intricate synth layers. This selection features Full-On, Progressive Psy, Goa Trance, Darkpsy, and Forest styles. In 2026, you can buy and download the best Psychedelic Trance on Volumo in high-quality MP3, WAV, AIFF, and FLAC formats.",
+                  "focus_banner_bg_color": "#00E5FF",
+                  "focus_banner_fg_color": "#0D282C",
+                  "rotation_banner_bg_color": null,
+                  "rotation_banner_fg_color": null
+                },
+                {
+                  "id": 20,
+                  "name": "Soulful House",
+                  "slug": "soulful-house",
+                  "featured": true,
+                  "description": "Soulful House is an uplifting and sophisticated genre that blends traditional House rhythms with the rich textures of Gospel, Jazz, and R&B. This collection features tracks with powerful vocals, live piano chords, and warm basslines. In 2026, you can buy and download the finest Soulful House on Volumo in high-quality MP3, WAV, AIFF, and FLAC formats.",
+                  "focus_banner_bg_color": "#99FF00",
+                  "focus_banner_fg_color": "#04070A",
+                  "rotation_banner_bg_color": null,
+                  "rotation_banner_fg_color": null
+                },
+                {
+                  "id": 29,
+                  "name": "Soul / R&B / Hip-Hop",
+                  "slug": "soul-rnb-hip-hop",
+                  "featured": false,
+                  "description": "Soul, R&B, and Hip-Hop are foundational genres defined by smooth melodies, rhythmic groove, and lyrical storytelling. This selection includes Neo-Soul, Contemporary R&B, Boom Bap, Trap, and Jazz-influenced tracks. In 2026, you can buy and download these essential releases on Volumo in high-quality MP3, WAV, AIFF, and FLAC formats.",
+                  "focus_banner_bg_color": "#511D08",
+                  "focus_banner_fg_color": "#FF5714",
+                  "rotation_banner_bg_color": null,
+                  "rotation_banner_fg_color": null
+                },
+                {
+                  "id": 21,
+                  "name": "Tech House",
+                  "slug": "tech-house",
+                  "featured": true,
+                  "description": "Tech House is a dynamic fusion of house and techno that prioritizes rhythmic drive and intricate percussion over melodic complexity. This collection spans Tribal Tech House, Deep Tech, Minimal, Acid, and Dub-influenced Tech House. In 2026, you can buy and download the most effective club weapons on Volumo in high-quality MP3, WAV, AIFF, and FLAC formats.",
+                  "focus_banner_bg_color": "#2C0D7D",
+                  "focus_banner_fg_color": "#5800EB",
+                  "rotation_banner_bg_color": "#0E022B",
+                  "rotation_banner_fg_color": "#FF5714"
+                },
+                {
+                  "id": 23,
+                  "name": "Techno (Peak Time)",
+                  "slug": "techno-peak-time",
+                  "featured": true,
+                  "description": "Techno (Peak Time) is a high-octane, driving genre designed for the most intense moments of a DJ set, featuring powerful kick drums, sharp percussion, and anthemic synth stabs. This selection includes Driving Techno, Mainstage Techno, and Acid-infused Peak Time tracks. In 2026, you can buy and download these explosive club anthems on Volumo in high-quality MP3, WAV, AIFF, and FLAC formats.",
+                  "focus_banner_bg_color": "#DD0000",
+                  "focus_banner_fg_color": "#04070A",
+                  "rotation_banner_bg_color": "#3D0603",
+                  "rotation_banner_fg_color": "#DD0000"
+                },
+                {
+                  "id": 22,
+                  "name": "Techno (Raw, Deep, Dub)",
+                  "slug": "techno-raw-deep-dub",
+                  "featured": true,
+                  "description": "Techno (Raw, Deep, Dub) is a sophisticated sub-genre focused on atmospheric depth, gritty analog textures, and hypnotic repetition. This selection features Warehouse Techno, Dub-influenced soundscapes, and Raw, unpolished rhythms. In 2026, you can buy and download these authentic underground tracks on Volumo in high-quality MP3, WAV, AIFF, and FLAC formats.",
+                  "focus_banner_bg_color": "#04070A",
+                  "focus_banner_fg_color": "#CED1D6",
+                  "rotation_banner_bg_color": "#3D0603",
+                  "rotation_banner_fg_color": "#DD0000"
+                },
+                {
+                  "id": 24,
+                  "name": "Trance",
+                  "slug": "trance",
+                  "featured": true,
+                  "description": "Trance is an uplifting and melodic genre of electronic music defined by its hypnotic rhythms, expansive synth layers, and emotional builds. This selection features Vocal Trance, Uplifting, Progressive Trance, and Tech-Trance styles. In 2026, you can buy and download the most transcendent tracks on Volumo in high-quality MP3, WAV, AIFF, and FLAC formats for a superior sonic journey.",
+                  "focus_banner_bg_color": "#0D282C",
+                  "focus_banner_fg_color": "#00E5FF",
+                  "rotation_banner_bg_color": null,
+                  "rotation_banner_fg_color": null
+                },
+                {
+                  "id": 25,
+                  "name": "UK Garage / 2-Step",
+                  "slug": "uk-garage-2-step",
+                  "featured": true,
+                  "description": "UK Garage and 2-Step are iconic urban genres defined by their infectious swing, syncopated drum patterns, and chopped vocal samples. This selection features Old Skool Garage, Modern UKG, Bassline-influenced tracks, and soulful 2-Step grooves. In 2026, you can buy and download the ultimate garage collection on Volumo in high-quality MP3, WAV, AIFF, and FLAC formats.",
+                  "focus_banner_bg_color": "#CED1D6",
+                  "focus_banner_fg_color": "#04070A",
+                  "rotation_banner_bg_color": null,
+                  "rotation_banner_fg_color": null
+                }
+              ],
+              "dataUpdateCount": 1,
+              "dataUpdatedAt": 1780335480003,
+              "error": null,
+              "errorUpdateCount": 0,
+              "errorUpdatedAt": 0,
+              "fetchFailureCount": 0,
+              "fetchFailureReason": null,
+              "fetchMeta": null,
+              "isInvalidated": false,
+              "status": "success",
+              "fetchStatus": "idle"
+            },
+            "queryKey": [
+              {
+                "scope": "Genres"
+              }
+            ],
+            "queryHash": "[{\"scope\":\"Genres\"}]"
+          },
+          {
+            "dehydratedAt": 1780335480010,
+            "state": {
+              "data": {
+                "stripe_pub_key": "pk_live_51IIHQnJaB2pC68UmK35js2xspSc75vtqjVfTJ04iUATFL5a7vbeeoUSwRoHs8OSqKasXGZh0nJQa1UAbHKvCLinn00oWbzrsNp",
+                "paypal_client_id": "AfyAsn7Io_S-GkbD_3M8OuBqUucKYpKiI_P2NaPAMOguzbYG5FSEqsjh5d1ynu9c_dUHIRABS8v53RSh",
+                "preconnect_domains": [],
+                "server_timezone_shift": 180
+              },
+              "dataUpdateCount": 1,
+              "dataUpdatedAt": 1780335480003,
+              "error": null,
+              "errorUpdateCount": 0,
+              "errorUpdatedAt": 0,
+              "fetchFailureCount": 0,
+              "fetchFailureReason": null,
+              "fetchMeta": null,
+              "isInvalidated": false,
+              "status": "success",
+              "fetchStatus": "idle"
+            },
+            "queryKey": [
+              {
+                "scope": "AppSettings"
+              }
+            ],
+            "queryHash": "[{\"scope\":\"AppSettings\"}]"
+          },
+          {
+            "dehydratedAt": 1780335480010,
+            "state": {
+              "data": {},
+              "dataUpdateCount": 1,
+              "dataUpdatedAt": 1780335480003,
+              "error": null,
+              "errorUpdateCount": 0,
+              "errorUpdatedAt": 0,
+              "fetchFailureCount": 0,
+              "fetchFailureReason": null,
+              "fetchMeta": null,
+              "isInvalidated": false,
+              "status": "success",
+              "fetchStatus": "idle"
+            },
+            "queryKey": [
+              {
+                "locale": "en",
+                "scope": "UrlMeta",
+                "url": "/album/5054289896224-we-are-warrior"
+              }
+            ],
+            "queryHash": "[{\"locale\":\"en\",\"scope\":\"UrlMeta\",\"url\":\"/album/5054289896224-we-are-warrior\"}]"
+          },
+          {
+            "dehydratedAt": 1780335480010,
+            "state": {
+              "data": {
+                "en:page-meta:about:title": "About us — Volumo",
+                "en:page-meta:album:title": "{artists:, :2} - {albumTitle} by {recordlabelTitle} at Volumo",
+                "en:page-meta:chart:title": "{chartName} by {author} - Volumo",
+                "en:page-meta:genre:title": "{genreTitle} {currentYear} music download at Volumo",
+                "en:page-meta:track:title": "{artists:, :1} - {trackTitle} by {recordlabelTitle} at Volumo",
+                "en:page-meta:album:og-url": "{ogUrl}",
+                "en:page-meta:artist:title": "{contributorTitle} music download at Volumo",
+                "en:page-meta:chart:og-url": "{ogUrl}",
+                "en:page-meta:album:og-type": "website",
+                "en:page-meta:album:og-image": "{ogImage}",
+                "en:page-meta:album:og-title": "{albumTitle} from {recordlabelTitle} on Volumo",
+                "en:page-meta:chart:og-image": "{ogImage}",
+                "en:page-meta:chart:og-title": "{chartName} by {author}",
+                "en:page-meta:artist:og-image": "{ogImage}",
+                "en:page-meta:artistList:title": "Best {currentYear} {genres: :1} Artists Tracks, Releases & Albums at Volumo - {paginationText}",
+                "en:page-meta:about:description": "About Volumo – A new generation of electronic music store for professional DJs. Download the latest electronic, dance, and house releases in MP3, WAV, AIFF, and FLAC.",
+                "en:page-meta:album:description": "{artists:, :2} - {albumTitle} by {recordlabelTitle} · Price: {price} · Catalog #{catalogNumber} · MP3, WAV, AIFF & FLAC · Unlimited Re-download",
+                "en:page-meta:chart:description": "{chartName} by {author} - Volumo · MP3, WAV, AIFF & FLAC · Unlimited Re-download",
+                "en:page-meta:genre:description": "{genreTitle} Music {genreDescription} {currentYear} Songs, Releases & Albums. Volumo - New generation electronic music store for pro DJs. Download MP3, WAV, AIFF & FLAC.",
+                "en:page-meta:playlist:og-image": "{ogImage}",
+                "en:page-meta:recordlabel:title": "{contributorTitle} music download at Volumo",
+                "en:page-meta:releaseList:title": "Newest Electronic, Dance & House {currentYear} music download at Volumo {paginationText}",
+                "en:page-meta:track:description": "{artists:, :1} - {trackTitle} by {recordlabelTitle} · Price: {price} · Unlimited Re-download · {catalogNumber} ·  {genres:, :3} · {bpm} · {keysign} · Released {releaseDate} · MP3, WAV, AIFF & FLAC",
+                "en:page-meta:artist:description": "Top {contributorTitle} Tracks, Releases & Albums. Volumo - New generation electronic music store for pro DJs. Download MP3, WAV, AIFF & FLAC.",
+                "en:page-meta:genreReleaseList:h1": "Top {genreTitle} of {currentYear}",
+                "en:page-meta:publicUser:og-image": "{ogImage}",
+                "en:page-meta:album:og-description": "{albumTitle} by {artists:, :6}!",
+                "en:page-meta:chart:og-description": "{chartName} by {author} - Volumo!",
+                "en:page-meta:recordlabel:og-image": "{ogImage}",
+                "en:page-meta:recordlabelList:title": "Best {currentYear} {genres: :1} Labels music download at Volumo {paginationText}",
+                "en:page-meta:artistList:description": "Best {currentYear} {genres: :1} Artists Tracks & Releases {paginationText}. Volumo - New generation electronic music store for pro DJs. Download MP3, WAV, AIFF & FLAC.",
+                "en:page-meta:genreReleaseList:title": "Top {genreTitle} {currentYear}: Best Releases & Albums at Volumo {paginationText}",
+                "en:page-meta:recordlabel:description": "Music by {contributorTitle} · Download MP3, WAV, AIFF & FLAC · Volumo - New generation electronic music store for pro DJs",
+                "en:page-meta:releaseList:description": "Newest Electronic, Dance & House {currentYear} music download {paginationText}. Volumo - New generation electronic music store for pro DJs. Download MP3, WAV, AIFF & FLAC.",
+                "en:page-meta:recordlabelList:description": "Best {currentYear} {genres: :1} Labels Songs, Releases & Albums {paginationText}. Volumo - New generation electronic music store for pro DJs. Download MP3, WAV, AIFF & FLAC.",
+                "en:page-meta:genreReleaseList:description": "Top {genreTitle} {currentYear}. Best Featured Releases & Albums {paginationText}. Volumo - New generation electronic music store for pro DJs. Download MP3, WAV, AIFF & FLAC.",
+                "en:page-meta:genreReleaseListFeatured:title": "Top {genreTitle} {currentYear}: Best Releases & Albums at Volumo {paginationText}",
+                "en:page-meta:genreReleaseListExclusive:title": "Exclusive {genreTitle} music download at Volumo {paginationText}",
+                "en:page-meta:genreReleaseListFeatured:description": "Top {genreTitle} {currentYear}. Best Featured Releases & Albums {paginationText}. Volumo - New generation electronic music store for pro DJs. Download MP3, WAV, AIFF & FLAC.",
+                "en:page-meta:genreReleaseListExclusive:description": "Exclusive {genreTitle} Music Songs, Releases & Albums {paginationText}. Volumo - New generation electronic music store for pro DJs. Download MP3, WAV, AIFF & FLAC."
+              },
+              "dataUpdateCount": 1,
+              "dataUpdatedAt": 1780335480003,
+              "error": null,
+              "errorUpdateCount": 0,
+              "errorUpdatedAt": 0,
+              "fetchFailureCount": 0,
+              "fetchFailureReason": null,
+              "fetchMeta": null,
+              "isInvalidated": false,
+              "status": "success",
+              "fetchStatus": "idle"
+            },
+            "queryKey": [
+              {
+                "scope": "PageMeta",
+                "locale": "en"
+              }
+            ],
+            "queryHash": "[{\"locale\":\"en\",\"scope\":\"PageMeta\"}]"
+          },
+          {
+            "dehydratedAt": 1780335480010,
+            "state": {
+              "data": {
+                "id": 1668389,
+                "hot": false,
+                "icpn": "5054289896224",
+                "price": 596,
+                "title": "WE ARE WARRIOR",
+                "genres": [
+                  11
+                ],
+                "tracks": [
+                  {
+                    "id": 6293736,
+                    "bpm": 77,
+                    "isrc": "GBKQU2645482",
+                    "album": {
+                      "id": 1668389,
+                      "icpn": "5054289896224",
+                      "title": "WE ARE WARRIOR",
+                      "exclusive": false,
+                      "artwork_uuid": "9103a7ca-9721-419e-8dc3-1f15f62e5e77",
+                      "volumo_direct": false,
+                      "catalog_number": "DM500",
+                      "release_start_at": "2026-05-28T21:00:00Z"
+                    },
+                    "genre": 11,
+                    "price": 149,
+                    "title": "WE ARE WARRIOR",
+                    "artists": [
+                      {
+                        "id": 39863,
+                        "name": "H! Dude",
+                        "type": "artist",
+                        "followed": null
+                      }
+                    ],
+                    "curated": true,
+                    "formats": {
+                      "mp3": {
+                        "filesize": 10638856
+                      },
+                      "wav": {
+                        "filesize": 46129578
+                      },
+                      "aiff": {
+                        "filesize": 46129588
+                      },
+                      "flac": {
+                        "filesize": 38540765
+                      }
+                    },
+                    "keysign": "F minor",
+                    "version": "Original Mix",
+                    "duration": 260209.7,
+                    "featured": true,
+                    "genre_id": 11,
+                    "listened": false,
+                    "remixers": [],
+                    "purchased": false,
+                    "album_only": false,
+                    "downloaded": false,
+                    "playlisted": 0,
+                    "recordlabel": {
+                      "id": 340996,
+                      "name": "Dolma Records",
+                      "type": "recordlabel",
+                      "followed": null
+                    },
+                    "composed_title": "WE ARE WARRIOR",
+                    "featured_artists": [],
+                    "release_start_at": "2026-05-28T21:00:00Z"
+                  },
+                  {
+                    "id": 6293737,
+                    "bpm": 80,
+                    "isrc": "GBKQU2645483",
+                    "album": {
+                      "id": 1668389,
+                      "icpn": "5054289896224",
+                      "title": "WE ARE WARRIOR",
+                      "exclusive": false,
+                      "artwork_uuid": "9103a7ca-9721-419e-8dc3-1f15f62e5e77",
+                      "volumo_direct": false,
+                      "catalog_number": "DM500",
+                      "release_start_at": "2026-05-28T21:00:00Z"
+                    },
+                    "genre": 11,
+                    "price": 149,
+                    "title": "WE ARE WARRIOR",
+                    "artists": [
+                      {
+                        "id": 39863,
+                        "name": "H! Dude",
+                        "type": "artist",
+                        "followed": null
+                      }
+                    ],
+                    "curated": true,
+                    "formats": {
+                      "mp3": {
+                        "filesize": 9410058
+                      },
+                      "wav": {
+                        "filesize": 40712392
+                      },
+                      "aiff": {
+                        "filesize": 40712402
+                      },
+                      "flac": {
+                        "filesize": 34967558
+                      }
+                    },
+                    "keysign": "A♭ major",
+                    "version": "AnGy KoRe Remix",
+                    "duration": 229500,
+                    "featured": true,
+                    "genre_id": 11,
+                    "listened": false,
+                    "remixers": [
+                      {
+                        "id": 4556,
+                        "name": "AnGy KoRe",
+                        "type": "artist",
+                        "followed": null
+                      }
+                    ],
+                    "purchased": false,
+                    "album_only": false,
+                    "downloaded": false,
+                    "playlisted": 0,
+                    "recordlabel": {
+                      "id": 340996,
+                      "name": "Dolma Records",
+                      "type": "recordlabel",
+                      "followed": null
+                    },
+                    "composed_title": "WE ARE WARRIOR",
+                    "featured_artists": [],
+                    "release_start_at": "2026-05-28T21:00:00Z"
+                  },
+                  {
+                    "id": 6293738,
+                    "bpm": 80,
+                    "isrc": "GBKQU2645484",
+                    "album": {
+                      "id": 1668389,
+                      "icpn": "5054289896224",
+                      "title": "WE ARE WARRIOR",
+                      "exclusive": false,
+                      "artwork_uuid": "9103a7ca-9721-419e-8dc3-1f15f62e5e77",
+                      "volumo_direct": false,
+                      "catalog_number": "DM500",
+                      "release_start_at": "2026-05-28T21:00:00Z"
+                    },
+                    "genre": 11,
+                    "price": 149,
+                    "title": "WE ARE WARRIOR",
+                    "artists": [
+                      {
+                        "id": 39863,
+                        "name": "H! Dude",
+                        "type": "artist",
+                        "followed": null
+                      }
+                    ],
+                    "curated": true,
+                    "formats": {
+                      "mp3": {
+                        "filesize": 12470562
+                      },
+                      "wav": {
+                        "filesize": 54206990
+                      },
+                      "aiff": {
+                        "filesize": 54207000
+                      },
+                      "flac": {
+                        "filesize": 42652317
+                      }
+                    },
+                    "keysign": "D minor",
+                    "version": "SCHRANZ REMIX",
+                    "duration": 306000,
+                    "featured": true,
+                    "genre_id": 11,
+                    "listened": false,
+                    "remixers": [
+                      {
+                        "id": 437133,
+                        "name": "Ortiz Karev",
+                        "type": "artist",
+                        "followed": null
+                      }
+                    ],
+                    "purchased": false,
+                    "album_only": false,
+                    "downloaded": false,
+                    "playlisted": 0,
+                    "recordlabel": {
+                      "id": 340996,
+                      "name": "Dolma Records",
+                      "type": "recordlabel",
+                      "followed": null
+                    },
+                    "composed_title": "WE ARE WARRIOR",
+                    "featured_artists": [],
+                    "release_start_at": "2026-05-28T21:00:00Z"
+                  },
+                  {
+                    "id": 6293739,
+                    "bpm": 82,
+                    "isrc": "GBKQU2645485",
+                    "album": {
+                      "id": 1668389,
+                      "icpn": "5054289896224",
+                      "title": "WE ARE WARRIOR",
+                      "exclusive": false,
+                      "artwork_uuid": "9103a7ca-9721-419e-8dc3-1f15f62e5e77",
+                      "volumo_direct": false,
+                      "catalog_number": "DM500",
+                      "release_start_at": "2026-05-28T21:00:00Z"
+                    },
+                    "genre": 11,
+                    "price": 149,
+                    "title": "WE ARE WARRIOR",
+                    "artists": [
+                      {
+                        "id": 39863,
+                        "name": "H! Dude",
+                        "type": "artist",
+                        "followed": null
+                      }
+                    ],
+                    "curated": true,
+                    "formats": {
+                      "mp3": {
+                        "filesize": 13175872
+                      },
+                      "wav": {
+                        "filesize": 57318050
+                      },
+                      "aiff": {
+                        "filesize": 57318060
+                      },
+                      "flac": {
+                        "filesize": 43651168
+                      }
+                    },
+                    "keysign": "G minor",
+                    "version": "INDUSTRIAL REMIX",
+                    "duration": 323636.37999999995,
+                    "featured": true,
+                    "genre_id": 11,
+                    "listened": false,
+                    "remixers": [
+                      {
+                        "id": 437133,
+                        "name": "Ortiz Karev",
+                        "type": "artist",
+                        "followed": null
+                      }
+                    ],
+                    "purchased": false,
+                    "album_only": false,
+                    "downloaded": false,
+                    "playlisted": 0,
+                    "recordlabel": {
+                      "id": 340996,
+                      "name": "Dolma Records",
+                      "type": "recordlabel",
+                      "followed": null
+                    },
+                    "composed_title": "WE ARE WARRIOR",
+                    "featured_artists": [],
+                    "release_start_at": "2026-05-28T21:00:00Z"
+                  }
+                ],
+                "artists": [
+                  {
+                    "id": 4556,
+                    "name": "AnGy KoRe",
+                    "type": "artist",
+                    "followed": null
+                  },
+                  {
+                    "id": 39863,
+                    "name": "H! Dude",
+                    "type": "artist",
+                    "followed": null
+                  },
+                  {
+                    "id": 437133,
+                    "name": "Ortiz Karev",
+                    "type": "artist",
+                    "followed": null
+                  }
+                ],
+                "charted": false,
+                "curated": true,
+                "formats": {
+                  "mp3": {
+                    "filesize": 45695348
+                  },
+                  "wav": {
+                    "filesize": 198367010
+                  },
+                  "aiff": {
+                    "filesize": 198367050
+                  },
+                  "flac": {
+                    "filesize": 159811808
+                  }
+                },
+                "duration": 1119346.0799999998,
+                "featured": true,
+                "exclusive": false,
+                "purchased": false,
+                "downloaded": false,
+                "first_live": "2026-05-28T21:03:41Z",
+                "genres_ids": [
+                  11
+                ],
+                "description": "",
+                "recordlabel": {
+                  "id": 340996,
+                  "name": "Dolma Records",
+                  "type": "recordlabel",
+                  "followed": null
+                },
+                "artwork_uuid": "9103a7ca-9721-419e-8dc3-1f15f62e5e77",
+                "published_at": "2026-05-28T21:03:41Z",
+                "tracks_total": 4,
+                "volumo_direct": false,
+                "catalog_number": "DM500",
+                "release_start_at": "2026-05-28T21:00:00Z",
+                "original_release_date": "2026-05-29"
+              },
+              "dataUpdateCount": 1,
+              "dataUpdatedAt": 1780335480010,
+              "error": null,
+              "errorUpdateCount": 0,
+              "errorUpdatedAt": 0,
+              "fetchFailureCount": 0,
+              "fetchFailureReason": null,
+              "fetchMeta": null,
+              "isInvalidated": false,
+              "status": "success",
+              "fetchStatus": "idle"
+            },
+            "queryKey": [
+              {
+                "scope": "Album",
+                "albumIdOrIcpn": "5054289896224"
+              }
+            ],
+            "queryHash": "[{\"albumIdOrIcpn\":\"5054289896224\",\"scope\":\"Album\"}]"
+          },
+          {
+            "dehydratedAt": 1780335480010,
+            "state": {
+              "data": {
+                "charts": [],
+                "regular": []
+              },
+              "dataUpdateCount": 1,
+              "dataUpdatedAt": 1780335480010,
+              "error": null,
+              "errorUpdateCount": 0,
+              "errorUpdatedAt": 0,
+              "fetchFailureCount": 0,
+              "fetchFailureReason": null,
+              "fetchMeta": null,
+              "isInvalidated": false,
+              "status": "success",
+              "fetchStatus": "idle"
+            },
+            "queryKey": [
+              {
+                "scope": "AlbumPlaylists",
+                "albumIdOrIcpn": "5054289896224"
+              }
+            ],
+            "queryHash": "[{\"albumIdOrIcpn\":\"5054289896224\",\"scope\":\"AlbumPlaylists\"}]"
+          }
+        ]
+      },
+      "dictionaries": {},
+      "storeEnv": {
+        "basePath": "",
+        "builtAt": "2026-06-01T10:14:36Z",
+        "commitSha": "cd9dfff2",
+        "majorVersion": 2,
+        "envName": "prod",
+        "volumoAuthCookieName": "JSESSIONID",
+        "allowProxyDomains": false,
+        "googleAuthClientId": "926988931173-c7h73sa8gu3jupnj8lcr4nmtgdsqcrmm.apps.googleusercontent.com",
+        "shouldHideBehindSecret": false,
+        "isBuildPhase": false,
+        "isDevApiEnabled": false,
+        "volumoGtmId": "GTM-M4LBZB9",
+        "volumoImagesUrl": "https://volumo.com/img",
+        "volumoLocales": [
+          "en",
+          "de",
+          "es",
+          "nl",
+          "fr",
+          "it"
+        ],
+        "volumoStoreApiUrl": "https://volumo.com/api/v1",
+        "volumoStoreUrl": "https://volumo.com"
+      },
+      "refData": {
+        "href": "/album/5054289896224-we-are-warrior"
+      },
+      "randomNumber": 0.9003606086774245
+    }
+  },
+  "page": "/album/[albumIdOrIcpn]",
+  "query": {
+    "albumIdOrIcpn": "5054289896224-we-are-warrior"
+  },
+  "buildId": "qTNvVZTf0YFvk7U4Ub5Cx",
+  "isFallback": false,
+  "isExperimentalCompile": false,
+  "gip": true,
+  "appGip": true,
+  "locale": "en",
+  "locales": [
+    "en",
+    "de",
+    "es",
+    "et",
+    "fr",
+    "it",
+    "jp",
+    "nl",
+    "pt",
+    "uk"
+  ],
+  "defaultLocale": "en",
+  "scriptLoader": []
+}
