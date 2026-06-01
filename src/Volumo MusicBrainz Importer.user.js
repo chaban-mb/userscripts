@@ -432,11 +432,19 @@
                                     title = `${title} (${version})`;
                                 }
                             }
+
+                            let trackArtists = track.artists || [];
+                            if (Array.isArray(track.remixers) && track.remixers.length > 0) {
+                                const remixerIds = new Set(track.remixers.map(r => r.id).filter(Boolean));
+                                const remixerNames = new Set(track.remixers.map(r => r.name?.toLowerCase()).filter(Boolean));
+                                trackArtists = trackArtists.filter(a => !remixerIds.has(a.id) && !remixerNames.has(a.name?.toLowerCase()));
+                            }
+
                             return {
                                 number: (index + 1).toString(),
                                 title,
                                 duration: track.duration,
-                                artist_credit: this.#getArtistCredits(track.artists, track.featured_artists, artistMbidMap)
+                                artist_credit: this.#getArtistCredits(trackArtists, track.featured_artists, artistMbidMap)
                             };
                         })
                     }
