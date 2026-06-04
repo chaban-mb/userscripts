@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MusicBrainz: Uncheck checkboxes with Esc
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      1.3
+// @version      1.4.0
 // @description  Unchecks all checked checkboxes for specified selectors when pressing Escape key
 // @tag          ai-created
 // @author       chaban
@@ -47,7 +47,20 @@
         }
 
         document.querySelectorAll(fullSelector).forEach(checkbox => {
-            checkbox.checked = false;
+            // GUARD: If a previous click in this exact loop iteration already 
+            // unchecked this checkbox as a side-effect, skip it so we don't turn it back ON.
+            if (!checkbox.checked) {
+                return;
+            }
+
+            // Strategy A: Native Click simulation 
+            checkbox.click();
+
+            // Strategy B: DOM Fallback
+            if (checkbox.checked) {
+                checkbox.checked = false;
+                checkbox.dispatchEvent(new Event('change', { bubbles: true }));
+            }
         });
     }
 
