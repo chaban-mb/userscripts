@@ -1,0 +1,303 @@
+{
+  "id": 1655868,
+  "hot": false,
+  "icpn": "5054289756528",
+  "price": 996,
+  "title": "Night Logic EP",
+  "genres": [
+    16
+  ],
+  "tracks": [
+    {
+      "id": 6257235,
+      "bpm": 127,
+      "isrc": "GBKQU2623989",
+      "album": {
+        "id": 1655868,
+        "icpn": "5054289756528",
+        "title": "Night Logic EP",
+        "exclusive": true,
+        "artwork_uuid": "0fbb049c-f605-4547-8daa-ab1c8dfe2703",
+        "volumo_direct": false,
+        "catalog_number": "BAD079",
+        "release_start_at": "2026-05-14T21:00:00Z"
+      },
+      "genre": 16,
+      "price": 249,
+      "title": "Night Logic",
+      "artists": [
+        {
+          "id": 812795,
+          "name": "Gregg Mira",
+          "type": "artist",
+          "followed": null
+        }
+      ],
+      "curated": true,
+      "formats": {
+        "mp3": {
+          "filesize": 16647948
+        },
+        "wav": {
+          "filesize": 72323968
+        },
+        "aiff": {
+          "filesize": 72323978
+        },
+        "flac": {
+          "filesize": 44493537
+        }
+      },
+      "keysign": "D minor",
+      "version": "Original Mix",
+      "duration": 408189.3,
+      "featured": true,
+      "genre_id": 16,
+      "listened": false,
+      "remixers": [],
+      "purchased": false,
+      "album_only": false,
+      "downloaded": false,
+      "playlisted": 0,
+      "recordlabel": {
+        "id": 338135,
+        "name": "BienAimer Music",
+        "type": "recordlabel",
+        "followed": null
+      },
+      "composed_title": "Night Logic",
+      "featured_artists": [],
+      "release_start_at": "2026-05-14T21:00:00Z"
+    },
+    {
+      "id": 6257236,
+      "bpm": 126,
+      "isrc": "GBKQU2623990",
+      "album": {
+        "id": 1655868,
+        "icpn": "5054289756528",
+        "title": "Night Logic EP",
+        "exclusive": true,
+        "artwork_uuid": "0fbb049c-f605-4547-8daa-ab1c8dfe2703",
+        "volumo_direct": false,
+        "catalog_number": "BAD079",
+        "release_start_at": "2026-05-14T21:00:00Z"
+      },
+      "genre": 16,
+      "price": 249,
+      "title": "Breakin Boundaries",
+      "artists": [
+        {
+          "id": 812795,
+          "name": "Gregg Mira",
+          "type": "artist",
+          "followed": null
+        }
+      ],
+      "curated": true,
+      "formats": {
+        "mp3": {
+          "filesize": 16473458
+        },
+        "wav": {
+          "filesize": 71551456
+        },
+        "aiff": {
+          "filesize": 71551466
+        },
+        "flac": {
+          "filesize": 45326291
+        }
+      },
+      "keysign": "G minor",
+      "version": "Original Mix",
+      "duration": 403809.88,
+      "featured": true,
+      "genre_id": 16,
+      "listened": false,
+      "remixers": [],
+      "purchased": false,
+      "album_only": false,
+      "downloaded": false,
+      "playlisted": 0,
+      "recordlabel": {
+        "id": 338135,
+        "name": "BienAimer Music",
+        "type": "recordlabel",
+        "followed": null
+      },
+      "composed_title": "Breakin Boundaries",
+      "featured_artists": [],
+      "release_start_at": "2026-05-14T21:00:00Z"
+    },
+    {
+      "id": 6257237,
+      "bpm": 127,
+      "isrc": "GBKQU2623991",
+      "album": {
+        "id": 1655868,
+        "icpn": "5054289756528",
+        "title": "Night Logic EP",
+        "exclusive": true,
+        "artwork_uuid": "0fbb049c-f605-4547-8daa-ab1c8dfe2703",
+        "volumo_direct": false,
+        "catalog_number": "BAD079",
+        "release_start_at": "2026-05-14T21:00:00Z"
+      },
+      "genre": 16,
+      "price": 249,
+      "title": "Tokyo Drift",
+      "artists": [
+        {
+          "id": 812795,
+          "name": "Gregg Mira",
+          "type": "artist",
+          "followed": null
+        }
+      ],
+      "curated": true,
+      "formats": {
+        "mp3": {
+          "filesize": 13020062
+        },
+        "wav": {
+          "filesize": 56322972
+        },
+        "aiff": {
+          "filesize": 56322982
+        },
+        "flac": {
+          "filesize": 38395785
+        }
+      },
+      "keysign": "F minor",
+      "version": "Original Mix",
+      "duration": 317480.68,
+      "featured": true,
+      "genre_id": 16,
+      "listened": false,
+      "remixers": [],
+      "purchased": false,
+      "album_only": false,
+      "downloaded": false,
+      "playlisted": 0,
+      "recordlabel": {
+        "id": 338135,
+        "name": "BienAimer Music",
+        "type": "recordlabel",
+        "followed": null
+      },
+      "composed_title": "Tokyo Drift",
+      "featured_artists": [],
+      "release_start_at": "2026-05-14T21:00:00Z"
+    },
+    {
+      "id": 6257238,
+      "bpm": 130,
+      "isrc": "GBKQU2623992",
+      "album": {
+        "id": 1655868,
+        "icpn": "5054289756528",
+        "title": "Night Logic EP",
+        "exclusive": true,
+        "artwork_uuid": "0fbb049c-f605-4547-8daa-ab1c8dfe2703",
+        "volumo_direct": false,
+        "catalog_number": "BAD079",
+        "release_start_at": "2026-05-14T21:00:00Z"
+      },
+      "genre": 16,
+      "price": 249,
+      "title": "Transmetropolitan",
+      "artists": [
+        {
+          "id": 812795,
+          "name": "Gregg Mira",
+          "type": "artist",
+          "followed": null
+        }
+      ],
+      "curated": true,
+      "formats": {
+        "mp3": {
+          "filesize": 16271791
+        },
+        "wav": {
+          "filesize": 70662342
+        },
+        "aiff": {
+          "filesize": 70662352
+        },
+        "flac": {
+          "filesize": 44541354
+        }
+      },
+      "keysign": "E major",
+      "version": "Original Mix",
+      "duration": 398769.62,
+      "featured": true,
+      "genre_id": 16,
+      "listened": false,
+      "remixers": [],
+      "purchased": false,
+      "album_only": false,
+      "downloaded": false,
+      "playlisted": 0,
+      "recordlabel": {
+        "id": 338135,
+        "name": "BienAimer Music",
+        "type": "recordlabel",
+        "followed": null
+      },
+      "composed_title": "Transmetropolitan",
+      "featured_artists": [],
+      "release_start_at": "2026-05-14T21:00:00Z"
+    }
+  ],
+  "artists": [
+    {
+      "id": 812795,
+      "name": "Gregg Mira",
+      "type": "artist",
+      "followed": null
+    }
+  ],
+  "charted": false,
+  "curated": true,
+  "formats": {
+    "mp3": {
+      "filesize": 62413259
+    },
+    "wav": {
+      "filesize": 270860738
+    },
+    "aiff": {
+      "filesize": 270860778
+    },
+    "flac": {
+      "filesize": 172756967
+    }
+  },
+  "duration": 1528249.48,
+  "featured": true,
+  "exclusive": true,
+  "purchased": false,
+  "downloaded": false,
+  "first_live": "2026-05-14T21:16:47Z",
+  "genres_ids": [
+    16
+  ],
+  "description": "",
+  "recordlabel": {
+    "id": 338135,
+    "name": "BienAimer Music",
+    "type": "recordlabel",
+    "followed": null
+  },
+  "artwork_uuid": "0fbb049c-f605-4547-8daa-ab1c8dfe2703",
+  "published_at": "2026-05-14T21:16:47Z",
+  "tracks_total": 4,
+  "volumo_direct": false,
+  "catalog_number": "BAD079",
+  "release_start_at": "2026-05-14T21:00:00Z",
+  "original_release_date": "2026-06-12"
+}
