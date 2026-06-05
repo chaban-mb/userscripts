@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Volumo: MusicBrainz Importer
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      1.2.0
+// @version      1.3.0
 // @description  Allows importing releases from Volumo into MusicBrainz.
 // @tag          ai-created
 // @author       chaban
@@ -45,7 +45,7 @@
             this.#addStyles();
             this.#currentUrl = window.location.href;
             this.#initializeObserver();
-            
+
             if (document.readyState === 'complete') {
                 this.#run();
             } else {
@@ -60,10 +60,10 @@
                     this.#currentUrl = url;
                     this.#run();
                 } else {
-                    const barcode = this.#extractBarcodeFromUrl(url);
+                    const idOrBarcode = this.#extractIdOrBarcodeFromUrl(url);
                     const containerExists = document.getElementById('mb-volumo-button-container');
-                    
-                    if (barcode && !containerExists) {
+
+                    if (idOrBarcode && !containerExists) {
                         this.#handleDomRecreation();
                     }
                 }
@@ -78,8 +78,8 @@
 
             this.#cleanup();
 
-            const barcode = this.#extractBarcodeFromUrl(urlForThisRun);
-            if (!barcode) {
+            const idOrBarcode = this.#extractIdOrBarcodeFromUrl(urlForThisRun);
+            if (!idOrBarcode) {
                 return;
             }
 
@@ -93,7 +93,7 @@
                 this.#setupLoadingState();
 
                 // Fetch metadata
-                const albumData = await this.#fetchAlbumData(barcode);
+                const albumData = await this.#fetchAlbumData(idOrBarcode);
                 if (this.#runId !== runId) return;
 
                 if (!albumData) {
@@ -177,7 +177,7 @@
             }
         }
 
-        #extractBarcodeFromUrl(url) {
+        #extractIdOrBarcodeFromUrl(url) {
             try {
                 const parsed = new URL(url);
                 const match = parsed.pathname.match(/\/(?:[a-z]{2}\/)?album\/(\d+)(?:-|$)/);
@@ -188,21 +188,26 @@
         }
 
         #normalizeUrl(url) {
-            const barcode = this.#extractBarcodeFromUrl(url);
-            return barcode ? `https://volumo.com/album/${barcode}` : url;
+            const idOrBarcode = this.#extractIdOrBarcodeFromUrl(url);
+            return idOrBarcode ? `https://volumo.com/album/${idOrBarcode}` : url;
         }
 
-        async #fetchAlbumData(barcode) {
+        async #fetchAlbumData(idOrBarcode) {
             // 1. Try __NEXT_DATA__
             const nextDataScript = document.getElementById('__NEXT_DATA__');
             if (nextDataScript?.textContent) {
                 try {
                     const nextData = JSON.parse(nextDataScript.textContent);
                     const queries = nextData.props?.pageProps?.dehydratedState?.queries || [];
-                    const albumQuery = queries.find(q =>
-                        q.queryKey && q.queryKey[0] && q.queryKey[0].scope === 'Album' &&
-                        (q.queryKey[0].albumIdOrIcpn === barcode || q.state?.data?.icpn === barcode)
-                    );
+                    const albumQuery = queries.find(q => {
+                        const key = q.queryKey?.[0];
+                        if (key && key.scope === 'Album') {
+                            return String(key.albumIdOrIcpn) === String(idOrBarcode) ||
+                                String(q.state?.data?.id || '') === String(idOrBarcode) ||
+                                String(q.state?.data?.icpn || '') === String(idOrBarcode);
+                        }
+                        return false;
+                    });
                     if (albumQuery?.state?.data) {
                         console.debug('[Volumo Importer] Successfully extracted metadata from __NEXT_DATA__');
                         return albumQuery.state.data;
@@ -213,13 +218,19 @@
             }
 
             // 2. Fallback to API fetch
-            console.debug(`[Volumo Importer] Fetching metadata from API for barcode ${barcode}`);
+            const isBarcode = /^\d{12,}$/.test(idOrBarcode);
+            const url = isBarcode
+                ? `/api/v1/album_by_icpn/${idOrBarcode}`
+                : `/api/v1/albums/${idOrBarcode}`;
+
+            console.debug(`[Volumo Importer] Fetching metadata from API: ${url}`);
             try {
-                const response = await fetch(`/api/v1/album_by_icpn/${barcode}`);
+                const response = await fetch(url);
                 if (!response.ok) {
                     throw new Error(`API returned HTTP ${response.status}`);
                 }
-                return await response.json();
+                const data = await response.json();
+                return Array.isArray(data) ? data[0] : data;
             } catch (error) {
                 console.error('[Volumo Importer] API fetch failed', error);
                 return null;
@@ -340,19 +351,32 @@
 
             // Import with Harmony button
             const harmonyLink = document.createElement('a');
+            const hasGtin = !!albumData.icpn;
             const harmonyParams = new URLSearchParams({
                 gtin: albumData.icpn || '',
-                url: normalizedUrl,
+                // TODO: url: normalizedUrl, (restore once Harmony supports Volumo)
                 category: 'preferred',
             });
             if (mbInfo?.mbid) {
                 harmonyParams.set('musicbrainz', mbInfo.mbid);
             }
-            harmonyLink.href = `${VolumoMusicBrainzImporter.URLS.HARMONY_BASE}?${harmonyParams.toString()}`;
-            harmonyLink.target = '_blank';
+
+            if (hasGtin) {
+                harmonyLink.href = `${VolumoMusicBrainzImporter.URLS.HARMONY_BASE}?${harmonyParams.toString()}`;
+                harmonyLink.target = '_blank';
+            } else {
+                harmonyLink.style.pointerEvents = 'none';
+                harmonyLink.style.opacity = '0.5';
+                harmonyLink.style.cursor = 'not-allowed';
+            }
+
             harmonyLink.className = 'mb-btn mb-btn-harmony';
             harmonyLink.textContent = 'Import with Harmony';
-            harmonyLink.addEventListener('click', () => {
+            harmonyLink.addEventListener('click', (e) => {
+                if (!hasGtin) {
+                    e.preventDefault();
+                    return;
+                }
                 this.#mbApi.invalidateCacheForUrl(normalizedUrl);
             });
             this.#container.appendChild(harmonyLink);

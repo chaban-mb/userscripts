@@ -33,8 +33,6 @@ from html.parser import HTMLParser
 # ---------------------------------------------------------------------------
 
 BASE_URL = "https://volumo.com"
-API_URL = "{base}/api/v1/album_by_icpn/{barcode}"
-PAGE_URL = "{base}/album/{barcode}"
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
@@ -149,19 +147,61 @@ def save_schema(out_dir: Path, api_data: dict):
 # Main
 # ---------------------------------------------------------------------------
 
-def run(barcode: str):
-    out_dir = SNAPSHOTS_DIR / barcode
-    print(f"\nSnapshoting barcode {barcode}")
+def run(identifier: str):
+    identifier = identifier.strip()
+
+    # Determine type of identifier and extract parameters
+    slug_or_id = None
+    is_barcode = False
+
+    if identifier.startswith("http://") or identifier.startswith("https://"):
+        m = re.search(r"volumo\.com/album/([^/?#]+)", identifier)
+        if m:
+            slug_or_id = m.group(1)
+        else:
+            print(f"Error: Could not parse album slug/ID from URL: {identifier}", file=sys.stderr)
+            sys.exit(1)
+    else:
+        if identifier.isdigit() and len(identifier) >= 12:
+            is_barcode = True
+        else:
+            slug_or_id = identifier
+
+    if is_barcode:
+        barcode = identifier
+        dir_name = barcode
+        api_url = f"{BASE_URL}/api/v1/album_by_icpn/{barcode}"
+        page_url = f"{BASE_URL}/album/{barcode}"
+        print(f"\nSnapshoting barcode {barcode}")
+    else:
+        m = re.match(r"^(\d+)", slug_or_id)
+        if not m:
+            print(f"Error: Could not extract a numeric album ID from slug: {slug_or_id}", file=sys.stderr)
+            sys.exit(1)
+        album_id = m.group(1)
+        dir_name = slug_or_id
+        api_url = f"{BASE_URL}/api/v1/albums/{album_id}"
+        page_url = f"{BASE_URL}/album/{slug_or_id}"
+        print(f"\nSnapshoting album slug/ID {slug_or_id} (ID: {album_id})")
+
+    out_dir = SNAPSHOTS_DIR / dir_name
     print(f"Output directory: {out_dir.relative_to(REPO_ROOT)}\n")
 
     # 1. Fetch API JSON
-    api_url = API_URL.format(base=BASE_URL, barcode=barcode)
     print(f"[1/3] Fetching API response: {api_url}")
     api_data = fetch_json(api_url)
+
+    # Normalize response (albums endpoint returns a list with a single album)
+    if isinstance(api_data, list):
+        if len(api_data) > 0:
+            api_data = api_data[0]
+        else:
+            print(f"Error: API returned an empty list from: {api_url}", file=sys.stderr)
+            sys.exit(1)
+
     save_snapshot(out_dir, "api.json", api_data)
 
     # 2. Fetch page HTML and extract __NEXT_DATA__
-    page_url = PAGE_URL.format(base=BASE_URL, barcode=barcode)
     print(f"\n[2/3] Fetching page HTML for __NEXT_DATA__: {page_url}")
     html = fetch_text(page_url)
     extractor = NextDataExtractor()
@@ -182,7 +222,7 @@ def run(barcode: str):
     save_schema(out_dir, api_data)
 
     print(f"\nDone. To detect future changes run:")
-    print(f"  git diff snapshots/volumo/{barcode}/")
+    print(f"  git diff snapshots/volumo/{dir_name}/")
 
 
 def main():
@@ -190,11 +230,11 @@ def main():
         description="Snapshot Volumo album API and page data for development reference."
     )
     parser.add_argument(
-        "barcode",
-        help="Numeric ICPN barcode of the album (e.g. 8721466352961)",
+        "identifier",
+        help="Album identifier (barcode, slug, numeric ID, or Volumo album URL)",
     )
     args = parser.parse_args()
-    run(args.barcode)
+    run(args.identifier)
 
 
 if __name__ == "__main__":

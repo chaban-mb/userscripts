@@ -1,0 +1,168 @@
+{
+  "id": 103374,
+  "hot": false,
+  "icpn": null,
+  "price": 600,
+  "title": "Doping / Flickering EP",
+  "genres": [
+    16,
+    3
+  ],
+  "tracks": [
+    {
+      "id": 392285,
+      "bpm": null,
+      "isrc": null,
+      "album": {
+        "id": 103374,
+        "icpn": null,
+        "title": "Doping / Flickering EP",
+        "exclusive": true,
+        "artwork_uuid": "5aac675a-cc12-4c29-bbb9-1e7c75a71be0",
+        "volumo_direct": true,
+        "catalog_number": null,
+        "release_start_at": "2022-11-15T23:00:00Z"
+      },
+      "genre": 16,
+      "price": 400,
+      "title": "Doping",
+      "artists": [
+        {
+          "id": 36611,
+          "name": "iO (Mulen)",
+          "type": "artist",
+          "followed": null
+        }
+      ],
+      "curated": true,
+      "formats": {
+        "mp3": {
+          "filesize": 19065135
+        },
+        "wav": {
+          "filesize": 83780549
+        },
+        "aiff": {
+          "filesize": 83780559
+        },
+        "flac": {
+          "filesize": 52211707
+        }
+      },
+      "keysign": "E minor",
+      "version": null,
+      "duration": 474461.5478515625,
+      "featured": true,
+      "genre_id": 16,
+      "listened": false,
+      "remixers": [],
+      "purchased": false,
+      "album_only": false,
+      "downloaded": false,
+      "playlisted": 0,
+      "recordlabel": null,
+      "composed_title": "Doping",
+      "featured_artists": [],
+      "release_start_at": "2022-11-15T23:00:00Z"
+    },
+    {
+      "id": 392284,
+      "bpm": null,
+      "isrc": null,
+      "album": {
+        "id": 103374,
+        "icpn": null,
+        "title": "Doping / Flickering EP",
+        "exclusive": true,
+        "artwork_uuid": "5aac675a-cc12-4c29-bbb9-1e7c75a71be0",
+        "volumo_direct": true,
+        "catalog_number": null,
+        "release_start_at": "2022-11-15T23:00:00Z"
+      },
+      "genre": 3,
+      "price": 400,
+      "title": "Flickering",
+      "artists": [
+        {
+          "id": 36611,
+          "name": "iO (Mulen)",
+          "type": "artist",
+          "followed": null
+        }
+      ],
+      "curated": true,
+      "formats": {
+        "mp3": {
+          "filesize": 16626011
+        },
+        "wav": {
+          "filesize": 73031299
+        },
+        "aiff": {
+          "filesize": 73031309
+        },
+        "flac": {
+          "filesize": 49392718
+        }
+      },
+      "keysign": "C major",
+      "version": null,
+      "duration": 413538.51318359375,
+      "featured": true,
+      "genre_id": 3,
+      "listened": false,
+      "remixers": [],
+      "purchased": false,
+      "album_only": false,
+      "downloaded": false,
+      "playlisted": 0,
+      "recordlabel": null,
+      "composed_title": "Flickering",
+      "featured_artists": [],
+      "release_start_at": "2022-11-15T23:00:00Z"
+    }
+  ],
+  "artists": [
+    {
+      "id": 36611,
+      "name": "iO (Mulen)",
+      "type": "artist",
+      "followed": null
+    }
+  ],
+  "charted": false,
+  "curated": true,
+  "formats": {
+    "mp3": {
+      "filesize": 35691146
+    },
+    "wav": {
+      "filesize": 156811848
+    },
+    "aiff": {
+      "filesize": 156811868
+    },
+    "flac": {
+      "filesize": 101604425
+    }
+  },
+  "duration": 888000.0610351562,
+  "featured": true,
+  "exclusive": true,
+  "purchased": false,
+  "downloaded": false,
+  "first_live": "2022-09-21T21:00:56Z",
+  "genres_ids": [
+    16,
+    3
+  ],
+  "description": "",
+  "recordlabel": null,
+  "artwork_uuid": "5aac675a-cc12-4c29-bbb9-1e7c75a71be0",
+  "published_at": "2022-09-21T21:00:56Z",
+  "tracks_total": 2,
+  "volumo_direct": true,
+  "catalog_number": null,
+  "release_start_at": "2022-11-15T23:00:00Z",
+  "original_release_date": null
+}
