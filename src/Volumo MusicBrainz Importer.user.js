@@ -38,6 +38,7 @@
         #runId = 0;
         #container = null;
         #lastRenderArgs = null;
+        #areaCache = new Map();
 
         constructor() {
             this.#mbApi = new MusicBrainzAPI({
@@ -196,13 +197,19 @@
                     // Look up Area GID if country_code is present
                     let areaGid = null;
                     if (contributorData.country_code) {
-                        try {
-                            const areaResults = await this.#mbApi.search('area', `iso:${contributorData.country_code}`, 1);
-                            if (areaResults && areaResults.areas && areaResults.areas.length > 0) {
-                                areaGid = areaResults.areas[0].id;
+                        const cachedGid = this.#areaCache.get(contributorData.country_code);
+                        if (cachedGid !== undefined) {
+                            areaGid = cachedGid;
+                        } else {
+                            try {
+                                const areaResults = await this.#mbApi.search('area', `iso:${contributorData.country_code}`, 1);
+                                if (areaResults && areaResults.areas && areaResults.areas.length > 0) {
+                                    areaGid = areaResults.areas[0].id;
+                                }
+                                this.#areaCache.set(contributorData.country_code, areaGid);
+                            } catch (e) {
+                                console.warn('[Volumo Importer] Failed to lookup area GID by ISO code', e);
                             }
-                        } catch (e) {
-                            console.warn('[Volumo Importer] Failed to lookup area GID by ISO code', e);
                         }
                     }
                     if (this.#runId !== runId) return;
