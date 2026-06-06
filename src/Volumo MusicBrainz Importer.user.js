@@ -683,8 +683,12 @@
 
         #submitImportForm(albumData, normalizedUrl, labelMbid, artistMbidMap) {
             const release = this.#mapToMbRelease(albumData, normalizedUrl, labelMbid, artistMbidMap);
-            const parameters = MBImport.buildFormParameters(release, this.#makeEditNote(normalizedUrl));
-            this.#submitPostForm(`${VolumoMusicBrainzImporter.URLS.MUSICBRAINZ_BASE}/release/add`, parameters);
+            // buildFormParameters returns [{name, value}] — convert to plain object for #submitPostForm
+            const params = Object.fromEntries(
+                MBImport.buildFormParameters(release, this.#makeEditNote(normalizedUrl))
+                    .map(({ name, value }) => [name, value])
+            );
+            this.#submitPostForm(`${VolumoMusicBrainzImporter.URLS.MUSICBRAINZ_BASE}/release/add`, params);
         }
 
         #submitAddUrlForm(mbid, normalizedUrl) {
