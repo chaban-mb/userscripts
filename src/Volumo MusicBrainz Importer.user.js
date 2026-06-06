@@ -653,46 +653,19 @@
             this.#container.appendChild(harmonyLink);
         }
 
-        #submitImportForm(albumData, normalizedUrl, labelMbid, artistMbidMap) {
-            const release = this.#mapToMbRelease(albumData, normalizedUrl, labelMbid, artistMbidMap);
-            const editNote = MBImport.makeEditNote(
+        #makeEditNote(normalizedUrl) {
+            return MBImport.makeEditNote(
                 normalizedUrl,
                 VolumoMusicBrainzImporter.SCRIPT_NAME,
                 '',
                 'https://github.com/chaban-mb/userscripts'
             );
-            const parameters = MBImport.buildFormParameters(release, editNote);
-            const formHtml = MBImport.buildFormHTML(parameters);
-
-            const tempDiv = document.createElement('div');
-            tempDiv.style.display = 'none';
-            tempDiv.innerHTML = formHtml;
-            document.body.appendChild(tempDiv);
-
-            const form = tempDiv.querySelector('form');
-            if (form) {
-                form.submit();
-            }
-
-            setTimeout(() => tempDiv.remove(), 1000);
         }
 
-        #submitAddUrlForm(mbid, normalizedUrl) {
-            const editNote = MBImport.makeEditNote(
-                normalizedUrl,
-                VolumoMusicBrainzImporter.SCRIPT_NAME,
-                '',
-                'https://github.com/chaban-mb/userscripts'
-            );
-            const params = {
-                'urls.0.url': normalizedUrl,
-                'urls.0.link_type': MBImport.URL_TYPES.purchase_for_download,
-                'edit_note': editNote,
-            };
-
+        #submitPostForm(action, params) {
             const form = document.createElement('form');
             form.method = 'post';
-            form.action = `${VolumoMusicBrainzImporter.URLS.MUSICBRAINZ_BASE}/release/${mbid}/edit`;
+            form.action = action;
             form.style.display = 'none';
 
             for (const [name, value] of Object.entries(params)) {
@@ -706,6 +679,23 @@
             document.body.appendChild(form);
             form.submit();
             setTimeout(() => form.remove(), 1000);
+        }
+
+        #submitImportForm(albumData, normalizedUrl, labelMbid, artistMbidMap) {
+            const release = this.#mapToMbRelease(albumData, normalizedUrl, labelMbid, artistMbidMap);
+            const parameters = MBImport.buildFormParameters(release, this.#makeEditNote(normalizedUrl));
+            this.#submitPostForm(`${VolumoMusicBrainzImporter.URLS.MUSICBRAINZ_BASE}/release/add`, parameters);
+        }
+
+        #submitAddUrlForm(mbid, normalizedUrl) {
+            this.#submitPostForm(
+                `${VolumoMusicBrainzImporter.URLS.MUSICBRAINZ_BASE}/release/${mbid}/edit`,
+                {
+                    'urls.0.url': normalizedUrl,
+                    'urls.0.link_type': MBImport.URL_TYPES.purchase_for_download,
+                    'edit_note': this.#makeEditNote(normalizedUrl),
+                }
+            );
         }
 
         #mapToMbRelease(albumData, normalizedUrl, labelMbid, artistMbidMap) {
