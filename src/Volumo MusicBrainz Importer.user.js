@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Volumo: MusicBrainz Importer
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      1.3.1
+// @version      1.4.0
 // @description  Allows importing releases from Volumo into MusicBrainz.
 // @tag          ai-created
 // @author       chaban
@@ -17,6 +17,7 @@
 // @updateURL    https://github.com/chaban-mb/userscripts/raw/main/src/Volumo%20MusicBrainz%20Importer.user.js
 // @downloadURL  https://github.com/chaban-mb/userscripts/raw/main/src/Volumo%20MusicBrainz%20Importer.user.js
 // ==/UserScript==
+
 
 (function () {
     'use strict';
@@ -43,6 +44,8 @@
                 user_agent: `${VolumoMusicBrainzImporter.SCRIPT_NAME}/${GM.info.script.version} ( ${GM_info.script.namespace} )`
             });
             this.#addStyles();
+
+
             this.#currentUrl = window.location.href;
             this.#initializeObserver();
 
@@ -60,16 +63,17 @@
                     this.#currentUrl = url;
                     this.#run();
                 } else {
-                    const idOrBarcode = this.#extractIdOrBarcodeFromUrl(url);
+                    const page = this.#detectPage(url);
                     const containerExists = document.getElementById('mb-volumo-button-container');
 
-                    if (idOrBarcode && !containerExists) {
+                    if (page && !containerExists) {
                         this.#handleDomRecreation();
                     }
                 }
             });
             this.#observer.observe(document.body, { childList: true, subtree: true });
         }
+
 
         async #run() {
             const runId = ++this.#runId;
@@ -78,28 +82,37 @@
 
             this.#cleanup();
 
-            const idOrBarcode = this.#extractIdOrBarcodeFromUrl(urlForThisRun);
-            if (!idOrBarcode) {
+            const page = this.#detectPage(urlForThisRun);
+            if (!page) {
                 return;
             }
 
             try {
-                const hintRoot = await this.#waitForElement(VolumoMusicBrainzImporter.SELECTORS.RANDOM_HINT, 10000);
+                let targetSelector;
+                if (page.type === 'album') {
+                    targetSelector = VolumoMusicBrainzImporter.SELECTORS.RANDOM_HINT;
+                } else {
+                    targetSelector = 'h1[class*="ContributorInfo_title"], h1[class*="DesktopContributorInfo_title"]';
+                }
+
+                const targetEl = await this.#waitForElement(targetSelector, 10000);
                 if (this.#runId !== runId) return;
 
-                this.#createButtonContainer(hintRoot);
+                this.#createButtonContainer(targetEl, page.type);
 
-                const normalizedUrl = this.#normalizeUrl(urlForThisRun);
+                const normalizedUrl = this.#normalizeUrl(urlForThisRun, page);
                 this.#setupLoadingState();
 
-                // Fetch metadata
-                const albumData = await this.#fetchAlbumData(idOrBarcode);
-                if (this.#runId !== runId) return;
+                if (page.type === 'album') {
+                    // Fetch metadata
+                    const albumData = await this.#fetchAlbumData(page.id);
+                    if (this.#runId !== runId) return;
 
-                if (!albumData) {
-                    this.#showErrorState('Failed to extract album data');
-                    return;
-                }
+                    if (!albumData) {
+                        this.#showErrorState('Failed to extract album data');
+                        return;
+                    }
+
 
                 // Collect all candidate URLs for MusicBrainz relationship lookup
                 const releaseUrl = normalizedUrl;
@@ -169,6 +182,54 @@
                 });
 
                 this.#renderButtons(albumData, normalizedUrl, mbInfo, labelMbid, artistMbidMap);
+                } else {
+                    // Artist / Label flow
+                    const contributorData = await this.#fetchContributorData(page.type, page.id);
+
+                    if (this.#runId !== runId) return;
+
+                    if (!contributorData) {
+                        this.#showErrorState('Failed to extract contributor data');
+                        return;
+                    }
+
+                    // Look up Area GID if country_code is present
+                    let areaGid = null;
+                    if (contributorData.country_code) {
+                        try {
+                            const areaResults = await this.#mbApi.search('area', `iso:${contributorData.country_code}`, 1);
+                            if (areaResults && areaResults.areas && areaResults.areas.length > 0) {
+                                areaGid = areaResults.areas[0].id;
+                            }
+                        } catch (e) {
+                            console.warn('[Volumo Importer] Failed to lookup area GID by ISO code', e);
+                        }
+                    }
+                    if (this.#runId !== runId) return;
+
+                    const lookupUrl = normalizedUrl;
+                    const inc = [];
+                    if (!this.#mbApi.cache.has(lookupUrl)) {
+                        inc.push(page.type === 'artist' ? 'artist-rels' : 'label-rels');
+                    }
+
+                    const lookupResults = await this.#mbApi.lookupUrl([lookupUrl], inc);
+                    if (this.#runId !== runId) return;
+
+                    let mbInfo = null;
+                    const entityData = lookupResults.get(lookupUrl);
+                    if (entityData && Array.isArray(entityData.relations)) {
+                        const relation = entityData.relations.find(rel =>
+                            rel['target-type'] === page.type && rel[page.type]
+                        );
+                        if (relation) {
+                            mbInfo = { mbid: relation[page.type].id };
+                        }
+                    }
+
+                    this.#renderContributorButtons(contributorData, normalizedUrl, mbInfo, page.type, areaGid);
+                }
+
 
             } catch (error) {
                 if (this.#runId !== runId) return;
@@ -177,20 +238,31 @@
             }
         }
 
-        #extractIdOrBarcodeFromUrl(url) {
+        #detectPage(url) {
             try {
                 const parsed = new URL(url);
-                const match = parsed.pathname.match(/\/(?:[a-z]{2}\/)?album\/(\d+)(?:-|$)/);
-                return match ? match[1] : null;
-            } catch (e) {
-                return null;
-            }
+                const albumMatch = parsed.pathname.match(/\/(?:[a-z]{2}\/)?album\/(\d+)(?:-|$)/);
+                if (albumMatch) {
+                    return { type: 'album', id: albumMatch[1] };
+                }
+                const artistMatch = parsed.pathname.match(/\/(?:[a-z]{2}\/)?artist\/(\d+)(?:-|$)/);
+                if (artistMatch) {
+                    return { type: 'artist', id: artistMatch[1] };
+                }
+                const labelMatch = parsed.pathname.match(/\/(?:[a-z]{2}\/)?label\/(\d+)(?:-|$)/);
+                if (labelMatch) {
+                    return { type: 'label', id: labelMatch[1] };
+                }
+            } catch (e) {}
+            return null;
         }
 
-        #normalizeUrl(url) {
-            const idOrBarcode = this.#extractIdOrBarcodeFromUrl(url);
-            return idOrBarcode ? `https://volumo.com/album/${idOrBarcode}` : url;
+        #normalizeUrl(url, page) {
+            if (!page) page = this.#detectPage(url);
+            if (!page) return url;
+            return `https://volumo.com/${page.type}/${page.id}`;
         }
+
 
         async #fetchAlbumData(idOrBarcode) {
             // 1. Try __NEXT_DATA__
@@ -237,6 +309,44 @@
             }
         }
 
+        async #fetchContributorData(type, id) {
+            // 1. Try __NEXT_DATA__
+            const nextDataScript = document.getElementById('__NEXT_DATA__');
+            if (nextDataScript?.textContent) {
+                try {
+                    const nextData = JSON.parse(nextDataScript.textContent);
+                    const queries = nextData.props?.pageProps?.dehydratedState?.queries || [];
+                    const contributorQuery = queries.find(q => {
+                        const key = q.queryKey?.[0];
+                        return key && key.scope === 'Contributor' && String(key.contributorId) === String(id);
+                    });
+                    if (contributorQuery?.state?.data) {
+                        console.debug('[Volumo Importer] Successfully extracted contributor metadata from __NEXT_DATA__');
+                        return contributorQuery.state.data;
+                    }
+                } catch (e) {
+                    console.warn('[Volumo Importer] Failed to parse __NEXT_DATA__ for contributor', e);
+                }
+            }
+
+            // 2. Fallback to API fetch
+            const apiType = type === 'label' ? 'recordlabel' : 'artist';
+            const url = `/api/v1/contributors/${apiType}/${id}?public=true`;
+            console.debug(`[Volumo Importer] Fetching contributor metadata from API: ${url}`);
+            try {
+                const response = await fetch(url);
+                if (!response.ok) {
+                    throw new Error(`API returned HTTP ${response.status}`);
+                }
+                const data = await response.json();
+                return data;
+            } catch (error) {
+                console.error('[Volumo Importer] Contributor API fetch failed', error);
+                return null;
+            }
+        }
+
+
         #getLabelUrl(recordlabel) {
             if (!recordlabel || !recordlabel.id) return null;
             return `https://volumo.com/label/${recordlabel.id}`;
@@ -280,14 +390,28 @@
             this.#container = null;
         }
 
-        #createButtonContainer(hintRoot) {
-            // Hide the rotating hint text and take over the slot
-            const hint = hintRoot.querySelector('[class*="RandomHint_hint"]');
-            if (hint) hint.style.display = 'none';
-
+        #createButtonContainer(targetEl, pageType) {
             this.#container = document.createElement('div');
             this.#container.id = 'mb-volumo-button-container';
-            hintRoot.appendChild(this.#container);
+
+            if (pageType === 'album') {
+                // Hide the rotating hint text and take over the slot
+                const hint = targetEl.querySelector('[class*="RandomHint_hint"]');
+                if (hint) hint.style.display = 'none';
+                targetEl.appendChild(this.#container);
+            } else {
+                // Find Left Column (parent of title element)
+                const leftColumn = targetEl.parentElement;
+                if (!leftColumn) return;
+
+                // Try to insert after the counters block
+                const countersEl = leftColumn.querySelector('[class*="ContributorInfo_counters"], [class*="DesktopContributorInfo_counters"]');
+                if (countersEl) {
+                    countersEl.after(this.#container);
+                } else {
+                    leftColumn.appendChild(this.#container);
+                }
+            }
         }
 
         #handleDomRecreation() {
@@ -297,15 +421,148 @@
                 return;
             }
 
-            const hintRoot = document.querySelector(VolumoMusicBrainzImporter.SELECTORS.RANDOM_HINT);
-            if (!hintRoot) return;
+            const page = this.#detectPage(window.location.href);
+            if (!page) return;
 
-            this.#createButtonContainer(hintRoot);
+            let targetSelector;
+            if (page.type === 'album') {
+                targetSelector = VolumoMusicBrainzImporter.SELECTORS.RANDOM_HINT;
+            } else {
+                targetSelector = 'h1[class*="ContributorInfo_title"], h1[class*="DesktopContributorInfo_title"]';
+            }
 
-            const { albumData, normalizedUrl, mbInfo, labelMbid, artistMbidMap } = args;
-            this.#renderButtons(albumData, normalizedUrl, mbInfo, labelMbid, artistMbidMap);
-            console.debug('[Volumo Importer] Re-injected buttons into new DOM element');
+            const targetEl = document.querySelector(targetSelector);
+            if (!targetEl) return;
+
+            this.#createButtonContainer(targetEl, page.type);
+
+            if (page.type === 'album') {
+                const { albumData, normalizedUrl, mbInfo, labelMbid, artistMbidMap } = args;
+                this.#renderButtons(albumData, normalizedUrl, mbInfo, labelMbid, artistMbidMap);
+            } else {
+                const { contributorData, normalizedUrl, mbInfo, entityType, areaGid } = args;
+                this.#renderContributorButtons(contributorData, normalizedUrl, mbInfo, entityType, areaGid);
+            }
+            console.debug(`[Volumo Importer] Re-injected buttons into new DOM element for ${page.type}`);
         }
+
+        #renderContributorButtons(contributorData, normalizedUrl, mbInfo, entityType, areaGid) {
+            if (!this.#container) return;
+            // Persist args so we can re-inject after a React remount
+            this.#lastRenderArgs = { contributorData, normalizedUrl, mbInfo, entityType, areaGid };
+            this.#container.innerHTML = '';
+
+            const displayName = contributorData.name;
+
+            if (mbInfo) {
+                // Open in MusicBrainz
+                const mbLink = document.createElement('a');
+                mbLink.href = `${VolumoMusicBrainzImporter.URLS.MUSICBRAINZ_BASE}/${entityType}/${mbInfo.mbid}`;
+                mbLink.target = '_blank';
+                mbLink.className = 'mb-btn mb-btn-open';
+                mbLink.textContent = 'Open in MusicBrainz';
+                this.#container.appendChild(mbLink);
+            } else {
+                // Import/Add directly into MusicBrainz (using GET parameters)
+                const importLink = document.createElement('a');
+                importLink.href = this.#buildContributorCreateUrl(contributorData, normalizedUrl, entityType, areaGid);
+                importLink.target = '_blank';
+                importLink.className = 'mb-btn mb-btn-import';
+                importLink.textContent = 'Add to MusicBrainz';
+                this.#container.appendChild(importLink);
+
+                // Search in MB button
+                const searchLink = document.createElement('a');
+                searchLink.href = `${VolumoMusicBrainzImporter.URLS.MUSICBRAINZ_BASE}/search?query=${encodeURIComponent(displayName)}&type=${entityType}`;
+                searchLink.target = '_blank';
+                searchLink.className = 'mb-btn mb-btn-search';
+                searchLink.textContent = 'Search in MusicBrainz';
+                this.#container.appendChild(searchLink);
+            }
+        }
+
+        #buildContributorCreateUrl(contributorData, normalizedUrl, entityType, areaGid) {
+            const params = new URLSearchParams();
+
+            const displayName = contributorData.name;
+            params.set(`edit-${entityType}.name`, displayName);
+
+            if (entityType === 'artist') {
+                params.set('edit-artist.sort_name', displayName);
+            }
+
+            // Resolve area country
+            if (contributorData.country_code) {
+                try {
+                    const countryName = new Intl.DisplayNames(['en'], { type: 'region' }).of(contributorData.country_code);
+                    if (countryName) {
+                        params.set(`edit-${entityType}.area.name`, countryName);
+                        if (areaGid) {
+                            params.set(`edit-${entityType}.area.gid`, areaGid);
+                        }
+                    }
+                } catch (e) {
+                    console.warn('[Volumo Importer] Failed to resolve country name using Intl.DisplayNames', e);
+                }
+            }
+
+            // Add URLs
+            const urls = [];
+            // Index 0 is always the Volumo page itself
+            urls.push({
+                url: normalizedUrl,
+                typeId: entityType === 'artist' ? 176 : 959
+            });
+
+            // Subsequent ones are social links
+            if (Array.isArray(contributorData.social_links)) {
+                contributorData.social_links.forEach(linkUrl => {
+                    const typeId = this.#getSocialLinkType(linkUrl, entityType);
+                    if (typeId) {
+                        urls.push({
+                            url: linkUrl,
+                            typeId: typeId
+                        });
+                    }
+                });
+            }
+
+            urls.forEach((u, index) => {
+                params.set(`edit-${entityType}.url.${index}.text`, u.url);
+                params.set(`edit-${entityType}.url.${index}.link_type_id`, u.typeId);
+            });
+
+            // Add edit note
+            const editNote = `Imported from Volumo (${normalizedUrl}) using Volumo MusicBrainz Importer userscript.`;
+            params.set(`edit-${entityType}.edit_note`, editNote);
+
+            return `${VolumoMusicBrainzImporter.URLS.MUSICBRAINZ_BASE}/${entityType}/create?${params.toString()}`;
+        }
+
+        #getSocialLinkType(url, entityType) {
+            try {
+                const parsed = new URL(url);
+                const hostname = parsed.hostname.toLowerCase();
+                if (hostname.includes('youtube.com') || hostname.includes('youtu.be')) {
+                    return entityType === 'artist' ? 193 : 225;
+                }
+                if (hostname.includes('soundcloud.com')) {
+                    return entityType === 'artist' ? 291 : 290;
+                }
+                if (hostname.includes('bandcamp.com')) {
+                    return entityType === 'artist' ? 718 : 719;
+                }
+                if (hostname.includes('instagram.com') ||
+                    hostname.includes('facebook.com') ||
+                    hostname.includes('tiktok.com') ||
+                    hostname.includes('twitter.com') ||
+                    hostname.includes('x.com')) {
+                    return entityType === 'artist' ? 192 : 218;
+                }
+            } catch (e) {}
+            return null;
+        }
+
 
         #setupLoadingState() {
             if (!this.#container) return;
@@ -598,6 +855,10 @@
                 .mb-btn-harmony {
                     background-color: #c45555;
                 }
+                .mb-btn-search {
+                    background-color: #5c6bc0;
+                }
+
                 .musicbrainz_import_search {
                     margin: 0;
                     padding: 0;
