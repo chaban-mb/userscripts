@@ -31,6 +31,12 @@
             MUSICBRAINZ_BASE: 'https://musicbrainz.org',
             HARMONY_BASE: 'https://harmony.pulsewidth.org.uk/release',
         };
+        static SOCIAL_DOMAINS = [
+            { patterns: ['youtube.com', 'youtu.be'], artist: 193, label: 225 },
+            { patterns: ['soundcloud.com'], artist: 291, label: 290 },
+            { patterns: ['bandcamp.com'], artist: 718, label: 719 },
+            { patterns: ['instagram.com', 'facebook.com', 'tiktok.com', 'twitter.com', 'x.com'], artist: 192, label: 218 },
+        ];
 
         #mbApi = null;
         #currentUrl = '';
@@ -271,29 +277,33 @@
         }
 
 
-        async #fetchAlbumData(idOrBarcode) {
-            // 1. Try __NEXT_DATA__
+        #getNextDataQueries() {
             const nextDataScript = document.getElementById('__NEXT_DATA__');
             if (nextDataScript?.textContent) {
                 try {
                     const nextData = JSON.parse(nextDataScript.textContent);
-                    const queries = nextData.props?.pageProps?.dehydratedState?.queries || [];
-                    const albumQuery = queries.find(q => {
-                        const key = q.queryKey?.[0];
-                        if (key && key.scope === 'Album') {
-                            return String(key.albumIdOrIcpn) === String(idOrBarcode) ||
-                                String(q.state?.data?.id || '') === String(idOrBarcode) ||
-                                String(q.state?.data?.icpn || '') === String(idOrBarcode);
-                        }
-                        return false;
-                    });
-                    if (albumQuery?.state?.data) {
-                        console.debug('[Volumo Importer] Successfully extracted metadata from __NEXT_DATA__');
-                        return albumQuery.state.data;
-                    }
+                    return nextData.props?.pageProps?.dehydratedState?.queries || [];
                 } catch (e) {
                     console.warn('[Volumo Importer] Failed to parse __NEXT_DATA__', e);
                 }
+            }
+            return [];
+        }
+
+        async #fetchAlbumData(idOrBarcode) {
+            const queries = this.#getNextDataQueries();
+            const albumQuery = queries.find(q => {
+                const key = q.queryKey?.[0];
+                if (key && key.scope === 'Album') {
+                    return String(key.albumIdOrIcpn) === String(idOrBarcode) ||
+                        String(q.state?.data?.id || '') === String(idOrBarcode) ||
+                        String(q.state?.data?.icpn || '') === String(idOrBarcode);
+                }
+                return false;
+            });
+            if (albumQuery?.state?.data) {
+                console.debug('[Volumo Importer] Successfully extracted metadata from __NEXT_DATA__');
+                return albumQuery.state.data;
             }
 
             // 2. Fallback to API fetch
@@ -317,23 +327,14 @@
         }
 
         async #fetchContributorData(type, id) {
-            // 1. Try __NEXT_DATA__
-            const nextDataScript = document.getElementById('__NEXT_DATA__');
-            if (nextDataScript?.textContent) {
-                try {
-                    const nextData = JSON.parse(nextDataScript.textContent);
-                    const queries = nextData.props?.pageProps?.dehydratedState?.queries || [];
-                    const contributorQuery = queries.find(q => {
-                        const key = q.queryKey?.[0];
-                        return key && key.scope === 'Contributor' && String(key.contributorId) === String(id);
-                    });
-                    if (contributorQuery?.state?.data) {
-                        console.debug('[Volumo Importer] Successfully extracted contributor metadata from __NEXT_DATA__');
-                        return contributorQuery.state.data;
-                    }
-                } catch (e) {
-                    console.warn('[Volumo Importer] Failed to parse __NEXT_DATA__ for contributor', e);
-                }
+            const queries = this.#getNextDataQueries();
+            const contributorQuery = queries.find(q => {
+                const key = q.queryKey?.[0];
+                return key && key.scope === 'Contributor' && String(key.contributorId) === String(id);
+            });
+            if (contributorQuery?.state?.data) {
+                console.debug('[Volumo Importer] Successfully extracted contributor metadata from __NEXT_DATA__');
+                return contributorQuery.state.data;
             }
 
             // 2. Fallback to API fetch
@@ -463,28 +464,19 @@
 
             if (mbInfo) {
                 // Open in MusicBrainz
-                const mbLink = document.createElement('a');
-                mbLink.href = `${VolumoMusicBrainzImporter.URLS.MUSICBRAINZ_BASE}/${entityType}/${mbInfo.mbid}`;
-                mbLink.target = '_blank';
-                mbLink.className = 'mb-btn mb-btn-open';
-                mbLink.textContent = 'Open in MusicBrainz';
-                this.#container.appendChild(mbLink);
+                this.#container.appendChild(
+                    this.#createAnchorLink('Open in MusicBrainz', `${VolumoMusicBrainzImporter.URLS.MUSICBRAINZ_BASE}/${entityType}/${mbInfo.mbid}`, 'mb-btn-open')
+                );
             } else {
                 // Import/Add directly into MusicBrainz (using GET parameters)
-                const importLink = document.createElement('a');
-                importLink.href = this.#buildContributorCreateUrl(contributorData, normalizedUrl, entityType, areaGid);
-                importLink.target = '_blank';
-                importLink.className = 'mb-btn mb-btn-import';
-                importLink.textContent = 'Add to MusicBrainz';
-                this.#container.appendChild(importLink);
+                this.#container.appendChild(
+                    this.#createAnchorLink('Add to MusicBrainz', this.#buildContributorCreateUrl(contributorData, normalizedUrl, entityType, areaGid), 'mb-btn-import')
+                );
 
                 // Search in MB button
-                const searchLink = document.createElement('a');
-                searchLink.href = `${VolumoMusicBrainzImporter.URLS.MUSICBRAINZ_BASE}/search?query=${encodeURIComponent(displayName)}&type=${entityType}`;
-                searchLink.target = '_blank';
-                searchLink.className = 'mb-btn mb-btn-search';
-                searchLink.textContent = 'Search in MusicBrainz';
-                this.#container.appendChild(searchLink);
+                this.#container.appendChild(
+                    this.#createAnchorLink('Search in MusicBrainz', `${VolumoMusicBrainzImporter.URLS.MUSICBRAINZ_BASE}/search?query=${encodeURIComponent(displayName)}&type=${entityType}`, 'mb-btn-search')
+                );
             }
         }
 
@@ -548,26 +540,24 @@
 
         #getSocialLinkType(url, entityType) {
             try {
-                const parsed = new URL(url);
-                const hostname = parsed.hostname.toLowerCase();
-                if (hostname.includes('youtube.com') || hostname.includes('youtu.be')) {
-                    return entityType === 'artist' ? 193 : 225;
-                }
-                if (hostname.includes('soundcloud.com')) {
-                    return entityType === 'artist' ? 291 : 290;
-                }
-                if (hostname.includes('bandcamp.com')) {
-                    return entityType === 'artist' ? 718 : 719;
-                }
-                if (hostname.includes('instagram.com') ||
-                    hostname.includes('facebook.com') ||
-                    hostname.includes('tiktok.com') ||
-                    hostname.includes('twitter.com') ||
-                    hostname.includes('x.com')) {
-                    return entityType === 'artist' ? 192 : 218;
+                const hostname = new URL(url).hostname.toLowerCase();
+                const match = VolumoMusicBrainzImporter.SOCIAL_DOMAINS.find(domain =>
+                    domain.patterns.some(pattern => hostname.includes(pattern))
+                );
+                if (match) {
+                    return entityType === 'artist' ? match.artist : match.label;
                 }
             } catch (e) {}
             return null;
+        }
+
+        #createAnchorLink(text, href, className) {
+            const link = document.createElement('a');
+            link.href = href;
+            link.target = '_blank';
+            link.className = `mb-btn ${className}`;
+            link.textContent = text;
+            return link;
         }
 
 
@@ -589,12 +579,9 @@
 
             if (mbInfo) {
                 // Open in MusicBrainz
-                const mbLink = document.createElement('a');
-                mbLink.href = `${VolumoMusicBrainzImporter.URLS.MUSICBRAINZ_BASE}/release/${mbInfo.mbid}`;
-                mbLink.target = '_blank';
-                mbLink.className = 'mb-btn mb-btn-open';
-                mbLink.textContent = 'Open in MusicBrainz';
-                this.#container.appendChild(mbLink);
+                this.#container.appendChild(
+                    this.#createAnchorLink('Open in MusicBrainz', `${VolumoMusicBrainzImporter.URLS.MUSICBRAINZ_BASE}/release/${mbInfo.mbid}`, 'mb-btn-open')
+                );
             } else {
                 // Import directly into MusicBrainz
                 const importBtn = document.createElement('button');
@@ -614,28 +601,23 @@
             this.#container.appendChild(searchWrapper.firstChild);
 
             // Import with Harmony button
-            const harmonyLink = document.createElement('a');
             const hasGtin = !!albumData.icpn;
-            const harmonyParams = new URLSearchParams({
-                gtin: albumData.icpn || '',
-                // TODO: url: normalizedUrl, (restore once Harmony supports Volumo)
-                category: 'preferred',
-            });
-            if (mbInfo?.mbid) {
-                harmonyParams.set('musicbrainz', mbInfo.mbid);
-            }
-
+            const harmonyLink = this.#createAnchorLink('Import with Harmony', '#', 'mb-btn-harmony');
             if (hasGtin) {
+                const harmonyParams = new URLSearchParams({
+                    gtin: albumData.icpn || '',
+                    category: 'preferred',
+                });
+                if (mbInfo?.mbid) {
+                    harmonyParams.set('musicbrainz', mbInfo.mbid);
+                }
                 harmonyLink.href = `${VolumoMusicBrainzImporter.URLS.HARMONY_BASE}?${harmonyParams.toString()}`;
-                harmonyLink.target = '_blank';
             } else {
                 harmonyLink.style.pointerEvents = 'none';
                 harmonyLink.style.opacity = '0.5';
                 harmonyLink.style.cursor = 'not-allowed';
             }
 
-            harmonyLink.className = 'mb-btn mb-btn-harmony';
-            harmonyLink.textContent = 'Import with Harmony';
             harmonyLink.addEventListener('click', (e) => {
                 if (!hasGtin) {
                     e.preventDefault();
@@ -831,7 +813,7 @@
                     align-items: center;
                     gap: 12px;
                 }
-                .mb-btn {
+                .mb-btn, .musicbrainz_import_search button {
                     display: inline-flex;
                     align-items: center;
                     justify-content: center;
@@ -846,23 +828,20 @@
                     text-decoration: none !important;
                     transition: filter 0.2s ease, transform 0.1s ease;
                 }
-                .mb-btn:hover {
+                .mb-btn:hover, .musicbrainz_import_search button:hover {
                     filter: brightness(1.1);
                     transform: scale(1.02);
                 }
-                .mb-btn:active {
+                .mb-btn:active, .musicbrainz_import_search button:active {
                     transform: scale(0.98);
                 }
-                .mb-btn-open {
-                    background-color: #BA478F;
-                }
-                .mb-btn-import {
+                .mb-btn-open, .mb-btn-import {
                     background-color: #BA478F;
                 }
                 .mb-btn-harmony {
                     background-color: #c45555;
                 }
-                .mb-btn-search {
+                .mb-btn-search, .musicbrainz_import_search button {
                     background-color: #5c6bc0;
                 }
 
@@ -870,28 +849,6 @@
                     margin: 0;
                     padding: 0;
                     display: inline-flex;
-                }
-                .musicbrainz_import_search button {
-                    display: inline-flex;
-                    align-items: center;
-                    justify-content: center;
-                    border: none;
-                    border-radius: 8px;
-                    padding: 8px 16px;
-                    font-family: inherit;
-                    font-size: 14px;
-                    font-weight: 600;
-                    color: #fff;
-                    cursor: pointer;
-                    background-color: #5c6bc0;
-                    transition: filter 0.2s ease, transform 0.1s ease;
-                }
-                .musicbrainz_import_search button:hover {
-                    filter: brightness(1.1);
-                    transform: scale(1.02);
-                }
-                .musicbrainz_import_search button:active {
-                    transform: scale(0.98);
                 }
                 .mb-loading-spinner {
                     width: 20px;
