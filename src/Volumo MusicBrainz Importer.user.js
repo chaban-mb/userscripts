@@ -121,87 +121,87 @@
                     }
 
 
-                // Collect all candidate URLs for MusicBrainz relationship lookup
-                const releaseUrl = normalizedUrl;
-                const labelUrl = albumData.recordlabel ? this.#getLabelUrl(albumData.recordlabel) : null;
-                const uniqueArtists = this.#collectArtists(albumData);
-                const artistUrls = uniqueArtists.map(a => this.#getArtistUrl(a)).filter(Boolean);
+                    // Collect all candidate URLs for MusicBrainz relationship lookup
+                    const releaseUrl = normalizedUrl;
+                    const labelUrl = albumData.recordlabel ? this.#getLabelUrl(albumData.recordlabel) : null;
+                    const uniqueArtists = this.#collectArtists(albumData);
+                    const artistUrls = uniqueArtists.map(a => this.#getArtistUrl(a)).filter(Boolean);
 
-                const allUrls = [releaseUrl];
-                if (labelUrl) allUrls.push(labelUrl);
-                allUrls.push(...artistUrls);
+                    const allUrls = [releaseUrl];
+                    if (labelUrl) allUrls.push(labelUrl);
+                    allUrls.push(...artistUrls);
 
-                // Dynamically build the required inc parameters for uncached resources
-                const inc = [];
-                if (!this.#mbApi.cache.has(releaseUrl)) {
-                    inc.push('release-rels');
-                }
-                if (labelUrl && !this.#mbApi.cache.has(labelUrl)) {
-                    inc.push('label-rels');
-                }
-                const hasUncachedArtist = artistUrls.some(url => !this.#mbApi.cache.has(url));
-                if (hasUncachedArtist) {
-                    inc.push('artist-rels');
-                }
-
-                // Single batched lookup call!
-                const lookupResults = await this.#mbApi.lookupUrl(allUrls, inc);
-                if (this.#runId !== runId) return;
-
-                // Extract release MBID
-                let mbInfo = null;
-                const releaseData = lookupResults.get(releaseUrl);
-                if (releaseData && Array.isArray(releaseData.relations)) {
-                    const relation = releaseData.relations.find(rel =>
-                        rel['target-type'] === 'release' && rel.release
-                    );
-                    if (relation) {
-                        mbInfo = { mbid: relation.release.id, foundVia: 'url' };
+                    // Dynamically build the required inc parameters for uncached resources
+                    const inc = [];
+                    if (!this.#mbApi.cache.has(releaseUrl)) {
+                        inc.push('release-rels');
                     }
-                }
-
-                // Fallback to searching by barcode/icpn if not found via URL
-                if (!mbInfo && albumData.icpn) {
-                    try {
-                        const searchResults = await this.#mbApi.search('release', `barcode:${albumData.icpn}`, 1);
-                        if (this.#runId !== runId) return;
-                        if (searchResults && searchResults.releases && searchResults.releases.length > 0) {
-                            mbInfo = { mbid: searchResults.releases[0].id, foundVia: 'barcode' };
-                        }
-                    } catch (e) {
-                        console.warn('[Volumo Importer] Failed to search release by barcode', e);
+                    if (labelUrl && !this.#mbApi.cache.has(labelUrl)) {
+                        inc.push('label-rels');
                     }
-                }
+                    const hasUncachedArtist = artistUrls.some(url => !this.#mbApi.cache.has(url));
+                    if (hasUncachedArtist) {
+                        inc.push('artist-rels');
+                    }
 
-                // Extract label MBID
-                let labelMbid = null;
-                if (labelUrl) {
-                    const labelData = lookupResults.get(labelUrl);
-                    if (labelData && Array.isArray(labelData.relations)) {
-                        const relation = labelData.relations.find(rel =>
-                            rel['target-type'] === 'label' && rel.label
+                    // Single batched lookup call!
+                    const lookupResults = await this.#mbApi.lookupUrl(allUrls, inc);
+                    if (this.#runId !== runId) return;
+
+                    // Extract release MBID
+                    let mbInfo = null;
+                    const releaseData = lookupResults.get(releaseUrl);
+                    if (releaseData && Array.isArray(releaseData.relations)) {
+                        const relation = releaseData.relations.find(rel =>
+                            rel['target-type'] === 'release' && rel.release
                         );
                         if (relation) {
-                            labelMbid = relation.label.id;
+                            mbInfo = { mbid: relation.release.id, foundVia: 'url' };
                         }
                     }
-                }
 
-                // Extract artist MBIDs
-                const artistMbidMap = new Map();
-                artistUrls.forEach(url => {
-                    const artistData = lookupResults.get(url);
-                    if (artistData && Array.isArray(artistData.relations)) {
-                        const relation = artistData.relations.find(rel =>
-                            rel['target-type'] === 'artist' && rel.artist
-                        );
-                        if (relation?.artist?.id) {
-                            artistMbidMap.set(url, relation.artist.id);
+                    // Fallback to searching by barcode/icpn if not found via URL
+                    if (!mbInfo && albumData.icpn) {
+                        try {
+                            const searchResults = await this.#mbApi.search('release', `barcode:${albumData.icpn}`, 1);
+                            if (this.#runId !== runId) return;
+                            if (searchResults && searchResults.releases && searchResults.releases.length > 0) {
+                                mbInfo = { mbid: searchResults.releases[0].id, foundVia: 'barcode' };
+                            }
+                        } catch (e) {
+                            console.warn('[Volumo Importer] Failed to search release by barcode', e);
                         }
                     }
-                });
 
-                this.#renderButtons(albumData, normalizedUrl, mbInfo, labelMbid, artistMbidMap);
+                    // Extract label MBID
+                    let labelMbid = null;
+                    if (labelUrl) {
+                        const labelData = lookupResults.get(labelUrl);
+                        if (labelData && Array.isArray(labelData.relations)) {
+                            const relation = labelData.relations.find(rel =>
+                                rel['target-type'] === 'label' && rel.label
+                            );
+                            if (relation) {
+                                labelMbid = relation.label.id;
+                            }
+                        }
+                    }
+
+                    // Extract artist MBIDs
+                    const artistMbidMap = new Map();
+                    artistUrls.forEach(url => {
+                        const artistData = lookupResults.get(url);
+                        if (artistData && Array.isArray(artistData.relations)) {
+                            const relation = artistData.relations.find(rel =>
+                                rel['target-type'] === 'artist' && rel.artist
+                            );
+                            if (relation?.artist?.id) {
+                                artistMbidMap.set(url, relation.artist.id);
+                            }
+                        }
+                    });
+
+                    this.#renderButtons(albumData, normalizedUrl, mbInfo, labelMbid, artistMbidMap);
                 } else {
                     // Artist / Label flow
                     const contributorData = await this.#fetchContributorData(page.type, page.id);
@@ -279,7 +279,7 @@
                 if (labelMatch) {
                     return { type: 'label', id: labelMatch[1] };
                 }
-            } catch (e) {}
+            } catch (e) { }
             return null;
         }
 
@@ -560,7 +560,7 @@
                 if (match) {
                     return entityType === 'artist' ? match.artist : match.label;
                 }
-            } catch (e) {}
+            } catch (e) { }
             return null;
         }
 
@@ -758,7 +758,9 @@
 
             return {
                 title: albumData.title,
-                artist_credit: this.#getArtistCredits(releaseArtists, [], artistMbidMap),
+                artist_credit: releaseArtists.length > 4
+                    ? [MBImport.specialArtist('various_artists')]
+                    : this.#getArtistCredits(releaseArtists, [], artistMbidMap),
                 type,
                 status: 'official',
                 packaging: 'none',
