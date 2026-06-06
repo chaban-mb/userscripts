@@ -666,6 +666,7 @@
             const form = document.createElement('form');
             form.method = 'post';
             form.action = action;
+            form.target = '_blank';
             form.style.display = 'none';
 
             for (const [name, value] of Object.entries(params)) {
