@@ -412,10 +412,10 @@
                 const leftColumn = targetEl.parentElement;
                 if (!leftColumn) return;
 
-                // Try to insert after the counters block
+                // Try to insert before the counters block
                 const countersEl = leftColumn.querySelector('[class*="ContributorInfo_counters"], [class*="DesktopContributorInfo_counters"]');
                 if (countersEl) {
-                    countersEl.after(this.#container);
+                    countersEl.before(this.#container);
                 } else {
                     leftColumn.appendChild(this.#container);
                 }
