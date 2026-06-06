@@ -156,7 +156,20 @@
                         rel['target-type'] === 'release' && rel.release
                     );
                     if (relation) {
-                        mbInfo = { mbid: relation.release.id };
+                        mbInfo = { mbid: relation.release.id, foundVia: 'url' };
+                    }
+                }
+
+                // Fallback to searching by barcode/icpn if not found via URL
+                if (!mbInfo && albumData.icpn) {
+                    try {
+                        const searchResults = await this.#mbApi.search('release', `barcode:${albumData.icpn}`, 1);
+                        if (this.#runId !== runId) return;
+                        if (searchResults && searchResults.releases && searchResults.releases.length > 0) {
+                            mbInfo = { mbid: searchResults.releases[0].id, foundVia: 'barcode' };
+                        }
+                    } catch (e) {
+                        console.warn('[Volumo Importer] Failed to search release by barcode', e);
                     }
                 }
 
@@ -582,6 +595,18 @@
                 this.#container.appendChild(
                     this.#createAnchorLink('Open in MusicBrainz', `${VolumoMusicBrainzImporter.URLS.MUSICBRAINZ_BASE}/release/${mbInfo.mbid}`, 'mb-btn-open')
                 );
+
+                // If found via barcode only, the Volumo URL is not yet linked — offer to add it
+                if (mbInfo.foundVia === 'barcode') {
+                    const addUrlBtn = document.createElement('button');
+                    addUrlBtn.className = 'mb-btn mb-btn-import';
+                    addUrlBtn.textContent = 'Add Volumo URL to MB';
+                    addUrlBtn.addEventListener('click', (e) => {
+                        e.preventDefault();
+                        this.#submitAddUrlForm(mbInfo.mbid, normalizedUrl);
+                    });
+                    this.#container.appendChild(addUrlBtn);
+                }
             } else {
                 // Import directly into MusicBrainz
                 const importBtn = document.createElement('button');
@@ -650,6 +675,37 @@
             }
 
             setTimeout(() => tempDiv.remove(), 1000);
+        }
+
+        #submitAddUrlForm(mbid, normalizedUrl) {
+            const editNote = MBImport.makeEditNote(
+                normalizedUrl,
+                VolumoMusicBrainzImporter.SCRIPT_NAME,
+                '',
+                'https://github.com/chaban-mb/userscripts'
+            );
+            const params = {
+                'urls.0.url': normalizedUrl,
+                'urls.0.link_type': MBImport.URL_TYPES.purchase_for_download,
+                'edit_note': editNote,
+            };
+
+            const form = document.createElement('form');
+            form.method = 'post';
+            form.action = `${VolumoMusicBrainzImporter.URLS.MUSICBRAINZ_BASE}/release/${mbid}/edit`;
+            form.style.display = 'none';
+
+            for (const [name, value] of Object.entries(params)) {
+                const input = document.createElement('input');
+                input.type = 'hidden';
+                input.name = name;
+                input.value = value;
+                form.appendChild(input);
+            }
+
+            document.body.appendChild(form);
+            form.submit();
+            setTimeout(() => form.remove(), 1000);
         }
 
         #mapToMbRelease(albumData, normalizedUrl, labelMbid, artistMbidMap) {
