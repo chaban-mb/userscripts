@@ -482,9 +482,11 @@
                 );
             } else {
                 // Import/Add directly into MusicBrainz (using GET parameters)
-                this.#container.appendChild(
-                    this.#createAnchorLink('Add to MusicBrainz', this.#buildContributorCreateUrl(contributorData, normalizedUrl, entityType, areaGid), 'mb-btn-import')
-                );
+                const addLink = this.#createAnchorLink('Add to MusicBrainz', this.#buildContributorCreateUrl(contributorData, normalizedUrl, entityType, areaGid), 'mb-btn-import');
+                addLink.addEventListener('click', () => {
+                    this.#mbApi.invalidateCacheForUrl(normalizedUrl);
+                });
+                this.#container.appendChild(addLink);
 
                 // Search in MB button
                 this.#container.appendChild(
@@ -648,7 +650,7 @@
                     e.preventDefault();
                     return;
                 }
-                this.#mbApi.invalidateCacheForUrl(normalizedUrl);
+                this.#invalidateReleaseCache(albumData, normalizedUrl);
             });
             this.#container.appendChild(harmonyLink);
         }
@@ -689,10 +691,12 @@
                 MBImport.buildFormParameters(release, this.#makeEditNote(normalizedUrl))
                     .map(({ name, value }) => [name, value])
             );
+            this.#invalidateReleaseCache(albumData, normalizedUrl);
             this.#submitPostForm(`${VolumoMusicBrainzImporter.URLS.MUSICBRAINZ_BASE}/release/add`, params);
         }
 
         #submitAddUrlForm(mbid, normalizedUrl) {
+            this.#mbApi.invalidateCacheForUrl(normalizedUrl);
             this.#submitPostForm(
                 `${VolumoMusicBrainzImporter.URLS.MUSICBRAINZ_BASE}/release/${mbid}/edit`,
                 {
@@ -701,6 +705,19 @@
                     'edit_note': this.#makeEditNote(normalizedUrl),
                 }
             );
+        }
+
+        #invalidateReleaseCache(albumData, normalizedUrl) {
+            const invalidateUrls = [normalizedUrl];
+            if (albumData.recordlabel) {
+                const labelUrl = this.#getLabelUrl(albumData.recordlabel);
+                if (labelUrl) invalidateUrls.push(labelUrl);
+            }
+            const uniqueArtists = this.#collectArtists(albumData);
+            const artistUrls = uniqueArtists.map(a => this.#getArtistUrl(a)).filter(Boolean);
+            invalidateUrls.push(...artistUrls);
+
+            this.#mbApi.invalidateCacheForUrl(invalidateUrls);
         }
 
         #mapToMbRelease(albumData, normalizedUrl, labelMbid, artistMbidMap) {
