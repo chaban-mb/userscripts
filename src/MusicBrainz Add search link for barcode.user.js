@@ -2,7 +2,7 @@
 // @name        MusicBrainz: Add search link for barcode
 // @namespace   https://musicbrainz.org/user/chaban
 // @description Searches for existing releases in "Add release" edits by barcode, highlights and adds a search link on match
-// @version     3.2.3
+// @version     3.2.4
 // @tag         ai-created
 // @author      chaban
 // @license     MIT
@@ -32,6 +32,15 @@
 
 (function() {
     'use strict';
+
+    /**
+     * Removes leading zeros from a barcode string.
+     * @param {string} barcode - The barcode string.
+     * @returns {string} The normalized barcode string.
+     */
+    function removeLeadingZeros(barcode) {
+        return barcode.replace(/^0+/, '') || barcode;
+    }
 
     /**
      * Configuration object to centralize all constants.
@@ -99,8 +108,9 @@
                     barcodeSpan.textContent = barcode;
                     barcodeSpan.classList.add(Config.PROCESSED_BARCODE_SPAN_CLASS);
 
+                    const normalized = removeLeadingZeros(barcode);
                     // Store a reference to the span for this barcode
-                    this._barcodeToSpansMap.has(barcode) ? this._barcodeToSpansMap.get(barcode).push(barcodeSpan) : this._barcodeToSpansMap.set(barcode, [barcodeSpan]);
+                    this._barcodeToSpansMap.has(normalized) ? this._barcodeToSpansMap.get(normalized).push(barcodeSpan) : this._barcodeToSpansMap.set(normalized, [barcodeSpan]);
                     this._uniqueBarcodes.add(barcode);
 
                     fragment.appendChild(barcodeSpan);
@@ -171,7 +181,8 @@
                     const releasesByBarcode = new Map();
                     allReleases.forEach(release => {
                         if (release.barcode) {
-                            releasesByBarcode.has(release.barcode) ? releasesByBarcode.get(release.barcode).push(release) : releasesByBarcode.set(release.barcode, [release]);
+                            const normalized = removeLeadingZeros(release.barcode);
+                            releasesByBarcode.has(normalized) ? releasesByBarcode.get(normalized).push(release) : releasesByBarcode.set(normalized, [release]);
                         }
                     });
 
@@ -183,7 +194,7 @@
                                 const searchUrl = `//musicbrainz.org/search?type=release&method=advanced&query=barcode:${barcode}`;
                                 spans.forEach(span => {
                                     span.style.backgroundColor = 'yellow';
-                                    span.title = `Multiple MusicBrainz releases found for barcode: ${barcode}`;
+                                    span.title = `Multiple MusicBrainz releases found for barcode: ${span.textContent}`;
                                     const link = document.createElement('a');
                                     link.href = searchUrl;
                                     link.target = '_blank';
