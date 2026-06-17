@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MusicBrainz: Guess Case Improver
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      0.6.5
+// @version      0.6.6
 // @tag          ai-created
 // @description  Improves the native "Guess Case" for release, recording and track titles with advanced artist and ETI parsing. Also removes artist from title and duplicate artists after using "Guess feat. artists" on tracklists.
 // @author       chaban
@@ -504,7 +504,131 @@
         if (button.dataset.enhanced) return;
         log('Found Release/Recording "Guess Feat." button to enhance.', button);
 
-        button.addEventListener('click', () => {
+        button.addEventListener('click', (event) => {
+            const input = findAssociatedInput(button);
+
+            // --- Standalone Form Advanced Correction Interception ---
+            if (input && /[\/.]recording\/create/.test(window.location.pathname)) {
+                const titleVal = input.value.trim();
+
+                const patterns = [
+                    // Layout Style A: "Artist - Title feat. Guest 1, Guest 2 (ETI)"
+                    // Handled here to cleanly extract multiple guests and isolate any trailing ETIs
+                    {
+                        regex: /^(.*?)\s+-\s+([^([]+?)\s+(?:feat\.?|ft\.?|featuring)\s+([^([]+?)((?:\s*(?:\([^)]+\)|\[[^\]]+\]))*)$/i,
+                        parse: (m) => ({ main: m[1], join: ' feat. ', guests: m[3], title: m[2], eti: m[4] || '' })
+                    },
+                    // Layout Style B: "Artist feat. Guest - Title (ETI)"
+                    // Handled here to fix the native standalone form scrapper
+                    {
+                        regex: /^(.*?)\s+(?:feat\.?|ft\.?|featuring)\s+([^([]+?)\s+-\s+(.*)$/i,
+                        parse: (m) => ({ main: m[1], join: ' feat. ', guests: m[2], title: m[3], eti: '' })
+                    },
+                    // Layout Style C: Braced hyphen layout "Artist (feat. Guest - Title) (ETI)"
+                    {
+                        regex: /^(.*?)\s+\((?:feat\.?|ft\.?|featuring)\s+(.*?)\s+-\s+(.*?)\)((?:\s*(?:\([^)]+\)|\[[^\]]+\]))*)$/i,
+                        parse: (m) => ({ main: m[1], join: ' feat. ', guests: m[2], title: m[3], eti: m[4] || '' })
+                    },
+                    // Layout Style D: Suffix "with" addition "Artist - Title (with Guest) (ETI)"
+                    {
+                        regex: /^(.*?)\s+-\s+(.*?)\s+\((with|and|feat\.?|ft\.?|featuring)\s+([^)]+)\)((?:\s*(?:\([^)]+\)|\[[^\]]+\]))*)$/i,
+                        parse: (m) => ({ main: m[1], join: ` ${m[3]} `, guests: m[4], title: m[2], eti: m[5] || '' })
+                    }
+                ];
+
+                let matchedData = null;
+                for (const p of patterns) {
+                    const m = titleVal.match(p.regex);
+                    if (m) {
+                        matchedData = p.parse(m);
+                        break;
+                    }
+                }
+
+                if (matchedData) {
+                    log('Intercepting standalone seeded formatting pattern via custom structural layout rules.');
+                    event.stopImmediatePropagation(); // Disarm standard misbehaving script execution loop completely
+
+                    const mainArtistText = matchedData.main.trim();
+                    const joinPhraseText = matchedData.join;
+                    let trackTitle = matchedData.title.trim();
+                    let trailingEti = matchedData.eti ? matchedData.eti.trim() : '';
+
+                    // Fall-through safety check to pick up any nested trailing parentheticals
+                    const iEtiMatch = trackTitle.match(/\s*(\[[^\]]+\]|\([^)]+\))$/);
+                    if (iEtiMatch && !trailingEti) {
+                        trailingEti = iEtiMatch[1];
+                        trackTitle = trackTitle.substring(0, trackTitle.lastIndexOf(trailingEti)).trim();
+                    }
+
+                    // Programmatically run Advanced Case Correction rules on variables
+                    let correctedTitle = applyAdvancedRules(trackTitle, button);
+                    let correctedEti = trailingEti ? applyAdvancedRules(trailingEti, button) : '';
+
+                    const finalTrackTitleText = correctedEti ? `${correctedTitle} ${correctedEti}` : correctedTitle;
+                    setReactValue(input, finalTrackTitleText);
+
+                    // Access core underlying Knockout models
+                    const sourceInstance = window.MB?.getSourceEntityInstance?.();
+                    if (sourceInstance && sourceInstance.artistCredit) {
+                        const acObservable = sourceInstance.artistCredit;
+                        const currentAC = acObservable();
+
+                        if (currentAC && currentAC.names && currentAC.names.length > 0) {
+                            const originalFirstArtistNode = currentAC.names[0];
+
+                            // Preserves unlinked data correctly to avoid blank rows
+                            const preservedName = originalFirstArtistNode.name || mainArtistText;
+                            const preservedCredit = originalFirstArtistNode.credit || mainArtistText;
+
+                            const updatedFirstArtistNode = {
+                                ...originalFirstArtistNode,
+                                name: preservedName,
+                                credit: preservedCredit,
+                                joinPhrase: joinPhraseText
+                            };
+
+                            // Split multiple featured guest nodes cleanly on common delimiters
+                            const guestList = matchedData.guests.split(/\s*,\s*|\s+(?:and|&|x)\s+/i);
+                            const parsedArtistNodes = [updatedFirstArtistNode];
+
+                            guestList.forEach((guestName, idx) => {
+                                const cleanGuestName = guestName.trim();
+                                if (!cleanGuestName) return;
+
+                                parsedArtistNodes.push({
+                                    artist: null,
+                                    name: cleanGuestName,
+                                    credit: cleanGuestName,
+                                    joinPhrase: (idx < guestList.length - 1) ? ', ' : ''
+                                });
+                            });
+
+                            // Update the model array cleanly
+                            acObservable({
+                                ...currentAC,
+                                names: parsedArtistNodes
+                            });
+
+                            // Synchronize the Autocomplete search elements to display the visible values on screen
+                            setTimeout(() => {
+                                parsedArtistNodes.forEach((node, index) => {
+                                    const acInputEl = document.getElementById(`ac-source-artist-${index}`);
+                                    if (acInputEl && acInputEl.value !== node.name) {
+                                        setReactValue(acInputEl, node.name);
+                                    }
+                                });
+                            }, 60);
+                        }
+                    }
+
+                    setTimeout(() => {
+                        pristineValues.set(input, input.value);
+                    }, 50);
+                    return;
+                }
+            }
+
             log(`'Guess Feat.' click detected for release/recording. Allowing native script to run first.`);
 
             // Deduplicate the global artist credit editor and clean up title
