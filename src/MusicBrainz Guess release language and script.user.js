@@ -177,11 +177,12 @@
     // --- MusicBrainz Integration ---
 
     function selectOptionByValue(selectElement, value) {
-        // Use `==` to allow implicit conversion between string and number
         const option = [...selectElement.options].find(opt => opt.value == value);
         if (option) {
-            selectElement.value = value;
-            selectElement.dispatchEvent(new Event('change'));
+            const nativeSelectValueSetter = Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, 'value').set;
+            nativeSelectValueSetter.call(selectElement, value);
+            selectElement.dispatchEvent(new Event('input', { bubbles: true }));
+            selectElement.dispatchEvent(new Event('change', { bubbles: true }));
         } else {
             throw new Error(`Value '${value}' not found in the dropdown.`);
         }

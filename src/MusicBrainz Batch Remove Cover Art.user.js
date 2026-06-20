@@ -193,10 +193,23 @@
             }
         }, 123);
     }
-    function forceValue(input, value) {
-        input.dispatchEvent(new Event("input", { bubbles: true }));
-        (Object.getOwnPropertyDescriptor(Object.getPrototypeOf(input), "value").set).call(input, value);
-        input.dispatchEvent(new Event("change", { bubbles: true }));
+    function setInputValue(element, value) {
+        if (!element || typeof value === 'undefined') return;
+        let ok = false;
+        try {
+            element.focus();
+            element.setSelectionRange(0, element.value.length);
+            ok = value ? document.execCommand('insertText', false, value)
+                       : document.execCommand('delete', false, null);
+            if (ok && element.value !== value) ok = false;
+        } catch (e) { ok = false; }
+        if (!ok) {
+            const descriptor = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value')
+                || Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value');
+            descriptor.set.call(element, value);
+            element.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+        element.dispatchEvent(new Event('change', { bubbles: true }));
     }
     function decodeHTML(HTMLBlurb) {
         var decoder = document.createElement("div");
@@ -341,7 +354,7 @@
         function createClearButton() {
             let butt = createButton("×", "25px");
             butt.addEventListener("click", function (event) {
-                forceValue(notetext, "");
+                setInputValue(notetext, "");
                 if (event[CONTROL_POMME.shift.key] && submit_button) { sendEvent(submit_button, "click"); }
                 else { notetext.focus(); }
             });
@@ -389,7 +402,7 @@
                         if (CONTROL_POMME.ctrl.test(event)) {
                             forget(this.id.match(/(\d)$/)[1]);
                         } else {
-                            forceValue(notetext, this.getAttribute("title"));
+                            setInputValue(notetext, this.getAttribute("title"));
                             if (event[CONTROL_POMME.shift.key] && submit_button) { sendEvent(submit_button, "click"); }
                         }
                         notetext.focus();
@@ -401,7 +414,7 @@
             notetext.parentNode.insertBefore(buttons, notetext);
             let lastnotetext = localStorage.getItem(notetextStorage + "00");
             if (save && lastnotetext && notetext.value === "") {
-                forceValue(notetext, lastnotetext);
+                setInputValue(notetext, lastnotetext);
             }
         }
         return {

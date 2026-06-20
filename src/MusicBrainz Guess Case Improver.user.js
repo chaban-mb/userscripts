@@ -182,11 +182,23 @@
         return value === 'true';
     }
 
-    function setReactValue(element, value) {
+    function setInputValue(element, value) {
         if (!element || typeof value === 'undefined') return;
-        const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
-        nativeInputValueSetter.call(element, value);
-        element.dispatchEvent(new Event('input', { bubbles: true }));
+        let ok = false;
+        try {
+            element.focus();
+            element.setSelectionRange(0, element.value.length);
+            ok = value ? document.execCommand('insertText', false, value)
+                       : document.execCommand('delete', false, null);
+            if (ok && element.value !== value) ok = false;
+        } catch (e) { ok = false; }
+        if (!ok) {
+            const descriptor = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value')
+                || Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value');
+            descriptor.set.call(element, value);
+            element.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+        element.dispatchEvent(new Event('change', { bubbles: true }));
     }
 
     function findAssociatedInput(button) {
@@ -240,7 +252,7 @@
             if (artistPartIndex !== -1) {
                 newText = parts.filter((_, index) => index !== artistPartIndex).join(separator);
                 log(`Removed artist part from title: "${input.value}" -> "${newText}"`);
-                setReactValue(input, newText.trim());
+                setInputValue(input, newText.trim());
             }
         }
     }
@@ -419,7 +431,7 @@
     function getTrackModel(trackRow) {
         const id = trackRow?.id; // e.g. "track-row-abc123"
         if (!id) return null;
-        const release = window.MB?._releaseEditor?.rootField?.release?.();
+        const release = window.MB?.releaseEditor?.rootField?.release?.();
         if (!release) return null;
         for (const medium of release.mediums?.() ?? []) {
             for (const track of medium.tracks?.() ?? []) {
@@ -566,7 +578,7 @@
                     let correctedEti = trailingEti ? applyAdvancedRules(trailingEti, button) : '';
 
                     const finalTrackTitleText = correctedEti ? `${correctedTitle} ${correctedEti}` : correctedTitle;
-                    setReactValue(input, finalTrackTitleText);
+                    setInputValue(input, finalTrackTitleText);
 
                     // Access core underlying Knockout models
                     const sourceInstance = window.MB?.getSourceEntityInstance?.();
@@ -615,7 +627,7 @@
                                 parsedArtistNodes.forEach((node, index) => {
                                     const acInputEl = document.getElementById(`ac-source-artist-${index}`);
                                     if (acInputEl && acInputEl.value !== node.name) {
-                                        setReactValue(acInputEl, node.name);
+                                        setInputValue(acInputEl, node.name);
                                     }
                                 });
                             }, 60);
@@ -634,7 +646,7 @@
             // Deduplicate the global artist credit editor and clean up title
             setTimeout(() => {
                 // Release editor (tracklist page): release.artistCredit
-                const release = window.MB?._releaseEditor?.rootField?.release?.();
+                const release = window.MB?.releaseEditor?.rootField?.release?.();
                 if (release?.artistCredit) {
                     log('Deduplicating release AC via Knockout model.');
                     deduplicateACFromObservable(release.artistCredit);
@@ -720,7 +732,7 @@
             if (activePreview) {
                 log('Hiding preview and restoring original value.');
                 const originalValue = pristineValues.get(input);
-                setReactValue(input, originalValue); // Use dispatch to notify React/Knockout
+                setInputValue(input, originalValue); // Use dispatch to notify React/Knockout
                 input.classList.remove('preview');
                 activePreview = false;
             }
@@ -735,7 +747,7 @@
                 const enhancedValue = applyAdvancedRules(nativeValue, button);
                 log(`Native: "${nativeValue}", Enhanced: "${enhancedValue}"`);
 
-                setReactValue(input, enhancedValue); // Set the final value
+                setInputValue(input, enhancedValue); // Set the final value
 
                 // This is now the new "original" value
                 pristineValues.set(input, enhancedValue);
@@ -782,7 +794,7 @@
         const interval = setInterval(() => {
             if (creditedAsInput.value !== currentValue) {
                 log(`Overwritten 'credited as' field detected. Restoring pristine value: "${currentValue}"`);
-                setReactValue(creditedAsInput, currentValue);
+                setInputValue(creditedAsInput, currentValue);
                 clearInterval(interval);
             }
             if (++attempts > 40) clearInterval(interval); // Timeout safely after ~2 seconds
