@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YouTube: MusicBrainz Importer
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      2.8.3
+// @version      2.8.4
 // @description  Imports YouTube videos to MusicBrainz as a new standalone recording
 // @tag          ai-created
 // @author       nikki, RustyNova, chaban
@@ -1719,7 +1719,7 @@
                         L10n.getString('errorApiRateLimit', { apiName }) :
                         L10n.getString('errorApiNetwork', { apiName });
                     RecordingButtonManager.displayError(errorMessage);
-                    PlaylistButtonManager.displayError(errorMessage);
+                    PlaylistButtonManager.hide();
                     return;
                 }
             }
