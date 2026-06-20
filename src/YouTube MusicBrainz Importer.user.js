@@ -111,7 +111,7 @@
      */
     const Config = {
         SHORT_APP_NAME: 'UserJS.YoutubeImport',
-        GOOGLE_API_KEY: 'AIzaSyC5syukuFyCSoRvMr42Geu_d_1c_cRYouU',
+        GOOGLE_API_KEY: 'AIzaSyCOb5XdjfRz1TYDk21_wb0K3KnFf0EguDU',
         MUSICBRAINZ_API_ROOT: 'https://musicbrainz.org/ws/2/',
         LISTENBRAINZ_API_ROOT: 'https://api.listenbrainz.org/1/',
         TOKEN_STORAGE_KEY: 'listenbrainz_user_token',
