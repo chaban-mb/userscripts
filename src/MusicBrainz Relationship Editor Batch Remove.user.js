@@ -263,10 +263,31 @@ function setup() {
     }
 }
 
-// Wait for the MB relationship editor to be fully initialized.
-const initInterval = setInterval(() => {
-    if (Object.keys((window.MB?.linkedEntities?.link_type_tree) ?? {}).length) {
-        clearInterval(initInterval);
-        setup();
+function onReactHydrated(element, callback) {
+    if (!element) return;
+    const alreadyHydrated = Object.keys(element)
+        .some((propertyName) => propertyName.startsWith('_reactListening') && element[propertyName]);
+
+    if (alreadyHydrated) {
+        callback();
+    } else {
+        element.addEventListener('mb-hydration', callback, { once: true });
     }
-}, 250);
+}
+
+function init() {
+    // Poll for the relationship editor container exactly as kellnerd's readyRelationshipEditor does
+    const interval = setInterval(() => {
+        const root = document.querySelector('.release-relationship-editor, .relationship-editor');
+        if (root) {
+            clearInterval(interval);
+            onReactHydrated(root, setup);
+        }
+    }, 100);
+}
+
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+} else {
+    init();
+}
