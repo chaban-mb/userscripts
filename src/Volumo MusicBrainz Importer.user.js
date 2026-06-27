@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Volumo: MusicBrainz Importer
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      1.4.1
+// @version      1.4.2
 // @description  Allows importing releases from Volumo into MusicBrainz.
 // @tag          ai-created
 // @author       chaban
@@ -13,9 +13,8 @@
 // @grant        GM.addStyle
 // @require      ../lib/MusicBrainzAPI.js
 // @require      https://raw.githubusercontent.com/murdos/musicbrainz-userscripts/master/lib/mbimport.js
-// @require      https://raw.githubusercontent.com/murdos/musicbrainz-userscripts/master/lib/mbimportstyle.js
-// @updateURL    https://github.com/chaban-mb/userscripts/raw/volumo-importer/feat/add-volumo-importer/src/Volumo%20MusicBrainz%20Importer.user.js
-// @downloadURL  https://github.com/chaban-mb/userscripts/raw/volumo-importer/feat/add-volumo-importer/src/Volumo%20MusicBrainz%20Importer.user.js
+// @updateURL    https://github.com/chaban-mb/userscripts/raw/main/src/Volumo%20MusicBrainz%20Importer.user.js
+// @downloadURL  https://github.com/chaban-mb/userscripts/raw/main/src/Volumo%20MusicBrainz%20Importer.user.js
 // ==/UserScript==
 
 
