@@ -188,17 +188,26 @@
     }
 
     function mergeArtistCredits(currentNames, parsedTitleArtists) {
-        const currentLowerMap = new Map();
+        // Flatten all current editor names into individual lowercase names for matching
+        const currentIndividualNamesLower = [];
         currentNames.forEach(n => {
-            currentLowerMap.set(n.name.trim().toLowerCase(), n);
+            const parsed = parseArtistNamesFromString(n.name);
+            currentIndividualNamesLower.push(...parsed);
         });
 
-        const hasPartialMatch = parsedTitleArtists.some(ta => currentLowerMap.has(ta.name.trim().toLowerCase()));
+        // Check if any parsed title artist is in the editor's individual names
+        const hasPartialMatch = parsedTitleArtists.some(ta => 
+            currentIndividualNamesLower.includes(ta.name.trim().toLowerCase())
+        );
 
         if (hasPartialMatch) {
-            // Precedence Rule: Overwrite/replace seeded credits with parsed title credits
+            // Precedence Rule: Overwrite/replace seeded credits with parsed title credits.
             const updatedNames = parsedTitleArtists.map((ta) => {
-                const match = currentLowerMap.get(ta.name.trim().toLowerCase());
+                const taLower = ta.name.trim().toLowerCase();
+                const match = currentNames.find(n => {
+                    const nLower = n.name.trim().toLowerCase();
+                    return nLower === taLower || parseArtistNamesFromString(n.name).includes(taLower);
+                });
                 return {
                     artist: match ? match.artist : null,
                     name: ta.name,
@@ -300,7 +309,7 @@
             element.focus();
             element.setSelectionRange(0, element.value.length);
             ok = value ? document.execCommand('insertText', false, value)
-                       : document.execCommand('delete', false, null);
+                : document.execCommand('delete', false, null);
             if (ok && element.value !== value) ok = false;
         } catch (e) { ok = false; }
         if (!ok) {
@@ -402,12 +411,12 @@
                 let titleGuests = [];
                 if (featMatch) {
                     const joinWord = featMatch[1].toLowerCase();
-                    const joinPhrase = joinWord.startsWith('feat') || joinWord.startsWith('ft') ? ' feat. ' 
-                                     : joinWord.startsWith('with') ? ' with ' 
-                                     : ` ${joinWord} `;
+                    const joinPhrase = joinWord.startsWith('feat') || joinWord.startsWith('ft') ? ' feat. '
+                        : joinWord.startsWith('with') ? ' with '
+                            : ` ${joinWord} `;
                     const guestStr = featMatch[2].trim();
                     titleGuests = parseArtistsAndJoins(guestStr);
-                    
+
                     newTitle = newTitle.replace(featMatch[0], '').trim();
 
                     if (parsedTitleArtists.length > 0) {
