@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YouTube: MusicBrainz Importer
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      2.8.4
+// @version      2.9.0
 // @description  Imports YouTube videos to MusicBrainz as a new standalone recording
 // @tag          ai-created
 // @author       nikki, RustyNova, chaban
@@ -15,6 +15,7 @@
 // @grant        GM.xmlHttpRequest
 // @grant        GM.getValue
 // @grant        GM.setValue
+// @grant        GM.deleteValue
 // @grant        GM.registerMenuCommand
 // @run-at       document-end
 // @noframes
@@ -154,7 +155,15 @@
         _token: null,
         async init() {
             this._token = await GM.getValue(Config.TOKEN_STORAGE_KEY, null);
-            GM.registerMenuCommand('Set ListenBrainz Token', () => this.getToken(true));
+            GM.registerMenuCommand('Set ListenBrainz Token', async () => {
+                const success = await this.setToken();
+                if (success) {
+                    const currentVideoId = DOMScanner.getVideoId();
+                    if (currentVideoId) {
+                        YouTubeMusicBrainzImporter.triggerUpdate(currentVideoId);
+                    }
+                }
+            });
         },
         getTokenValue() {
             return this._token;
@@ -170,13 +179,21 @@
         },
         async setToken() {
             const token = prompt('Please enter your ListenBrainz User Token:', this._token || '');
-            if (token && token.trim()) {
-                this._token = token.trim();
+            if (token === null) {
+                return false;
+            }
+            const trimmedToken = token.trim();
+            if (trimmedToken === '') {
+                this._token = null;
+                await GM.deleteValue(Config.TOKEN_STORAGE_KEY);
+                alert('ListenBrainz token cleared!');
+                return true;
+            } else {
+                this._token = trimmedToken;
                 await GM.setValue(Config.TOKEN_STORAGE_KEY, this._token);
                 alert('ListenBrainz token saved!');
                 return true;
             }
-            return false;
         }
     };
 
@@ -1788,8 +1805,7 @@
             }
 
             if (!TokenManager.getTokenValue()) {
-                // Pass a function that re-runs this logic after token is set
-                PlaylistButtonManager.setStateTokenNeeded(() => this._handlePlaylistLogic(ytData, canonicalYtUrl));
+                PlaylistButtonManager.hide();
                 return;
             }
 
