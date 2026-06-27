@@ -1,1 +1,4 @@
 *.log
+AGENTS.md
+.agents/
+.brain/
