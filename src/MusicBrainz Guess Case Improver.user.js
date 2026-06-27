@@ -188,46 +188,72 @@
     }
 
     function mergeArtistCredits(currentNames, parsedTitleArtists) {
-        const currentNamesLower = currentNames.map(n => n.name.trim().toLowerCase());
-        const newTitleArtists = parsedTitleArtists.filter(ta => !currentNamesLower.includes(ta.name.trim().toLowerCase()));
-
-        if (newTitleArtists.length === 0) {
-            return currentNames;
-        }
-
-        const updatedNames = [...currentNames];
-        let joinPhraseToUse = ' feat. ';
-        const firstNewIdx = parsedTitleArtists.findIndex(ta => !currentNamesLower.includes(ta.name.trim().toLowerCase()));
-        if (firstNewIdx > 0) {
-            joinPhraseToUse = parsedTitleArtists[firstNewIdx - 1].joinPhrase || ' & ';
-        }
-
-        if (updatedNames.length > 0) {
-            const lastIdx = updatedNames.length - 1;
-            updatedNames[lastIdx] = {
-                ...updatedNames[lastIdx],
-                joinPhrase: joinPhraseToUse
-            };
-        }
-
-        newTitleArtists.forEach((ta) => {
-            updatedNames.push({
-                artist: null,
-                name: ta.name,
-                credit: ta.name,
-                joinPhrase: ta.joinPhrase
-            });
+        const currentLowerMap = new Map();
+        currentNames.forEach(n => {
+            currentLowerMap.set(n.name.trim().toLowerCase(), n);
         });
 
-        if (updatedNames.length > 0) {
-            const lastIdx = updatedNames.length - 1;
-            updatedNames[lastIdx] = {
-                ...updatedNames[lastIdx],
-                joinPhrase: ''
-            };
-        }
+        const hasPartialMatch = parsedTitleArtists.some(ta => currentLowerMap.has(ta.name.trim().toLowerCase()));
 
-        return updatedNames;
+        if (hasPartialMatch) {
+            // Precedence Rule: Overwrite/replace seeded credits with parsed title credits
+            const updatedNames = parsedTitleArtists.map((ta) => {
+                const match = currentLowerMap.get(ta.name.trim().toLowerCase());
+                return {
+                    artist: match ? match.artist : null,
+                    name: ta.name,
+                    credit: ta.name,
+                    joinPhrase: ta.joinPhrase
+                };
+            });
+
+            if (updatedNames.length > 0) {
+                updatedNames[updatedNames.length - 1].joinPhrase = '';
+            }
+            return updatedNames;
+        } else {
+            // Append non-duplicate parsed artists
+            const currentNamesLower = currentNames.map(n => n.name.trim().toLowerCase());
+            const newTitleArtists = parsedTitleArtists.filter(ta => !currentNamesLower.includes(ta.name.trim().toLowerCase()));
+
+            if (newTitleArtists.length === 0) {
+                return currentNames;
+            }
+
+            const updatedNames = [...currentNames];
+            let joinPhraseToUse = ' feat. ';
+            const firstNewIdx = parsedTitleArtists.findIndex(ta => !currentNamesLower.includes(ta.name.trim().toLowerCase()));
+            if (firstNewIdx > 0) {
+                joinPhraseToUse = parsedTitleArtists[firstNewIdx - 1].joinPhrase || ' & ';
+            }
+
+            if (updatedNames.length > 0) {
+                const lastIdx = updatedNames.length - 1;
+                updatedNames[lastIdx] = {
+                    ...updatedNames[lastIdx],
+                    joinPhrase: joinPhraseToUse
+                };
+            }
+
+            newTitleArtists.forEach((ta) => {
+                updatedNames.push({
+                    artist: null,
+                    name: ta.name,
+                    credit: ta.name,
+                    joinPhrase: ta.joinPhrase
+                });
+            });
+
+            if (updatedNames.length > 0) {
+                const lastIdx = updatedNames.length - 1;
+                updatedNames[lastIdx] = {
+                    ...updatedNames[lastIdx],
+                    joinPhrase: ''
+                };
+            }
+
+            return updatedNames;
+        }
     }
 
     function getACObservable(input, button) {
