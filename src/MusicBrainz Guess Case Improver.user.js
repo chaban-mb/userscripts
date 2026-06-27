@@ -40,6 +40,7 @@
     // We use a WeakMap to store the "pristine" (original) value of an input,
     // side-stepping any event race conditions with native preview handlers.
     const pristineValues = new WeakMap();
+    const pristineArtistNames = new WeakMap();
 
     // ====================================================================================
     // --- ✨ USER CONFIGURATION ✨ ---
@@ -187,17 +188,18 @@
         })).filter(item => item.name !== '');
     }
 
-    function mergeArtistCredits(currentNames, parsedTitleArtists) {
-        // Flatten all current editor names into individual lowercase names for matching
-        const currentIndividualNamesLower = [];
-        currentNames.forEach(n => {
-            const parsed = parseArtistNamesFromString(n.name);
-            currentIndividualNamesLower.push(...parsed);
+    function mergeArtistCredits(currentNames, parsedTitleArtists, seededArtists) {
+        // Flatten all seeded names into individual lowercase names for matching
+        const seededIndividualNamesLower = [];
+        const artistsToCheck = seededArtists || [];
+        artistsToCheck.forEach(name => {
+            const parsed = parseArtistNamesFromString(name);
+            seededIndividualNamesLower.push(...parsed);
         });
 
-        // Check if any parsed title artist is in the editor's individual names
-        const hasPartialMatch = parsedTitleArtists.some(ta => 
-            currentIndividualNamesLower.includes(ta.name.trim().toLowerCase())
+        // Check if any parsed title artist is in the editor's individual seeded names
+        const hasPartialMatch = parsedTitleArtists.some(ta =>
+            seededIndividualNamesLower.includes(ta.name.trim().toLowerCase())
         );
 
         if (hasPartialMatch) {
@@ -335,7 +337,7 @@
 
     function removeArtistFromTitle(input, button) {
         if (!input || !button) return;
-        let newText = input.value;
+        let newText = pristineValues.get(input) || input.value;
 
         // Handle native MB mis-guess in ETI (flattening)
         // This ensures the separator split can correctly identify the artist part
@@ -431,7 +433,8 @@
                     // Knockout Model Mode: merge and strip completely
                     const currentAC = acObservable();
                     if (currentAC?.names) {
-                        const updatedNames = mergeArtistCredits(currentAC.names, parsedTitleArtists);
+                        const seededArtists = pristineArtistNames.get(input) || getCurrentArtistNames(button);
+                        const updatedNames = mergeArtistCredits(currentAC.names, parsedTitleArtists, seededArtists);
                         if (updatedNames !== currentAC.names) {
                             log('Updating AC observable with merged artists:', updatedNames);
                             acObservable({
@@ -451,6 +454,7 @@
                     }
                     log(`Removed artist part from title: "${input.value}" -> "${finalTitle}"`);
                     setInputValue(input, finalTitle.trim());
+                    pristineValues.set(input, input.value);
                 } else {
                     // Fallback DOM Mode: only strip if all parsed artists are already in editor
                     const allArtistsInTitle = parsedTitleArtists.map(n => n.name.toLowerCase());
@@ -463,9 +467,11 @@
                         }
                         log(`Removed artist part from title (fallback): "${input.value}" -> "${finalTitle}"`);
                         setInputValue(input, finalTitle.trim());
+                        pristineValues.set(input, input.value);
                     } else {
                         // Keep current value intact
                         setInputValue(input, reassembleOriginal());
+                        pristineValues.set(input, input.value);
                     }
                 }
             }
@@ -694,9 +700,13 @@
 
         button.addEventListener('click', () => {
             log(`'Guess Feat.' click detected for track. Allowing native script to run first.`);
+            const input = trackRow.querySelector('input.track-name');
+            if (input) {
+                pristineValues.set(input, input.value);
+                pristineArtistNames.set(input, getCurrentArtistNames(button));
+            }
             setTimeout(() => {
                 deduplicateTrackAC(trackRow);
-                const input = trackRow.querySelector('input.track-name');
                 if (input) removeArtistFromTitle(input, button);
             }, 100);
         }, true);
@@ -710,10 +720,17 @@
 
         button.addEventListener('click', () => {
             log('Medium-wide "Guess Feat." clicked. Allowing native script to run first.');
-            setTimeout(() => {
-                const medium = button.closest('fieldset.advanced-medium');
-                if (!medium) return;
+            const medium = button.closest('fieldset.advanced-medium');
+            if (!medium) return;
 
+            // Capture all pristine values before native script modifies them
+            const inputs = Array.from(medium.querySelectorAll('tr.track input.track-name'));
+            inputs.forEach(input => {
+                pristineValues.set(input, input.value);
+                pristineArtistNames.set(input, getCurrentArtistNames(button));
+            });
+
+            setTimeout(() => {
                 log('Applying de-duplication and title cleanup to all tracks in this medium.');
                 medium.querySelectorAll('tr.track').forEach(trackRow => {
                     deduplicateTrackAC(trackRow);
@@ -733,6 +750,10 @@
 
         button.addEventListener('click', (event) => {
             const input = findAssociatedInput(button);
+            if (input) {
+                pristineValues.set(input, input.value);
+                pristineArtistNames.set(input, getCurrentArtistNames(button));
+            }
 
             // --- Standalone Form Advanced Correction Interception ---
             if (input && /[\/.]recording\/create/.test(window.location.pathname)) {
@@ -870,6 +891,7 @@
 
                         setTimeout(() => {
                             pristineValues.set(input, input.value);
+                            pristineArtistNames.set(input, getCurrentArtistNames(button));
                         }, 50);
                         return;
                     }
@@ -901,6 +923,7 @@
                     removeArtistFromTitle(input, button);
                     // Update pristine value state for the guesscase button
                     pristineValues.set(input, input.value);
+                    pristineArtistNames.set(input, getCurrentArtistNames(button));
                     log(`Updated pristine value for ${input.name || input.id} after Guess Feat cleanup: "${input.value}"`);
                 }
             }, 100);
@@ -927,7 +950,8 @@
             log(`Set initial pristine value for ${input.name || input.id}: "${input.value}"`);
         }
 
-        const updatePristineValue = () => {
+        const updatePristineValue = (event) => {
+            if (event && !event.isTrusted) return;
             pristineValues.set(input, input.value);
             log(`Updated pristine value for ${input.name || input.id}: "${input.value}"`);
         };
