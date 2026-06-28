@@ -1082,6 +1082,113 @@
 
 
     // ====================================================================================
+    // --- Model-Level Support for Apollo & Custom Editors
+    // ====================================================================================
+
+    function cleanTrackModelAfterGuessFeat(track, originalTitle, originalArtists) {
+        if (!track) return;
+        log('Starting cleanTrackModelAfterGuessFeat for track model:', track);
+
+        // 1. Deduplicate the artist credit observable
+        deduplicateACFromObservable(track.artistCredit);
+
+        // 2. Remove artist from title on the model level
+        const titleVal = track.name() || '';
+        let newText = originalTitle || titleVal;
+
+        // Extract trailing ETIs recursively
+        let eti = '';
+        const etiPattern = /\s*(\[[^\]]+\]|\([^)]+\))$/;
+        let match;
+        while ((match = newText.match(etiPattern))) {
+            eti = match[1] + (eti ? ' ' + eti : '');
+            newText = newText.substring(0, newText.lastIndexOf(match[1])).trim();
+        }
+
+        const separatorPattern = /\s+[-–—/]\s+|\s+[-–—/]\s*|\s*[-–—/]\s+(?=.)|(?<=[\u3040-\u30ff\u4e00-\u9fff\uac00-\ud7af\uff00-\uffef])[-–—/]|[-–—/](?=[\u3040-\u30ff\u4e00-\u9fff\uac00-\ud7af\uff00-\uffef])/g;
+        const parts = newText.split(separatorPattern).map(p => p.trim()).filter(Boolean);
+
+        if (parts.length > 1) {
+            const currentAC = track.artistCredit();
+            const artistsInEditor = (currentAC?.names ?? []).map(n => n.name);
+            const editorLower = artistsInEditor.map(a => a.toLowerCase());
+
+            const partMatches = parts.map(part => {
+                const artistsInPart = parseArtistNamesFromString(part);
+                const matches = artistsInPart.filter(name => editorLower.includes(name.toLowerCase()));
+                return {
+                    part,
+                    artists: artistsInPart,
+                    matchCount: matches.length
+                };
+            });
+
+            let artistPartIndex = -1;
+            let candidateIndices = [];
+            partMatches.forEach((pm, idx) => {
+                if (pm.matchCount > 0) {
+                    candidateIndices.push(idx);
+                }
+            });
+
+            if (candidateIndices.length === 1) {
+                artistPartIndex = candidateIndices[0];
+            } else if (candidateIndices.length > 1) {
+                candidateIndices.sort((a, b) => partMatches[b].matchCount - partMatches[a].matchCount);
+                if (partMatches[candidateIndices[0]].matchCount > partMatches[candidateIndices[1]].matchCount) {
+                    artistPartIndex = candidateIndices[0];
+                }
+            }
+
+            if (artistPartIndex !== -1) {
+                const artistPart = parts[artistPartIndex];
+                let parsedTitleArtists = parseArtistsAndJoins(artistPart);
+
+                const titleParts = parts.filter((_, index) => index !== artistPartIndex);
+                let newTitle = titleParts.join(' - ');
+
+                const featPattern = /\s*\(?(feat\.?|ft\.?|featuring|with)\s*([^)]+)\)?/i;
+                const featMatch = newTitle.match(featPattern);
+                let titleGuests = [];
+                if (featMatch) {
+                    const joinWord = featMatch[1].toLowerCase();
+                    const joinPhrase = joinWord.startsWith('feat') || joinWord.startsWith('ft') ? ' feat. '
+                        : joinWord.startsWith('with') ? ' with '
+                            : ` ${joinWord} `;
+                    const guestStr = featMatch[2].trim();
+                    titleGuests = parseArtistsAndJoins(guestStr);
+
+                    newTitle = newTitle.replace(featMatch[0], '').trim();
+
+                    if (parsedTitleArtists.length > 0) {
+                        parsedTitleArtists[parsedTitleArtists.length - 1].joinPhrase = joinPhrase;
+                    }
+                }
+
+                parsedTitleArtists = [...parsedTitleArtists, ...titleGuests];
+
+                if (currentAC?.names) {
+                    const updatedNames = mergeArtistCredits(currentAC.names, parsedTitleArtists, originalArtists);
+                    if (updatedNames !== currentAC.names) {
+                        log('Updating AC observable with merged artists:', updatedNames);
+                        track.artistCredit({
+                            ...currentAC,
+                            names: updatedNames
+                        });
+                    }
+                }
+
+                let finalTitle = newTitle;
+                if (eti) {
+                    finalTitle += ' ' + eti;
+                }
+                log(`Removed artist part from title (model): "${titleVal}" -> "${finalTitle}"`);
+                track.name(finalTitle.trim());
+            }
+        }
+    }
+
+    // ====================================================================================
     // --- Initialization
     // ====================================================================================
 
@@ -1103,6 +1210,24 @@
             }
         };
         releaseEditor.guessCaseTrackName.isEnhanced = true;
+
+        if (releaseEditor.guessTrackFeatArtists && !releaseEditor.guessTrackFeatArtists.isEnhanced) {
+            const originalGuessTrackFeatArtists = releaseEditor.guessTrackFeatArtists;
+            releaseEditor.guessTrackFeatArtists = function (track, event) {
+                log('Intercepted guessTrackFeatArtists on model.');
+                const originalTitle = track.name();
+                const originalArtists = (track.artistCredit()?.names ?? []).map(n => n.name);
+
+                originalGuessTrackFeatArtists.call(this, track, event);
+
+                try {
+                    cleanTrackModelAfterGuessFeat(track, originalTitle, originalArtists);
+                } catch (e) {
+                    err('Error cleaning track model after guessTrackFeatArtists:', e);
+                }
+            };
+            releaseEditor.guessTrackFeatArtists.isEnhanced = true;
+        }
     }
 
     const observer = new MutationObserver(() => {
