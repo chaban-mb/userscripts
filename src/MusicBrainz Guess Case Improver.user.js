@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MusicBrainz: Guess Case Improver
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      0.8.0
+// @version      0.8.1
 // @tag          ai-created
 // @description  Improves the native "Guess Case" for release, recording and track titles with advanced artist and ETI parsing. Also removes artist from title and duplicate artists after using "Guess feat. artists" on tracklists.
 // @author       chaban
@@ -223,7 +223,7 @@
             }
             return updatedNames;
         } else {
-            // Append non-duplicate parsed artists
+            // Append non-duplicate parsed artists while preserving the order defined by parsedTitleArtists
             const currentNamesLower = currentNames.map(n => n.name.trim().toLowerCase());
             const newTitleArtists = parsedTitleArtists.filter(ta => !currentNamesLower.includes(ta.name.trim().toLowerCase()));
 
@@ -231,34 +231,40 @@
                 return currentNames;
             }
 
-            const updatedNames = [...currentNames];
-            let joinPhraseToUse = ' feat. ';
-            const firstNewIdx = parsedTitleArtists.findIndex(ta => !currentNamesLower.includes(ta.name.trim().toLowerCase()));
-            if (firstNewIdx > 0) {
-                joinPhraseToUse = parsedTitleArtists[firstNewIdx - 1].joinPhrase || ' & ';
-            }
-
-            if (updatedNames.length > 0) {
-                const lastIdx = updatedNames.length - 1;
-                updatedNames[lastIdx] = {
-                    ...updatedNames[lastIdx],
-                    joinPhrase: joinPhraseToUse
-                };
-            }
-
-            newTitleArtists.forEach((ta) => {
-                updatedNames.push({
-                    artist: null,
+            // Partition currentNames: seeded (not in title) vs title artists (already in currentNames)
+            const titleNamesLower = parsedTitleArtists.map(ta => ta.name.trim().toLowerCase());
+            const seededNames = currentNames.filter(n => !titleNamesLower.includes(n.name.trim().toLowerCase()));
+            
+            // Re-assemble title artists in their correct order from parsedTitleArtists
+            const orderedTitleArtists = parsedTitleArtists.map(ta => {
+                const taLower = ta.name.trim().toLowerCase();
+                const match = currentNames.find(n => {
+                    const nLower = n.name.trim().toLowerCase();
+                    return nLower === taLower || parseArtistNamesFromString(n.name).includes(taLower);
+                });
+                return {
+                    artist: match ? match.artist : null,
                     name: ta.name,
                     credit: ta.name,
                     joinPhrase: ta.joinPhrase
-                });
+                };
             });
 
+            // Seeded artists should be joined to the title artists.
+            // We set the join phrase of the last seeded artist to ' & '.
+            const updatedSeeded = [...seededNames];
+            if (updatedSeeded.length > 0) {
+                updatedSeeded[updatedSeeded.length - 1] = {
+                    ...updatedSeeded[updatedSeeded.length - 1],
+                    joinPhrase: ' & '
+                };
+            }
+
+            const updatedNames = [...updatedSeeded, ...orderedTitleArtists];
+
             if (updatedNames.length > 0) {
-                const lastIdx = updatedNames.length - 1;
-                updatedNames[lastIdx] = {
-                    ...updatedNames[lastIdx],
+                updatedNames[updatedNames.length - 1] = {
+                    ...updatedNames[updatedNames.length - 1],
                     joinPhrase: ''
                 };
             }
@@ -368,12 +374,13 @@
         const parts = newText.split(separatorPattern).map(p => p.trim()).filter(Boolean);
 
         if (parts.length > 1) {
-            const artistsInEditor = getCurrentArtistNames(button);
-            const editorLower = artistsInEditor.map(a => a.toLowerCase());
+            const pristineArtists = pristineArtistNames.get(input);
+            const pristineLower = (pristineArtists && pristineArtists.length > 0) ? pristineArtists.map(a => a.toLowerCase()) : [];
+            const editorLower = getCurrentArtistNames(button).map(a => a.toLowerCase());
 
-            const partMatches = parts.map(part => {
+            const partMatchesPristine = parts.map(part => {
                 const artistsInPart = parseArtistNamesFromString(part);
-                const matches = artistsInPart.filter(name => editorLower.includes(name.toLowerCase()));
+                const matches = artistsInPart.filter(name => pristineLower.includes(name.toLowerCase()));
                 return {
                     part,
                     artists: artistsInPart,
@@ -381,21 +388,48 @@
                 };
             });
 
-            // Find the index of the artist part
             let artistPartIndex = -1;
-            let candidateIndices = [];
-            partMatches.forEach((pm, idx) => {
+            let pristineCandidateIndices = [];
+            partMatchesPristine.forEach((pm, idx) => {
                 if (pm.matchCount > 0) {
-                    candidateIndices.push(idx);
+                    pristineCandidateIndices.push(idx);
                 }
             });
 
-            if (candidateIndices.length === 1) {
-                artistPartIndex = candidateIndices[0];
-            } else if (candidateIndices.length > 1) {
-                candidateIndices.sort((a, b) => partMatches[b].matchCount - partMatches[a].matchCount);
-                if (partMatches[candidateIndices[0]].matchCount > partMatches[candidateIndices[1]].matchCount) {
-                    artistPartIndex = candidateIndices[0];
+            if (pristineCandidateIndices.length === 1) {
+                artistPartIndex = pristineCandidateIndices[0];
+            } else if (pristineCandidateIndices.length > 1) {
+                pristineCandidateIndices.sort((a, b) => partMatchesPristine[b].matchCount - partMatchesPristine[a].matchCount);
+                if (partMatchesPristine[pristineCandidateIndices[0]].matchCount > partMatchesPristine[pristineCandidateIndices[1]].matchCount) {
+                    artistPartIndex = pristineCandidateIndices[0];
+                }
+            }
+
+            if (artistPartIndex === -1) {
+                const partMatchesCurrent = parts.map(part => {
+                    const artistsInPart = parseArtistNamesFromString(part);
+                    const matches = artistsInPart.filter(name => editorLower.includes(name.toLowerCase()));
+                    return {
+                        part,
+                        artists: artistsInPart,
+                        matchCount: matches.length
+                    };
+                });
+
+                let currentCandidateIndices = [];
+                partMatchesCurrent.forEach((pm, idx) => {
+                    if (pm.matchCount > 0) {
+                        currentCandidateIndices.push(idx);
+                    }
+                });
+
+                if (currentCandidateIndices.length === 1) {
+                    artistPartIndex = currentCandidateIndices[0];
+                } else if (currentCandidateIndices.length > 1) {
+                    currentCandidateIndices.sort((a, b) => partMatchesCurrent[b].matchCount - partMatchesCurrent[a].matchCount);
+                    if (partMatchesCurrent[currentCandidateIndices[0]].matchCount > partMatchesCurrent[currentCandidateIndices[1]].matchCount) {
+                        artistPartIndex = currentCandidateIndices[0];
+                    }
                 }
             }
 
@@ -852,31 +886,14 @@
                             const currentAC = acObservable();
 
                             if (currentAC && currentAC.names && currentAC.names.length > 0) {
-                                const originalFirstArtistNode = currentAC.names[0];
-
-                                // Preserves unlinked data correctly to avoid blank rows
-                                const preservedName = originalFirstArtistNode.name || mainArtistText;
-                                const preservedCredit = originalFirstArtistNode.credit || mainArtistText;
-
-                                const updatedFirstArtistNode = {
-                                    ...originalFirstArtistNode,
-                                    name: preservedName,
-                                    credit: preservedCredit,
-                                    joinPhrase: joinPhraseText
-                                };
-
-                                // Split multiple featured guest nodes cleanly on common delimiters
+                                const parsedMainArtists = parseArtistsAndJoins(mainArtistText);
+                                if (parsedMainArtists.length > 0) {
+                                    parsedMainArtists[parsedMainArtists.length - 1].joinPhrase = joinPhraseText;
+                                }
                                 const guestList = parseArtistsAndJoins(matchedData.guests);
-                                const parsedArtistNodes = [updatedFirstArtistNode];
+                                const parsedTitleArtists = [...parsedMainArtists, ...guestList];
 
-                                guestList.forEach((guestNode, idx) => {
-                                    parsedArtistNodes.push({
-                                        artist: null,
-                                        name: guestNode.name,
-                                        credit: guestNode.name,
-                                        joinPhrase: (idx < guestList.length - 1) ? guestNode.joinPhrase || ', ' : ''
-                                    });
-                                });
+                                const parsedArtistNodes = mergeArtistCredits(currentAC.names, parsedTitleArtists, artistsInEditor);
 
                                 // Update the model array cleanly
                                 acObservable({
@@ -1110,12 +1127,12 @@
 
         if (parts.length > 1) {
             const currentAC = track.artistCredit();
-            const artistsInEditor = (currentAC?.names ?? []).map(n => n.name);
-            const editorLower = artistsInEditor.map(a => a.toLowerCase());
+            const pristineLower = (originalArtists && originalArtists.length > 0) ? originalArtists.map(a => a.toLowerCase()) : [];
+            const editorLower = (currentAC?.names ?? []).map(n => n.name.toLowerCase());
 
-            const partMatches = parts.map(part => {
+            const partMatchesPristine = parts.map(part => {
                 const artistsInPart = parseArtistNamesFromString(part);
-                const matches = artistsInPart.filter(name => editorLower.includes(name.toLowerCase()));
+                const matches = artistsInPart.filter(name => pristineLower.includes(name.toLowerCase()));
                 return {
                     part,
                     artists: artistsInPart,
@@ -1124,19 +1141,47 @@
             });
 
             let artistPartIndex = -1;
-            let candidateIndices = [];
-            partMatches.forEach((pm, idx) => {
+            let pristineCandidateIndices = [];
+            partMatchesPristine.forEach((pm, idx) => {
                 if (pm.matchCount > 0) {
-                    candidateIndices.push(idx);
+                    pristineCandidateIndices.push(idx);
                 }
             });
 
-            if (candidateIndices.length === 1) {
-                artistPartIndex = candidateIndices[0];
-            } else if (candidateIndices.length > 1) {
-                candidateIndices.sort((a, b) => partMatches[b].matchCount - partMatches[a].matchCount);
-                if (partMatches[candidateIndices[0]].matchCount > partMatches[candidateIndices[1]].matchCount) {
-                    artistPartIndex = candidateIndices[0];
+            if (pristineCandidateIndices.length === 1) {
+                artistPartIndex = pristineCandidateIndices[0];
+            } else if (pristineCandidateIndices.length > 1) {
+                pristineCandidateIndices.sort((a, b) => partMatchesPristine[b].matchCount - partMatchesPristine[a].matchCount);
+                if (partMatchesPristine[pristineCandidateIndices[0]].matchCount > partMatchesPristine[pristineCandidateIndices[1]].matchCount) {
+                    artistPartIndex = pristineCandidateIndices[0];
+                }
+            }
+
+            if (artistPartIndex === -1) {
+                const partMatchesCurrent = parts.map(part => {
+                    const artistsInPart = parseArtistNamesFromString(part);
+                    const matches = artistsInPart.filter(name => editorLower.includes(name.toLowerCase()));
+                    return {
+                        part,
+                        artists: artistsInPart,
+                        matchCount: matches.length
+                    };
+                });
+
+                let currentCandidateIndices = [];
+                partMatchesCurrent.forEach((pm, idx) => {
+                    if (pm.matchCount > 0) {
+                        currentCandidateIndices.push(idx);
+                    }
+                });
+
+                if (currentCandidateIndices.length === 1) {
+                    artistPartIndex = currentCandidateIndices[0];
+                } else if (currentCandidateIndices.length > 1) {
+                    currentCandidateIndices.sort((a, b) => partMatchesCurrent[b].matchCount - partMatchesCurrent[a].matchCount);
+                    if (partMatchesCurrent[currentCandidateIndices[0]].matchCount > partMatchesCurrent[currentCandidateIndices[1]].matchCount) {
+                        artistPartIndex = currentCandidateIndices[0];
+                    }
                 }
             }
 
