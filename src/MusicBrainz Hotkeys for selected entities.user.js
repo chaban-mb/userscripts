@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MusicBrainz: Hotkeys for selected entities
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      1.6.0
+// @version      1.6.1
 // @description  Adds hotkeys to perform actions on selected entities. "A" = Artwork, "D" = Delete, "E" = Edit, "W" = Merge, "Q" = Aliases, "R" = Relationship Editor
 // @tag          ai-created
 // @author       chaban
@@ -149,6 +149,9 @@
      * @param {KeyboardEvent} event - The keydown event.
      */
     function handleKeyDown(event) {
+        if (!event.isTrusted) {
+            return;
+        }
         if (event.ctrlKey || event.altKey || event.shiftKey || event.metaKey || event.isComposing || isInputFocused()) {
             return;
         }
