@@ -792,14 +792,27 @@
          * @param {HTMLElement|null} dockElement - The element to append the button to.
          */
         appendToDock: function (dockElement) {
-            if (document.body.contains(this._containerDiv)) {
-                return;
-            }
-
             if (dockElement) {
+                // If it's already in the correct dock, do nothing
+                if (dockElement.contains(this._containerDiv)) {
+                    return;
+                }
+                // Clean up fallback styles if it was previously attached to body
+                this._containerDiv.style.position = '';
+                this._containerDiv.style.top = '';
+                this._containerDiv.style.right = '';
+                this._containerDiv.style.zIndex = '';
+                this._containerDiv.style.background = '';
+                this._containerDiv.style.padding = '';
+                this._containerDiv.style.borderRadius = '';
+
                 dockElement.appendChild(this._containerDiv);
                 console.log(`[${GM.info.script.name}] Button UI appended to dock.`);
             } else {
+                // Only fallback if it's not already attached anywhere in the document
+                if (document.body.contains(this._containerDiv)) {
+                    return;
+                }
                 console.warn(`[${GM.info.script.name}] Could not find a suitable dock element. Appending to body as last resort.`);
                 document.body.appendChild(this._containerDiv);
                 this._containerDiv.style.position = 'fixed';
@@ -968,11 +981,40 @@
         },
 
         appendToDock: function (dockElement) {
-            if (document.body.contains(this._containerDiv)) {
-                return;
-            }
             if (dockElement) {
+                // If it's already in the correct dock, do nothing
+                if (dockElement.contains(this._containerDiv)) {
+                    return;
+                }
+
+                // Clear any potential fallback layout styles if moving out of body
+                this._containerDiv.style.position = '';
+                this._containerDiv.style.top = '';
+                this._containerDiv.style.right = '';
+                this._containerDiv.style.zIndex = '';
+                this._containerDiv.style.background = '';
+                this._containerDiv.style.padding = '';
+                this._containerDiv.style.borderRadius = '';
+
                 dockElement.appendChild(this._containerDiv);
+                console.log(`[${GM.info.script.name}] Playlist UI appended to dock.`);
+            } else {
+                // Only fallback to body if it's not already attached anywhere in the DOM
+                if (document.body.contains(this._containerDiv)) {
+                    return;
+                }
+
+                console.warn(`[${GM.info.script.name}] Could not find a suitable dock element for Playlist UI. Appending to body.`);
+                document.body.appendChild(this._containerDiv);
+
+                // Mirror the RecordingButton fixed layout so they line up neatly if both fallback
+                this._containerDiv.style.position = 'fixed';
+                this._containerDiv.style.top = '56px'; // Shifted down slightly so it sits right underneath the Recording Button fallback
+                this._containerDiv.style.right = '10px';
+                this._containerDiv.style.zIndex = '9999';
+                this._containerDiv.style.background = 'rgba(0,0,0,0.7)';
+                this._containerDiv.style.padding = '5px';
+                this._containerDiv.style.borderRadius = '5px';
             }
         },
 
