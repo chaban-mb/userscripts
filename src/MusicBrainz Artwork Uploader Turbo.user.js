@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MusicBrainz: Artwork Uploader Turbo
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      3.3.1
+// @version      3.3.2
 // @tag          ai-created
 // @description  Allows for multiple artwork images to be uploaded simultaneously and recursively upload directories.
 // @author       chaban
@@ -203,13 +203,13 @@
             },
 
             async _handleDirectorySelection(event) {
-                const files = Array.from(event.target.files);
-                if (files.length === 0) {
-                    ArtworkUploaderTurbo.logger.warn('No files found in selected directory.');
-                    return;
-                }
+                try {
+                    const files = Array.from(event.target.files);
+                    if (files.length === 0) {
+                        ArtworkUploaderTurbo.logger.warn('No files found in selected directory.');
+                        return;
+                    }
 
-                if (ArtworkUploaderTurbo.state.upvm?.addFile) {
                     const validationPromises = files.map(file =>
                         ArtworkUploaderTurbo.toNativePromise(MB.Art.validate_file(file))
                             .then(() => ({ file, valid: true }))
@@ -226,15 +226,29 @@
                         ArtworkUploaderTurbo.logger.log(`Ignoring ${files.length - validFiles.length} invalid files.`);
                     }
 
-                    validFiles.forEach(file => ArtworkUploaderTurbo.state.upvm.addFile(file));
+                    if (validFiles.length > 0) {
+                        const dt = new DataTransfer();
+                        validFiles.forEach(file => dt.items.add(file));
 
-                    const formName = window.__MB__.$c.action.name.replace(/_/g, '-');
-                    document.querySelector(`#${formName}-submit`).disabled = false;
-                } else {
-                    ArtworkUploaderTurbo.logger.error("Could not access the captured UploadProcessViewModel.");
+                        const $input = $('input.add-files');
+                        if ($input.length) {
+                            $input[0].files = dt.files;
+                            $input.trigger('change');
+                        } else {
+                            const fileInput = document.querySelector('input.add-files');
+                            if (fileInput) {
+                                fileInput.files = dt.files;
+                                fileInput.dispatchEvent(new Event('change', { bubbles: true }));
+                            } else {
+                                ArtworkUploaderTurbo.logger.error("Could not find page's input.add-files element.");
+                            }
+                        }
+                    }
+                } catch (error) {
+                    ArtworkUploaderTurbo.logger.error("Failed to process directory selection:", error);
+                } finally {
+                    event.target.value = '';
                 }
-
-                event.target.value = '';
             },
         },
 
@@ -436,14 +450,6 @@
             const checkMB = setInterval(() => {
                 if (window.MB?.Art?.add_art_submit && window.MB?.Art?.UploadProcessViewModel && window.__MB__?.$c && window.$) {
                     clearInterval(checkMB);
-
-                    const originalVM = MB.Art.UploadProcessViewModel;
-                    MB.Art.UploadProcessViewModel = function (...args) {
-                        const instance = new originalVM(...args);
-                        ArtworkUploaderTurbo.state.upvm = instance;
-                        ArtworkUploaderTurbo.logger.log('Successfully captured UploadProcessViewModel instance.');
-                        return instance;
-                    };
 
                     this.UI.init();
                     this.Uploader.init();
