@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YouTube: MusicBrainz Importer
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      2.9.0
+// @version      2.9.1
 // @description  Imports YouTube videos to MusicBrainz as a new standalone recording
 // @tag          ai-created
 // @author       nikki, RustyNova, chaban
