@@ -234,7 +234,7 @@
             // Partition currentNames: seeded (not in title) vs title artists (already in currentNames)
             const titleNamesLower = parsedTitleArtists.map(ta => ta.name.trim().toLowerCase());
             const seededNames = currentNames.filter(n => !titleNamesLower.includes(n.name.trim().toLowerCase()));
-            
+
             // Re-assemble title artists in their correct order from parsedTitleArtists
             const orderedTitleArtists = parsedTitleArtists.map(ta => {
                 const taLower = ta.name.trim().toLowerCase();
@@ -519,7 +519,7 @@
 
         // Preserve MusicBrainz special track titles in square brackets and convert them to lowercase
         const bracketExceptions = [];
-        const exceptionPattern = /\[(untitled|unknown|data track)\]/gi;
+        const exceptionPattern = /\[(untitled|unknown|data track|silence)\]/gi;
         newText = newText.replace(exceptionPattern, (match, p1) => {
             const index = bracketExceptions.length;
             bracketExceptions.push(`[${p1.toLowerCase()}]`);
