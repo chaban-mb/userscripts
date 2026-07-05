@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MusicBrainz: Artwork Uploader Turbo
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      3.3.3
+// @version      3.3.4
 // @tag          ai-created
 // @description  Allows for multiple artwork images to be uploaded simultaneously and recursively upload directories.
 // @author       chaban
@@ -17,6 +17,11 @@
 
 (function () {
     'use strict';
+
+    function isArtStationActive() {
+        const root = document.getElementById('as-root');
+        return !!(root && !root.classList.contains('as-orig'));
+    }
 
     // --- MAIN APPLICATION ---
     const ArtworkUploaderTurbo = {
@@ -187,6 +192,7 @@
             },
 
             _handleClick(event) {
+                if (isArtStationActive()) return;
                 if (event.shiftKey) {
                     event.stopImmediatePropagation();
                     event.preventDefault();
@@ -195,6 +201,7 @@
             },
 
             _handleShiftState(event) {
+                if (isArtStationActive()) return;
                 if (event.key === 'Shift') {
                     this._addFilesButton.textContent = event.type === 'keydown'
                         ? 'Select directory...'
@@ -259,7 +266,13 @@
                 const pageInfo = this._getPageInfo(actionName);
                 if (!pageInfo) return;
 
-                MB.Art.add_art_submit = this.run.bind(this, pageInfo);
+                const originalAddArtSubmit = MB.Art.add_art_submit;
+                MB.Art.add_art_submit = (gid, upvm) => {
+                    if (isArtStationActive()) {
+                        return originalAddArtSubmit(gid, upvm);
+                    }
+                    return this.run(pageInfo, gid, upvm);
+                };
             },
 
             _getPageInfo(actionName) {
@@ -468,6 +481,37 @@
                     this.UI.init();
                     this.Uploader.init();
                     this.DirectoryUploader.init();
+
+                    let lastActive = null;
+                    const handleArtStationState = () => {
+                        const active = isArtStationActive();
+                        if (active === lastActive) return;
+                        lastActive = active;
+                        ArtworkUploaderTurbo.logger.log(`Art Station status: ${active ? 'active (deactivating script)' : 'inactive (activating script)'}`);
+                        const container = document.getElementById('mb-artwork-uploader-turbo-container');
+                        if (container) {
+                            container.style.display = active ? 'none' : '';
+                        }
+                        const button = this.DirectoryUploader._addFilesButton;
+                        if (button) {
+                            if (active) {
+                                button.textContent = this.DirectoryUploader._originalButtonText;
+                                button.removeAttribute('title');
+                            } else {
+                                button.setAttribute('title', 'Hold Shift to select a directory');
+                            }
+                        }
+                    };
+
+                    const observer = new MutationObserver(handleArtStationState);
+                    observer.observe(document.documentElement, {
+                        childList: true,
+                        subtree: true,
+                        attributes: true,
+                        attributeFilter: ['class']
+                    });
+
+                    handleArtStationState();
                 }
             }, 50);
         }
