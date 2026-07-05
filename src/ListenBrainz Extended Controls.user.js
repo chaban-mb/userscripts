@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ListenBrainz: Extended Controls
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      1.2.5
+// @version      1.2.6
 // @tag          ai-created
 // @description  Allows customizing which actions are shown in listen controls cards, moving "Open in Music Service" links to the main controls area, displaying source info, and auto-copying text in the "Link Listen" modal.
 // @author       chaban
@@ -73,6 +73,7 @@
             'web scrobbler': 'https://raw.githubusercontent.com/web-scrobbler/web-scrobbler/refs/heads/master/src/icons/main/universal.svg',
             'youtube music': 'https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/youtube-music.svg',
             youtube: 'https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/youtube.svg',
+            'YT Music Morphe': 'https://avatars.githubusercontent.com/u/246280111',
             'YT Music': 'https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/youtube-music.svg',
         }
     };
