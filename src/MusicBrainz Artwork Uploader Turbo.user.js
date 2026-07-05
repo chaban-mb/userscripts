@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MusicBrainz: Artwork Uploader Turbo
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      3.3.4
+// @version      3.3.5
 // @tag          ai-created
 // @description  Allows for multiple artwork images to be uploaded simultaneously and recursively upload directories.
 // @author       chaban
@@ -483,6 +483,8 @@
                     this.DirectoryUploader.init();
 
                     let lastActive = null;
+                    let artStationObserver = null;
+
                     const handleArtStationState = () => {
                         const active = isArtStationActive();
                         if (active === lastActive) return;
@@ -503,13 +505,20 @@
                         }
                     };
 
-                    const observer = new MutationObserver(handleArtStationState);
-                    observer.observe(document.documentElement, {
-                        childList: true,
-                        subtree: true,
-                        attributes: true,
-                        attributeFilter: ['class']
+                    const contentObserver = new MutationObserver(() => {
+                        handleArtStationState();
+                        const root = document.getElementById('as-root');
+                        if (root && !artStationObserver) {
+                            artStationObserver = new MutationObserver(handleArtStationState);
+                            artStationObserver.observe(root, { attributes: true, attributeFilter: ['class'] });
+                        } else if (!root && artStationObserver) {
+                            artStationObserver.disconnect();
+                            artStationObserver = null;
+                        }
                     });
+
+                    const contentArea = document.getElementById('content') || document.body;
+                    contentObserver.observe(contentArea, { childList: true });
 
                     handleArtStationState();
                 }
