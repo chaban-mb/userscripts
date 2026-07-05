@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MusicBrainz: Artwork Uploader Turbo
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      3.3.2
+// @version      3.3.3
 // @tag          ai-created
 // @description  Allows for multiple artwork images to be uploaded simultaneously and recursively upload directories.
 // @author       chaban
@@ -420,7 +420,7 @@
                                 file.status(MB.Art.upload_status_enum.submitting);
                                 file._script.stage = 'Submitting';
                                 ArtworkUploaderTurbo.UI.updateDebugUI();
-                                await ArtworkUploaderTurbo.toNativePromise(MB.Art.submit_edit(file, file.postfields, file.mimeType(), position));
+                                 await ArtworkUploaderTurbo.toNativePromise(MB.Art.submit_edit(file, file.postfields, file.mimeType(), position));
                                 file.progress(100);
                                 file.status(MB.Art.upload_status_enum.done);
                                 file._script.stage = 'Done';
@@ -431,11 +431,25 @@
                             } catch (error) {
                                 const errMsg = typeof file.editErrorMessage === 'function' ? file.editErrorMessage() : '';
                                 if (errMsg && errMsg.includes('expired')) {
-                                    ArtworkUploaderTurbo.logger.warn(`Nonce expired for ${file.name}, restarting upload process...`);
-                                    file._script.retryDelay = null;
+                                    ArtworkUploaderTurbo.logger.warn(`Nonce expired for ${file.name}, refreshing signature...`);
+                                    file._script.stage = 'Refreshing nonce';
+                                    ArtworkUploaderTurbo.UI.updateDebugUI();
                                     file.editErrorMessage(''); // clear out old error
-                                    this.filesToSign.push(file);
-                                    break;
+
+                                    const archiveName = this.formName === 'add-cover-art' ? 'cover' : 'event';
+                                    try {
+                                        const response = await fetch(`/ws/js/${archiveName}-art-upload/${this.gid}?mime_type=${encodeURIComponent(file.mimeType())}&image_id=${file.postfields.image_id}&t=${Date.now()}`);
+                                        if (!response.ok) {
+                                            throw new Error(`Failed to refresh signature: HTTP ${response.status}`);
+                                        }
+                                        const newPostfields = await response.json();
+                                        file.postfields = newPostfields;
+                                        ArtworkUploaderTurbo.logger.log(`[DEBUG] Successfully refreshed signature for ${file.name}`);
+                                        continue; // retry submission
+                                    } catch (refreshError) {
+                                        ArtworkUploaderTurbo.logger.error(`Error refreshing signature for ${file.name}:`, refreshError);
+                                        if (!(await this._handleRetry(file, [refreshError]))) break;
+                                    }
                                 }
                                 if (!(await this._handleRetry(file, error))) break;
                             }
