@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MusicBrainz: Batch Remove Cover Art
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      0.6.1
+// @version      0.6.2
 // @description  Allows batch removing cover art from MusicBrainz releases.
 // @tag          ai-created
 // @author       chaban, jesus2099
@@ -473,6 +473,8 @@
                 document.head.appendChild(styleSheet);
 
                 let lastActive = null;
+                let artStationObserver = null;
+
                 const handleArtStationState = () => {
                     const active = isArtStationActive();
                     if (active === lastActive) return;
@@ -480,13 +482,21 @@
                     console.log('[MusicBrainz: Batch Remove Cover Art] Art Station status:', active ? 'active (deactivating script)' : 'inactive (activating script)');
                     document.body.classList.toggle('artstation-active', active);
                 };
-                const artStationObserver = new MutationObserver(handleArtStationState);
-                artStationObserver.observe(document.documentElement, {
-                    childList: true,
-                    subtree: true,
-                    attributes: true,
-                    attributeFilter: ['class']
+
+                const contentObserver = new MutationObserver(() => {
+                    handleArtStationState();
+                    const root = document.getElementById('as-root');
+                    if (root && !artStationObserver) {
+                        artStationObserver = new MutationObserver(handleArtStationState);
+                        artStationObserver.observe(root, { attributes: true, attributeFilter: ['class'] });
+                    } else if (!root && artStationObserver) {
+                        artStationObserver.disconnect();
+                        artStationObserver = null;
+                    }
                 });
+
+                contentObserver.observe(document.getElementById('content'), { childList: true });
+
                 handleArtStationState();
             }
         };
