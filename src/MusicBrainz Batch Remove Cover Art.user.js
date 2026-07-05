@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MusicBrainz: Batch Remove Cover Art
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      0.6.0
+// @version      0.6.1
 // @description  Allows batch removing cover art from MusicBrainz releases.
 // @tag          ai-created
 // @author       chaban, jesus2099
@@ -17,6 +17,11 @@
 
 (function () {
     'use strict';
+
+    function isArtStationActive() {
+        const root = document.getElementById('as-root');
+        return !!(root && !root.classList.contains('as-orig'));
+    }
 
     // --- START OF INLINED LIBRARIES ---
     // CONTROL-POMME.js
@@ -455,6 +460,34 @@
                 initialized = true;
                 observer.disconnect();
                 initBatchRemove();
+
+                const styleSheet = document.createElement('style');
+                styleSheet.type = 'text/css';
+                styleSheet.innerText = `
+                    body.artstation-active .batch-remove-container,
+                    body.artstation-active .cover-art-checkbox,
+                    body.artstation-active .mb-batch-remove-artwork-wrapper .status {
+                        display: none !important;
+                    }
+                `;
+                document.head.appendChild(styleSheet);
+
+                let lastActive = null;
+                const handleArtStationState = () => {
+                    const active = isArtStationActive();
+                    if (active === lastActive) return;
+                    lastActive = active;
+                    console.log('[MusicBrainz: Batch Remove Cover Art] Art Station status:', active ? 'active (deactivating script)' : 'inactive (activating script)');
+                    document.body.classList.toggle('artstation-active', active);
+                };
+                const artStationObserver = new MutationObserver(handleArtStationState);
+                artStationObserver.observe(document.documentElement, {
+                    childList: true,
+                    subtree: true,
+                    attributes: true,
+                    attributeFilter: ['class']
+                });
+                handleArtStationState();
             }
         };
 
@@ -547,12 +580,14 @@
         };
 
         selectAllCheckbox.addEventListener('change', (event) => {
+            if (isArtStationActive()) return;
             document.querySelectorAll('input.cover-art-checkbox:not(:disabled)').forEach(cb => {
                 cb.checked = event.target.checked;
             });
         });
 
         removeSelectedBtn.addEventListener('click', async () => {
+            if (isArtStationActive()) return;
             editNoteMemory.saveNote();
             const selectedCheckboxes = Array.from(document.querySelectorAll('input.cover-art-checkbox:checked'));
             if (selectedCheckboxes.length === 0) {
@@ -653,6 +688,7 @@
         };
 
         document.getElementById('content').addEventListener('click', (event) => {
+            if (isArtStationActive()) return;
             if (event.target.classList.contains('cover-art-checkbox')) {
                 const checkbox = event.target;
                 if (event.shiftKey && lastChecked && lastChecked !== checkbox) {
