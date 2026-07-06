@@ -187,7 +187,7 @@ def do_release():
         if main_content is not None:
             main_ver, _ = extract_version_and_name(main_content)
             
-        needs_bump = (main_ver is None) or (curr_ver == main_ver)
+        needs_bump = (main_ver is not None) and (curr_ver == main_ver)
         
         unreleased_info.append({
             'rel_path': rel_path_str,
@@ -201,7 +201,12 @@ def do_release():
 
     print("\nAvailable scripts for release:")
     for idx, info in enumerate(unreleased_info, 1):
-        status_str = "[BUMP NEEDED]" if info['needs_bump'] else "[BUMPED]"
+        if info['main_version'] is None:
+            status_str = "[NEW]"
+        elif info['needs_bump']:
+            status_str = "[BUMP NEEDED]"
+        else:
+            status_str = "[BUMPED]"
         ver_str = f"({info['main_version']} -> {info['curr_version']})" if info['main_version'] else f"(New: {info['curr_version']})"
         print(f"  {idx}) {status_str} {info['name']} {ver_str}")
         
@@ -276,8 +281,19 @@ def do_release():
                 continue
         else:
             new_version = current_version
-            print(f"Version is already bumped relative to main: {script['main_version']} -> {new_version}")
-            confirm = input("Do you want to keep this version or bump it again? (k=keep, 1=patch, 2=minor, 3=major, 4=custom): ").strip().lower()
+            if script['main_version'] is None:
+                print(f"New script: releasing initial version {new_version}")
+            else:
+                print(f"Version is already bumped relative to main: {script['main_version']} -> {new_version}")
+                
+            print("Select action:")
+            print("  k) Keep current version")
+            print("  1) Patch (bug fix/minor tweaks)")
+            print("  2) Minor (backwards-compatible enhancements)")
+            print("  3) Major (incompatible UI/behavior changes)")
+            print("  4) Custom version")
+            
+            confirm = input("Choice (default: k): ").strip().lower() or 'k'
             if confirm == '1':
                 new_version = bump_version(new_version, 'patch')
             elif confirm == '2':
@@ -287,20 +303,41 @@ def do_release():
             elif confirm == '4':
                 new_version = input("Enter new version: ").strip()
 
+        # Update version in file if changed
+        version_updated = False
         if new_version != current_version:
             print(f"Updating version in file to {new_version}...")
             if update_version_in_file(script['full_path'], new_version):
                 print("File updated.")
-                slug = script['slug']
-                commit_msg = f"chore({slug}): bump version to {new_version}"
-                print(f"Committing bump: '{commit_msg}'")
-                subprocess.run(['git', 'add', str(script['rel_path'])], check=True)
-                subprocess.run(['git', 'commit', '-m', commit_msg], check=True)
+                version_updated = True
             else:
                 print("Failed to update version in file.")
                 continue
+
+        # Automatically stage the script file and its description
+        subprocess.run(['git', 'add', str(script['rel_path'])], check=True)
+        
+        script_base_name = script['full_path'].name.replace('.user.js', '')
+        desc_rel_path = f"docs/descriptions/{script_base_name}.md"
+        desc_full_path = repo_root / desc_rel_path
+        if desc_full_path.exists():
+            subprocess.run(['git', 'add', desc_rel_path], check=True)
+            
+        # Check if there are staged changes for this script or its description
+        res = subprocess.run(['git', 'diff', '--cached', '--name-only', '--', str(script['rel_path']), str(desc_rel_path)], capture_output=True, text=True)
+        staged_changes = res.stdout.strip()
+        if staged_changes:
+            slug = script['slug']
+            if version_updated:
+                commit_msg = f"chore({slug}): bump version to {new_version}"
+            elif script['main_version'] is None:
+                commit_msg = f"feat({slug}): add initial version {new_version}"
+            else:
+                commit_msg = f"feat({slug}): release version {new_version}"
+            print(f"Committing changes: '{commit_msg}'")
+            subprocess.run(['git', 'commit', '-m', commit_msg], check=True)
         else:
-            print(f"No version changes to commit for {script['name']}.")
+            print(f"No changes to commit for {script['name']}.")
 
     # Rebuild Markdown list of userscripts and commit it if changed
     print("\nRebuilding userscripts list (docs/USERSCRIPTS.md)...")
@@ -339,7 +376,16 @@ def do_release():
         print("Release finalized locally on current branch. Merging and pushing skipped.")
         return
 
+    # Check if working tree has dirty/uncommitted changes
+    dirty = run_cmd("git status --porcelain").strip()
+    stashed = False
+    
     try:
+        if dirty:
+            print("Working directory is dirty. Stashing local changes...")
+            subprocess.run(['git', 'stash', '-u', '-m', 'workflow_release_stash'], check=True)
+            stashed = True
+
         print("Checking out main...")
         subprocess.run(['git', 'checkout', 'main'], check=True)
         
@@ -360,6 +406,15 @@ def do_release():
     except subprocess.CalledProcessError as e:
         print(f"\nAn error occurred during git operations: {e}")
         print("You may need to manually resolve branch status.")
+    finally:
+        # Ensure we are back on dev and pop stash if stashed
+        curr_branch = run_cmd("git branch --show-current")
+        if curr_branch != "dev":
+            print("Returning to dev branch...")
+            subprocess.run(['git', 'checkout', 'dev'], check=True)
+        if stashed:
+            print("Restoring stashed local changes...")
+            subprocess.run(['git', 'stash', 'pop'], check=True)
 
 def resolve_command(arg):
     commands = ['check', 'cleanup', 'release', 'build']
