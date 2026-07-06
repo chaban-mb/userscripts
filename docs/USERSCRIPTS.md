@@ -120,6 +120,13 @@ A developer tool that logs all DOM changes to the console.
 - **Live Logging:** Real-time console logs for element additions, removals, and attribute changes.
 - **Detailed Info:** Shows exactly what changed, including old and new values.
 
+## Harmony: Domain Redirector
+
+[![Install](https://img.shields.io/badge/Install-success.svg?style=for-the-badge&logo=tampermonkey)](https://github.com/chaban-mb/userscripts/raw/main/src/Harmony%20Domain%20Redirector.user.js)
+[![Source](https://img.shields.io/badge/Source-grey.svg?style=for-the-badge&logo=github)](https://github.com/chaban-mb/userscripts/blob/main/src/Harmony%20Domain%20Redirector.user.js)
+
+Redirects the user from the official Harmony instance (`harmony.pulsewidth.org.uk`) to the alternative mybrainz instance (`harmony.mybrainz.dev`) while preserving the URL path and query parameters.
+
 ## Harmony: Enhancements
 
 [![Install](https://img.shields.io/badge/Install-success.svg?style=for-the-badge&logo=tampermonkey)](https://github.com/chaban-mb/userscripts/raw/main/src/Harmony%20Enhancements.user.js)
