@@ -1,12 +1,13 @@
 // ==UserScript==
 // @name         Harmony: Enhancements
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      1.27.5
+// @version      1.27.6
 // @tag          ai-created
 // @description  Adds some convenience features, various UI and behavior settings, as well as an improved language detection to Harmony.
 // @author       chaban
 // @license      MIT
 // @match        https://harmony.pulsewidth.org.uk/*
+// @match        https://harmony.mybrainz.dev/*
 // @icon         https://harmony.pulsewidth.org.uk/harmony-logo.svg
 // @grant        GM_getValue
 // @grant        GM_setValue
