@@ -58,9 +58,23 @@ def build():
         print(f"Error: {src_path} not found.")
         return
 
-    # 1. Collect all scripts
+    # 1. Collect all scripts (only include files tracked by git to avoid unreleased drafts)
+    tracked_paths = None
+    try:
+        import subprocess
+        git_files = subprocess.check_output(
+            ["git", "ls-files", "src/"],
+            cwd=str(repo_root),
+            text=True
+        ).splitlines()
+        tracked_paths = { (repo_root / p).resolve() for p in git_files }
+    except Exception as e:
+        print(f"Warning: Failed to query git tracked files: {e}")
+
     scripts_list = []
     for script_file in src_path.rglob('*.user.js'):
+        if tracked_paths is not None and script_file.resolve() not in tracked_paths:
+            continue
         metadata = get_script_metadata(script_file, repo_root, descriptions_path)
         scripts_list.append(metadata)
 
