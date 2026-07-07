@@ -530,6 +530,13 @@ Enhances the MusicBrainz Release Editor by adding ISRC search capabilities to th
 - **ISRC Search:** Allows you to find recordings by pasting an ISRC directly into the recording search field.
 - **Seamless Integration:** Works within the existing inline search interface of the Release Editor.
 
+## MusicBrainz: Subscriber Spam Filter
+
+[![Install](https://img.shields.io/badge/Install-success.svg?style=for-the-badge&logo=tampermonkey)](https://github.com/chaban-mb/userscripts/raw/main/src/MusicBrainz%20Subscriber%20Spam%20Filter.user.js)
+[![Source](https://img.shields.io/badge/Source-grey.svg?style=for-the-badge&logo=github)](https://github.com/chaban-mb/userscripts/blob/main/src/MusicBrainz%20Subscriber%20Spam%20Filter.user.js)
+
+*No description provided.*
+
 ## MusicBrainz: Uncheck checkboxes with Esc
 
 [![Install](https://img.shields.io/badge/Install-success.svg?style=for-the-badge&logo=tampermonkey)](https://github.com/chaban-mb/userscripts/raw/main/src/MusicBrainz%20Uncheck%20checkboxes%20with%20Esc.user.js)
