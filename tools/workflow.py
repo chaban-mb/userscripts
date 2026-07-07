@@ -185,9 +185,28 @@ def do_release():
     commits_created = 0
 
     # Check for uncommitted changes upfront to prevent stash pop conflicts later
-    dirty_status = run_cmd("git status --porcelain").strip()
-    if dirty_status:
-        print(f"\n{COLOR_YELLOW}{COLOR_BOLD}Warning: You have uncommitted changes in your working directory.{COLOR_RESET}")
+    dirty_lines = run_cmd("git status --porcelain").splitlines()
+    other_dirty = []
+    for line in dirty_lines:
+        trimmed = line.strip()
+        if not trimmed:
+            continue
+        parts = trimmed.split(maxsplit=1)
+        if len(parts) < 2:
+            continue
+        filepath = parts[1].strip('"').replace('\\', '/')
+        is_handled = (
+            (filepath.startswith("src/") and filepath.endswith(".user.js")) or
+            (filepath.startswith("docs/descriptions/") and filepath.endswith(".md")) or
+            (filepath == "docs/USERSCRIPTS.md")
+        )
+        if not is_handled:
+            other_dirty.append(filepath)
+
+    if other_dirty:
+        print(f"\n{COLOR_YELLOW}{COLOR_BOLD}Warning: You have uncommitted changes in files not managed by the release workflow:{COLOR_RESET}")
+        for f in other_dirty:
+            print(f"  * {f}")
         print("It is highly recommended to commit or stash them before releasing to avoid merge conflicts.")
         confirm = input(f"Do you want to proceed with the release anyway? (y/N): ").strip().lower()
         if confirm != 'y':
@@ -375,6 +394,8 @@ def do_release():
                 print("Failed to update version in file.")
                 continue
 
+        script['version_updated'] = version_updated
+
         # Automatically stage the script file and its description
         subprocess.run(['git', 'add', str(script['rel_path'])], check=True)
         
@@ -389,14 +410,17 @@ def do_release():
         staged_changes = res.stdout.strip()
         if staged_changes:
             slug = script['slug']
-            default_type = "fix" if (version_updated or script['main_version'] is not None) else "feat"
             
-            # Use a descriptive default description for new scripts
+            # For new scripts, the commit type is always 'feat' and default description is adding the script.
+            # Otherwise, if the version was updated during release, the default type is 'fix' and description is bumping version.
             if script['main_version'] is None:
+                default_type = "feat"
                 default_desc = f"add {script['name']} userscript"
             elif version_updated:
+                default_type = "fix"
                 default_desc = f"bump version to {new_version}"
             else:
+                default_type = "feat"
                 default_desc = f"release version {new_version}"
 
             print(f"\nEnter commit message details for {script['name']}.")
@@ -404,15 +428,7 @@ def do_release():
             commit_type = input(f"Commit type (fix/feat/chore/refactor/style, default: {default_type}): ").strip().lower() or default_type
             commit_desc = input(f"Description (default: {default_desc}): ").strip()
 
-            if not commit_desc:
-                if version_updated:
-                    commit_msg = f"chore({slug}): bump version to {new_version}"
-                elif script['main_version'] is None:
-                    commit_msg = f"feat({slug}): add {script['name']} userscript"
-                else:
-                    commit_msg = f"feat({slug}): release version {new_version}"
-            else:
-                commit_msg = f"{commit_type}({slug}): {commit_desc}"
+            commit_msg = f"{commit_type}({slug}): {commit_desc or default_desc}"
 
             print(f"Committing changes: '{commit_msg}'")
             subprocess.run(['git', 'commit', '-m', commit_msg], check=True)
@@ -474,6 +490,9 @@ def do_release():
                     script_base_name = script['full_path'].name.replace('.user.js', '')
                     desc_rel_path = f"docs/descriptions/{script_base_name}.md"
                     subprocess.run(['git', 'restore', '--staged', desc_rel_path], capture_output=True)
+                    if script.get('version_updated'):
+                        print(f"{COLOR_YELLOW}Reverting version bump in {script['rel_path']} back to {script['curr_version']}...{COLOR_RESET}")
+                        update_version_in_file(script['full_path'], script['curr_version'])
  
                 print(f"{COLOR_GREEN}Commits reverted. Workspace changes preserved and unstaged.{COLOR_RESET}\n")
         return
