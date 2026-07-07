@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MusicBrainz: Artwork Uploader Turbo
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      3.3.5
+// @version      3.3.6
 // @tag          ai-created
 // @description  Allows for multiple artwork images to be uploaded simultaneously and recursively upload directories.
 // @author       chaban
@@ -87,7 +87,7 @@
                 styleSheet.innerText = `
                     #mb-artwork-uploader-turbo-container {
                         background-color: var(--background-accent, #f9f9f9); border: 1px solid #ccc;
-                        color: var(--text, black); position: fixed; right: 10px; bottom: 10px;
+                        color: var(--text, black); position: fixed; left: 10px; bottom: 10px;
                         padding: 10px; max-width: 450px; box-shadow: 1pt 1pt 2pt gray;
                         z-index: 1000; font-size: small;
                     }
