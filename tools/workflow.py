@@ -10,6 +10,15 @@ from pathlib import Path
 VERSION_RE = re.compile(r'//\s*@version\s+(\S+)')
 NAME_RE = re.compile(r'//\s*@name\s+(.*)')
 
+# ANSI Escape Codes for Terminal Colors
+COLOR_RESET = "\033[0m"
+COLOR_RED = "\033[31m"
+COLOR_GREEN = "\033[32m"
+COLOR_YELLOW = "\033[33m"
+COLOR_CYAN = "\033[36m"
+COLOR_MAGENTA = "\033[35m"
+COLOR_BOLD = "\033[1m"
+
 def run_cmd(cmd):
     res = subprocess.run(cmd, shell=True, text=True, capture_output=True)
     return res.stdout.strip() if res.returncode == 0 else ""
@@ -54,10 +63,10 @@ def extract_version_and_name(content):
     name = name_match.group(1).strip() if name_match else None
     return version, name
 
-def get_main_file_content(rel_path_str):
+def get_main_file_content(rel_path_str, main_branch="main"):
     git_path = rel_path_str.replace('\\', '/')
     try:
-        res = subprocess.run(['git', 'show', f'main:{git_path}'], capture_output=True, text=True, encoding='utf-8', check=True)
+        res = subprocess.run(['git', 'show', f'{main_branch}:{git_path}'], capture_output=True, text=True, encoding='utf-8', check=True)
         return res.stdout
     except subprocess.CalledProcessError:
         return None
@@ -71,6 +80,7 @@ def parse_semver(version_str):
 def bump_version(version_str, bump_type):
     parts = parse_semver(version_str)
     if not parts:
+        print(f"Error: Version '{version_str}' is not a valid Semantic Version (x.y.z). Please correct the '@version' tag in the script header.")
         return None
     major, minor, patch = parts
     if bump_type == 'patch':
@@ -80,6 +90,33 @@ def bump_version(version_str, bump_type):
     elif bump_type == 'major':
         return f"{major + 1}.0.0"
     return None
+
+def get_git_remote():
+    remotes = run_cmd("git remote").splitlines()
+    remotes = [r.strip() for r in remotes if r.strip()]
+    if not remotes:
+        return "origin"
+    if "origin" in remotes:
+        return "origin"
+    return remotes[0]
+
+def get_main_branch_name(remote="origin"):
+    local_branches = run_cmd("git branch --format='%(refname:short)'").splitlines()
+    local_branches = [b.strip() for b in local_branches if b.strip()]
+    if "main" in local_branches:
+        return "main"
+    if "master" in local_branches:
+        return "master"
+    
+    # Fallback to check remote branches
+    remote_branches = run_cmd(f"git branch -r --format='%(refname:short)'").splitlines()
+    remote_branches = [b.strip() for b in remote_branches if b.strip()]
+    if f"{remote}/main" in remote_branches:
+        return "main"
+    if f"{remote}/master" in remote_branches:
+        return "master"
+        
+    return "main"
 
 def update_version_in_file(file_path, new_version):
     try:
@@ -143,24 +180,38 @@ def do_cleanup(branch_name=None, main_branch="main"):
         subprocess.run([sys.executable, git_cleanup_path, branch, main_branch])
 
 def do_release():
+    remote = get_git_remote()
+    main_branch = get_main_branch_name(remote)
+    commits_created = 0
+
+    # Check for uncommitted changes upfront to prevent stash pop conflicts later
+    dirty_status = run_cmd("git status --porcelain").strip()
+    if dirty_status:
+        print(f"\n{COLOR_YELLOW}{COLOR_BOLD}Warning: You have uncommitted changes in your working directory.{COLOR_RESET}")
+        print("It is highly recommended to commit or stash them before releasing to avoid merge conflicts.")
+        confirm = input(f"Do you want to proceed with the release anyway? (y/N): ").strip().lower()
+        if confirm != 'y':
+            print(f"{COLOR_RED}Aborting.{COLOR_RESET}\n")
+            return
+
     curr_branch = run_cmd("git branch --show-current")
     if curr_branch != "dev":
-        print(f"Warning: Current branch is '{curr_branch}', but releases should normally start from the 'dev' branch.")
+        print(f"\n{COLOR_YELLOW}{COLOR_BOLD}Warning: Current branch is '{curr_branch}', but releases should normally start from the 'dev' branch.{COLOR_RESET}")
         confirm = input("Do you want to continue anyway? (y/N): ").strip().lower()
         if confirm != 'y':
-            print("Aborting.")
+            print(f"{COLOR_RED}Aborting.{COLOR_RESET}\n")
             return
 
     repo_root = Path(__file__).resolve().parent.parent
     
-    diff_files = get_git_stdout(['git', 'diff', '--name-only', 'main', '--', 'src/']).splitlines()
+    diff_files = get_git_stdout(['git', 'diff', '--name-only', main_branch, '--', 'src/']).splitlines()
     untracked_files = get_git_stdout(['git', 'ls-files', '--others', '--exclude-standard', '--', 'src/']).splitlines()
     
     all_files = sorted(list(set(diff_files + untracked_files)))
     userscripts = [f for f in all_files if f.endswith('.user.js')]
     
     if not userscripts:
-        print("No unreleased changes found in src/ compared to main.")
+        print(f"\n{COLOR_CYAN}No unreleased changes found in src/ compared to {main_branch}.{COLOR_RESET}\n")
         return
 
     print("Checking unreleased userscripts...")
@@ -182,7 +233,7 @@ def do_release():
         curr_ver, curr_name = extract_version_and_name(current_content)
         display_name = curr_name or full_path.name
         
-        main_content = get_main_file_content(rel_path_str)
+        main_content = get_main_file_content(rel_path_str, main_branch)
         main_ver = None
         if main_content is not None:
             main_ver, _ = extract_version_and_name(main_content)
@@ -199,25 +250,25 @@ def do_release():
             'slug': get_slug(rel_path_str, mapping)
         })
 
-    print("\nAvailable scripts for release:")
+    print(f"\n{COLOR_CYAN}{COLOR_BOLD}Available scripts for release:{COLOR_RESET}")
     for idx, info in enumerate(unreleased_info, 1):
         if info['main_version'] is None:
-            status_str = "[NEW]"
+            status_str = f"{COLOR_CYAN}[NEW]{COLOR_RESET}"
         elif info['needs_bump']:
-            status_str = "[BUMP NEEDED]"
+            status_str = f"{COLOR_RED}{COLOR_BOLD}[BUMP NEEDED]{COLOR_RESET}"
         else:
-            status_str = "[BUMPED]"
+            status_str = f"{COLOR_GREEN}{COLOR_BOLD}[BUMPED]{COLOR_RESET}"
         ver_str = f"({info['main_version']} -> {info['curr_version']})" if info['main_version'] else f"(New: {info['curr_version']})"
         print(f"  {idx}) {status_str} {info['name']} {ver_str}")
         
-    print("\nSelect scripts to release:")
+    print(f"\n{COLOR_CYAN}{COLOR_BOLD}Select scripts to release:{COLOR_RESET}")
     print("  Enter numbers separated by commas (e.g. 1,3)")
     print("  Enter 'all' to release all scripts")
     print("  Enter 'q' to quit")
     
-    choice = input("Choice: ").strip().lower()
+    choice = input(f"{COLOR_BOLD}Choice:{COLOR_RESET} ").strip().lower()
     if choice in ['q', 'quit', 'exit']:
-        print("Aborting.")
+        print(f"{COLOR_RED}Aborting.{COLOR_RESET}\n")
         return
         
     selected_indices = []
@@ -227,7 +278,7 @@ def do_release():
         try:
             selected_indices = [int(i.strip()) - 1 for i in choice.split(',') if i.strip()]
         except ValueError:
-            print("Invalid input. Aborting.")
+            print(f"{COLOR_RED}Invalid input. Aborting.{COLOR_RESET}\n")
             return
             
     selected_scripts = []
@@ -235,21 +286,31 @@ def do_release():
         if 0 <= idx < len(unreleased_info):
             selected_scripts.append(unreleased_info[idx])
         else:
-            print(f"Invalid index {idx + 1}. Skipping.")
+            print(f"{COLOR_YELLOW}Invalid index {idx + 1}. Skipping.{COLOR_RESET}")
             
     if not selected_scripts:
-        print("No scripts selected.")
+        print(f"{COLOR_YELLOW}No scripts selected.{COLOR_RESET}\n")
         return
-
+ 
     for script in selected_scripts:
-        print(f"\nProcessing release for: {script['name']}")
+        print(f"\n{COLOR_CYAN}{COLOR_BOLD}Processing release for:{COLOR_RESET} {script['name']}")
+        
+        # Check description file existence and warn if missing
+        script_base_name = script['full_path'].name.replace('.user.js', '')
+        desc_rel_path = f"docs/descriptions/{script_base_name}.md"
+        desc_full_path = repo_root / desc_rel_path
+        if not desc_full_path.exists():
+            print(f"  {COLOR_YELLOW}{COLOR_BOLD}[!] WARNING:{COLOR_RESET} Description file is missing: {desc_rel_path}")
+            print(f"      Please create this file to describe the userscript's features.")
+            print()
+
         current_version = script['curr_version']
         
         if not current_version:
-            print(f"Warning: No version tag found for {script['name']}.")
+            print(f"{COLOR_YELLOW}Warning: No version tag found for {script['name']}.{COLOR_RESET}")
             current_version = input("Enter current/initial version (e.g. 1.0.0): ").strip()
             if not current_version:
-                print("Skipping due to invalid version.")
+                print(f"{COLOR_RED}Skipping due to invalid version.{COLOR_RESET}")
                 continue
                 
         if script['needs_bump']:
@@ -328,14 +389,34 @@ def do_release():
         staged_changes = res.stdout.strip()
         if staged_changes:
             slug = script['slug']
-            if version_updated:
-                commit_msg = f"chore({slug}): bump version to {new_version}"
-            elif script['main_version'] is None:
-                commit_msg = f"feat({slug}): add initial version {new_version}"
+            default_type = "fix" if (version_updated or script['main_version'] is not None) else "feat"
+            
+            # Use a descriptive default description for new scripts
+            if script['main_version'] is None:
+                default_desc = f"add {script['name']} userscript"
+            elif version_updated:
+                default_desc = f"bump version to {new_version}"
             else:
-                commit_msg = f"feat({slug}): release version {new_version}"
+                default_desc = f"release version {new_version}"
+
+            print(f"\nEnter commit message details for {script['name']}.")
+            print(f"Format: <type>({slug}): <description>")
+            commit_type = input(f"Commit type (fix/feat/chore/refactor/style, default: {default_type}): ").strip().lower() or default_type
+            commit_desc = input(f"Description (default: {default_desc}): ").strip()
+
+            if not commit_desc:
+                if version_updated:
+                    commit_msg = f"chore({slug}): bump version to {new_version}"
+                elif script['main_version'] is None:
+                    commit_msg = f"feat({slug}): add {script['name']} userscript"
+                else:
+                    commit_msg = f"feat({slug}): release version {new_version}"
+            else:
+                commit_msg = f"{commit_type}({slug}): {commit_desc}"
+
             print(f"Committing changes: '{commit_msg}'")
             subprocess.run(['git', 'commit', '-m', commit_msg], check=True)
+            commits_created += 1
         else:
             print(f"No changes to commit for {script['name']}.")
 
@@ -349,31 +430,52 @@ def do_release():
         print("Staging and committing updated USERSCRIPTS.md...")
         subprocess.run(['git', 'add', 'docs/USERSCRIPTS.md'], check=True)
         subprocess.run(['git', 'commit', '-m', "chore(docs): update userscripts list"], check=True)
+        commits_created += 1
 
-    print("\n--- Finalizing Release Workflow ---")
-    print("Preview of actions to perform:")
+    print(f"\n{COLOR_CYAN}{COLOR_BOLD}--- Finalizing Release Workflow ---{COLOR_RESET}")
+    print(f"{COLOR_BOLD}Preview of actions to perform:{COLOR_RESET}")
     
-    # Show commits that will be merged into main
-    print("  * Commits to merge into 'main':")
-    commits_to_merge = get_git_stdout(['git', 'log', 'main..HEAD', '--oneline']).splitlines()
+    # Show commits that will be merged into main_branch
+    print(f"\n  * Commits to merge into '{main_branch}':")
+    commits_to_merge = get_git_stdout(['git', 'log', f'{main_branch}..HEAD', '--oneline']).splitlines()
     if commits_to_merge:
         for commit in commits_to_merge:
-            print(f"      {commit}")
+            print(f"      {COLOR_GREEN}{commit}{COLOR_RESET}")
     else:
-        print("      No new commits to merge (dev and main are already in sync).")
+        print(f"      {COLOR_YELLOW}No new commits to merge (dev and {main_branch} are already in sync).{COLOR_RESET}")
         
     # Show branch updates
-    print("  * Git operations to run:")
-    print("      git checkout main")
-    print("      git merge dev")
-    print("      git push origin main")
-    print("      git checkout dev")
-    print("      git merge main")
-    print("      git push origin dev\n")
+    print(f"\n  * Git operations to run:")
+    print(f"      {COLOR_CYAN}git checkout {main_branch}{COLOR_RESET}")
+    print(f"      {COLOR_CYAN}git merge dev{COLOR_RESET}")
+    print(f"      {COLOR_CYAN}git push {remote} {main_branch}{COLOR_RESET}")
+    print(f"      {COLOR_CYAN}git checkout dev{COLOR_RESET}")
+    print(f"      {COLOR_CYAN}git merge {main_branch}{COLOR_RESET}")
+    print(f"      {COLOR_CYAN}git push {remote} dev{COLOR_RESET}\n")
     
-    confirm = input("Do you want to merge 'dev' into 'main' and push changes? (y/N): ").strip().lower()
+    confirm = input(f"{COLOR_BOLD}Do you want to merge 'dev' into '{main_branch}' and push changes? (y/N):{COLOR_RESET} ").strip().lower()
     if confirm != 'y':
-        print("Release finalized locally on current branch. Merging and pushing skipped.")
+        print(f"\n{COLOR_YELLOW}Release finalized locally on current branch. Merging and pushing skipped.{COLOR_RESET}")
+        if commits_created > 0:
+            undo_confirm = input(f"\n{COLOR_YELLOW}{COLOR_BOLD}Do you want to undo/revert the {commits_created} local commits created during this session? (y/N):{COLOR_RESET} ").strip().lower()
+            if undo_confirm == 'y':
+                print(f"\n{COLOR_RED}Undoing last {commits_created} commits (git reset --soft)...{COLOR_RESET}")
+                subprocess.run(['git', 'reset', '--soft', f'HEAD~{commits_created}'], check=True)
+                
+                # Revert auto-generated docs/USERSCRIPTS.md changes
+                print(f"{COLOR_YELLOW}Reverting auto-generated changes to docs/USERSCRIPTS.md...{COLOR_RESET}")
+                subprocess.run(['git', 'restore', '--staged', 'docs/USERSCRIPTS.md'], capture_output=True)
+                subprocess.run(['git', 'restore', 'docs/USERSCRIPTS.md'], capture_output=True)
+                
+                # Unstage the script and description files that were released
+                print(f"{COLOR_YELLOW}Unstaging released script files...{COLOR_RESET}")
+                for script in selected_scripts:
+                    subprocess.run(['git', 'restore', '--staged', str(script['rel_path'])], capture_output=True)
+                    script_base_name = script['full_path'].name.replace('.user.js', '')
+                    desc_rel_path = f"docs/descriptions/{script_base_name}.md"
+                    subprocess.run(['git', 'restore', '--staged', desc_rel_path], capture_output=True)
+ 
+                print(f"{COLOR_GREEN}Commits reverted. Workspace changes preserved and unstaged.{COLOR_RESET}\n")
         return
 
     # Check if working tree has dirty/uncommitted changes
@@ -382,39 +484,40 @@ def do_release():
     
     try:
         if dirty:
-            print("Working directory is dirty. Stashing local changes...")
+            print(f"\n{COLOR_YELLOW}Working directory is dirty. Stashing local changes...{COLOR_RESET}")
             subprocess.run(['git', 'stash', '-u', '-m', 'workflow_release_stash'], check=True)
             stashed = True
 
-        print("Checking out main...")
-        subprocess.run(['git', 'checkout', 'main'], check=True)
+        print(f"\n{COLOR_CYAN}Checking out {main_branch}...{COLOR_RESET}")
+        subprocess.run(['git', 'checkout', main_branch], check=True)
         
-        print("Merging dev into main...")
+        print(f"\n{COLOR_CYAN}Merging dev into {main_branch}...{COLOR_RESET}")
         subprocess.run(['git', 'merge', 'dev'], check=True)
         
-        print("Pushing main to origin...")
-        subprocess.run(['git', 'push', 'origin', 'main'], check=True)
+        print(f"\n{COLOR_CYAN}Pushing {main_branch} to {remote}...{COLOR_RESET}")
+        subprocess.run(['git', 'push', remote, main_branch], check=True)
         
-        print("Checking out dev...")
+        print(f"\n{COLOR_CYAN}Checking out dev...{COLOR_RESET}")
         subprocess.run(['git', 'checkout', 'dev'], check=True)
         
-        print("Syncing dev with main...")
-        subprocess.run(['git', 'merge', 'main'], check=True)
-        subprocess.run(['git', 'push', 'origin', 'dev'], check=True)
+        print(f"\n{COLOR_CYAN}Syncing dev with {main_branch}...{COLOR_RESET}")
+        subprocess.run(['git', 'merge', main_branch], check=True)
+        subprocess.run(['git', 'push', remote, 'dev'], check=True)
         
-        print("\nRelease completed successfully!")
+        print(f"\n{COLOR_GREEN}{COLOR_BOLD}Release completed successfully!{COLOR_RESET}\n")
     except subprocess.CalledProcessError as e:
-        print(f"\nAn error occurred during git operations: {e}")
-        print("You may need to manually resolve branch status.")
+        print(f"\n{COLOR_RED}{COLOR_BOLD}An error occurred during git operations: {e}{COLOR_RESET}")
+        print(f"{COLOR_YELLOW}You may need to manually resolve branch status.{COLOR_RESET}\n")
     finally:
         # Ensure we are back on dev and pop stash if stashed
         curr_branch = run_cmd("git branch --show-current")
         if curr_branch != "dev":
-            print("Returning to dev branch...")
+            print(f"\n{COLOR_CYAN}Returning to dev branch...{COLOR_RESET}")
             subprocess.run(['git', 'checkout', 'dev'], check=True)
         if stashed:
-            print("Restoring stashed local changes...")
+            print(f"\n{COLOR_YELLOW}Restoring stashed local changes...{COLOR_RESET}")
             subprocess.run(['git', 'stash', 'pop'], check=True)
+            print()
 
 def resolve_command(arg):
     commands = ['check', 'cleanup', 'release', 'build']

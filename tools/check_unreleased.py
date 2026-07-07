@@ -94,6 +94,13 @@ def main():
             else:
                 print(f"[*] [BUMPED]      {display_name} ({rel_path_str})")
                 print(f"   Version: {main_ver} -> {curr_ver}")
+
+        # Check description file
+        script_base_name = full_path.name.replace('.user.js', '')
+        desc_rel_path = f"docs/descriptions/{script_base_name}.md"
+        desc_full_path = repo_root / desc_rel_path
+        if not desc_full_path.exists():
+            print(f"   [!] [MISSING DESCRIPTION] Description file is missing: {desc_rel_path}")
         
         # Print changes since release
         if commits or has_uncommitted:
