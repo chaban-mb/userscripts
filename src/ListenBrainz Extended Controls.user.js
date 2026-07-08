@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ListenBrainz: Extended Controls
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      1.2.6
+// @version      1.2.7
 // @tag          ai-created
 // @description  Allows customizing which actions are shown in listen controls cards, moving "Open in Music Service" links to the main controls area, displaying source info, and auto-copying text in the "Link Listen" modal.
 // @author       chaban
@@ -60,7 +60,7 @@
             'music-assistant': 'https://avatars.githubusercontent.com/u/71128003',
             musicbee: 'https://getmusicbee.com/img/musicbee.png',
             navidrome: 'https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/navidrome.svg',
-            'pano scrobbler': 'https://raw.githubusercontent.com/kawaiiDango/pano-scrobbler/refs/heads/main/composeApp/src/desktopMain/composeResources/drawable/ic_launcher_with_bg.svg',
+            'pano scrobbler': 'https://raw.githubusercontent.com/kawaiiDango/pano-scrobbler/refs/heads/main/composeApp/src/jvmMain/composeResources/drawable/ic_launcher_with_bg.svg',
             plex: 'https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/plex.svg',
             rythmbox: 'https://gitlab.gnome.org/GNOME/rhythmbox/raw/master/data/icons/hicolor/scalable/apps/org.gnome.Rhythmbox3.svg',
             soundcloud: 'https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/soundcloud.svg',
