@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name           MusicBrainz: Release day of the week
 // @namespace      https://musicbrainz.org/user/chaban
-// @version        1.1.0
+// @version        1.2.0
 // @description    Display the day of the week for release events.
 // @tag            ai-created
 // @author         Jugdish, SultS, chaban
@@ -30,8 +30,13 @@
         return setTimeout(function () { cb(); }, 1);
     };
 
-    const dayNames = new Intl.DateTimeFormat('en', { weekday: 'short' });
-    const fullDayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    const locale = document.documentElement.lang || 'en';
+    const dayNames = new Intl.DateTimeFormat(locale, { weekday: 'short' });
+    const fullDayNamesFormatter = new Intl.DateTimeFormat(locale, { weekday: 'long', timeZone: 'UTC' });
+    const fullDayNames = Array.from({ length: 7 }, (_, i) => {
+        const date = new Date(Date.UTC(2006, 0, i + 1));
+        return fullDayNamesFormatter.format(date);
+    });
     const dateRegex = /\b(\d{4}-\d{2}-\d{2})\b/;
 
     const SWITCH_DATE_2015 = new Date('2015-07-10T00:00:00');
@@ -42,7 +47,9 @@
         'FR': { name: 'France', expectedDay: (date) => (date >= SWITCH_DATE_2015 ? 5 : 1) },
         'CA': { name: 'Canada', expectedDay: (date) => (date >= SWITCH_DATE_2015 ? 5 : 2) },
         'DE': { name: 'Germany', expectedDay: (date) => (date < SWITCH_DATE_DE ? 1 : 5) },
+        'IT': { name: 'Italy', expectedDay: (date) => (date >= SWITCH_DATE_2015 ? 5 : 2) },
         'JP': { name: 'Japan', expectedDay: 3 },
+        'NL': { name: 'Netherlands', expectedDay: 5 },
         'NZ': { name: 'New Zealand', expectedDay: (date) => (date >= SWITCH_DATE_2015 ? 5 : 1) },
         'GB': { name: 'United Kingdom', expectedDay: (date) => (date >= SWITCH_DATE_2015 ? 5 : 1) },
         'US': { name: 'United States', expectedDay: (date) => (date >= SWITCH_DATE_2015 ? 5 : 2) },
@@ -125,7 +132,8 @@
                     const dayOfWeek = date.getDay();
                     const dayName = dayNames.format(date);
 
-                    let country = null;
+                    let countryCode = null;
+                    let countryName = null;
                     let countryEl = null;
                     const parentContainer = textNode.parentElement ? textNode.parentElement.closest('li, td') : null;
 
@@ -143,14 +151,24 @@
                     }
 
                     if (countryEl) {
-                        country = (countryEl.title || countryEl.textContent || '').trim();
-                        if (country && country.length === 2 && countryEl.title) country = countryEl.title.trim();
+                        const title = (countryEl.title || '').trim();
+                        const text = (countryEl.textContent || '').trim();
+
+                        if (text.length === 2) {
+                            countryCode = text;
+                            countryName = title;
+                        } else if (title.length === 2) {
+                            countryCode = title;
+                            countryName = text;
+                        } else {
+                            countryName = title || text;
+                        }
                     } else if (textNode.parentNode && textNode.parentNode.tagName === 'SPAN') {
                         // Fallback for custom layouts like the "Supercharged Cover Art Edits" script
                         let sibling = textNode.parentNode.nextSibling;
                         if (sibling && sibling.nodeType === Node.TEXT_NODE) {
                             let rMatch = sibling.nodeValue.match(/^\s*\(([A-Z]{2})(?:,.*)?\)/);
-                            if (rMatch) country = rMatch[1];
+                            if (rMatch) countryCode = rMatch[1];
                         }
                     }
 
@@ -158,17 +176,21 @@
                     let expectedDay = null;
                     let rule = null;
 
-                    if (country) {
-                        rule = COUNTRY_MAP.get(country);
-                        if (rule !== undefined) {
-                            expectedDay = typeof rule.expectedDay === 'function' ? rule.expectedDay(date) : rule.expectedDay;
-                        }
+                    if (countryCode) {
+                        rule = COUNTRY_MAP.get(countryCode);
+                    }
+                    if (!rule && countryName) {
+                        rule = COUNTRY_MAP.get(countryName);
+                    }
+
+                    if (rule !== null && rule !== undefined) {
+                        expectedDay = typeof rule.expectedDay === 'function' ? rule.expectedDay(date) : rule.expectedDay;
                     }
 
                     const statusClass = (expectedDay !== null) ? ((dayOfWeek === expectedDay) ? 'standard' : 'non-standard') : 'unknown';
 
                     let tooltipText = '';
-                    const displayCountry = rule ? rule.name : country;
+                    const displayCountry = rule ? rule.name : (countryName || countryCode || '');
 
                     if (expectedDay !== null && dayOfWeek !== expectedDay) {
                         tooltipText = `Expected ${fullDayNames[expectedDay]} for ${displayCountry}, but is ${fullDayNames[dayOfWeek]}.`;
@@ -176,7 +198,7 @@
                         tooltipText = `Standard release day for ${displayCountry}.`;
                     } else if (displayCountry === 'Worldwide') {
                         tooltipText = 'No standard Global Release Day existed prior to July 10, 2015.';
-                    } else if (country) {
+                    } else if (displayCountry) {
                         tooltipText = `No standard release day known for ${displayCountry}.`;
                     } else {
                         tooltipText = 'Could not determine country.';
