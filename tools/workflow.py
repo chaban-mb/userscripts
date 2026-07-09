@@ -214,10 +214,23 @@ def do_release():
             return
 
     curr_branch = run_cmd("git branch --show-current")
-    if curr_branch != "dev":
+    release_branch = curr_branch
+    if curr_branch != "dev" and curr_branch != "main":
         print(f"\n{COLOR_YELLOW}{COLOR_BOLD}Warning: Current branch is '{curr_branch}', but releases should normally start from the 'dev' branch.{COLOR_RESET}")
-        confirm = input("Do you want to continue anyway? (y/N): ").strip().lower()
-        if confirm != 'y':
+        print("What would you like to do?")
+        print(f"  1) Automatically merge '{curr_branch}' into 'dev', switch to 'dev', and proceed with release")
+        print(f"  2) Continue on the current branch '{curr_branch}' anyway")
+        print("  q) Quit")
+        choice = input("Choice (default: 1): ").strip().lower() or '1'
+        if choice == '1':
+            print(f"\n{COLOR_CYAN}Checking out dev...{COLOR_RESET}")
+            subprocess.run(['git', 'checkout', 'dev'], check=True)
+            print(f"{COLOR_CYAN}Merging '{curr_branch}' into dev...{COLOR_RESET}")
+            subprocess.run(['git', 'merge', curr_branch], check=True)
+            release_branch = "dev"
+        elif choice == '2':
+            pass
+        else:
             print(f"{COLOR_RED}Aborting.{COLOR_RESET}\n")
             return
 
@@ -423,16 +436,32 @@ def do_release():
                 default_type = "feat"
                 default_desc = f"release version {new_version}"
 
-            print(f"\nEnter commit message details for {script['name']}.")
-            print(f"Format: <type>({slug}): <description>")
-            commit_type = input(f"Commit type (fix/feat/chore/refactor/style, default: {default_type}): ").strip().lower() or default_type
-            commit_desc = input(f"Description (default: {default_desc}): ").strip()
+            # Check if the last commit was about this script (contains slug)
+            last_commit_subject = run_cmd("git log -n 1 --format=%s").strip()
+            suggest_amend = False
+            if f"({slug})" in last_commit_subject:
+                suggest_amend = True
 
-            commit_msg = f"{commit_type}({slug}): {commit_desc or default_desc}"
+            amend = False
+            if suggest_amend:
+                amend_choice = input(f"Last commit matches this script's slug. Amend the version bump to '{last_commit_subject}'? (Y/n): ").strip().lower() or 'y'
+                if amend_choice == 'y':
+                    amend = True
 
-            print(f"Committing changes: '{commit_msg}'")
-            subprocess.run(['git', 'commit', '-m', commit_msg], check=True)
-            commits_created += 1
+            if amend:
+                print(f"Amending last commit to include version bump...")
+                subprocess.run(['git', 'commit', '--amend', '--no-edit'], check=True)
+            else:
+                print(f"\nEnter commit message details for {script['name']}.")
+                print(f"Format: <type>({slug}): <description>")
+                commit_type = input(f"Commit type (fix/feat/chore/refactor/style, default: {default_type}): ").strip().lower() or default_type
+                commit_desc = input(f"Description (default: {default_desc}): ").strip()
+
+                commit_msg = f"{commit_type}({slug}): {commit_desc or default_desc}"
+
+                print(f"Committing changes: '{commit_msg}'")
+                subprocess.run(['git', 'commit', '-m', commit_msg], check=True)
+                commits_created += 1
         else:
             print(f"No changes to commit for {script['name']}.")
 
@@ -458,18 +487,18 @@ def do_release():
         for commit in commits_to_merge:
             print(f"      {COLOR_GREEN}{commit}{COLOR_RESET}")
     else:
-        print(f"      {COLOR_YELLOW}No new commits to merge (dev and {main_branch} are already in sync).{COLOR_RESET}")
+        print(f"      {COLOR_YELLOW}No new commits to merge ({release_branch} and {main_branch} are already in sync).{COLOR_RESET}")
         
     # Show branch updates
     print(f"\n  * Git operations to run:")
     print(f"      {COLOR_CYAN}git checkout {main_branch}{COLOR_RESET}")
-    print(f"      {COLOR_CYAN}git merge dev{COLOR_RESET}")
+    print(f"      {COLOR_CYAN}git merge {release_branch}{COLOR_RESET}")
     print(f"      {COLOR_CYAN}git push {remote} {main_branch}{COLOR_RESET}")
-    print(f"      {COLOR_CYAN}git checkout dev{COLOR_RESET}")
+    print(f"      {COLOR_CYAN}git checkout {release_branch}{COLOR_RESET}")
     print(f"      {COLOR_CYAN}git merge {main_branch}{COLOR_RESET}")
-    print(f"      {COLOR_CYAN}git push {remote} dev{COLOR_RESET}\n")
+    print(f"      {COLOR_CYAN}git push {remote} {release_branch}{COLOR_RESET}\n")
     
-    confirm = input(f"{COLOR_BOLD}Do you want to merge 'dev' into '{main_branch}' and push changes? (y/N):{COLOR_RESET} ").strip().lower()
+    confirm = input(f"{COLOR_BOLD}Do you want to merge '{release_branch}' into '{main_branch}' and push changes? (y/N):{COLOR_RESET} ").strip().lower()
     if confirm != 'y':
         print(f"\n{COLOR_YELLOW}Release finalized locally on current branch. Merging and pushing skipped.{COLOR_RESET}")
         if commits_created > 0:
@@ -496,7 +525,7 @@ def do_release():
  
                 print(f"{COLOR_GREEN}Commits reverted. Workspace changes preserved and unstaged.{COLOR_RESET}\n")
         return
-
+ 
     # Check if working tree has dirty/uncommitted changes
     dirty = run_cmd("git status --porcelain").strip()
     stashed = False
@@ -506,33 +535,33 @@ def do_release():
             print(f"\n{COLOR_YELLOW}Working directory is dirty. Stashing local changes...{COLOR_RESET}")
             subprocess.run(['git', 'stash', '-u', '-m', 'workflow_release_stash'], check=True)
             stashed = True
-
+ 
         print(f"\n{COLOR_CYAN}Checking out {main_branch}...{COLOR_RESET}")
         subprocess.run(['git', 'checkout', main_branch], check=True)
         
-        print(f"\n{COLOR_CYAN}Merging dev into {main_branch}...{COLOR_RESET}")
-        subprocess.run(['git', 'merge', 'dev'], check=True)
+        print(f"\n{COLOR_CYAN}Merging {release_branch} into {main_branch}...{COLOR_RESET}")
+        subprocess.run(['git', 'merge', release_branch], check=True)
         
         print(f"\n{COLOR_CYAN}Pushing {main_branch} to {remote}...{COLOR_RESET}")
         subprocess.run(['git', 'push', remote, main_branch], check=True)
         
-        print(f"\n{COLOR_CYAN}Checking out dev...{COLOR_RESET}")
-        subprocess.run(['git', 'checkout', 'dev'], check=True)
+        print(f"\n{COLOR_CYAN}Checking out {release_branch}...{COLOR_RESET}")
+        subprocess.run(['git', 'checkout', release_branch], check=True)
         
-        print(f"\n{COLOR_CYAN}Syncing dev with {main_branch}...{COLOR_RESET}")
+        print(f"\n{COLOR_CYAN}Syncing {release_branch} with {main_branch}...{COLOR_RESET}")
         subprocess.run(['git', 'merge', main_branch], check=True)
-        subprocess.run(['git', 'push', remote, 'dev'], check=True)
+        subprocess.run(['git', 'push', remote, release_branch], check=True)
         
         print(f"\n{COLOR_GREEN}{COLOR_BOLD}Release completed successfully!{COLOR_RESET}\n")
     except subprocess.CalledProcessError as e:
         print(f"\n{COLOR_RED}{COLOR_BOLD}An error occurred during git operations: {e}{COLOR_RESET}")
         print(f"{COLOR_YELLOW}You may need to manually resolve branch status.{COLOR_RESET}\n")
     finally:
-        # Ensure we are back on dev and pop stash if stashed
+        # Ensure we are back on release_branch and pop stash if stashed
         curr_branch = run_cmd("git branch --show-current")
-        if curr_branch != "dev":
-            print(f"\n{COLOR_CYAN}Returning to dev branch...{COLOR_RESET}")
-            subprocess.run(['git', 'checkout', 'dev'], check=True)
+        if curr_branch != release_branch:
+            print(f"\n{COLOR_CYAN}Returning to {release_branch} branch...{COLOR_RESET}")
+            subprocess.run(['git', 'checkout', release_branch], check=True)
         if stashed:
             print(f"\n{COLOR_YELLOW}Restoring stashed local changes...{COLOR_RESET}")
             subprocess.run(['git', 'stash', 'pop'], check=True)
