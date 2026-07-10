@@ -215,6 +215,7 @@ def do_release():
 
     curr_branch = run_cmd("git branch --show-current")
     release_branch = curr_branch
+    merged_feature_branch = None
     if curr_branch != "dev" and curr_branch != "main":
         print(f"\n{COLOR_YELLOW}{COLOR_BOLD}Warning: Current branch is '{curr_branch}', but releases should normally start from the 'dev' branch.{COLOR_RESET}")
         print("What would you like to do?")
@@ -228,6 +229,7 @@ def do_release():
             print(f"{COLOR_CYAN}Merging '{curr_branch}' into dev...{COLOR_RESET}")
             subprocess.run(['git', 'merge', curr_branch], check=True)
             release_branch = "dev"
+            merged_feature_branch = curr_branch
         elif choice == '2':
             pass
         else:
@@ -553,6 +555,13 @@ def do_release():
         subprocess.run(['git', 'push', remote, release_branch], check=True)
         
         print(f"\n{COLOR_GREEN}{COLOR_BOLD}Release completed successfully!{COLOR_RESET}\n")
+
+        if merged_feature_branch:
+            print(f"\n{COLOR_CYAN}Cleaning up merged feature branch '{merged_feature_branch}'...{COLOR_RESET}")
+            script_dir = os.path.dirname(os.path.abspath(__file__))
+            git_cleanup_path = os.path.join(script_dir, "git_cleanup.py")
+            subprocess.run([sys.executable, git_cleanup_path, merged_feature_branch, main_branch])
+
     except subprocess.CalledProcessError as e:
         print(f"\n{COLOR_RED}{COLOR_BOLD}An error occurred during git operations: {e}{COLOR_RESET}")
         print(f"{COLOR_YELLOW}You may need to manually resolve branch status.{COLOR_RESET}\n")
