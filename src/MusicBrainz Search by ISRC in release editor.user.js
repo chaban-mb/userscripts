@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MusicBrainz: Search by ISRC in release editor
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      1.1.2
+// @version      1.1.3
 // @tag          ai-created
 // @description  Hooks into the inline recording search of the release editor to allow searching by ISRC.
 // @author       chaban
@@ -111,7 +111,18 @@
                                     comment: item.disambiguation,
                                     video: item.video || false,
                                     artist: reduceArtistCredit(artistCredit),
-                                    artistCredit: { names: artistCredit },
+                                    artistCredit: {
+                                        names: (artistCredit || []).map(ac => ({
+                                            name: ac.name,
+                                            joinPhrase: ac.joinphrase || '',
+                                            artist: ac.artist ? {
+                                                gid: ac.artist.id,
+                                                name: ac.artist.name,
+                                                sort_name: ac.artist['sort-name'],
+                                                entityType: 'artist'
+                                            } : null
+                                        }))
+                                    },
                                     appearsOn: {
                                         hits: appearsOn.length,
                                         results: appearsOn,
