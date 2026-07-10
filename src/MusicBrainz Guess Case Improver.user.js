@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MusicBrainz: Guess Case Improver
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      0.8.1
+// @version      0.8.2
 // @tag          ai-created
 // @description  Improves the native "Guess Case" for release, recording and track titles with advanced artist and ETI parsing. Also removes artist from title and duplicate artists after using "Guess feat. artists" on tracklists.
 // @author       chaban
@@ -347,7 +347,7 @@
 
         // Handle native MB mis-guess in ETI (flattening)
         // This ensures the separator split can correctly identify the artist part
-        const etiMatch = newText.match(/\s*(\[[^\]]+\]|\([^)]+\))$/);
+        const etiMatch = newText.match(/\s*(\[[^\]]+\]|\([^)]+\)|【[^】]+】)$/);
         if (etiMatch) {
             const potentialEti = etiMatch[1];
             const etiContent = potentialEti.slice(1, -1).trim();
@@ -358,7 +358,7 @@
 
         // Extract all trailing ETIs recursively to preserve them
         let eti = '';
-        const etiPattern = /\s*(\([^)]+\)|\[[^\]]+\])$/;
+        const etiPattern = /\s*(\([^)]+\)|\[[^\]]+\]|【[^】]+】)$/;
         let match;
         while ((match = newText.match(etiPattern))) {
             eti = match[1] + (eti ? ' ' + eti : '');
@@ -527,7 +527,7 @@
         });
 
         let trailingEti = '';
-        const etiMatch = newText.match(/\s*(\[[^\]]+\]|\([^)]+\))$/);
+        const etiMatch = newText.match(/\s*(\[[^\]]+\]|\([^)]+\)|【[^】]+】)$/);
         if (etiMatch) {
             const potentialEti = etiMatch[1];
             // Check if the native script made a mess by wrapping the title in "feat." parens
@@ -866,7 +866,7 @@
                         }
 
                         // Fall-through safety check to pick up any nested trailing parentheticals
-                        const iEtiMatch = trackTitle.match(/\s*(\[[^\]]+\]|\([^)]+\))$/);
+                        const iEtiMatch = trackTitle.match(/\s*(\[[^\]]+\]|\([^)]+\)|【[^】]+】)$/);
                         if (iEtiMatch && !trailingEti) {
                             trailingEti = iEtiMatch[1];
                             trackTitle = trackTitle.substring(0, trackTitle.lastIndexOf(trailingEti)).trim();
