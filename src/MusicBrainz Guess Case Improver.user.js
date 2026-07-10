@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MusicBrainz: Guess Case Improver
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      0.8.2
+// @version      0.8.3
 // @tag          ai-created
 // @description  Improves the native "Guess Case" for release, recording and track titles with advanced artist and ETI parsing. Also removes artist from title and duplicate artists after using "Guess feat. artists" on tracklists.
 // @author       chaban
@@ -872,11 +872,7 @@
                             trackTitle = trackTitle.substring(0, trackTitle.lastIndexOf(trailingEti)).trim();
                         }
 
-                        // Programmatically run Advanced Case Correction rules on variables
-                        let correctedTitle = applyAdvancedRules(trackTitle, button);
-                        let correctedEti = trailingEti ? applyAdvancedRules(trailingEti, button) : '';
-
-                        const finalTrackTitleText = correctedEti ? `${correctedTitle} ${correctedEti}` : correctedTitle;
+                        const finalTrackTitleText = trailingEti ? `${trackTitle} ${trailingEti}` : trackTitle;
                         setInputValue(input, finalTrackTitleText);
 
                         // Access core underlying Knockout models
