@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MusicBrainz: Uncheck checkboxes with Esc
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      1.4.0
+// @version      1.4.1
 // @description  Unchecks all checked checkboxes for specified selectors when pressing Escape key
 // @tag          ai-created
 // @author       chaban
@@ -30,6 +30,7 @@
         '.release-relationship-editor #tracklist [type="checkbox"]',
         '.cover-art-checkbox',
         '#selectAllCovers',
+        'input[name="elephant-tag-checkbox"]',
     ];
 
     /**
