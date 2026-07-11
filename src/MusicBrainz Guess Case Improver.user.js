@@ -28,6 +28,9 @@
             console.log(`[${SCRIPT_NAME}]`, ...args);
         }
     };
+    const info = (...args) => {
+        console.info(`[${SCRIPT_NAME}]`, ...args);
+    };
     const warn = (...args) => {
         console.warn(`[${SCRIPT_NAME}]`, ...args);
     };
@@ -616,7 +619,7 @@
                     if (eti) {
                         finalTitle += ' ' + eti;
                     }
-                    log(`Removed artist part from title: "${input.value}" -> "${finalTitle}"`);
+                    info(`Removed artist part from title: "${input.value}" -> "${finalTitle}"`);
                     setInputValue(input, finalTitle.trim());
                     pristineValues.set(input, input.value);
                 } else {
@@ -631,7 +634,7 @@
                         if (eti) {
                             finalTitle += ' ' + eti;
                         }
-                        log(`Removed artist part from title (fallback): "${input.value}" -> "${finalTitle}"`);
+                        info(`Removed artist part from title (fallback): "${input.value}" -> "${finalTitle}"`);
                         setInputValue(input, finalTitle.trim());
                         pristineValues.set(input, input.value);
                     } else {
@@ -777,7 +780,7 @@
             return;
         }
 
-        log(`deduplicateACFromObservable: Removing ${toRemove.size} duplicate(s). Feat join phrase: "${featJoinPhrase}"`);
+        info(`deduplicateACFromObservable: Removing ${toRemove.size} duplicate(s). Feat join phrase: "${featJoinPhrase}"`);
 
         const dedupedNames = names.filter((_, i) => !toRemove.has(i));
 
@@ -813,7 +816,7 @@
         }
 
         acObservable({ ...ac, names: dedupedNames });
-        log('deduplicateACFromObservable: Done.', fmtAC(dedupedNames));
+        info('deduplicateACFromObservable: Done.', fmtAC(dedupedNames));
     }
 
     /**
@@ -1287,7 +1290,7 @@
                 if (currentAC?.names) {
                     const updatedNames = mergeArtistCredits(currentAC.names, parsedTitleArtists, originalArtists);
                     if (updatedNames !== currentAC.names) {
-                        log('Updating AC observable with merged artists:', updatedNames);
+                        info('Updating AC observable with merged artists:', updatedNames);
                         track.artistCredit({
                             ...currentAC,
                             names: updatedNames
@@ -1299,7 +1302,7 @@
                 if (eti) {
                     finalTitle += ' ' + eti;
                 }
-                log(`Removed artist part from title (model): "${titleVal}" -> "${finalTitle}"`);
+                info(`Removed artist part from title (model): "${titleVal}" -> "${finalTitle}"`);
                 track.name(finalTitle.trim());
             }
         }
