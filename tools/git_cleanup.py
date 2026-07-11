@@ -18,10 +18,14 @@ def main():
     branch = sys.argv[1]
     main_branch = sys.argv[2] if len(sys.argv) > 2 else "main"
     
+    # Check if upstream remote exists, otherwise fallback to origin
+    res = subprocess.run("git remote get-url upstream", shell=True, capture_output=True)
+    remote = "upstream" if res.returncode == 0 else "origin"
+    
     # 1. Sync Main Branch
     if not run(f"git checkout {main_branch}"): return
-    if not run("git fetch upstream"): return
-    if not run(f"git merge upstream/{main_branch}"): return
+    if not run(f"git fetch {remote}"): return
+    if not run(f"git merge {remote}/{main_branch}"): return
     if not run(f"git push origin {main_branch}"): return
     
     # 2. Delete Local Feature Branch
