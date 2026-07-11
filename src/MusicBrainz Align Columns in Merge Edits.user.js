@@ -349,8 +349,11 @@
                 const allTempSelectors = [];
                 
                 activeAligners.forEach(aligner => {
+                    globalCssRules.delete(aligner.uniqueId);
                     aligner.prepareForMeasurement(allOriginalStyles, allTempSelectors);
                 });
+                
+                updateGlobalStyle();
                 
                 tempStyleElement.textContent = allTempSelectors.join(',\n') + ' { white-space: nowrap !important; }';
 
