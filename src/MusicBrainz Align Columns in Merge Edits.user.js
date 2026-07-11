@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MusicBrainz: Align Columns in Merge Edits
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      2.4.4
+// @version      2.4.5
 // @tag          ai-created
 // @description  Aligns columns in merge edit tables for easier comparison.
 // @author       chaban
@@ -43,6 +43,17 @@
         subtree: true,
         characterData: true,
     };
+
+    const globalCssRules = new Map();
+    let globalStyleElement = null;
+
+    function updateGlobalStyle() {
+        if (!globalStyleElement) {
+            globalStyleElement = document.createElement('style');
+            document.head.appendChild(globalStyleElement);
+        }
+        globalStyleElement.textContent = Array.from(globalCssRules.values()).join('\n');
+    }
 
     function time(name, func) {
         const startTime = performance.now();
@@ -114,7 +125,6 @@
     class TableAligner {
         #contextElement;
         #tables;
-        #styleElement;
         #observer;
         #config;
         #uniqueId;
@@ -130,72 +140,52 @@
 
             this.#uniqueId = `mb-align-${Math.random().toString(36).substring(2, 9)}`;
             this.#contextElement.dataset.alignId = this.#uniqueId;
-            this.#styleElement = document.createElement('style');
-            document.head.appendChild(this.#styleElement);
 
             this.#setupObserver();
             this.#subscribeToConfigChanges();
         }
 
-        runAlignment() {
-            if (this.#tables.some(table => !document.body.contains(table))) {
-                this.disconnect();
-                return 0;
-            }
+        get uniqueId() { return this.#uniqueId; }
 
-            if (DEBUG) console.log(`%c[${SCRIPT_NAME}] Running alignment for ${this.#uniqueId}...`, 'font-weight: bold; color: royalblue;');
-            this.#observer.disconnect();
-
-            let duration = 0;
-            try {
-                duration = time(`Alignment for ${this.#uniqueId}`, () => {
-                    this.#resetStyles();
-                    const headerMaps = this.#getHeaderMaps();
-                    if (headerMaps.some(h => h.length === 0)) return;
-
-                    const collapsedColumns = this.#findCollapsedColumns(headerMaps);
-                    const columnWidths = this.#calculateColumnWidths(headerMaps, collapsedColumns);
-                    if (DEBUG) console.log(`[${SCRIPT_NAME}] Calculated column widths for ${this.#uniqueId}:`, columnWidths);
-                    this.#applyColumnStyles(columnWidths, headerMaps, collapsedColumns);
-                });
-            } catch (error) {
-                console.error(`[${SCRIPT_NAME}] Error during alignment for ${this.#uniqueId}:`, error);
-            } finally {
-                this.#reconnectObserver();
-            }
-            return duration;
+        isDetached() {
+            return this.#tables.some(table => !document.body.contains(table));
         }
 
-        #calculateColumnWidths(headerMaps, collapsedColumns) {
-            const columnWidths = new Map();
-            const originalStyles = new Map();
-            const tempStyleElement = document.createElement('style');
-            document.head.appendChild(tempStyleElement);
+        prepareForMeasurement(originalStylesMap, tempSelectorsArray) {
+            this.#observer.disconnect();
+            
+            this.#tables.forEach(t => {
+                t.style.cssText = '';
+                Array.from(t.rows).forEach(r => r.style.height = '');
+            });
 
-            try {
-                const tempSelector = `[data-align-id="${this.#uniqueId}"] .tbl th, [data-align-id="${this.#uniqueId}"] .tbl td`;
-                tempStyleElement.textContent = `${tempSelector} { white-space: nowrap !important; }`;
-                this.#tables.forEach(t => {
-                    originalStyles.set(t, t.style.cssText);
-                    t.style.cssText = 'table-layout: auto; width: 1px;';
+            const tempSelector = `[data-align-id="${this.#uniqueId}"] .tbl th, [data-align-id="${this.#uniqueId}"] .tbl td`;
+            tempSelectorsArray.push(tempSelector);
+
+            this.#tables.forEach(t => {
+                originalStylesMap.set(t, t.style.cssText);
+                t.style.cssText = 'table-layout: auto; width: 1px;';
+            });
+        }
+
+        measure() {
+            const headerMaps = this.#getHeaderMaps();
+            if (headerMaps.some(h => h.length === 0)) return null;
+
+            const collapsedColumns = this.#findCollapsedColumns(headerMaps);
+            const columnWidths = new Map();
+
+            this.#tables.forEach((table, tableIndex) => {
+                const currentHeaders = headerMaps[tableIndex];
+                table.querySelectorAll('thead th, tbody td').forEach(cell => {
+                    const headerName = currentHeaders?.[cell.cellIndex];
+                    if (!headerName || collapsedColumns.has(headerName)) return;
+                    const width = cell.getBoundingClientRect().width;
+                    columnWidths.set(headerName, Math.max(columnWidths.get(headerName) || 0, width));
                 });
-                this.#contextElement.offsetHeight;
-                this.#tables.forEach((table, tableIndex) => {
-                    const currentHeaders = headerMaps[tableIndex];
-                    table.querySelectorAll('thead th, tbody td').forEach(cell => {
-                        const headerName = currentHeaders?.[cell.cellIndex];
-                        if (!headerName || collapsedColumns.has(headerName)) return;
-                        const width = cell.getBoundingClientRect().width;
-                        columnWidths.set(headerName, Math.max(columnWidths.get(headerName) || 0, width));
-                    });
-                });
-            } finally {
-                tempStyleElement.remove();
-                this.#tables.forEach(t => {
-                    t.style.cssText = originalStyles.get(t);
-                });
-            }
-            return columnWidths;
+            });
+
+            return { headerMaps, collapsedColumns, columnWidths };
         }
 
         #subscribeToConfigChanges() {
@@ -239,14 +229,6 @@
             return collapsedColumns;
         }
 
-        #resetStyles() {
-            this.#styleElement.textContent = '';
-            this.#tables.forEach(t => {
-                t.style.cssText = '';
-                Array.from(t.rows).forEach(r => r.style.height = '');
-            });
-        }
-
         #getHeaderMaps() {
             return this.#tables.map(t => Array.from(t.querySelectorAll('thead th')).map(th => th.textContent.trim()));
         }
@@ -257,7 +239,11 @@
             return cl.textContent.trim() === '';
         }
 
-        #applyColumnStyles(columnWidths, headerMaps, collapsedColumns) {
+        applyMeasurement(data) {
+            this.#reconnectObserver();
+            if (!data) return '';
+            
+            const { headerMaps, collapsedColumns, columnWidths } = data;
             const containerWidth = this.#contextElement.clientWidth;
             let rigidWidthTotal = 0;
             let flexibleIdealTotal = 0;
@@ -298,11 +284,13 @@
                 }
             }
             cssRules.push(`${p} th { overflow: hidden; text-overflow: ellipsis; }`);
-            this.#styleElement.textContent = cssRules.join('\n');
+            
             this.#tables.forEach(t => {
                 t.style.tableLayout = 'fixed';
                 t.style.width = '100%';
             });
+            
+            return cssRules.join('\n');
         }
 
         #setupObserver() {
@@ -319,7 +307,8 @@
 
         disconnect() {
             if (this.#observer) this.#observer.disconnect();
-            if (this.#styleElement) this.#styleElement.remove();
+            globalCssRules.delete(this.#uniqueId);
+            updateGlobalStyle();
         }
     }
 
@@ -336,27 +325,54 @@
         const dirtyAligners = new Set();
         const runDirtyAlignments = debounce(() => {
             if (dirtyAligners.size === 0) return;
-            const taskCount = dirtyAligners.size;
-            if (DEBUG) console.log(`%c[${SCRIPT_NAME}] Scheduler dispatching ${taskCount} alignment tasks...`, 'font-weight: bold; color: darkgreen;');
-
-            let completedTasks = 0;
-            let totalCpuTime = 0;
-
-            dirtyAligners.forEach(aligner => {
-                setTimeout(() => {
-                    const executionTime = aligner.runAlignment();
-                    if (typeof executionTime === 'number') {
-                        totalCpuTime += executionTime;
-                    }
-                    completedTasks++;
-
-                    if (completedTasks === taskCount) {
-                        if (DEBUG) console.log(`%c[${SCRIPT_NAME}] Batch of ${taskCount} tasks finished. Total CPU time: ${totalCpuTime.toFixed(2)} ms`, 'font-weight: bold; color: darkgreen;');
-                    }
-                }, 0);
-            });
-
+            const alignersToProcess = Array.from(dirtyAligners);
             dirtyAligners.clear();
+
+            // Filter out detached aligners
+            const activeAligners = [];
+            for (const aligner of alignersToProcess) {
+                if (aligner.isDetached()) aligner.disconnect();
+                else activeAligners.push(aligner);
+            }
+            if (activeAligners.length === 0) return;
+
+            if (DEBUG) console.log(`%c[${SCRIPT_NAME}] Scheduler processing ${activeAligners.length} alignment tasks...`, 'font-weight: bold; color: darkgreen;');
+
+            requestAnimationFrame(() => {
+                const startTime = performance.now();
+
+                // Phase 1: Mutate (Setup)
+                const tempStyleElement = document.createElement('style');
+                document.head.appendChild(tempStyleElement);
+                
+                const allOriginalStyles = new Map();
+                const allTempSelectors = [];
+                
+                activeAligners.forEach(aligner => {
+                    aligner.prepareForMeasurement(allOriginalStyles, allTempSelectors);
+                });
+                
+                tempStyleElement.textContent = allTempSelectors.join(',\n') + ' { white-space: nowrap !important; }';
+
+                // Phase 2: Measure (Forces single synchronous layout!)
+                const alignerData = activeAligners.map(aligner => aligner.measure());
+
+                // Phase 3: Mutate (Apply)
+                tempStyleElement.remove();
+                
+                allOriginalStyles.forEach((originalStyle, table) => {
+                    table.style.cssText = originalStyle;
+                });
+                
+                activeAligners.forEach((aligner, index) => {
+                    const rulesStr = aligner.applyMeasurement(alignerData[index]);
+                    globalCssRules.set(aligner.uniqueId, rulesStr);
+                });
+                
+                updateGlobalStyle();
+
+                if (DEBUG) console.log(`%c[${SCRIPT_NAME}] Batch of ${activeAligners.length} tasks finished. Total time: ${(performance.now() - startTime).toFixed(2)} ms`, 'font-weight: bold; color: darkgreen;');
+            });
         }, 250);
 
 
