@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MusicBrainz: Auto login MusicBrainz ISRC importers
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      2.1.2
+// @version      2.1.3
 // @description  Attempts to login on MusicBrainz ISRC submission sites like ISRC Hunt or MagicISRC and automatically handle OAuth authorization
 // @tag          ai-created
 // @author       chaban
@@ -55,8 +55,12 @@
         .map(client => new URL(client.redirectUriBase).origin + '/')
         .filter((value, index, self) => self.indexOf(value) === index)
 
-    // --- Helper function for Scope Validation ---
-    // Checks if the requested scopes exactly match the expected scopes, ignoring order.
+    /**
+     * @summary Checks if the requested scopes exactly match the expected scopes, ignoring order.
+     * @param {string} requestedScopeString - The space-separated string of requested scopes.
+     * @param {string[]} expectedScopes - An array of expected scope strings.
+     * @returns {boolean} True if the scopes match exactly, false otherwise.
+     */
     function isValidScope(requestedScopeString, expectedScopes) {
         if (!requestedScopeString) {
             log("Scope validation FAILED: No 'scope' parameter found in URL.");
@@ -78,9 +82,10 @@
         return allMatch;
     }
 
-    // --- Function to handle the MusicBrainz OAuth Authorization Page ---
-    // This function attempts to auto-click the 'Allow Access' or 'Confirm' button
-    // after validating the requesting client's redirect URI, client ID, and scopes.
+    /**
+     * @summary Automatically confirms the MusicBrainz OAuth authorization page for trusted clients.
+     * Validates the client ID, redirect URI, and scopes before clicking the allow button.
+     */
     function handleOAuthAuthorizationPage() {
         log('Detected MusicBrainz OAuth authorization page.');
 
@@ -137,9 +142,10 @@
         }
     }
 
-    // --- Function to handle ISRC Importer Login Pages ---
-    // This function attempts to automatically initiate the login process
-    // on ISRC Hunt or MagicISRC sites.
+    /**
+     * @summary Automatically initiates the login process on supported ISRC importer sites.
+     * Looks for specific login buttons or links and simulates a click.
+     */
     function handleISRCImporterLoginPage() {
         log('Detected ISRC importer page.');
 

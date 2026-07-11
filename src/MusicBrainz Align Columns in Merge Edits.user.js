@@ -76,11 +76,24 @@
         };
     }
 
+    /**
+     * @typedef {Object} ConfigOption
+     * @property {string} name - The internal name of the configuration option.
+     * @property {string} key - The Tampermonkey storage key.
+     * @property {boolean} defaultValue - The default value for the option.
+     */
+
+    /**
+     * @summary Manages reactive configuration state and synchronizes with GM storage.
+     */
     class ReactiveConfig {
         #options = {};
         #listeners = {};
         #configDefinition;
 
+        /**
+         * @param {ConfigOption[]} configDefinition - The list of configuration options to manage.
+         */
         constructor(configDefinition) {
             this.#configDefinition = configDefinition;
             configDefinition.forEach(opt => {
@@ -122,6 +135,16 @@
         }
     }
 
+    /**
+     * @typedef {Object} AlignerMeasurement
+     * @property {string[][]} headerMaps - Array of header maps for each table.
+     * @property {Set<string>} collapsedColumns - Set of column names that should be collapsed.
+     * @property {Map<string, number>} columnWidths - Map of column names to their measured max pixel width.
+     */
+
+    /**
+     * @summary Manages the layout measurement and style application for a single merge edit context.
+     */
     class TableAligner {
         #contextElement;
         #tables;
@@ -131,6 +154,11 @@
         #observedNodes;
         #scheduler;
 
+        /**
+         * @param {HTMLElement} contextElement - The DOM element containing the merge tables.
+         * @param {ReactiveConfig} config - The shared reactive configuration instance.
+         * @param {Function} scheduler - The callback to trigger a global layout re-measurement.
+         */
         constructor(contextElement, config, scheduler) {
             this.#contextElement = contextElement;
             this.#config = config;
@@ -151,6 +179,11 @@
             return this.#tables.some(table => !document.body.contains(table));
         }
 
+        /**
+         * @summary Phase 1: Prepares the tables for raw DOM measurement by stripping styles and applying table-layout: auto.
+         * @param {Map<HTMLElement, string>} originalStylesMap - A map to store the original cssText of each table.
+         * @param {string[]} tempSelectorsArray - An array to push the temporary CSS selectors needed for measurement.
+         */
         prepareForMeasurement(originalStylesMap, tempSelectorsArray) {
             this.#observer.disconnect();
             
@@ -168,6 +201,10 @@
             });
         }
 
+        /**
+         * @summary Phase 2: Measures the natural bounding box widths of all non-collapsed table cells.
+         * @returns {AlignerMeasurement|null} The measurement results, or null if tables are empty.
+         */
         measure() {
             const headerMaps = this.#getHeaderMaps();
             if (headerMaps.some(h => h.length === 0)) return null;
@@ -312,6 +349,10 @@
         }
     }
 
+    /**
+     * @summary Initializes the table alignment process and manages reactive configuration.
+     * Sets up the MutationObserver and registers GM menu commands for configuration toggles.
+     */
     async function init() {
         const OPTIONS_CONFIG = [
             { name: 'collapseEmpty', key: 'collapse-empty-columns', text: 'Collapse Empty Columns', defaultValue: true },

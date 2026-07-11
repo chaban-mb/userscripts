@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Volumo: MusicBrainz Importer
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      1.4.2
+// @version      1.4.3
 // @description  Allows importing releases from Volumo into MusicBrainz.
 // @tag          ai-created
 // @author       chaban
@@ -36,6 +36,66 @@
             { patterns: ['bandcamp.com'], artist: 718, label: 719 },
             { patterns: ['instagram.com', 'facebook.com', 'tiktok.com', 'twitter.com', 'x.com'], artist: 192, label: 218 },
         ];
+
+        /**
+         * @typedef {Object} PageInfo
+         * @property {string} type - The page type (album, artist, label).
+         * @property {string} id - The extracted Volumo ID.
+         */
+
+        /**
+         * @typedef {Object} MbInfo
+         * @property {string} mbid - The matching MusicBrainz ID.
+         * @property {string} [foundVia] - How the MBID was found (e.g., 'url', 'barcode').
+         */
+
+        /**
+         * @typedef {Object} VolumoArtist
+         * @property {number} id
+         * @property {string} name
+         */
+
+        /**
+         * @typedef {Object} VolumoRecordLabel
+         * @property {number} id
+         * @property {string} name
+         */
+
+        /**
+         * @typedef {Object} VolumoTrack
+         * @property {number} id
+         * @property {string} title
+         * @property {string} [composed_title]
+         * @property {string|null} [version]
+         * @property {number} [duration]
+         * @property {VolumoArtist[]} [artists]
+         * @property {VolumoArtist[]} [featured_artists]
+         * @property {VolumoArtist[]} [remixers]
+         */
+
+        /**
+         * @typedef {Object} AlbumData
+         * @property {number} id
+         * @property {string} title
+         * @property {string|null} [icpn]
+         * @property {string|null} [catalog_number]
+         * @property {boolean} [exclusive]
+         * @property {string} [release_start_at]
+         * @property {string|null} [original_release_date]
+         * @property {string} [published_at]
+         * @property {string} [first_live]
+         * @property {VolumoRecordLabel|null} [recordlabel]
+         * @property {VolumoArtist[]} [artists]
+         * @property {VolumoTrack[]} [tracks]
+         */
+
+        /**
+         * @typedef {Object} ContributorData
+         * @property {number} id
+         * @property {string} name
+         * @property {string} [country_code]
+         * @property {string[]} [social_links]
+         */
 
         #mbApi = null;
         #currentUrl = '';
@@ -81,6 +141,10 @@
         }
 
 
+        /**
+         * @summary Executes the core DOM injection and API fetching logic for the current page.
+         * Runs automatically on load or mutation debounces.
+         */
         async #run() {
             const runId = ++this.#runId;
             const urlForThisRun = window.location.href;
@@ -302,6 +366,11 @@
             return [];
         }
 
+        /**
+         * @summary Fetches album metadata either from Next.js injected state or via API fallback.
+         * @param {string|number} idOrBarcode - The Volumo album ID or ICPN barcode.
+         * @returns {Promise<AlbumData|null>} The structured album data.
+         */
         async #fetchAlbumData(idOrBarcode) {
             const queries = this.#getNextDataQueries();
             const albumQuery = queries.find(q => {
@@ -338,6 +407,12 @@
             }
         }
 
+        /**
+         * @summary Fetches contributor (artist/label) metadata either from Next.js injected state or via API fallback.
+         * @param {string} type - 'artist' or 'label'.
+         * @param {string|number} id - The Volumo contributor ID.
+         * @returns {Promise<ContributorData|null>} The structured contributor data.
+         */
         async #fetchContributorData(type, id) {
             const queries = this.#getNextDataQueries();
             const contributorQuery = queries.find(q => {
@@ -466,6 +541,14 @@
             console.debug(`[Volumo Importer] Re-injected buttons into new DOM element for ${page.type}`);
         }
 
+        /**
+         * @summary Renders UI buttons for artist/label pages (Open in MB, Add to MB, Search in MB).
+         * @param {ContributorData} contributorData - The Volumo contributor object.
+         * @param {string} normalizedUrl - Canonical URL for the contributor.
+         * @param {MbInfo|null} mbInfo - Existing MBID context.
+         * @param {string} entityType - 'artist' or 'label'.
+         * @param {string|null} areaGid - The resolved MB Area GID.
+         */
         #renderContributorButtons(contributorData, normalizedUrl, mbInfo, entityType, areaGid) {
             if (!this.#container) return;
             // Persist args so we can re-inject after a React remount
@@ -494,6 +577,14 @@
             }
         }
 
+        /**
+         * @summary Constructs the URL and pre-filled parameters for creating a new artist/label on MusicBrainz.
+         * @param {ContributorData} contributorData - The Volumo contributor object.
+         * @param {string} normalizedUrl - Canonical URL for the contributor.
+         * @param {string} entityType - 'artist' or 'label'.
+         * @param {string|null} areaGid - The resolved MB Area GID.
+         * @returns {string} The formatted MusicBrainz submission URL.
+         */
         #buildContributorCreateUrl(contributorData, normalizedUrl, entityType, areaGid) {
             const params = new URLSearchParams();
 

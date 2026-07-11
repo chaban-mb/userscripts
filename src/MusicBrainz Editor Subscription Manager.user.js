@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MusicBrainz: Editor Subscription Manager
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      0.3.1
+// @version      0.3.2
 // @tag          ai-created
 // @description  Manages subscriptions, tracks name changes and detects deleted users.
 // @author       chaban
@@ -146,6 +146,12 @@
     // #endregion
 
     // #region Network & Parsing Utilities
+    /**
+     * @summary Promisified wrapper for GM_xmlhttpRequest.
+     * @param {string} method - HTTP method (GET, POST).
+     * @param {string} url - Target URL.
+     * @returns {Promise<{status: number, doc: Document|null, finalUrl: string}>} Response details including parsed DOM if applicable.
+     */
     async function request(method, url) {
         return new Promise((resolve, reject) => {
             GM_xmlhttpRequest({
@@ -180,6 +186,11 @@
         return `/user/${encodeURIComponent(name)}`;
     }
 
+    /**
+     * @summary Scrapes detailed edit and vote statistics from an editor's profile DOM.
+     * @param {Document} doc - The parsed profile page DOM.
+     * @returns {object} Scraped statistics object.
+     */
     function scrapeStats(doc) {
         const stats = { edits: {}, votes: {}, added: {}, secondary: {} };
         doc.querySelectorAll('table.statistics').forEach(table => {
@@ -202,6 +213,13 @@
         return stats;
     }
 
+    /**
+     * @summary Parses the profile DOM to extract Editor properties and state.
+     * @param {Document} doc - The parsed profile page DOM.
+     * @param {string} url - The URL the DOM was fetched from.
+     * @param {string|null} [forceId=null] - Optional forced ID to use.
+     * @returns {object} The Editor object containing parsed data.
+     */
     function parseProfile(doc, url, forceId = null) {
         const id = forceId || getEditorId(doc);
         if (!id) return { id: null, error: 'No ID found' };
@@ -270,6 +288,11 @@
         return null;
     }
 
+    /**
+     * @summary Fully fetches and parses an editor's profile and edits page.
+     * @param {object} basicInfo - Basic editor info object.
+     * @returns {Promise<object>} The fully populated Editor object or error state.
+     */
     async function fetchEditorFull(basicInfo) {
         try {
             const profileUrl = getProfileUrl(basicInfo.name);
@@ -349,6 +372,32 @@
         }
     };
 
+    /**
+     * @typedef {object} Editor
+     * @property {string} id - The Editor ID.
+     * @property {string} name - The Editor name.
+     * @property {boolean} isSpammer - If the editor is marked as a spammer.
+     * @property {boolean} isDeleted - If the editor is deleted.
+     * @property {boolean} [isSubscribed] - If the user is currently subscribed to this editor.
+     * @property {boolean} [isLost] - If the editor subscription was lost (no unsub link).
+     * @property {object} stats - Scraped statistics.
+     * @property {number} acceptedEdits - Number of accepted edits.
+     * @property {number} rejectedEdits - Number of rejected edits.
+     * @property {number} rejectionRate - The rejection rate percentage.
+     * @property {number} lastUpdated - Timestamp of the last update.
+     * @property {string} [restrictions] - Editor restrictions string.
+     * @property {string} [memberSince] - ISO date string of when they joined.
+     * @property {string} [userType] - Type of user account.
+     * @property {string} [lastEditDate] - ISO date string of the last edit.
+     * @property {string} [error] - Error message if fetch failed.
+     * @property {string[]} [previousNames] - Array of previously known names.
+     */
+
+    /**
+     * @summary Migrates storage from localStorage to GM storage.
+     * Needed for users transitioning from a previous version of the script.
+     * @returns {Promise<void>}
+     */
     async function migrateStorage() {
         const keys = [CACHE_KEY, SETTINGS_KEY];
         for (const key of keys) {

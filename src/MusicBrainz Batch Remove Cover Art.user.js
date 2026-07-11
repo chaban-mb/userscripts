@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MusicBrainz: Batch Remove Cover Art
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      0.6.2
+// @version      0.6.3
 // @description  Allows batch removing cover art from MusicBrainz releases.
 // @tag          ai-created
 // @author       chaban, jesus2099
@@ -296,6 +296,11 @@
     `);
 
     // --- START OF ELEPHANT EDITOR LOGIC (adapted from original) ---
+    /**
+     * @summary Initializes the "Elephant Editor" logic for storing and recalling previous edit notes.
+     * @param {HTMLTextAreaElement} editNoteTextarea - The textarea element to bind memory functionality to.
+     * @returns {Object} An interface for saving notes and setting the submit button.
+     */
     function initElephantEditor(editNoteTextarea) {
         const userjs = "jesus2099userjs94629";
         const memories = 10;
@@ -446,6 +451,9 @@
 
     let isAborting = false;
 
+    /**
+     * @summary Observes the DOM to detect when cover art elements are loaded, handling ArtStation compatibility.
+     */
     const observeDOM = () => {
         const contentArea = document.getElementById('content');
         if (!contentArea) {
@@ -506,6 +514,9 @@
         init();
     };
 
+    /**
+     * @summary Initializes the UI and logic for batch selecting and removing cover art.
+     */
     const initBatchRemove = () => {
         const coverArtDivs = Array.from(document.querySelectorAll('.artwork-cont'));
         if (coverArtDivs.length === 0) {
@@ -671,6 +682,12 @@
             }
         };
 
+        /**
+         * @summary Submits a POST request to remove a specific cover art image.
+         * @param {string} url - The URL endpoint for removing the specific cover art.
+         * @param {string} editNote - The edit note to include in the removal request.
+         * @returns {Promise<Object>} A promise resolving to the GM.xmlHttpRequest response if successful.
+         */
         const submitRemoval = (url, editNote) => {
             const formData = new URLSearchParams();
             formData.append('confirm.edit_note', editNote);

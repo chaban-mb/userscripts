@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MusicBrainz: Subscriber Spam Filter
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      1.0.0
+// @version      1.0.1
 // @tag          ai-created
 // @description  Filters spammers on your MusicBrainz subscriber list by detecting blocked profiles, stats, and name similarities.
 // @author       chaban
@@ -25,6 +25,22 @@
     const SPAMMER_TEXT = 'This user was blocked and their profile is hidden';
     const CONCURRENCY_LIMIT = 3;
 
+    /**
+     * @typedef {Object} ProfileData
+     * @property {boolean} isSpammer - True if profile is hidden or deleted.
+     * @property {number} totalEdits - Total number of edits the user has made.
+     * @property {string|null} memberSince - The registration date string.
+     * @property {boolean} [isDeleted] - True if a 404 was returned.
+     * @property {number} [lastChecked] - Timestamp of the last profile scrape.
+     */
+
+    /**
+     * @typedef {Object} Subscriber
+     * @property {string} username - The extracted username.
+     * @property {HTMLElement} element - The DOM element representing the row.
+     * @property {HTMLAnchorElement} linkElement - The anchor linking to the profile.
+     */
+
     // Logging
     function log(msg, ...args) {
         console.log(`[${SCRIPT_NAME}] ${msg}`, ...args);
@@ -37,6 +53,11 @@
         return text ? parseInt(text.replace(/,/g, '').match(/^(-?\d+)/)?.[1] || 0, 10) : 0;
     }
 
+    /**
+     * @summary Extracts user statistics from the profile page DOM.
+     * @param {Document} doc - The parsed HTML document of the user's profile.
+     * @returns {Object} An object containing structured edit, vote, and tag counts.
+     */
     function scrapeStats(doc) {
         const stats = { edits: {}, votes: {}, added: {}, secondary: {} };
         doc.querySelectorAll('table.statistics').forEach(table => {
@@ -60,6 +81,11 @@
     }
 
     // Helper for requests
+    /**
+     * @summary Fetches a user's profile page and extracts spammer status and statistics.
+     * @param {string} username - The username to fetch.
+     * @returns {Promise<ProfileData>} The extracted profile data.
+     */
     async function fetchProfile(username) {
         const url = `/user/${encodeURIComponent(username)}`;
         return new Promise((resolve, reject) => {
@@ -100,6 +126,12 @@
     };
 
     // Levenshtein distance calculation
+    /**
+     * @summary Calculates the Levenshtein distance (edit distance) between two strings.
+     * @param {string} a - First string.
+     * @param {string} b - Second string.
+     * @returns {number} The distance score.
+     */
     function levenshtein(a, b) {
         const matrix = [];
         for (let i = 0; i <= b.length; i++) {
@@ -130,6 +162,12 @@
     }
 
     // Precompute potential spammers map to avoid O(N^2) Levenshtein computations inside loops
+    /**
+     * @summary Precomputes potential spammer reasons to avoid O(N^2) computations inside the DOM loop.
+     * @param {Subscriber[]} subscribers - The list of current subscribers.
+     * @param {Object} cache - The current user data cache.
+     * @returns {Map<string, string>} A map of usernames to their suspicion reason.
+     */
     function getPotentialSpammersMap(subscribers, cache) {
         const potentialReasons = new Map();
 
@@ -178,6 +216,12 @@
         return potentialReasons;
     }
 
+    /**
+     * @summary Applies visual tags, row colors, and display filters based on spammer status.
+     * @param {Subscriber[]} subscribers - The list of subscribers.
+     * @param {string} currentFilter - The active filter mode ('all', 'hideSpammers', etc.).
+     * @param {Map<string, string>} potentialReasons - The precomputed suspicion map.
+     */
     function applyFilters(subscribers, currentFilter, potentialReasons) {
         const cache = storage.getCache();
 
@@ -222,6 +266,9 @@
     }
 
     // Style addition
+    /**
+     * @summary Injects the required CSS styles for the subscriber spam filter UI.
+     */
     function addStyles() {
         GM_addStyle(`
             #mbsf-control-panel {
@@ -302,6 +349,10 @@
     }
 
     // Extract subscribers from page
+    /**
+     * @summary Extracts the list of subscribers and their corresponding DOM elements from the page.
+     * @returns {Subscriber[]} An array of subscriber objects.
+     */
     function getSubscribers() {
         const listItems = document.querySelectorAll('#page > ul > li');
         const subscribers = [];
@@ -325,6 +376,12 @@
         return subscribers;
     }
 
+    /**
+     * @summary Initiates an asynchronous scan of subscriber profiles to determine spammer status.
+     * @param {Subscriber[]} subscribers - The list of subscribers to scan.
+     * @param {boolean} force - If true, bypasses the local cache.
+     * @param {Function} updateProgressCallback - Callback to report scan progress.
+     */
     async function scanSubscribers(subscribers, force = false, updateProgressCallback) {
         const cache = storage.getCache();
         const toScan = subscribers.filter(sub => force || cache[sub.username] === undefined);

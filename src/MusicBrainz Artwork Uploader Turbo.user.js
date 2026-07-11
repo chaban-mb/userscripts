@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MusicBrainz: Artwork Uploader Turbo
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      3.3.6
+// @version      3.3.7
 // @tag          ai-created
 // @description  Allows for multiple artwork images to be uploaded simultaneously and recursively upload directories.
 // @author       chaban
@@ -209,6 +209,10 @@
                 }
             },
 
+            /**
+             * @summary Processes the selected directory of files, validates them, and updates the form.
+             * @param {Event} event - The directory input change event.
+             */
             async _handleDirectorySelection(event) {
                 try {
                     const files = Array.from(event.target.files);
@@ -286,6 +290,12 @@
                 return { entityType, archiveName, formName };
             },
 
+            /**
+             * @summary Initiates the upload pipeline for the given entity and file list.
+             * @param {Object} pageInfo - The extracted page context.
+             * @param {string} gid - The MBID of the entity.
+             * @param {Object} upvm - The Knockout ViewModel containing the files.
+             */
             async run({ entityType, archiveName, formName }, gid, upvm) {
                 ArtworkUploaderTurbo.state.files = upvm.files_to_upload().filter(f => f.status() !== 'done');
                 if (ArtworkUploaderTurbo.state.files.length === 0) return;
@@ -318,6 +328,11 @@
             },
 
             Pipeline: class {
+                /**
+                 * @param {string} gid - The MBID of the entity.
+                 * @param {Object[]} allFiles - Array of file objects from the ViewModel.
+                 * @param {string} formName - The HTML form name for UI selectors.
+                 */
                 constructor(gid, allFiles, formName) {
                     this.gid = gid;
                     this.allFiles = allFiles;
@@ -340,6 +355,12 @@
                     await Promise.all(promises);
                 }
 
+                /**
+                 * @summary Determines if a failed request is retriable (HTTP 5xx, 429, etc.) and handles the exponential backoff.
+                 * @param {Object} file - The file object being processed.
+                 * @param {Array} error - The jQuery deferred error array or custom error.
+                 * @returns {Promise<boolean>} True if the request should be retried, false if it's a fatal error.
+                 */
                 async _handleRetry(file, error) {
                     let httpStatus = error[0]?.status ?? null;
                     if (httpStatus === null && typeof error[1] === 'number') {
@@ -371,6 +392,9 @@
                     return false;
                 }
 
+                /**
+                 * @summary Continuously signs files in the queue using the MusicBrainz API, shifting them to the upload queue.
+                 */
                 async _signerThread() {
                     while (this.processedFileCount < this.allFiles.length && !this.hasCriticalError) {
                         if (this.filesToUpload.length >= ArtworkUploaderTurbo.UPLOAD_WORKER_LIMIT * 2) {
@@ -398,6 +422,9 @@
                     }
                 }
 
+                /**
+                 * @summary Consumes signed files from the upload queue, pushing binary data to the Internet Archive.
+                 */
                 async _uploaderWorker() {
                     while (this.processedFileCount < this.allFiles.length && !this.hasCriticalError) {
                         const file = this.filesToUpload.shift();
@@ -420,6 +447,9 @@
                     }
                 }
 
+                /**
+                 * @summary Consumes uploaded files from the submit queue, finalizing the edit on MusicBrainz.
+                 */
                 async _submitterThread() {
                     const startingPosition = parseInt($(`#id-${this.formName}\\.position`).val(), 10);
                     while (this.processedFileCount < this.allFiles.length && !this.hasCriticalError) {

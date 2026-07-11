@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        MusicBrainz: Add Spotify and Deezer ISRC link to release pages
 // @namespace   https://musicbrainz.org/user/chaban
-// @version     1.3
+// @version     1.3.1
 // @tag         ai-created
 // @description Adds an "import ISRCs" link to MusicBrainz release pages with a Spotify or Deezer URL
 // @author      atj, chaban
@@ -43,6 +43,9 @@ function insertAfter(elem, after) {
     return elem;
 }
 
+/**
+ * @summary Scans the release relationships for Spotify or Deezer URLs and appends an "import ISRCs" link to them.
+ */
 function addImportIsrcsLink() {
     const releaseRels = document.getElementById('release-relationships');
 

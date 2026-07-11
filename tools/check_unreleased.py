@@ -34,18 +34,18 @@ def main():
     repo_root = Path(__file__).resolve().parent.parent
     
     # 1. Get tracked changes relative to main
-    diff_files = get_git_stdout(['git', 'diff', '--name-only', 'main', '--', 'src/']).splitlines()
+    diff_files = get_git_stdout(['git', 'diff', '--name-only', 'main', '--', 'src/', 'lib/']).splitlines()
     # 2. Get untracked files
-    untracked_files = get_git_stdout(['git', 'ls-files', '--others', '--exclude-standard', '--', 'src/']).splitlines()
+    untracked_files = get_git_stdout(['git', 'ls-files', '--others', '--exclude-standard', '--', 'src/', 'lib/']).splitlines()
     
     all_files = sorted(list(set(diff_files + untracked_files)))
-    userscripts = [f for f in all_files if f.endswith('.user.js')]
+    userscripts = [f for f in all_files if f.endswith('.user.js') or (f.startswith('lib/') and f.endswith('.js'))]
     
     if not userscripts:
-        print("No unreleased changes found in src/ compared to main.")
+        print("No unreleased changes found in src/ or lib/ compared to main.")
         return
-
-    print(f"Found {len(userscripts)} modified/new userscript(s) relative to main:\n")
+ 
+    print(f"Found {len(userscripts)} modified/new userscript(s) or library file(s) relative to main:\n")
     
     bump_needed_count = 0
     
@@ -67,6 +67,8 @@ def main():
             
         curr_ver, curr_name = extract_version_and_name(current_content)
         display_name = curr_name or full_path.name
+        if rel_path_str.startswith('lib/'):
+            display_name = f"[LIB] {display_name}"
         
         # Read main content
         main_content = get_main_file_content(rel_path_str)
@@ -94,13 +96,14 @@ def main():
             else:
                 print(f"[*] [BUMPED]      {display_name} ({rel_path_str})")
                 print(f"   Version: {main_ver} -> {curr_ver}")
-
-        # Check description file
-        script_base_name = full_path.name.replace('.user.js', '')
-        desc_rel_path = f"docs/descriptions/{script_base_name}.md"
-        desc_full_path = repo_root / desc_rel_path
-        if not desc_full_path.exists():
-            print(f"   [!] [MISSING DESCRIPTION] Description file is missing: {desc_rel_path}")
+ 
+        # Check description file (only for non-library scripts)
+        if not rel_path_str.startswith('lib/'):
+            script_base_name = full_path.name.replace('.user.js', '')
+            desc_rel_path = f"docs/descriptions/{script_base_name}.md"
+            desc_full_path = repo_root / desc_rel_path
+            if not desc_full_path.exists():
+                print(f"   [!] [MISSING DESCRIPTION] Description file is missing: {desc_rel_path}")
         
         # Print changes since release
         if commits or has_uncommitted:

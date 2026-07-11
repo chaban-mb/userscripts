@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Harmony: Enhancements
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      1.27.6
+// @version      1.27.7
 // @tag          ai-created
 // @description  Adds some convenience features, various UI and behavior settings, as well as an improved language detection to Harmony.
 // @author       chaban
@@ -551,6 +551,10 @@
         return settings;
     }
 
+    /**
+     * @summary Extracts the release data from the Next.js '__FRSH_STATE__' script tag JSON payload.
+     * @returns {object|null} The parsed release data object, or null if not found.
+     */
     function getReleaseDataFromJSON() {
         if (AppState.data.release !== undefined) { return AppState.data.release; }
         AppState.data.release = null;
@@ -942,6 +946,15 @@
         }, TOOLTIP_DISPLAY_DURATION);
     }
 
+    /**
+     * @summary Creates and displays a confirmation modal dialog.
+     * @param {object} options Modal configuration options.
+     * @param {string} options.title The title of the modal.
+     * @param {string} options.message The main text body of the modal.
+     * @param {string} [options.confirmText='Confirm'] Text for the confirm button.
+     * @param {string} [options.cancelText='Cancel'] Text for the cancel button.
+     * @returns {Promise<boolean>} A promise that resolves to true if confirmed, false otherwise.
+     */
     function showConfirmationModal({ title, message, confirmText = 'Confirm', cancelText = 'Cancel' }) {
         return new Promise((resolve) => {
             const overlay = document.createElement('div');
@@ -1054,6 +1067,10 @@
 
     // --- SETTINGS PAGE ---
 
+    /**
+     * @summary Initializes and renders the Harmony Enhancements settings page.
+     * Generates UI elements dynamically based on SETTINGS_CONFIG.
+     */
     function initSettingsPage() {
         const main = AppState.dom.settingsMain;
         if (!main || main.querySelector('.he-settings-container')) return;
@@ -1258,6 +1275,10 @@
         main.appendChild(container);
     }
 
+    /**
+     * @summary Resets all language detection settings to their default values.
+     * Deletes saved preferences and updates the UI accordingly.
+     */
     async function resetLanguageSettings() {
         const langConfigs = Object.values(SETTINGS_CONFIG).filter(c => c.section === 'Language Detection');
         for (const config of langConfigs) {
@@ -2519,6 +2540,10 @@
 
     // --- FORM SUBMISSION HANDLER ---
 
+    /**
+     * @summary Intercepts seeder form submissions to run final transformations before sending to MusicBrainz.
+     * @param {Event} event - The form submission event.
+     */
     function handleSeederFormSubmit(event) {
         event.preventDefault();
         event.stopPropagation();
@@ -2753,6 +2778,10 @@
         GM_addStyle(css);
     }
 
+    /**
+     * @summary Runs a one-time migration and cleanup script for settings.
+     * Removes outdated settings and restores defaults if stored values match the default.
+     */
     async function runSettingsCleanup() {
         const settings = AppState.settings;
 
@@ -2820,6 +2849,10 @@
         }
     }
 
+    /**
+     * @summary The main execution entry point for the userscript.
+     * Initializes state, runs cleanup, caches DOM elements, and executes active modules.
+     */
     async function main() {
         AppState.settings = await getSettings();
         await runSettingsCleanup();

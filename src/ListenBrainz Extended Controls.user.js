@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ListenBrainz: Extended Controls
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      1.2.7
+// @version      1.2.8
 // @tag          ai-created
 // @description  Allows customizing which actions are shown in listen controls cards, moving "Open in Music Service" links to the main controls area, displaying source info, and auto-copying text in the "Link Listen" modal.
 // @author       chaban
@@ -117,6 +117,13 @@
     `);
 
     // --- DOM Helper ---
+    /**
+     * @summary Creates and configures a DOM or SVG element.
+     * @param {string} tag - The HTML or SVG tag name.
+     * @param {Object} [props={}] - Element properties, attributes, and event listeners.
+     * @param {Array<HTMLElement|SVGElement|string>} [children=[]] - Child nodes or text strings to append.
+     * @returns {HTMLElement|SVGElement} The constructed element.
+     */
     function el(tag, props = {}, children = []) {
         const isSvg = ['svg', 'path', 'image'].includes(tag);
         const element = isSvg
@@ -149,6 +156,10 @@
     }
     function handleEsc(e) { if (e.key === 'Escape') closeSettings(); }
 
+    /**
+     * @summary Builds and injects the Extended Controls settings menu overlay into the DOM.
+     * Also discovers available dropdown actions to populate the dynamic settings list.
+     */
     function createSettingsUI() {
         if (document.getElementById('lb-ext-settings-menu')) return;
         discoverActionsOnPage();
@@ -231,6 +242,11 @@
         return !!titleLink;
     }
 
+    /**
+     * @summary Extracts the raw Spotify album URL from various possible formats.
+     * @param {string|null} value - The raw Spotify URI, URL, or ID.
+     * @returns {string|null} The normalized open.spotify.com URL, or null.
+     */
     function normalizeSpotifyAlbum(value) {
         if (!value) return null;
         const s = String(value).trim();
@@ -251,6 +267,11 @@
         return null;
     }
 
+    /**
+     * @summary Extracts the best available album URL from ListenBrainz payload metadata.
+     * @param {Object} listen - The ListenBrainz payload.
+     * @returns {string|null} The resolved album URL, or null if none found.
+     */
     function getAlbumUrlFromListen(listen) {
         const info = listen?.track_metadata?.additional_info || {};
 
@@ -295,6 +316,11 @@
         return h.toString();
     }
 
+    /**
+     * @summary Retrieves the SVG element or image icon for a given service.
+     * @param {string} key - The service name/identifier.
+     * @returns {SVGElement|null} The constructed SVG element for the icon.
+     */
     function getIcon(key) {
         const data = REGISTRY.icons[key];
         if (!data) return null;
@@ -312,6 +338,10 @@
         );
     }
 
+    /**
+     * @summary Injects configured quick action buttons (e.g., Harmony, Open in Service) into a listen card's controls.
+     * @param {HTMLElement} card - The DOM element representing a single listen card.
+     */
     function addQuickButtons(card) {
         const controls = card.querySelector('.listen-controls');
         const menuBtn = controls?.querySelector('.dropdown-toggle');
@@ -441,6 +471,9 @@
         processedCards.add(card);
     }
 
+    /**
+     * @summary Scans the current page DOM to inject settings and quick buttons on all listen cards.
+     */
     function scanPage() {
         injectSettingsButton();
 

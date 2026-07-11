@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MusicBrainz: Guess Case Improver
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      0.8.4
+// @version      0.8.5
 // @tag          ai-created
 // @description  Improves the native "Guess Case" for release, recording and track titles with advanced artist and ETI parsing. Also removes artist from title and duplicate artists after using "Guess feat. artists" on tracklists.
 // @author       chaban
@@ -512,6 +512,12 @@
         }
     }
 
+    /**
+     * @summary Applies advanced rule sets like French/Swedish apostrophe corrections and acronym fixes.
+     * @param {string} text - The current guessed text string.
+     * @param {HTMLElement} [button] - The button element that was clicked to trigger the guess case.
+     * @returns {string} The text processed by advanced rules.
+     */
     function applyAdvancedRules(text, button) {
         log('--- applyAdvancedRules START ---');
         let newText = text;
@@ -945,6 +951,10 @@
         button.dataset.enhanced = 'true';
     }
 
+    /**
+     * @summary Enhances a React-based "Guess Case" button with advanced rules and hover previews.
+     * @param {HTMLElement} button - The Guess Case button element.
+     */
     function enhanceReactGuessCase(button) {
         if (button.dataset.enhanced) return;
         log('Found React-based "Guess Case" button to enhance.', button);

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Spotify: MusicBrainz importer
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      1.4.3
+// @version      1.4.4
 // @tag          ai-created
 // @description  Adds buttons for MusicBrainz, ListenBrainz, Harmony, ISRC Hunt and SAMBL to Spotify.
 // @author       chaban, garylaski, RustyNova
@@ -80,6 +80,51 @@
             LISTENBRAINZ_API_BASE: 'https://api.listenbrainz.org/1',
             LISTENBRAINZ_BASE: 'https://listenbrainz.org',
         };
+
+        /**
+         * @typedef {Object} PageInfo
+         * @property {string} type - The page type (album, artist, track, playlist, unknown).
+         * @property {string|null} id - The extracted provider ID.
+         */
+
+        /**
+         * @typedef {Object} MbInfo
+         * @property {string} targetType - The MusicBrainz entity type (release, artist, recording).
+         * @property {string} mbid - The matching MusicBrainz ID.
+         */
+
+        /**
+         * @typedef {Object} LbPlaylistResult
+         * @property {number} count - Number of matched playlists.
+         * @property {Array<Object>} playlists - Array of ListenBrainz playlist objects.
+         */
+
+        /**
+         * @typedef {Object} ButtonContext
+         * @property {PageInfo} pageInfo - Parsed information about the current Spotify page.
+         * @property {string} normalizedUrl - The canonical Spotify URL.
+         * @property {number} runId - The execution run ID.
+         * @property {boolean} tokenExists - Whether a ListenBrainz user token is set.
+         * @property {MbInfo} [mbInfo] - The matched MusicBrainz entity info (if available).
+         * @property {LbPlaylistResult} [lbPlaylistResult] - The result of a ListenBrainz playlist search.
+         * @property {HTMLElement} [button] - The actual DOM button element.
+         */
+
+        /**
+         * @typedef {Object} ButtonConfig
+         * @property {string} id - HTML ID for the button.
+         * @property {string} text - Display text for the button.
+         * @property {string} className - CSS class name for styling.
+         * @property {string} color - Hex color code for the button background.
+         * @property {string[]} pages - Array of page types where this button should appear.
+         * @property {boolean} [requiresMbInfo] - If true, waits for MB API response before enabling.
+         * @property {boolean} [invalidateCache] - If true, invalidates API cache on click.
+         * @property {function(ButtonContext): string|null} getUrl - Generates the target URL.
+         * @property {function(ButtonContext): string} [getText] - Dynamic text generator.
+         * @property {function(ButtonContext): void} [onClick] - Custom click handler instead of href.
+         */
+
+        /** @type {Object<string, ButtonConfig>} */
 
         static BUTTON_CONFIG = {
             HARMONY: {
@@ -245,6 +290,10 @@
             this.#observer.observe(document.body, { childList: true, subtree: true });
         }
 
+        /**
+         * @summary Executes the core DOM injection and API fetching logic for the current page.
+         * Runs automatically on load or mutation debounces.
+         */
         async #run() {
             const runId = ++this.#runId;
             const urlForThisRun = location.href;
@@ -400,6 +449,11 @@
             return button;
         }
 
+        /**
+         * @summary Searches ListenBrainz to check if a Spotify playlist has already been imported.
+         * @param {string} spotifyUrl - The canonical Spotify playlist URL.
+         * @returns {Promise<LbPlaylistResult>} An object containing the search results.
+         */
         async #findListenBrainzPlaylist(spotifyUrl) {
             const cacheKey = `lb-playlist-search-${spotifyUrl}`;
             if (this.#urlCache.has(cacheKey)) {
@@ -428,6 +482,11 @@
             return result;
         }
 
+        /**
+         * @summary Triggers a remote playlist import job on the ListenBrainz server.
+         * @param {ButtonContext} context - The current button execution context.
+         * @returns {Promise<boolean|null>} True if successful, or null if no token exists.
+         */
         async #importSpotifyPlaylist({ pageInfo, normalizedUrl, button }) {
             const token = await TokenManager.getToken();
             if (!token) {
@@ -520,6 +579,12 @@
             GM.addStyle(staticStyles + dynamicStyles);
         }
 
+        /**
+         * @summary Fetches entity relationships from MusicBrainz API to find corresponding MBIDs for the current Spotify URL.
+         * @param {string} url - The current Spotify URL to look up.
+         * @param {PageInfo} pageInfo - The parsed page information to determine query type.
+         * @returns {Promise<MbInfo|null>} The MBID and entity type, or null if not found.
+         */
         async #fetchMusicBrainzInfo(url, pageInfo) {
             console.debug(`%c[${main.SCRIPT_NAME}] #fetchMusicBrainzInfo`, 'color: blue; font-weight: bold;', { url, pageInfo });
             const normalizedUrl = main.normalizeUrl(url);

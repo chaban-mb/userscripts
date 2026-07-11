@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MusicBrainz: Resizable Secondary Types Forms
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      1.0.3
+// @version      1.0.4
 // @tag          ai-created
 // @description  Makes the release group secondary type drop-down expandable and remembers its height.
 // @author       chaban
@@ -52,6 +52,12 @@ GM.addStyle(`
     .resizable-select-handle:hover { opacity: 1; background-color: #e0e0e0; }
 `);
 
+/**
+ * @summary Injects a drag handle and logic to make a <select> element resizable.
+ * @param {HTMLSelectElement} selectEl The select element to enhance.
+ * @param {string} storageKey The GM storage key to save the resized size.
+ * @returns {Promise<void>}
+ */
 async function makeSelectResizable(selectEl, storageKey) {
     if (selectEl.dataset.resizable) return;
     selectEl.dataset.resizable = 'true';

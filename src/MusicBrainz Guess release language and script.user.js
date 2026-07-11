@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MusicBrainz: Guess release language and script
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      1.0.3
+// @version      1.0.4
 // @tag          ai-created
 // @description  Guess release language and script from release tracklist using Language Detector API
 // @author       ROpdebee, chaban
@@ -107,6 +107,12 @@
         return `${(value * 100).toFixed(2)}%`;
     }
 
+    /**
+     * @summary Uses the browser's native LanguageDetector API to guess the language of the provided text.
+     * @param {string} text - The text content to analyze.
+     * @param {number} [confidenceThreshold=0.75] - Minimum confidence score (0.0 to 1.0) to consider a detection reliable.
+     * @returns {Promise<string>} The mapped English name of the detected language.
+     */
     const detectLanguage = async (text, confidenceThreshold = 0.75) => {
         if (!('LanguageDetector' in window)) {
             throw new Error('LanguageDetector API is not available in this browser.');
@@ -144,6 +150,12 @@
         }
     };
 
+    /**
+     * @summary Guesses the script of the provided text by counting regex matches for various Unicode ranges.
+     * @param {string} text - The text content to analyze.
+     * @param {number} [confidenceThreshold=0.75] - Minimum confidence ratio required to make a definitive guess.
+     * @returns {string|undefined} The name of the detected script, or undefined if no clear match.
+     */
     function detectScript(text, confidenceThreshold = 0.75) {
         const scriptCounts = new Map(
             Object.entries(SCRIPT_REGEXES).map(([script, regex]) => {
@@ -188,6 +200,10 @@
         }
     }
 
+    /**
+     * @summary Guesses the language of the release and sets the corresponding dropdown option.
+     * @param {string[]} titles - An array of release and track titles.
+     */
     async function guessLanguage(titles) {
         const text = titles.join('. ');
         const languageName = await detectLanguage(text); // e.g., 'English'
@@ -200,6 +216,10 @@
         selectOptionByValue(qs('select#language'), languageId);
     }
 
+    /**
+     * @summary Guesses the script of the release and sets the corresponding dropdown option.
+     * @param {string[]} titles - An array of release and track titles.
+     */
     function guessScript(titles) {
         const text = titles.join('').replaceAll(/\s+/g, '');
         const scriptName = detectScript(text); // e.g., 'Latin'
@@ -238,6 +258,13 @@
         }, 20, 250);
     }
 
+    /**
+     * @summary Creates a throttled function to limit the concurrency and rate of promise-returning function calls.
+     * @param {Object} options - Throttling configuration.
+     * @param {number} options.limit - Maximum number of active promises at a time.
+     * @param {number} options.interval - Time delay (in ms) to wait before allowing the next execution.
+     * @returns {Function} A higher-order function that wraps a target promise-returning function.
+     */
     function pThrottle({ limit, interval }) {
         const queue = [];
         let activeCount = 0;
@@ -323,6 +350,9 @@
     }
 
     // --- UI ---
+    /**
+     * @summary Injects the "Guess language and script" button into the release editor UI.
+     */
     function addButton() {
         const target = qs('table.row-form > tbody');
         if (!target) return;

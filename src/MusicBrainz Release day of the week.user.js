@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name           MusicBrainz: Release day of the week
 // @namespace      https://musicbrainz.org/user/chaban
-// @version        1.2.0
+// @version        1.2.1
 // @description    Display the day of the week for release events.
 // @tag            ai-created
 // @author         Jugdish, SultS, chaban
@@ -73,6 +73,20 @@
     `;
     document.head.appendChild(style);
 
+    /**
+     * @typedef {Object} WriteTask
+     * @property {Text} textNode - The text node containing the parsed date.
+     * @property {number} splitIndex - The string index where the text node should be split.
+     * @property {string} statusClass - The CSS class indicating if the release day is standard.
+     * @property {string} dayName - The localized name of the day of the week.
+     * @property {string} tooltipText - Additional information about the expected release day.
+     */
+
+    /**
+     * @summary Scans DOM nodes for release dates and builds a list of DOM injection tasks.
+     * @param {Node[]} nodesToProcess - An array of DOM nodes to search within.
+     * @returns {WriteTask[]} An array of tasks representing planned DOM updates.
+     */
     function buildWriteTasks(nodesToProcess) {
         const tasks = [];
         // Track nodes we've seen in this batch so we don't process them twice
@@ -219,6 +233,10 @@
         return tasks;
     }
 
+    /**
+     * @summary Executes the planned DOM updates in a single batch to minimize layout thrashing.
+     * @param {WriteTask[]} tasks - The list of prepared DOM manipulation tasks.
+     */
     function flushWriteTasks(tasks) {
         tasks.forEach(task => {
             if (!task.textNode.parentNode) return;
@@ -240,6 +258,9 @@
     const collectedNodes = new Set();
     let isScheduled = false;
 
+    /**
+     * @summary Schedules background DOM processing of collected text nodes using requestIdleCallback to avoid layout thrashing.
+     */
     function scheduleProcessing() {
         if (isScheduled) return;
         isScheduled = true;

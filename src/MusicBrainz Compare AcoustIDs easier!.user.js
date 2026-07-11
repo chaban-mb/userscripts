@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name          MusicBrainz: Compare AcoustIDs easier!
 // @namespace     https://musicbrainz.org/user/chaban
-// @version       1.1.2
+// @version       1.1.3
 // @tag           ai-created
 // @description   Displays AcoustID fingerprints in more places at MusicBrainz.
 // @author        otringal, chaban
@@ -308,6 +308,10 @@
 
   // -- UI EVENT HANDLING --
 
+  /**
+   * @summary Sets up a delegated click listener on the body to handle "show all/less" toggles.
+   * Toggles the visibility of hidden AcoustID elements when a toggle button is clicked.
+   */
   function setupShowHideListener() {
     if (document.body.dataset.showhideListenerAttached) return;
     document.body.dataset.showhideListenerAttached = 'true';
@@ -341,6 +345,10 @@
 
   // -- MAIN ROUTER --
 
+  /**
+   * @summary The main execution entry point for the userscript.
+   * Routes the execution to specific page handlers based on the current URL.
+   */
   function main() {
     const path = window.location.href;
     console.log('[AcoustID Script] Main executing. Path:', path);

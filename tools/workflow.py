@@ -238,14 +238,14 @@ def do_release():
 
     repo_root = Path(__file__).resolve().parent.parent
     
-    diff_files = get_git_stdout(['git', 'diff', '--name-only', main_branch, '--', 'src/']).splitlines()
-    untracked_files = get_git_stdout(['git', 'ls-files', '--others', '--exclude-standard', '--', 'src/']).splitlines()
+    diff_files = get_git_stdout(['git', 'diff', '--name-only', main_branch, '--', 'src/', 'lib/']).splitlines()
+    untracked_files = get_git_stdout(['git', 'ls-files', '--others', '--exclude-standard', '--', 'src/', 'lib/']).splitlines()
     
     all_files = sorted(list(set(diff_files + untracked_files)))
-    userscripts = [f for f in all_files if f.endswith('.user.js')]
+    userscripts = [f for f in all_files if f.endswith('.user.js') or (f.startswith('lib/') and f.endswith('.js'))]
     
     if not userscripts:
-        print(f"\n{COLOR_CYAN}No unreleased changes found in src/ compared to {main_branch}.{COLOR_RESET}\n")
+        print(f"\n{COLOR_CYAN}No unreleased changes found in src/ or lib/ compared to {main_branch}.{COLOR_RESET}\n")
         return
 
     print("Checking unreleased userscripts...")
@@ -266,6 +266,8 @@ def do_release():
             
         curr_ver, curr_name = extract_version_and_name(current_content)
         display_name = curr_name or full_path.name
+        if rel_path_str.startswith('lib/'):
+            display_name = f"[LIB] {display_name}"
         
         main_content = get_main_file_content(rel_path_str, main_branch)
         main_ver = None
@@ -329,14 +331,15 @@ def do_release():
     for script in selected_scripts:
         print(f"\n{COLOR_CYAN}{COLOR_BOLD}Processing release for:{COLOR_RESET} {script['name']}")
         
-        # Check description file existence and warn if missing
-        script_base_name = script['full_path'].name.replace('.user.js', '')
-        desc_rel_path = f"docs/descriptions/{script_base_name}.md"
-        desc_full_path = repo_root / desc_rel_path
-        if not desc_full_path.exists():
-            print(f"  {COLOR_YELLOW}{COLOR_BOLD}[!] WARNING:{COLOR_RESET} Description file is missing: {desc_rel_path}")
-            print(f"      Please create this file to describe the userscript's features.")
-            print()
+        # Check description file existence and warn if missing (only for non-library scripts)
+        if not script['rel_path'].startswith('lib/'):
+            script_base_name = script['full_path'].name.replace('.user.js', '')
+            desc_rel_path = f"docs/descriptions/{script_base_name}.md"
+            desc_full_path = repo_root / desc_rel_path
+            if not desc_full_path.exists():
+                print(f"  {COLOR_YELLOW}{COLOR_BOLD}[!] WARNING:{COLOR_RESET} Description file is missing: {desc_rel_path}")
+                print(f"      Please create this file to describe the userscript's features.")
+                print()
 
         current_version = script['curr_version']
         
@@ -414,14 +417,17 @@ def do_release():
         # Automatically stage the script file and its description
         subprocess.run(['git', 'add', str(script['rel_path'])], check=True)
         
-        script_base_name = script['full_path'].name.replace('.user.js', '')
-        desc_rel_path = f"docs/descriptions/{script_base_name}.md"
-        desc_full_path = repo_root / desc_rel_path
-        if desc_full_path.exists():
-            subprocess.run(['git', 'add', desc_rel_path], check=True)
+        if not script['rel_path'].startswith('lib/'):
+            script_base_name = script['full_path'].name.replace('.user.js', '')
+            desc_rel_path = f"docs/descriptions/{script_base_name}.md"
+            desc_full_path = repo_root / desc_rel_path
+            if desc_full_path.exists():
+                subprocess.run(['git', 'add', desc_rel_path], check=True)
             
         # Check if there are staged changes for this script or its description
-        res = subprocess.run(['git', 'diff', '--cached', '--name-only', '--', str(script['rel_path']), str(desc_rel_path)], capture_output=True, text=True)
+        # (avoid checking nonexistent description file for library scripts)
+        desc_rel_path_to_check = f"docs/descriptions/{script['full_path'].name.replace('.user.js', '')}.md" if not script['rel_path'].startswith('lib/') else ""
+        res = subprocess.run(['git', 'diff', '--cached', '--name-only', '--', str(script['rel_path'])] + ([desc_rel_path_to_check] if desc_rel_path_to_check else []), capture_output=True, text=True)
         staged_changes = res.stdout.strip()
         if staged_changes:
             slug = script['slug']
@@ -518,9 +524,10 @@ def do_release():
                 print(f"{COLOR_YELLOW}Unstaging released script files...{COLOR_RESET}")
                 for script in selected_scripts:
                     subprocess.run(['git', 'restore', '--staged', str(script['rel_path'])], capture_output=True)
-                    script_base_name = script['full_path'].name.replace('.user.js', '')
-                    desc_rel_path = f"docs/descriptions/{script_base_name}.md"
-                    subprocess.run(['git', 'restore', '--staged', desc_rel_path], capture_output=True)
+                    if not script['rel_path'].startswith('lib/'):
+                        script_base_name = script['full_path'].name.replace('.user.js', '')
+                        desc_rel_path = f"docs/descriptions/{script_base_name}.md"
+                        subprocess.run(['git', 'restore', '--staged', desc_rel_path], capture_output=True)
                     if script.get('version_updated'):
                         print(f"{COLOR_YELLOW}Reverting version bump in {script['rel_path']} back to {script['curr_version']}...{COLOR_RESET}")
                         update_version_in_file(script['full_path'], script['curr_version'])
