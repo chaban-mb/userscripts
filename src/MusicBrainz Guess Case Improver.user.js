@@ -134,8 +134,29 @@
      * @returns {string[]} An array of artist names, trimmed and in lowercase.
      */
     function getCurrentArtistNames(button) {
-        // Priority 1: Track-specific artist credit input (Release Editor)
-        const trackRow = button.closest('tr.track');
+        // Priority 1: Track-specific viewmodel check (Knockout model of the track row)
+        const trackRow = button?.closest?.('tr.track');
+        let koTrackFound = false;
+        if (window.ko && trackRow) {
+            try {
+                const trackViewModel = window.ko.dataFor(trackRow);
+                if (trackViewModel?.artistCredit) {
+                    koTrackFound = true;
+                    const ac = trackViewModel.artistCredit();
+                    if (ac?.names?.length > 0) {
+                        const names = ac.names.map(n => n.name).filter(Boolean);
+                        if (names.length > 0) {
+                            log('Found artist(s) from track viewmodel:', names.join('; '));
+                            return names.flatMap(name => parseArtistNamesFromString(name));
+                        }
+                    }
+                }
+            } catch (e) {
+                warn('Error reading track viewmodel:', e);
+            }
+        }
+
+        // Priority 2: Track-specific DOM check (fallback)
         if (trackRow) {
             const trackArtistInput = trackRow.querySelector('.artist .autocomplete2 input');
             if (trackArtistInput?.value) {
@@ -144,7 +165,28 @@
             }
         }
 
-        // Priority 2: Main artist credit editor (Standalone Recording, Release Editor global AC)
+        // Priority 3: Global Release-level viewmodel check (Knockout release model)
+        let koReleaseFound = false;
+        if (window.MB?._releaseEditor?.rootField?.release) {
+            try {
+                const release = window.MB._releaseEditor.rootField.release();
+                if (release?.artistCredit) {
+                    koReleaseFound = true;
+                    const ac = release.artistCredit();
+                    if (ac?.names?.length > 0) {
+                        const names = ac.names.map(n => n.name).filter(Boolean);
+                        if (names.length > 0) {
+                            log('Found artist(s) from release viewmodel:', names.join('; '));
+                            return names.flatMap(name => parseArtistNamesFromString(name));
+                        }
+                    }
+                }
+            } catch (e) {
+                warn('Error reading release viewmodel:', e);
+            }
+        }
+
+        // Priority 4: Main artist credit editor (Standalone Recording, Release Editor global AC)
         const artistCreditEditor = document.getElementById('artist-credit-editor');
         let acEditorFound = false;
         if (artistCreditEditor) {
@@ -171,7 +213,7 @@
             }
         }
 
-        // Priority 3: Fallback to seeded data in the stash
+        // Priority 5: Fallback to seeded data in the stash
         let stashFound = false;
         try {
             const namesData = window?.__MB__?.$c?.stash?.artist_credit?.names ??
@@ -195,9 +237,11 @@
         }
 
         log('getCurrentArtistNames trace:');
-        log(`- Priority 1 (Track Row input): ${trackRow ? 'Found row, but input empty or missing' : 'Not in a track row'}`);
-        log(`- Priority 2 (AC Editor / Single Input): ${acEditorFound ? 'Found editor, but inputs empty' : 'Editor not found'}`);
-        log(`- Priority 3 (MB Stash): ${stashFound ? 'Found stash, but empty or missing names' : 'Stash not found'}`);
+        log(`- Priority 1 (Track VM): ${koTrackFound ? 'Found VM, but names empty' : 'VM not found/applicable'}`);
+        log(`- Priority 2 (Track DOM): ${trackRow ? 'Found row, but input empty or missing' : 'Not in a track row'}`);
+        log(`- Priority 3 (Release VM): ${koReleaseFound ? 'Found VM, but names empty' : 'VM not found/applicable'}`);
+        log(`- Priority 4 (AC Editor / Single Input): ${acEditorFound ? 'Found editor, but inputs empty' : 'Editor not found'}`);
+        log(`- Priority 5 (MB Stash): ${stashFound ? 'Found stash, but empty or missing names' : 'Stash not found'}`);
         log('-> Falling back to regex-only title parsing.');
 
         warn('Could not determine current artists from any source. Falling back to regex-only title parsing.');
