@@ -21,12 +21,9 @@
     'use strict';
 
     const SCRIPT_NAME = GM.info.script.name;
-    const DEBUG_MODE = false;
 
     const log = (...args) => {
-        if (DEBUG_MODE) {
-            console.log(`[${SCRIPT_NAME}]`, ...args);
-        }
+        console.debug(`[${SCRIPT_NAME}]`, ...args);
     };
     const info = (...args) => {
         console.info(`[${SCRIPT_NAME}]`, ...args);
