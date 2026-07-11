@@ -608,6 +608,7 @@
      * @returns {string} The text processed by advanced rules.
      */
     function applyAdvancedRules(text, button) {
+        if (typeof text !== 'string') return text;
         log('--- applyAdvancedRules START ---');
         let newText = text;
         const keepUpperCase = getBooleanCookie('guesscase_keepuppercase');
