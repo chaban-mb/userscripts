@@ -146,7 +146,9 @@
 
         // Priority 2: Main artist credit editor (Standalone Recording, Release Editor global AC)
         const artistCreditEditor = document.getElementById('artist-credit-editor');
+        let acEditorFound = false;
         if (artistCreditEditor) {
+            acEditorFound = true;
             // The hidden inputs hold the definitive state of the AC.
             // We target both the canonical artist name (.artist.name) and the "credited as" name (.name).
             // The credited name is crucial for matching what's usually in the title.
@@ -170,11 +172,13 @@
         }
 
         // Priority 3: Fallback to seeded data in the stash
+        let stashFound = false;
         try {
             const namesData = window?.__MB__?.$c?.stash?.artist_credit?.names ??
                 window?.__MB__?.$c?.stash?.source_entity?.artistCredit?.names;
 
             if (namesData?.length > 0) {
+                stashFound = true;
                 const names = namesData.flatMap(part => [
                     ...(parseArtistNamesFromString(part.name)),
                     ...(parseArtistNamesFromString(part.artist?.name))
@@ -190,7 +194,13 @@
             err('Error accessing __MB__ stash:', e);
         }
 
-        warn('Could not determine current artists from any source.');
+        log('getCurrentArtistNames trace:');
+        log(`- Priority 1 (Track Row input): ${trackRow ? 'Found row, but input empty or missing' : 'Not in a track row'}`);
+        log(`- Priority 2 (AC Editor / Single Input): ${acEditorFound ? 'Found editor, but inputs empty' : 'Editor not found'}`);
+        log(`- Priority 3 (MB Stash): ${stashFound ? 'Found stash, but empty or missing names' : 'Stash not found'}`);
+        log('-> Falling back to regex-only title parsing.');
+
+        warn('Could not determine current artists from any source. Falling back to regex-only title parsing.');
         return [];
     }
 
@@ -491,6 +501,7 @@
     function removeArtistFromTitle(input, button) {
         if (!input || !button) return;
         let newText = pristineValues.get(input) || input.value;
+        log('removeArtistFromTitle: Initial title input value:', newText);
 
         // Handle native MB mis-guess in ETI (flattening)
         newText = flattenEtiMisguess(newText);
@@ -498,6 +509,7 @@
         // Extract all trailing ETIs recursively to preserve them
         const { cleanTitle: cleanTitleWithoutEtis, eti } = extractTrailingEtis(newText);
         newText = cleanTitleWithoutEtis;
+        log('removeArtistFromTitle: ETI extracted:', eti || '(none)', 'Clean title for processing:', newText);
 
         const reassembleOriginal = () => {
             return newText + (eti ? ' ' + eti : '');
@@ -505,6 +517,7 @@
 
         // Split by separators (CJK-aware)
         const parts = newText.split(SEPARATOR_PATTERN).map(p => p.trim()).filter(Boolean);
+        log('removeArtistFromTitle: Split title parts:', parts);
 
         if (parts.length > 1) {
             const pristineArtists = pristineArtistNames.get(input);
@@ -512,10 +525,12 @@
             const editorLower = getCurrentArtistNames(button).map(a => a.toLowerCase());
 
             const artistPartIndex = findArtistPartIndex(parts, pristineLower, editorLower);
+            log('removeArtistFromTitle: Artist part matching index:', artistPartIndex, artistPartIndex !== -1 ? `("${parts[artistPartIndex]}")` : '(no artist part match)');
 
             if (artistPartIndex !== -1) {
                 const artistPart = parts[artistPartIndex];
                 let parsedTitleArtists = parseArtistsAndJoins(artistPart);
+                log('removeArtistFromTitle: Parsed artists from title part:', parsedTitleArtists);
 
                 // Re-assemble the remaining parts (the title part)
                 const titleParts = parts.filter((_, index) => index !== artistPartIndex);
@@ -530,9 +545,11 @@
                 }
 
                 parsedTitleArtists = [...parsedTitleArtists, ...titleGuests];
+                log('removeArtistFromTitle: Total parsed/extracted guest artists:', parsedTitleArtists);
 
                 const acObservable = getACObservable(input, button);
                 if (acObservable && typeof acObservable === 'function') {
+                    log('removeArtistFromTitle: Running in Knockout Model Mode.');
                     // Knockout Model Mode: merge and strip completely
                     const currentAC = acObservable();
                     if (currentAC?.names) {
@@ -559,9 +576,11 @@
                     setInputValue(input, finalTitle.trim());
                     pristineValues.set(input, input.value);
                 } else {
+                    log('removeArtistFromTitle: Running in Fallback DOM Mode.');
                     // Fallback DOM Mode: only strip if all parsed artists are already in editor
                     const allArtistsInTitle = parsedTitleArtists.map(n => n.name.toLowerCase());
                     const allArtistsMatch = allArtistsInTitle.every(a => editorLower.includes(a));
+                    log('removeArtistFromTitle (fallback): Do all title artists match the editor?', allArtistsMatch, 'Title artists:', allArtistsInTitle, 'Editor artists:', editorLower);
 
                     if (allArtistsMatch) {
                         let finalTitle = newTitle;
@@ -572,7 +591,7 @@
                         setInputValue(input, finalTitle.trim());
                         pristineValues.set(input, input.value);
                     } else {
-                        // Keep current value intact
+                        log('removeArtistFromTitle (fallback): Not all artists matched. Keeping current value intact.');
                         setInputValue(input, reassembleOriginal());
                         pristineValues.set(input, input.value);
                     }
