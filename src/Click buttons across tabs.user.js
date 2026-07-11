@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Click buttons across tabs
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      4.9.1
+// @version      4.9.2
 // @tag          ai-created
 // @description  Clicks specified buttons across tabs using the Broadcast Channel API and closes tabs after successful submission.
 // @author       chaban
@@ -301,9 +301,27 @@
 
             onDOMLoaded(() => {
                 if (checkAndAct(null)) return;
-                const observer = new MutationObserver((_, obs) => checkAndAct(obs));
-                // attributes: true is CRITICAL to detect when 'disabled' is removed
-                observer.observe(document.body, { childList: true, subtree: true, attributes: true });
+
+                let rafId = null;
+                const observer = new MutationObserver((mutations, obs) => {
+                    // Throttle the heavy DOM check to once per frame
+                    if (!rafId) {
+                        rafId = requestAnimationFrame(() => {
+                            rafId = null;
+                            checkAndAct(obs);
+                        });
+                    }
+                });
+                
+                // Optimized config: only watch relevant attributes instead of every single one
+                const optimizedConfig = { 
+                    childList: true, 
+                    subtree: true, 
+                    attributes: true,
+                    attributeFilter: ['disabled', 'class', 'style', 'value']
+                };
+                
+                observer.observe(document.body, optimizedConfig);
             });
         });
     }
