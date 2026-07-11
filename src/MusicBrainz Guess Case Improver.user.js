@@ -54,17 +54,39 @@
         'music video', 'super sped up', 'low pitched', 'slowed down'
     ];
 
+
+    // ====================================================================================
+    // --- 🔮 REGULAR EXPRESSION PATTERNS 🔮 ---
+    // ====================================================================================
+
     const JOIN_PHRASE_PATTERN = /\s*\b(?:featuring|feat|ft|vs)\b\.?\s*|\s*(?:[,，、&・×/])\s*|\s+(?:and|x)\s+/gi;
+    const SEPARATOR_PATTERN = /\s+[-–—/]\s+|\s+[-–—/]\s*|\s*[-–—/]\s+(?=.)|(?<=[\u3040-\u30ff\u4e00-\u9fff\uac00-\ud7af\uff00-\uffef])[-–—/]|[-–—/](?=[\u3040-\u30ff\u4e00-\u9fff\uac00-\ud7af\uff00-\uffef])/g;
+    const BRACKET_EXCEPTION_PATTERN = /\[(untitled|unknown|data track|silence)\]/gi;
+    const FEAT_PATTERN = /\s*\(?(feat\.?|ft\.?|featuring|with)\s*([^)]+)\)?/i;
+    const ETI_PATTERN = /\s*(\[[^\]]+\]|\([^)]+\)|【[^】]+】)$/;
+    const PARENS_CONTENT_PATTERN = /\(([^)]+)\)/g;
 
     log('User configuration loaded.');
+
+
 
     // ====================================================================================
     // --- Editor Control Class ---
     // ====================================================================================
 
+
+    /**
+     * @class ArtistCreditsEditor
+     * @summary Utility wrapper to programmatically open, close, and inspect the MusicBrainz Artist Credits dialog.
+     */
     class ArtistCreditsEditor {
         #bubble;
 
+        /**
+         * Opens the artist credit dialog by simulating a click on the edit button.
+         * @param {HTMLElement} openButton - The button element that opens the dialog.
+         * @returns {Promise<boolean>} A promise resolving to true if the dialog opened successfully, or false if it timed out.
+         */
         async open(openButton) {
             openButton.click();
             return new Promise(resolve => {
@@ -81,12 +103,19 @@
             });
         }
 
+        /**
+         * Closes the artist credit dialog by simulating a click on the positive action button.
+         */
         close() {
             if (!this.#bubble) return;
             this.#bubble.querySelector('.buttons .positive')?.click();
             this.#bubble = null;
         }
 
+        /**
+         * Retrieves all artist row elements in the currently open editor dialog.
+         * @returns {HTMLElement[]} An array of table row elements matching the artist rows.
+         */
         getArtistRows() {
             if (!this.#bubble) return [];
             return Array.from(this.#bubble.querySelectorAll('tbody > tr:has(div.autocomplete2)'));
@@ -173,6 +202,11 @@
             .filter(Boolean);
     }
 
+    /**
+     * @summary Parses a string containing artist names and their join phrases into structured objects.
+     * @param {string} artistPartString - The string part containing one or more artists.
+     * @returns {{name: string, joinPhrase: string}[]} Array of parsed artist and join phrase objects.
+     */
     function parseArtistsAndJoins(artistPartString) {
         const pattern = /\s*(?:\b(?:featuring|feat|ft|vs)\b\.?|[,，、&・×/])\s*|\s+\b(?:and|x)\b\s+/gi;
         const names = artistPartString.split(pattern);
@@ -188,6 +222,13 @@
         })).filter(item => item.name !== '');
     }
 
+    /**
+     * @summary Merges parsed guest/featured artists from a title into the current artist credit viewmodel/hidden inputs.
+     * @param {object[]} currentNames - Current artist credit objects in the editor viewmodel.
+     * @param {{name: string, joinPhrase: string}[]} parsedTitleArtists - List of artists parsed from the title.
+     * @param {string[]} seededArtists - List of original seeded/pristine artist names.
+     * @returns {object[]} The updated/merged artist credit list.
+     */
     function mergeArtistCredits(currentNames, parsedTitleArtists, seededArtists) {
         // Flatten all seeded names into individual lowercase names for matching
         const seededIndividualNamesLower = [];
@@ -273,6 +314,13 @@
         }
     }
 
+
+    /**
+     * @summary Resolves the Knockout artist credit observable for the given context.
+     * @param {HTMLElement|null} input - The input element (usually track name input).
+     * @param {HTMLElement|null} button - The guess button element.
+     * @returns {Function|null} The Knockout observable function for artistCredit, or null if not found.
+     */
     function getACObservable(input, button) {
         const trackRow = (input || button).closest('tr.track');
         if (trackRow) {
@@ -300,6 +348,8 @@
         }, 60);
     }
 
+
+
     function createSafeRegex(str) {
         const escapedStr = str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
         return new RegExp(escapedStr, 'i');
@@ -310,6 +360,11 @@
         return value === 'true';
     }
 
+    /**
+     * @summary Safely sets the value of an input element, firing necessary events for React/Knockout framework integration.
+     * @param {HTMLInputElement|HTMLTextAreaElement} element - The target form element to update.
+     * @param {string} value - The text value to set.
+     */
     function setInputValue(element, value) {
         if (!element || typeof value === 'undefined') return;
         let ok = false;
@@ -329,6 +384,7 @@
         element.dispatchEvent(new Event('change', { bubbles: true }));
     }
 
+
     function findAssociatedInput(button) {
         const trackRow = button.closest('tr.track');
         if (trackRow) return trackRow.querySelector('input.track-name');
@@ -341,97 +397,121 @@
     // --- Enhancement Logic
     // ====================================================================================
 
+    /**
+     * @summary Flattens the title when a native MB mis-guess wraps the artist and title inside parentheses/brackets in the ETI.
+     * @param {string} title - The track/recording title to inspect.
+     * @returns {string} The flattened title string.
+     */
+    function flattenEtiMisguess(title) {
+        let text = title;
+        const etiMatch = text.match(ETI_PATTERN);
+        if (etiMatch) {
+            const potentialEti = etiMatch[1];
+            const etiContent = potentialEti.slice(1, -1).trim();
+            const hasSeparator = etiContent.match(/\s+(?:[-–—]|\/)\s+/);
+            const isFeat = etiContent.match(/^(?:feat|ft|featuring)\.?\s+/i);
+            if (hasSeparator && isFeat) {
+                text = text.substring(0, text.lastIndexOf(potentialEti)).trim() + ' ' + etiContent;
+            }
+        }
+        return text;
+    }
+
+    /**
+     * @summary Recursively extracts trailing ETIs (bracketed/parenthesized suffixes) from the title.
+     * @param {string} title - The title to extract from.
+     * @returns {{cleanTitle: string, eti: string}} An object containing the cleaned title and the extracted ETI suffix.
+     */
+    function extractTrailingEtis(title) {
+        let cleanTitle = title;
+        let eti = '';
+        let match;
+        while ((match = cleanTitle.match(ETI_PATTERN))) {
+            eti = match[1] + (eti ? ' ' + eti : '');
+            cleanTitle = cleanTitle.substring(0, cleanTitle.lastIndexOf(match[1])).trim();
+        }
+        return { cleanTitle, eti };
+    }
+
+    /**
+     * @summary Finds the index of the split part that represents the artist name by matching against known artists.
+     * @param {string[]} parts - The separated text parts of the title.
+     * @param {string[]} pristineLower - List of pristine artist names in lowercase.
+     * @param {string[]} editorLower - List of active editor artist names in lowercase.
+     * @returns {number} The index of the artist part, or -1 if no match.
+     */
+    function findArtistPartIndex(parts, pristineLower, editorLower) {
+        const getMatchCount = (part, artistList) => {
+            const artistsInPart = parseArtistNamesFromString(part);
+            return artistsInPart.filter(name => artistList.includes(name.toLowerCase())).length;
+        };
+
+        const scoreParts = (artistList) => {
+            const scores = parts.map((part, idx) => ({ idx, count: getMatchCount(part, artistList) }));
+            const candidates = scores.filter(s => s.count > 0);
+            if (candidates.length === 1) return candidates[0].idx;
+            if (candidates.length > 1) {
+                candidates.sort((a, b) => b.count - a.count);
+                if (candidates[0].count > candidates[1].count) {
+                    return candidates[0].idx;
+                }
+            }
+            return -1;
+        };
+
+        const idx = scoreParts(pristineLower);
+        if (idx !== -1) return idx;
+
+        return scoreParts(editorLower);
+    }
+
+    /**
+     * @summary Parses featured guest artists out of the re-assembled title text.
+     * @param {string} title - The track/recording title text.
+     * @returns {{cleanTitle: string, titleGuests: {name: string, joinPhrase: string}[], joinPhrase: string|null}} The clean title and parsed guests.
+     */
+    function extractFeaturedFromTitle(title) {
+        let cleanTitle = title;
+        const featMatch = cleanTitle.match(FEAT_PATTERN);
+        let titleGuests = [];
+        let joinPhrase = null;
+
+        if (featMatch) {
+            const joinWord = featMatch[1].toLowerCase();
+            joinPhrase = joinWord.startsWith('feat') || joinWord.startsWith('ft') ? ' feat. '
+                : joinWord.startsWith('with') ? ' with '
+                    : ` ${joinWord} `;
+            const guestStr = featMatch[2].trim();
+            titleGuests = parseArtistsAndJoins(guestStr);
+            cleanTitle = cleanTitle.replace(featMatch[0], '').trim();
+        }
+        return { cleanTitle, titleGuests, joinPhrase };
+    }
+
     function removeArtistFromTitle(input, button) {
         if (!input || !button) return;
         let newText = pristineValues.get(input) || input.value;
 
         // Handle native MB mis-guess in ETI (flattening)
-        // This ensures the separator split can correctly identify the artist part
-        const etiMatch = newText.match(/\s*(\[[^\]]+\]|\([^)]+\)|【[^】]+】)$/);
-        if (etiMatch) {
-            const potentialEti = etiMatch[1];
-            const etiContent = potentialEti.slice(1, -1).trim();
-            if (etiContent.match(/\s+[-–]\s+/) && etiContent.match(/^(?:feat|ft|featuring)\.?\s+/i)) {
-                newText = newText.substring(0, newText.lastIndexOf(potentialEti)).trim() + ' ' + etiContent;
-            }
-        }
+        newText = flattenEtiMisguess(newText);
 
         // Extract all trailing ETIs recursively to preserve them
-        let eti = '';
-        const etiPattern = /\s*(\([^)]+\)|\[[^\]]+\]|【[^】]+】)$/;
-        let match;
-        while ((match = newText.match(etiPattern))) {
-            eti = match[1] + (eti ? ' ' + eti : '');
-            newText = newText.substring(0, newText.lastIndexOf(match[1])).trim();
-        }
+        const { cleanTitle: cleanTitleWithoutEtis, eti } = extractTrailingEtis(newText);
+        newText = cleanTitleWithoutEtis;
 
         const reassembleOriginal = () => {
             return newText + (eti ? ' ' + eti : '');
         };
 
         // Split by separators (CJK-aware)
-        const separatorPattern = /\s+[-–—/]\s+|\s+[-–—/]\s*|\s*[-–—/]\s+(?=.)|(?<=[\u3040-\u30ff\u4e00-\u9fff\uac00-\ud7af\uff00-\uffef])[-–—/]|[-–—/](?=[\u3040-\u30ff\u4e00-\u9fff\uac00-\ud7af\uff00-\uffef])/g;
-        const parts = newText.split(separatorPattern).map(p => p.trim()).filter(Boolean);
+        const parts = newText.split(SEPARATOR_PATTERN).map(p => p.trim()).filter(Boolean);
 
         if (parts.length > 1) {
             const pristineArtists = pristineArtistNames.get(input);
             const pristineLower = (pristineArtists && pristineArtists.length > 0) ? pristineArtists.map(a => a.toLowerCase()) : [];
             const editorLower = getCurrentArtistNames(button).map(a => a.toLowerCase());
 
-            const partMatchesPristine = parts.map(part => {
-                const artistsInPart = parseArtistNamesFromString(part);
-                const matches = artistsInPart.filter(name => pristineLower.includes(name.toLowerCase()));
-                return {
-                    part,
-                    artists: artistsInPart,
-                    matchCount: matches.length
-                };
-            });
-
-            let artistPartIndex = -1;
-            let pristineCandidateIndices = [];
-            partMatchesPristine.forEach((pm, idx) => {
-                if (pm.matchCount > 0) {
-                    pristineCandidateIndices.push(idx);
-                }
-            });
-
-            if (pristineCandidateIndices.length === 1) {
-                artistPartIndex = pristineCandidateIndices[0];
-            } else if (pristineCandidateIndices.length > 1) {
-                pristineCandidateIndices.sort((a, b) => partMatchesPristine[b].matchCount - partMatchesPristine[a].matchCount);
-                if (partMatchesPristine[pristineCandidateIndices[0]].matchCount > partMatchesPristine[pristineCandidateIndices[1]].matchCount) {
-                    artistPartIndex = pristineCandidateIndices[0];
-                }
-            }
-
-            if (artistPartIndex === -1) {
-                const partMatchesCurrent = parts.map(part => {
-                    const artistsInPart = parseArtistNamesFromString(part);
-                    const matches = artistsInPart.filter(name => editorLower.includes(name.toLowerCase()));
-                    return {
-                        part,
-                        artists: artistsInPart,
-                        matchCount: matches.length
-                    };
-                });
-
-                let currentCandidateIndices = [];
-                partMatchesCurrent.forEach((pm, idx) => {
-                    if (pm.matchCount > 0) {
-                        currentCandidateIndices.push(idx);
-                    }
-                });
-
-                if (currentCandidateIndices.length === 1) {
-                    artistPartIndex = currentCandidateIndices[0];
-                } else if (currentCandidateIndices.length > 1) {
-                    currentCandidateIndices.sort((a, b) => partMatchesCurrent[b].matchCount - partMatchesCurrent[a].matchCount);
-                    if (partMatchesCurrent[currentCandidateIndices[0]].matchCount > partMatchesCurrent[currentCandidateIndices[1]].matchCount) {
-                        artistPartIndex = currentCandidateIndices[0];
-                    }
-                }
-            }
+            const artistPartIndex = findArtistPartIndex(parts, pristineLower, editorLower);
 
             if (artistPartIndex !== -1) {
                 const artistPart = parts[artistPartIndex];
@@ -442,22 +522,11 @@
                 let newTitle = titleParts.join(' - '); // standard en-dash join
 
                 // Check if the title part contains a featured artist pattern (e.g. feat. Guest)
-                const featPattern = /\s*\(?(feat\.?|ft\.?|featuring|with)\s*([^)]+)\)?/i;
-                const featMatch = newTitle.match(featPattern);
-                let titleGuests = [];
-                if (featMatch) {
-                    const joinWord = featMatch[1].toLowerCase();
-                    const joinPhrase = joinWord.startsWith('feat') || joinWord.startsWith('ft') ? ' feat. '
-                        : joinWord.startsWith('with') ? ' with '
-                            : ` ${joinWord} `;
-                    const guestStr = featMatch[2].trim();
-                    titleGuests = parseArtistsAndJoins(guestStr);
+                const { cleanTitle: cleanTitleWithoutFeat, titleGuests, joinPhrase } = extractFeaturedFromTitle(newTitle);
+                newTitle = cleanTitleWithoutFeat;
 
-                    newTitle = newTitle.replace(featMatch[0], '').trim();
-
-                    if (parsedTitleArtists.length > 0) {
-                        parsedTitleArtists[parsedTitleArtists.length - 1].joinPhrase = joinPhrase;
-                    }
+                if (joinPhrase && parsedTitleArtists.length > 0) {
+                    parsedTitleArtists[parsedTitleArtists.length - 1].joinPhrase = joinPhrase;
                 }
 
                 parsedTitleArtists = [...parsedTitleArtists, ...titleGuests];
@@ -512,6 +581,7 @@
         }
     }
 
+
     /**
      * @summary Applies advanced rule sets like French/Swedish apostrophe corrections and acronym fixes.
      * @param {string} text - The current guessed text string.
@@ -525,15 +595,14 @@
 
         // Preserve MusicBrainz special track titles in square brackets and convert them to lowercase
         const bracketExceptions = [];
-        const exceptionPattern = /\[(untitled|unknown|data track|silence)\]/gi;
-        newText = newText.replace(exceptionPattern, (match, p1) => {
+        newText = newText.replace(BRACKET_EXCEPTION_PATTERN, (match, p1) => {
             const index = bracketExceptions.length;
             bracketExceptions.push(`[${p1.toLowerCase()}]`);
             return `___MB_GUESS_CASE_EXCEPTION_${index}___`;
         });
 
         let trailingEti = '';
-        const etiMatch = newText.match(/\s*(\[[^\]]+\]|\([^)]+\)|【[^】]+】)$/);
+        const etiMatch = newText.match(ETI_PATTERN);
         if (etiMatch) {
             const potentialEti = etiMatch[1];
             // Check if the native script made a mess by wrapping the title in "feat." parens
@@ -562,8 +631,7 @@
         }
 
         newText = newText.replace(/\[/g, '(').replace(/\]/g, ')');
-        const etiRegex = /\(([^)]+)\)/g;
-        newText = newText.replace(etiRegex, (match, etiContent) => {
+        newText = newText.replace(PARENS_CONTENT_PATTERN, (match, etiContent) => {
             let processedEti = etiContent;
             for (const phrase of etiPhrasesToLowercase) {
                 processedEti = processedEti.replace(createSafeRegex(phrase), matched => {
@@ -732,6 +800,10 @@
         });
     }
 
+    /**
+     * @summary Enhances a track-specific "Guess Feat" button.
+     * @param {HTMLElement} button - The track-specific guess feat button element.
+     */
     function enhanceTrackGuessFeat(button) {
         if (button.dataset.enhanced) return;
         log('Found track "Guess Feat." button to enhance.', button);
@@ -754,6 +826,10 @@
         button.dataset.enhanced = 'true';
     }
 
+    /**
+     * @summary Enhances a medium-wide "Guess Feat" button.
+     * @param {HTMLElement} button - The medium-wide guess feat button element.
+     */
     function enhanceMediumGuessFeat(button) {
         if (button.dataset.enhanced) return;
         log('Found medium-wide "Guess Feat." button to enhance.', button);
@@ -784,6 +860,10 @@
         button.dataset.enhanced = 'true';
     }
 
+    /**
+     * @summary Enhances the release-wide or global "Guess Feat" button.
+     * @param {HTMLElement} button - The release-wide or global guess feat button element.
+     */
     function enhanceReleaseGuessFeat(button) {
         if (button.dataset.enhanced) return;
         log('Found Release/Recording "Guess Feat." button to enhance.', button);
@@ -801,13 +881,11 @@
 
                 const patterns = [
                     // Layout Style A: "Artist - Title feat. Guest 1, Guest 2 (ETI)"
-                    // Handled here to cleanly extract multiple guests and isolate any trailing ETIs
                     {
                         regex: /^(.*?)\s+-\s+([^([]+?)\s+(?:feat\.?|ft\.?|featuring)\s+([^([]+?)((?:\s*(?:\([^)]+\)|\[[^\]]+\]))*)$/i,
                         parse: (m) => ({ main: m[1], join: ' feat. ', guests: m[3], title: m[2], eti: m[4] || '' })
                     },
                     // Layout Style B: "Artist feat. Guest - Title (ETI)"
-                    // Handled here to fix the native standalone form scrapper
                     {
                         regex: /^(.*?)\s+(?:feat\.?|ft\.?|featuring)\s+([^([]+?)\s+-\s+(.*)$/i,
                         parse: (m) => ({ main: m[1], join: ' feat. ', guests: m[2], title: m[3], eti: '' })
@@ -817,7 +895,7 @@
                         regex: /^(.*?)\s+\((?:feat\.?|ft\.?|featuring)\s+(.*?)\s+-\s+(.*?)\)((?:\s*(?:\([^)]+\)|\[[^\]]+\]))*)$/i,
                         parse: (m) => ({ main: m[1], join: ' feat. ', guests: m[2], title: m[3], eti: m[4] || '' })
                     },
-                    // Layout Style D: Suffix "with" addition "Artist - Title (with Guest) (ETI)" (Greedy title match)
+                    // Layout Style D: Suffix "with" addition "Artist - Title (with Guest) (ETI)"
                     {
                         regex: /^(.*?)\s+-\s+(.*)\s+\((with|and|feat\.?|ft\.?|featuring)\s+([^)]+)\)((?:\s*(?:\([^)]+\)|\[[^\]]+\]))*)$/i,
                         parse: (m) => ({ main: m[1], join: ` ${m[3]} `, guests: m[4], title: m[2], eti: m[5] || '' })
@@ -881,7 +959,6 @@
                         const finalTrackTitleText = trailingEti ? `${trackTitle} ${trailingEti}` : trackTitle;
                         setInputValue(input, finalTrackTitleText);
 
-                        // Access core underlying Knockout models
                         const sourceInstance = window.MB?.getSourceEntityInstance?.();
                         if (sourceInstance && sourceInstance.artistCredit) {
                             const acObservable = sourceInstance.artistCredit;
@@ -897,13 +974,11 @@
 
                                 const parsedArtistNodes = mergeArtistCredits(currentAC.names, parsedTitleArtists, artistsInEditor);
 
-                                // Update the model array cleanly
                                 acObservable({
                                     ...currentAC,
                                     names: parsedArtistNodes
                                 });
 
-                                // Synchronize the Autocomplete search elements to display the visible values on screen
                                 syncAutocompleteInputs(parsedArtistNodes);
                             }
                         }
@@ -921,13 +996,11 @@
 
             // Deduplicate the global artist credit editor and clean up title
             setTimeout(() => {
-                // Release editor (tracklist page): release.artistCredit
                 const release = window.MB?.releaseEditor?.rootField?.release?.();
                 if (release?.artistCredit) {
                     log('Deduplicating release AC via Knockout model.');
                     deduplicateACFromObservable(release.artistCredit);
                 } else {
-                    // Standalone recording/entity page: source entity via forms.js
                     const source = window.MB?.getSourceEntityInstance?.();
                     if (source?.artistCredit) {
                         log('Deduplicating standalone entity AC via Knockout model.');
@@ -937,19 +1010,20 @@
                     }
                 }
 
-                const input = findAssociatedInput(button);
-                if (input) {
-                    removeArtistFromTitle(input, button);
-                    // Update pristine value state for the guesscase button
-                    pristineValues.set(input, input.value);
-                    pristineArtistNames.set(input, getCurrentArtistNames(button));
-                    log(`Updated pristine value for ${input.name || input.id} after Guess Feat cleanup: "${input.value}"`);
+                const associatedInput = findAssociatedInput(button);
+                if (associatedInput) {
+                    removeArtistFromTitle(associatedInput, button);
+                    pristineValues.set(associatedInput, associatedInput.value);
+                    pristineArtistNames.set(associatedInput, getCurrentArtistNames(button));
+                    log(`Updated pristine value for ${associatedInput.name || associatedInput.id} after Guess Feat cleanup: "${associatedInput.value}"`);
                 }
             }, 100);
+
         }, true);
 
         button.dataset.enhanced = 'true';
     }
+
 
     /**
      * @summary Enhances a React-based "Guess Case" button with advanced rules and hover previews.
@@ -967,7 +1041,6 @@
 
         // --- Pristine Value Management ---
         // We set the initial value and update it on focus or input.
-        // This is our reliable "original value" source.
         if (!pristineValues.has(input)) {
             pristineValues.set(input, input.value);
             log(`Set initial pristine value for ${input.name || input.id}: "${input.value}"`);
@@ -988,16 +1061,14 @@
         const handleMouseEnter = (event) => {
             if (event.buttons !== 0) return;
 
-            // Get the *true* original value from our map
             const originalValue = pristineValues.get(input);
             activePreview = true;
             log(`Pristine value from map: "${originalValue}"`);
 
-            // Run *after* the native preview handler
             setTimeout(() => {
                 if (!activePreview) return; // Mouse already left
 
-                const nativePreviewValue = input.value; // Value *after* native handler ran
+                const nativePreviewValue = input.value;
                 const enhancedPreviewValue = applyAdvancedRules(nativePreviewValue, button);
 
                 if (enhancedPreviewValue !== originalValue) {
@@ -1005,7 +1076,7 @@
                     input.value = enhancedPreviewValue;
                 } else {
                     input.classList.remove('preview');
-                    input.value = originalValue; // Restore, just in case native changed it
+                    input.value = originalValue;
                 }
             }, 0);
         };
@@ -1014,7 +1085,7 @@
             if (activePreview) {
                 log('Hiding preview and restoring original value.');
                 const originalValue = pristineValues.get(input);
-                setInputValue(input, originalValue); // Use dispatch to notify React/Knockout
+                setInputValue(input, originalValue);
                 input.classList.remove('preview');
                 activePreview = false;
             }
@@ -1022,19 +1093,19 @@
 
         const handleClick = () => {
             log('"Guess Case" click detected.');
-            activePreview = false; // Disarm mouseleave
+            activePreview = false;
 
             setTimeout(() => {
                 const nativeValue = input.value;
                 const enhancedValue = applyAdvancedRules(nativeValue, button);
                 log(`Native: "${nativeValue}", Enhanced: "${enhancedValue}"`);
 
-                setInputValue(input, enhancedValue); // Set the final value
+                setInputValue(input, enhancedValue);
 
-                // This is now the new "original" value
                 pristineValues.set(input, enhancedValue);
             }, 0);
         };
+
 
         button.addEventListener('click', handleClick);
         button.addEventListener('mouseenter', handleMouseEnter);
@@ -1120,13 +1191,8 @@
         let newText = originalTitle || titleVal;
 
         // Extract trailing ETIs recursively
-        let eti = '';
-        const etiPattern = /\s*(\[[^\]]+\]|\([^)]+\))$/;
-        let match;
-        while ((match = newText.match(etiPattern))) {
-            eti = match[1] + (eti ? ' ' + eti : '');
-            newText = newText.substring(0, newText.lastIndexOf(match[1])).trim();
-        }
+        const { cleanTitle: cleanTitleWithoutEtis, eti } = extractTrailingEtis(newText);
+        newText = cleanTitleWithoutEtis;
 
         const separatorPattern = /\s+[-–—/]\s+|\s+[-–—/]\s*|\s*[-–—/]\s+(?=.)|(?<=[\u3040-\u30ff\u4e00-\u9fff\uac00-\ud7af\uff00-\uffef])[-–—/]|[-–—/](?=[\u3040-\u30ff\u4e00-\u9fff\uac00-\ud7af\uff00-\uffef])/g;
         const parts = newText.split(separatorPattern).map(p => p.trim()).filter(Boolean);
@@ -1136,60 +1202,7 @@
             const pristineLower = (originalArtists && originalArtists.length > 0) ? originalArtists.map(a => a.toLowerCase()) : [];
             const editorLower = (currentAC?.names ?? []).map(n => n.name.toLowerCase());
 
-            const partMatchesPristine = parts.map(part => {
-                const artistsInPart = parseArtistNamesFromString(part);
-                const matches = artistsInPart.filter(name => pristineLower.includes(name.toLowerCase()));
-                return {
-                    part,
-                    artists: artistsInPart,
-                    matchCount: matches.length
-                };
-            });
-
-            let artistPartIndex = -1;
-            let pristineCandidateIndices = [];
-            partMatchesPristine.forEach((pm, idx) => {
-                if (pm.matchCount > 0) {
-                    pristineCandidateIndices.push(idx);
-                }
-            });
-
-            if (pristineCandidateIndices.length === 1) {
-                artistPartIndex = pristineCandidateIndices[0];
-            } else if (pristineCandidateIndices.length > 1) {
-                pristineCandidateIndices.sort((a, b) => partMatchesPristine[b].matchCount - partMatchesPristine[a].matchCount);
-                if (partMatchesPristine[pristineCandidateIndices[0]].matchCount > partMatchesPristine[pristineCandidateIndices[1]].matchCount) {
-                    artistPartIndex = pristineCandidateIndices[0];
-                }
-            }
-
-            if (artistPartIndex === -1) {
-                const partMatchesCurrent = parts.map(part => {
-                    const artistsInPart = parseArtistNamesFromString(part);
-                    const matches = artistsInPart.filter(name => editorLower.includes(name.toLowerCase()));
-                    return {
-                        part,
-                        artists: artistsInPart,
-                        matchCount: matches.length
-                    };
-                });
-
-                let currentCandidateIndices = [];
-                partMatchesCurrent.forEach((pm, idx) => {
-                    if (pm.matchCount > 0) {
-                        currentCandidateIndices.push(idx);
-                    }
-                });
-
-                if (currentCandidateIndices.length === 1) {
-                    artistPartIndex = currentCandidateIndices[0];
-                } else if (currentCandidateIndices.length > 1) {
-                    currentCandidateIndices.sort((a, b) => partMatchesCurrent[b].matchCount - partMatchesCurrent[a].matchCount);
-                    if (partMatchesCurrent[currentCandidateIndices[0]].matchCount > partMatchesCurrent[currentCandidateIndices[1]].matchCount) {
-                        artistPartIndex = currentCandidateIndices[0];
-                    }
-                }
-            }
+            const artistPartIndex = findArtistPartIndex(parts, pristineLower, editorLower);
 
             if (artistPartIndex !== -1) {
                 const artistPart = parts[artistPartIndex];
@@ -1198,22 +1211,11 @@
                 const titleParts = parts.filter((_, index) => index !== artistPartIndex);
                 let newTitle = titleParts.join(' - ');
 
-                const featPattern = /\s*\(?(feat\.?|ft\.?|featuring|with)\s*([^)]+)\)?/i;
-                const featMatch = newTitle.match(featPattern);
-                let titleGuests = [];
-                if (featMatch) {
-                    const joinWord = featMatch[1].toLowerCase();
-                    const joinPhrase = joinWord.startsWith('feat') || joinWord.startsWith('ft') ? ' feat. '
-                        : joinWord.startsWith('with') ? ' with '
-                            : ` ${joinWord} `;
-                    const guestStr = featMatch[2].trim();
-                    titleGuests = parseArtistsAndJoins(guestStr);
+                const { cleanTitle: cleanTitleWithoutFeat, titleGuests, joinPhrase } = extractFeaturedFromTitle(newTitle);
+                newTitle = cleanTitleWithoutFeat;
 
-                    newTitle = newTitle.replace(featMatch[0], '').trim();
-
-                    if (parsedTitleArtists.length > 0) {
-                        parsedTitleArtists[parsedTitleArtists.length - 1].joinPhrase = joinPhrase;
-                    }
+                if (joinPhrase && parsedTitleArtists.length > 0) {
+                    parsedTitleArtists[parsedTitleArtists.length - 1].joinPhrase = joinPhrase;
                 }
 
                 parsedTitleArtists = [...parsedTitleArtists, ...titleGuests];
@@ -1239,14 +1241,18 @@
         }
     }
 
+
     // ====================================================================================
     // --- Initialization
     // ====================================================================================
 
-    function enhanceLegacyGuessCase() {
+    /**
+     * @summary Enhances MB.releaseEditor actions with custom formatting and de-duplication behaviors.
+     */
+    function enhanceReleaseEditorActions() {
         const releaseEditor = window.MB?._releaseEditor;
         if (!releaseEditor || releaseEditor.guessCaseTrackName.isEnhanced) return;
-        log('Found release editor, enhancing legacy (track name) guess case.');
+        log('Found release editor, enhancing viewmodel actions.');
 
         const originalGuessCaseTrackName = releaseEditor.guessCaseTrackName;
         releaseEditor.guessCaseTrackName = function (track, event) {
@@ -1279,10 +1285,84 @@
             };
             releaseEditor.guessTrackFeatArtists.isEnhanced = true;
         }
+
+        if (releaseEditor.guessMediumFeatArtists && !releaseEditor.guessMediumFeatArtists.isEnhanced) {
+            const originalGuessMediumFeatArtists = releaseEditor.guessMediumFeatArtists;
+            releaseEditor.guessMediumFeatArtists = function (medium, event) {
+                log('Intercepted guessMediumFeatArtists on model.');
+                const trackData = (medium.tracks?.() ?? []).map(track => ({
+                    track,
+                    originalTitle: track.name(),
+                    originalArtists: (track.artistCredit()?.names ?? []).map(n => n.name)
+                }));
+
+                originalGuessMediumFeatArtists.call(this, medium, event);
+
+                trackData.forEach(({ track, originalTitle, originalArtists }) => {
+                    try {
+                        cleanTrackModelAfterGuessFeat(track, originalTitle, originalArtists);
+                    } catch (e) {
+                        err('Error cleaning track model after guessMediumFeatArtists:', e);
+                    }
+                });
+            };
+            releaseEditor.guessMediumFeatArtists.isEnhanced = true;
+        }
+
+        if (releaseEditor.guessReleaseFeatArtists && !releaseEditor.guessReleaseFeatArtists.isEnhanced) {
+            const originalGuessReleaseFeatArtists = releaseEditor.guessReleaseFeatArtists;
+            releaseEditor.guessReleaseFeatArtists = function (release, event) {
+                log('Intercepted guessReleaseFeatArtists on model.');
+                const trackData = [];
+                for (const medium of release.mediums?.() ?? []) {
+                    for (const track of medium.tracks?.() ?? []) {
+                        trackData.push({
+                            track,
+                            originalTitle: track.name(),
+                            originalArtists: (track.artistCredit()?.names ?? []).map(n => n.name)
+                        });
+                    }
+                }
+
+                originalGuessReleaseFeatArtists.call(this, release, event);
+
+                trackData.forEach(({ track, originalTitle, originalArtists }) => {
+                    try {
+                        cleanTrackModelAfterGuessFeat(track, originalTitle, originalArtists);
+                    } catch (e) {
+                        err('Error cleaning track model after guessReleaseFeatArtists:', e);
+                    }
+                });
+            };
+            releaseEditor.guessReleaseFeatArtists.isEnhanced = true;
+        }
+
+        if (releaseEditor.guessCaseMediumName && !releaseEditor.guessCaseMediumName.isEnhanced) {
+            const originalGuessCaseMediumName = releaseEditor.guessCaseMediumName;
+            releaseEditor.guessCaseMediumName = function (medium, event) {
+                originalGuessCaseMediumName.call(this, medium, event);
+                switch (event.type) {
+                    case 'mouseenter':
+                        if (medium.previewName) {
+                            medium.previewName(applyAdvancedRules(medium.previewName.peek(), event.target));
+                        }
+                        break;
+                    case 'click':
+                        medium.name(applyAdvancedRules(medium.name.peek(), event.target));
+                        break;
+                    default:
+                        if (event.type !== 'mouseleave') {
+                            medium.name(applyAdvancedRules(medium.name.peek(), event.target));
+                        }
+                        break;
+                }
+            };
+            releaseEditor.guessCaseMediumName.isEnhanced = true;
+        }
     }
 
     const observer = new MutationObserver(() => {
-        if (window.MB?._releaseEditor) enhanceLegacyGuessCase();
+        if (window.MB?._releaseEditor) enhanceReleaseEditorActions();
 
         // We must be very specific. The 'legacy' enhancer handles track titles.
         // The 'react' enhancer handles all *other* titles (release, standalone recording).
