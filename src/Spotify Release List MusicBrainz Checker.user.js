@@ -1,12 +1,12 @@
 // ==UserScript==
 // @name         Spotify Release List: MusicBrainz Checker
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      1.0.0
+// @version      1.0.1
 // @tag          ai-created
 // @description  Checks releases on spotifyreleaselist.netlify.app against MusicBrainz. Fades or hides found releases and collapses date groups where everything is catalogued.
 // @author       chaban
 // @license      MIT
-// @icon         https://musicbrainz.org/favicon.ico
+// @icon         https://musicbrainz.org/static/images/favicons/android-chrome-512x512.png
 // @match        https://spotifyreleaselist.netlify.app/*
 // @match        https://*.spotifyreleaselist.netlify.app/*
 // @connect      musicbrainz.org
@@ -21,8 +21,8 @@
     'use strict';
 
     const SCRIPT_NAME = GM.info.script.name;
-    const log  = (...args) => console.debug(`[${SCRIPT_NAME}]`, ...args);
-    const warn = (...args) => console.warn (`[${SCRIPT_NAME}]`, ...args);
+    const log = (...args) => console.debug(`[${SCRIPT_NAME}]`, ...args);
+    const warn = (...args) => console.warn(`[${SCRIPT_NAME}]`, ...args);
 
     const MB_BASE = 'https://musicbrainz.org';
 
