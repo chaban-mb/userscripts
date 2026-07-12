@@ -569,6 +569,18 @@ Injects MusicBrainz links into SecondHandSongs pages for artists, releases, and 
 ### Features
 - **Context-Aware:** Detects the type of entity (Artist, Work, Release) and adds the appropriate MusicBrainz icon link.
 
+## Spotify Release List: MusicBrainz Checker
+
+[![Install](https://img.shields.io/badge/Install-success.svg?style=for-the-badge&logo=tampermonkey)](https://github.com/chaban-mb/userscripts/raw/main/src/Spotify%20Release%20List%20MusicBrainz%20Checker.user.js)
+[![Source](https://img.shields.io/badge/Source-grey.svg?style=for-the-badge&logo=github)](https://github.com/chaban-mb/userscripts/blob/main/src/Spotify%20Release%20List%20MusicBrainz%20Checker.user.js)
+
+Checks releases listed on [Spotify Release List](https://spotifyreleaselist.netlify.app/) against MusicBrainz using Spotify URL lookups.
+
+### Features
+- **Auto-Filtering**: Automatically hides releases that are already found in MusicBrainz to help you focus on missing releases.
+- **Header Toggle**: Adds a "Show Found" / "Hide Found" button in the page header to toggle the visibility of cataloged releases.
+- **Direct Links**: Adds a direct "MB ↗" link badge to matching release pages on MusicBrainz.
+
 ## Spotify: MusicBrainz importer
 
 [![Install](https://img.shields.io/badge/Install-success.svg?style=for-the-badge&logo=tampermonkey)](https://github.com/chaban-mb/userscripts/raw/main/src/Spotify%20MusicBrainz%20importer.user.js)
