@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MusicBrainz: Guess Case Improver
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      0.8.7
+// @version      0.9.0
 // @tag          ai-created
 // @description  Improves the native "Guess Case" for release, recording and track titles with advanced artist and ETI parsing. Also removes artist from title and duplicate artists after using "Guess feat. artists" on tracklists.
 // @author       chaban
@@ -372,6 +372,84 @@
             }
 
             return updatedNames;
+        }
+    }
+
+
+    /**
+     * @summary Checks if a given artist is identified as a remixer in the track title.
+     * @param {string} artistName - The name of the artist to check.
+     * @param {string} title - The track title.
+     * @returns {boolean} True if the artist is identified as a remixer.
+     */
+    function isArtistRemixerInTitle(artistName, title) {
+        if (!artistName || !title) return false;
+        const cleanName = artistName.trim().toLowerCase();
+        const cleanTitle = title.toLowerCase();
+
+        const remixKeywords = ['remix', 'rework', 'edit', 'mix', 'flip', 'bootleg', 'mashup', 'vip', 'dub', 'version'];
+        const hasRemixKeyword = (str) => remixKeywords.some(kw => new RegExp(`\\b${kw}\\b`, 'i').test(str));
+
+        // 1. Check parenthesized/bracketed ETIs
+        const parenthesizedMatches = cleanTitle.match(/\(([^)]+)\)|\[([^\]]+)\]|【([^】]+)】/g) || [];
+        for (const match of parenthesizedMatches) {
+            if (match.includes(cleanName) && hasRemixKeyword(match)) {
+                return true;
+            }
+        }
+
+        // 2. Check hyphen-separated parts
+        const separatorPattern = /\s+[-–—/]\s+|\s+[-–—/]\s*|\s*[-–—/]\s+(?=.)/g;
+        const parts = cleanTitle.split(separatorPattern).map(p => p.trim()).filter(Boolean);
+        if (parts.length > 1) {
+            for (const part of parts) {
+                if (part.includes(cleanName) && hasRemixKeyword(part)) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * @summary Removes detected remixers from a Knockout artist credit observable and normalizes standard join phrases.
+     * @param {Function} acObservable - The Knockout observable function for the artist credit.
+     * @param {string} title - The track title.
+     */
+    function removeRemixersFromAC(acObservable, title) {
+        if (typeof acObservable !== 'function' || !title) return;
+        const ac = acObservable();
+        if (!ac?.names?.length) return;
+
+        const filteredNames = ac.names.filter(n => {
+            const isRemixer = isArtistRemixerInTitle(n.name, title);
+            if (isRemixer) {
+                log(`removeRemixersFromAC: Removing remixer "${n.name}" from artist credit based on title.`);
+            }
+            return !isRemixer;
+        });
+
+        if (filteredNames.length !== ac.names.length) {
+            // Repair standard join phrases based on position/length
+            const isStandardJoin = (join) => !join || /^\s*(?:,|&|and|＆)\s*$/i.test(join);
+            for (let i = 0; i < filteredNames.length - 1; i++) {
+                const join = filteredNames[i].joinPhrase;
+                if (isStandardJoin(join)) {
+                    const isSecondToLast = (i === filteredNames.length - 2);
+                    filteredNames[i] = {
+                        ...filteredNames[i],
+                        joinPhrase: isSecondToLast ? ' & ' : ', '
+                    };
+                }
+            }
+            if (filteredNames.length > 0) {
+                filteredNames[filteredNames.length - 1] = {
+                    ...filteredNames[filteredNames.length - 1],
+                    joinPhrase: ''
+                };
+            }
+            acObservable({ ...ac, names: filteredNames });
         }
     }
 
@@ -932,6 +1010,9 @@
         const track = getTrackModel(trackRow);
         if (track) {
             deduplicateACFromObservable(track.artistCredit);
+            if (getBooleanCookie('guesscase_remove_remixers')) {
+                removeRemixersFromAC(track.artistCredit, track.name() || '');
+            }
             return;
         }
         // Fallback: DOM bubble (standalone recording page, no release editor model).
@@ -942,12 +1023,16 @@
         editor.open(openBubbleButton).then(opened => {
             if (!opened) { log('Failed to open AC bubble (fallback).'); return; }
             // Minimal bubble dedup for the fallback path.
+            const titleInput = trackRow.querySelector('input.track-name');
+            const title = titleInput ? titleInput.value : '';
+            const removeRemixers = getBooleanCookie('guesscase_remove_remixers');
             const rows = editor.getArtistRows();
             const seen = new Set();
             for (const row of rows) {
                 const inp = row.querySelector('div.autocomplete2 input[type="text"]');
                 const name = inp?.value.trim().toLowerCase();
-                if (name && seen.has(name)) {
+                const isRemixer = name && removeRemixers && isArtistRemixerInTitle(name, title);
+                if (isRemixer || (name && seen.has(name))) {
                     row.querySelector('.remove-artist-credit')?.click();
                 } else if (name) {
                     seen.add(name);
@@ -1347,6 +1432,10 @@
 
         // 1. Deduplicate the artist credit observable
         deduplicateACFromObservable(track.artistCredit);
+
+        if (getBooleanCookie('guesscase_remove_remixers')) {
+            removeRemixersFromAC(track.artistCredit, originalTitle || track.name() || '');
+        }
 
         // 2. Remove artist from title on the model level
         const titleVal = track.name() || '';
