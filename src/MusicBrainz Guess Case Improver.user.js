@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MusicBrainz: Guess Case Improver
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      0.8.6
+// @version      0.8.7
 // @tag          ai-created
 // @description  Improves the native "Guess Case" for release, recording and track titles with advanced artist and ETI parsing. Also removes artist from title and duplicate artists after using "Guess feat. artists" on tracklists.
 // @author       chaban
@@ -298,7 +298,13 @@
             seededIndividualNamesLower.includes(ta.name.trim().toLowerCase())
         );
 
-        if (hasPartialMatch) {
+        // We only trigger the overwrite/replace path if the primary artist is in the title's parsed guest artists.
+        const containsPrimaryArtist = seededIndividualNamesLower && seededIndividualNamesLower.length > 0 && parsedTitleArtists.some(ta => {
+            const taLower = ta.name.trim().toLowerCase();
+            return taLower === seededIndividualNamesLower[0] || parseArtistNamesFromString(ta.name).includes(seededIndividualNamesLower[0]);
+        });
+
+        if (hasPartialMatch && containsPrimaryArtist) {
             // Precedence Rule: Overwrite/replace seeded credits with parsed title credits.
             const updatedNames = parsedTitleArtists.map((ta) => {
                 const taLower = ta.name.trim().toLowerCase();
@@ -569,7 +575,19 @@
             const pristineLower = (pristineArtists && pristineArtists.length > 0) ? pristineArtists.map(a => a.toLowerCase()) : [];
             const editorLower = getCurrentArtistNames(button).map(a => a.toLowerCase());
 
-            const artistPartIndex = findArtistPartIndex(parts, pristineLower, editorLower);
+            let artistPartIndex = findArtistPartIndex(parts, pristineLower, editorLower);
+            if (artistPartIndex !== -1) {
+                const primaryArtist = pristineLower[0] || editorLower[0];
+                if (primaryArtist) {
+                    const artistPartLower = parts[artistPartIndex].toLowerCase();
+                    const primaryNames = parseArtistNamesFromString(primaryArtist);
+                    const isPrimaryInPart = primaryNames.some(name => artistPartLower.includes(name)) || artistPartLower.includes(primaryArtist);
+                    if (!isPrimaryInPart) {
+                        log('removeArtistFromTitle: Matched artist part does not contain the primary artist. Rejecting hyphen split.');
+                        artistPartIndex = -1;
+                    }
+                }
+            }
             log('removeArtistFromTitle: Artist part matching index:', artistPartIndex, artistPartIndex !== -1 ? `("${parts[artistPartIndex]}")` : '(no artist part match)');
 
             if (artistPartIndex !== -1) {
@@ -1346,7 +1364,19 @@
             const pristineLower = (originalArtists && originalArtists.length > 0) ? originalArtists.map(a => a.toLowerCase()) : [];
             const editorLower = (currentAC?.names ?? []).map(n => n.name.toLowerCase());
 
-            const artistPartIndex = findArtistPartIndex(parts, pristineLower, editorLower);
+            let artistPartIndex = findArtistPartIndex(parts, pristineLower, editorLower);
+            if (artistPartIndex !== -1) {
+                const primaryArtist = pristineLower[0] || editorLower[0];
+                if (primaryArtist) {
+                    const artistPartLower = parts[artistPartIndex].toLowerCase();
+                    const primaryNames = parseArtistNamesFromString(primaryArtist);
+                    const isPrimaryInPart = primaryNames.some(name => artistPartLower.includes(name)) || artistPartLower.includes(primaryArtist);
+                    if (!isPrimaryInPart) {
+                        log('cleanTrackModelAfterGuessFeat: Matched artist part does not contain the primary artist. Rejecting hyphen split.');
+                        artistPartIndex = -1;
+                    }
+                }
+            }
 
             if (artistPartIndex !== -1) {
                 const artistPart = parts[artistPartIndex];
