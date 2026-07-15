@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MusicBrainz: Guess Case Improver
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      0.8.5
+// @version      0.8.6
 // @tag          ai-created
 // @description  Improves the native "Guess Case" for release, recording and track titles with advanced artist and ETI parsing. Also removes artist from title and duplicate artists after using "Guess feat. artists" on tracklists.
 // @author       chaban
@@ -62,9 +62,11 @@
     const JOIN_PHRASE_PATTERN = /\s*\b(?:featuring|feat|ft|vs)\b\.?\s*|\s*(?:[,，、&・×/])\s*|\s+(?:and|x)\s+/gi;
     const SEPARATOR_PATTERN = /\s+[-–—/]\s+|\s+[-–—/]\s*|\s*[-–—/]\s+(?=.)|(?<=[\u3040-\u30ff\u4e00-\u9fff\uac00-\ud7af\uff00-\uffef])[-–—/]|[-–—/](?=[\u3040-\u30ff\u4e00-\u9fff\uac00-\ud7af\uff00-\uffef])/g;
     const BRACKET_EXCEPTION_PATTERN = /\[(untitled|unknown|data track|silence)\]/gi;
-    const FEAT_PATTERN = /\s*\(?(feat\.?|ft\.?|featuring|with)\s*([^)]+)\)?/i;
+    const FEAT_PATTERN = /\s*\(?(featuring|feat\.?|ft\.?|with)\s*([^)]+)?\)?/i;
     const ETI_PATTERN = /\s*(\[[^\]]+\]|\([^)]+\)|【[^】]+】)$/;
     const PARENS_CONTENT_PATTERN = /\(([^)]+)\)/g;
+    const ETI_FEAT_PATTERN = new RegExp('^' + FEAT_PATTERN.source, 'i');
+    const IS_RECORDING_CREATE_PAGE = /[\/.]recording\/create/.test(window.location.pathname);
 
     log('User configuration loaded.');
 
@@ -262,11 +264,10 @@
      * @returns {{name: string, joinPhrase: string}[]} Array of parsed artist and join phrase objects.
      */
     function parseArtistsAndJoins(artistPartString) {
-        const pattern = /\s*(?:\b(?:featuring|feat|ft|vs)\b\.?|[,，、&・×/])\s*|\s+\b(?:and|x)\b\s+/gi;
-        const names = artistPartString.split(pattern);
+        const names = artistPartString.split(JOIN_PHRASE_PATTERN);
         const joins = [];
         let match;
-        const regex = new RegExp(pattern);
+        const regex = new RegExp(JOIN_PHRASE_PATTERN);
         while ((match = regex.exec(artistPartString)) !== null) {
             joins.push(match[0]);
         }
@@ -463,7 +464,7 @@
             const potentialEti = etiMatch[1];
             const etiContent = potentialEti.slice(1, -1).trim();
             const hasSeparator = etiContent.match(/\s+(?:[-–—]|\/)\s+/);
-            const isFeat = etiContent.match(/^(?:feat|ft|featuring)\.?\s+/i);
+            const isFeat = etiContent.match(ETI_FEAT_PATTERN);
             if (hasSeparator && isFeat) {
                 text = text.substring(0, text.lastIndexOf(potentialEti)).trim() + ' ' + etiContent;
             }
@@ -606,7 +607,7 @@
                                 names: updatedNames
                             });
 
-                            if (/[\/.]recording\/create/.test(window.location.pathname)) {
+                            if (IS_RECORDING_CREATE_PAGE) {
                                 syncAutocompleteInputs(updatedNames);
                             }
                         }
@@ -672,7 +673,7 @@
             // Check if the native script made a mess by wrapping the title in "feat." parens
             const etiContent = potentialEti.slice(1, -1).trim();
             const hasSeparator = etiContent.match(/\s+[-–]\s+/);
-            const isFeat = etiContent.match(/^(?:feat|ft|featuring)\.?\s+/i);
+            const isFeat = etiContent.match(ETI_FEAT_PATTERN);
 
             if (hasSeparator && isFeat) {
                 log(`Detected likely native MB mis-guess in ETI: "${potentialEti}". Flattening for reprocessing.`);
@@ -762,7 +763,7 @@
                 // the first appended duplicate — that's where guessFeat placed it.
                 if (featJoinPhrase === null && i > 0) {
                     const prevPhrase = names[i - 1].joinPhrase ?? '';
-                    if (/feat|ft/i.test(prevPhrase)) {
+                    if (FEAT_PATTERN.test(prevPhrase)) {
                         featJoinPhrase = prevPhrase;
                     }
                 }
@@ -779,41 +780,115 @@
 
         info(`deduplicateACFromObservable: Removing ${toRemove.size} duplicate(s). Feat join phrase: "${featJoinPhrase}"`);
 
-        const dedupedNames = names.filter((_, i) => !toRemove.has(i));
+        const dedupedNames = [...names];
 
-        // Repair the join phrase at the true feat boundary.
-        // guessFeat.concat() appended copies of artists already in the AC.
-        // The feat block in the deduplicated result starts at the EARLIEST
-        // first-occurrence index of any removed duplicate — e.g. if KASANE TETO
-        // (a dup of index-1 Kasane Teto) and Una Otomachi (dup of index-2) were
-        // removed, the feat block starts at index 1, so the boundary entry that
-        // needs the feat join phrase is at index 0 (Dada).
-        if (featJoinPhrase !== null) {
-            let firstFeatIdx = Infinity;
-            for (const dupIdx of toRemove) {
-                const firstOccIdx = seenKeys.get(getKey(names[dupIdx]));
-                if (firstOccIdx !== undefined && firstOccIdx < firstFeatIdx) {
-                    firstFeatIdx = firstOccIdx;
+        // Propagate join phrases from duplicate entries to their survivors
+        for (const dupIdx of toRemove) {
+            const key = getKey(names[dupIdx]);
+            const survivorIdx = seenKeys.get(key);
+            if (survivorIdx !== undefined) {
+                const dupJoin = names[dupIdx].joinPhrase ?? '';
+                const survivorJoin = names[survivorIdx].joinPhrase ?? '';
+
+                // Find the index of the first featured join phrase in the array
+                let firstFeatJoinIdx = -1;
+                for (let idx = 0; idx < names.length; idx++) {
+                    const join = names[idx].joinPhrase ?? '';
+                    if (FEAT_PATTERN.test(join)) {
+                        firstFeatJoinIdx = idx;
+                        break;
+                    }
+                }
+
+                // Copy duplicate's join phrase if survivor is featured or doesn't have a featured join phrase
+                const isSurvivorFeatured = firstFeatJoinIdx !== -1 && survivorIdx >= firstFeatJoinIdx;
+
+                if (isSurvivorFeatured || !FEAT_PATTERN.test(survivorJoin)) {
+                    dedupedNames[survivorIdx] = {
+                        ...dedupedNames[survivorIdx],
+                        joinPhrase: dupJoin
+                    };
                 }
             }
+        }
+
+        const filteredNames = dedupedNames.filter((_, i) => !toRemove.has(i));
+
+        // Repair the join phrase at the true feat boundary.
+        if (featJoinPhrase !== null) {
+            // Find the index of the first featured join phrase in the original names array
+            let firstFeatJoinIdx = -1;
+            for (let idx = 0; idx < names.length; idx++) {
+                const join = names[idx].joinPhrase ?? '';
+                if (FEAT_PATTERN.test(join)) {
+                    firstFeatJoinIdx = idx;
+                    break;
+                }
+            }
+
+            let firstFeatIdx = filteredNames.length;
+            if (firstFeatJoinIdx !== -1) {
+                const firstFeatStartIdx = firstFeatJoinIdx + 1;
+                const featuredOriginalIndices = new Set();
+                
+                for (let idx = firstFeatStartIdx; idx < names.length; idx++) {
+                    if (toRemove.has(idx)) {
+                        const key = getKey(names[idx]);
+                        const survivorIdx = seenKeys.get(key);
+                        if (survivorIdx !== undefined) {
+                            featuredOriginalIndices.add(survivorIdx);
+                        }
+                    } else {
+                        featuredOriginalIndices.add(idx);
+                    }
+                }
+
+                // Map original featured indices to filteredNames indices
+                for (const origIdx of featuredOriginalIndices) {
+                    if (!toRemove.has(origIdx)) {
+                        let filteredIdx = 0;
+                        for (let i = 0; i < origIdx; i++) {
+                            if (!toRemove.has(i)) {
+                                filteredIdx++;
+                            }
+                        }
+                        if (filteredIdx < firstFeatIdx) {
+                            firstFeatIdx = filteredIdx;
+                        }
+                    }
+                }
+            }
+
             const boundaryIdx = firstFeatIdx - 1;
-            if (boundaryIdx >= 0 && boundaryIdx < dedupedNames.length) {
-                const current = dedupedNames[boundaryIdx].joinPhrase ?? '';
+            if (boundaryIdx >= 0 && boundaryIdx < filteredNames.length) {
+                const current = filteredNames[boundaryIdx].joinPhrase ?? '';
                 if (current !== featJoinPhrase) {
                     log(`Repairing join phrase at index ${boundaryIdx}: "${current}" → "${featJoinPhrase}"`);
-                    dedupedNames[boundaryIdx] = { ...dedupedNames[boundaryIdx], joinPhrase: featJoinPhrase };
+                    filteredNames[boundaryIdx] = { ...filteredNames[boundaryIdx], joinPhrase: featJoinPhrase };
                 }
+            }
+        }
+
+        // Apply default join phrase rules for empty join phrases
+        for (let i = 0; i < filteredNames.length - 1; i++) {
+            const currentJoin = (filteredNames[i].joinPhrase ?? '').trim();
+            if (!currentJoin) {
+                const isSecondToLast = (i === filteredNames.length - 2);
+                filteredNames[i] = {
+                    ...filteredNames[i],
+                    joinPhrase: isSecondToLast ? ' & ' : ', '
+                };
             }
         }
 
         // Ensure the last entry always has an empty join phrase.
-        const last = dedupedNames.length - 1;
-        if (dedupedNames[last]?.joinPhrase) {
-            dedupedNames[last] = { ...dedupedNames[last], joinPhrase: '' };
+        const last = filteredNames.length - 1;
+        if (filteredNames[last]?.joinPhrase) {
+            filteredNames[last] = { ...filteredNames[last], joinPhrase: '' };
         }
 
-        acObservable({ ...ac, names: dedupedNames });
-        info('deduplicateACFromObservable: Done.', fmtAC(dedupedNames));
+        acObservable({ ...ac, names: filteredNames });
+        info('deduplicateACFromObservable: Done.', fmtAC(filteredNames));
     }
 
     /**
@@ -882,6 +957,8 @@
                 pristineArtistNames.set(input, getCurrentArtistNames(button));
             }
             setTimeout(() => {
+                const releaseEditor = window.MB?._releaseEditor;
+                if (releaseEditor?.guessTrackFeatArtists?.isEnhanced) return;
                 deduplicateTrackAC(trackRow);
                 if (input) removeArtistFromTitle(input, button);
             }, 100);
@@ -911,6 +988,9 @@
             });
 
             setTimeout(() => {
+                const releaseEditor = window.MB?._releaseEditor;
+                if (releaseEditor?.guessMediumFeatArtists?.isEnhanced) return;
+
                 log('Applying de-duplication and title cleanup to all tracks in this medium.');
                 medium.querySelectorAll('tr.track').forEach(trackRow => {
                     deduplicateTrackAC(trackRow);
@@ -940,7 +1020,7 @@
             }
 
             // --- Standalone Form Advanced Correction Interception ---
-            if (input && /[\/.]recording\/create/.test(window.location.pathname)) {
+            if (input && IS_RECORDING_CREATE_PAGE) {
                 const titleVal = input.value.trim();
 
                 const patterns = [
