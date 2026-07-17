@@ -926,7 +926,7 @@
             if (firstFeatJoinIdx !== -1) {
                 const firstFeatStartIdx = firstFeatJoinIdx + 1;
                 const featuredOriginalIndices = new Set();
-                
+
                 for (let idx = firstFeatStartIdx; idx < names.length; idx++) {
                     if (toRemove.has(idx)) {
                         const key = getKey(names[idx]);
@@ -985,6 +985,57 @@
 
         acObservable({ ...ac, names: filteredNames });
         info('deduplicateACFromObservable: Done.', fmtAC(filteredNames));
+    }
+
+    /**
+     * @summary Propagates GIDs from track artist credits to release artist credits if release artist names have null GIDs.
+     * @param {object} release - The Knockout release model.
+     */
+    function propagateGidsFromTracksToRelease(release) {
+        if (!release || typeof release.artistCredit !== 'function') return;
+
+        const releaseAC = release.artistCredit();
+        if (!releaseAC?.names?.length) return;
+
+        // 1. Build a map of lowercased artist name to artist entity (which contains the GID) from tracks
+        const artistMap = new Map();
+        for (const medium of release.mediums?.() ?? []) {
+            for (const track of medium.tracks?.() ?? []) {
+                const trackAC = track.artistCredit?.();
+                for (const nameNode of trackAC?.names ?? []) {
+                    if (nameNode.artist?.gid && nameNode.name) {
+                        artistMap.set(nameNode.name.trim().toLowerCase(), nameNode.artist);
+                    }
+                }
+            }
+        }
+
+        if (artistMap.size === 0) return;
+
+        // 2. Scan release artist credit names and fill in GIDs from the map if missing
+        let modified = false;
+        const updatedNames = releaseAC.names.map(nameNode => {
+            if (!nameNode.artist && nameNode.name) {
+                const key = nameNode.name.trim().toLowerCase();
+                const matchedArtist = artistMap.get(key);
+                if (matchedArtist) {
+                    log(`Propagating GID for artist "${nameNode.name}" from tracks to release:`, matchedArtist.gid);
+                    modified = true;
+                    return {
+                        ...nameNode,
+                        artist: matchedArtist
+                    };
+                }
+            }
+            return nameNode;
+        });
+
+        if (modified) {
+            release.artistCredit({
+                ...releaseAC,
+                names: updatedNames
+            });
+        }
     }
 
     /**
@@ -1245,6 +1296,11 @@
             setTimeout(() => {
                 const release = window.MB?.releaseEditor?.rootField?.release?.();
                 if (release?.artistCredit) {
+                    try {
+                        propagateGidsFromTracksToRelease(release);
+                    } catch (e) {
+                        err('Error propagating GIDs from tracks to release:', e);
+                    }
                     log('Deduplicating release AC via Knockout model.');
                     deduplicateACFromObservable(release.artistCredit);
                 } else {
@@ -1588,6 +1644,15 @@
                 }
 
                 originalGuessReleaseFeatArtists.call(this, release, event);
+
+                try {
+                    propagateGidsFromTracksToRelease(release);
+                    if (release.artistCredit) {
+                        deduplicateACFromObservable(release.artistCredit);
+                    }
+                } catch (e) {
+                    err('Error propagating GIDs and deduplicating release AC:', e);
+                }
 
                 trackData.forEach(({ track, originalTitle, originalArtists }) => {
                     try {
