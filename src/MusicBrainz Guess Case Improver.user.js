@@ -62,10 +62,11 @@
     const JOIN_PHRASE_PATTERN = /\s*\b(?:featuring|feat|ft|vs)\b\.?\s*|\s*(?:[,，、&・×/])\s*|\s+(?:and|x)\s+/gi;
     const SEPARATOR_PATTERN = /\s+[-–—/]\s+|\s+[-–—/]\s*|\s*[-–—/]\s+(?=.)|(?<=[\u3040-\u30ff\u4e00-\u9fff\uac00-\ud7af\uff00-\uffef])[-–—/]|[-–—/](?=[\u3040-\u30ff\u4e00-\u9fff\uac00-\ud7af\uff00-\uffef])/g;
     const BRACKET_EXCEPTION_PATTERN = /\[(untitled|unknown|data track|silence)\]/gi;
-    const FEAT_PATTERN = /\s*\(?(featuring|feat\.?|ft\.?|with)\s*([^)]+)?\)?/i;
+    const FEAT_PATTERN = /\s*\b(?:featuring|feat\.?|ft\.?|with)\b/i;
+    const FEAT_TITLE_PATTERN = /\s*(?:\(?(featuring|feat\.?|ft\.?)|(?:\(|\[)(with))\s*([^)]+)?\)?/i;
     const ETI_PATTERN = /\s*(\[[^\]]+\]|\([^)]+\)|【[^】]+】)$/;
     const PARENS_CONTENT_PATTERN = /\(([^)]+)\)/g;
-    const ETI_FEAT_PATTERN = new RegExp('^' + FEAT_PATTERN.source, 'i');
+    const ETI_FEAT_PATTERN = new RegExp('^' + FEAT_TITLE_PATTERN.source, 'i');
     const IS_RECORDING_CREATE_PAGE = /[\/.]recording\/create/.test(window.location.pathname);
 
     log('User configuration loaded.');
@@ -312,10 +313,13 @@
                     const nLower = n.name.trim().toLowerCase();
                     return nLower === taLower || parseArtistNamesFromString(n.name).includes(taLower);
                 });
+                const useExistingName = match && (
+                    match.name.trim().toLowerCase() === taLower ||
+                    parseArtistNamesFromString(match.name).length === 1
+                );
                 return {
                     artist: match ? match.artist : null,
-                    name: ta.name,
-                    credit: ta.name,
+                    name: useExistingName ? match.name : ta.name,
                     joinPhrase: ta.joinPhrase
                 };
             });
@@ -344,10 +348,13 @@
                     const nLower = n.name.trim().toLowerCase();
                     return nLower === taLower || parseArtistNamesFromString(n.name).includes(taLower);
                 });
+                const useExistingName = match && (
+                    match.name.trim().toLowerCase() === taLower ||
+                    parseArtistNamesFromString(match.name).length === 1
+                );
                 return {
                     artist: match ? match.artist : null,
-                    name: ta.name,
-                    credit: ta.name,
+                    name: useExistingName ? match.name : ta.name,
                     joinPhrase: ta.joinPhrase
                 };
             });
@@ -566,8 +573,19 @@
         let eti = '';
         let match;
         while ((match = cleanTitle.match(ETI_PATTERN))) {
-            eti = match[1] + (eti ? ' ' + eti : '');
-            cleanTitle = cleanTitle.substring(0, cleanTitle.lastIndexOf(match[1])).trim();
+            const potentialEti = match[1];
+            const etiContent = potentialEti.slice(1, -1).trim();
+            const hasSeparator = etiContent.match(/\s+(?:[-–—]|\/)\s+/);
+            const isFeat = potentialEti.match(ETI_FEAT_PATTERN);
+
+            if (hasSeparator && isFeat) {
+                cleanTitle = cleanTitle.substring(0, cleanTitle.lastIndexOf(potentialEti)).trim() + ' ' + etiContent;
+            } else if (isFeat) {
+                break;
+            } else {
+                eti = potentialEti + (eti ? ' ' + eti : '');
+                cleanTitle = cleanTitle.substring(0, cleanTitle.lastIndexOf(potentialEti)).trim();
+            }
         }
         return { cleanTitle, eti };
     }
@@ -611,16 +629,16 @@
      */
     function extractFeaturedFromTitle(title) {
         let cleanTitle = title;
-        const featMatch = cleanTitle.match(FEAT_PATTERN);
+        const featMatch = cleanTitle.match(FEAT_TITLE_PATTERN);
         let titleGuests = [];
         let joinPhrase = null;
 
         if (featMatch) {
-            const joinWord = featMatch[1].toLowerCase();
+            const joinWord = (featMatch[1] || featMatch[2]).toLowerCase();
             joinPhrase = joinWord.startsWith('feat') || joinWord.startsWith('ft') ? ' feat. '
                 : joinWord.startsWith('with') ? ' with '
                     : ` ${joinWord} `;
-            const guestStr = featMatch[2].trim();
+            const guestStr = featMatch[3].trim();
             titleGuests = parseArtistsAndJoins(guestStr);
             cleanTitle = cleanTitle.replace(featMatch[0], '').trim();
         }
@@ -653,19 +671,7 @@
             const pristineLower = (pristineArtists && pristineArtists.length > 0) ? pristineArtists.map(a => a.toLowerCase()) : [];
             const editorLower = getCurrentArtistNames(button).map(a => a.toLowerCase());
 
-            let artistPartIndex = findArtistPartIndex(parts, pristineLower, editorLower);
-            if (artistPartIndex !== -1) {
-                const primaryArtist = pristineLower[0] || editorLower[0];
-                if (primaryArtist) {
-                    const artistPartLower = parts[artistPartIndex].toLowerCase();
-                    const primaryNames = parseArtistNamesFromString(primaryArtist);
-                    const isPrimaryInPart = primaryNames.some(name => artistPartLower.includes(name)) || artistPartLower.includes(primaryArtist);
-                    if (!isPrimaryInPart) {
-                        log('removeArtistFromTitle: Matched artist part does not contain the primary artist. Rejecting hyphen split.');
-                        artistPartIndex = -1;
-                    }
-                }
-            }
+            const artistPartIndex = findArtistPartIndex(parts, pristineLower, editorLower);
             log('removeArtistFromTitle: Artist part matching index:', artistPartIndex, artistPartIndex !== -1 ? `("${parts[artistPartIndex]}")` : '(no artist part match)');
 
             if (artistPartIndex !== -1) {
@@ -762,33 +768,38 @@
             return `___MB_GUESS_CASE_EXCEPTION_${index}___`;
         });
 
-        let trailingEti = '';
-        const etiMatch = newText.match(ETI_PATTERN);
-        if (etiMatch) {
-            const potentialEti = etiMatch[1];
+        const trailingEtis = [];
+        let match;
+        while ((match = newText.match(ETI_PATTERN))) {
+            const potentialEti = match[1];
             // Check if the native script made a mess by wrapping the title in "feat." parens
             const etiContent = potentialEti.slice(1, -1).trim();
             const hasSeparator = etiContent.match(/\s+[-–]\s+/);
-            const isFeat = etiContent.match(ETI_FEAT_PATTERN);
+            const isFeat = potentialEti.match(ETI_FEAT_PATTERN);
 
             if (hasSeparator && isFeat) {
                 log(`Detected likely native MB mis-guess in ETI: "${potentialEti}". Flattening for reprocessing.`);
                 newText = newText.substring(0, newText.lastIndexOf(potentialEti)).trim() + ' ' + etiContent;
+            } else if (isFeat) {
+                break;
             } else {
-                trailingEti = potentialEti;
-                newText = newText.substring(0, newText.lastIndexOf(trailingEti)).trim();
-                log(`Found ETI: "${trailingEti}"`);
-                log(`Text after ETI removal: "${newText}"`);
+                trailingEtis.unshift(potentialEti);
+                newText = newText.substring(0, newText.lastIndexOf(potentialEti)).trim();
             }
+        }
+
+        if (trailingEtis.length > 0) {
+            log(`Found ETI(s): ${trailingEtis.join(' ')}`);
+            log(`Text after ETI removal: "${newText}"`);
         } else {
             log('No ETI found.');
         }
 
         log(`Text for ETI processing: "${newText}"`);
 
-        if (trailingEti) {
-            newText += ` ${trailingEti}`;
-            log(`Re-added ETI. Final text before ETI processing: "${newText}"`);
+        if (trailingEtis.length > 0) {
+            newText += ` ${trailingEtis.join(' ')}`;
+            log(`Re-added ETI(s). Final text before ETI processing: "${newText}"`);
         }
 
         newText = newText.replace(/\[/g, '(').replace(/\]/g, ')');
@@ -824,6 +835,11 @@
      *
      * @param {ko.Observable} acObservable - The entity.artistCredit ko.observable.
      */
+    /**
+     * @summary Deduplicates and cleans up duplicate artists in the Knockout artist credit observable.
+     * @param {ko.Observable} acObservable - The entity.artistCredit ko.observable.
+     * @returns {void}
+     */
     function deduplicateACFromObservable(acObservable) {
         if (typeof acObservable !== 'function') return;
 
@@ -838,12 +854,22 @@
         // guessFeat appends entries via expandCredit with artist:null when
         // no relatedArtists are available, even if the original seeded entry
         // has a linked MBID. Keying by MBID would miss those cross-MBID/no-MBID
-        // duplicates. The first occurrence (which may carry the MBID) is always
-        // kept, so linked entity data is preserved.
+        // duplicates.
         const getKey = (entry) => entry.name.trim().toLowerCase();
 
-        const seenKeys = new Map(); // key → index of first occurrence
+        // Find the index of the first featured join phrase in the array
+        let firstFeatJoinIdx = -1;
+        for (let idx = 0; idx < names.length; idx++) {
+            const join = names[idx].joinPhrase ?? '';
+            if (FEAT_PATTERN.test(join)) {
+                firstFeatJoinIdx = idx;
+                break;
+            }
+        }
+
+        const seenKeys = new Map(); // key → index of first occurrence in names
         const toRemove = new Set();
+        const dedupedNames = [...names];
 
         // Identify duplicates and collect the feat join phrase.
         // guessFeat sets the feat join phrase on the LAST entry of the original
@@ -863,7 +889,35 @@
                         featJoinPhrase = prevPhrase;
                     }
                 }
-                toRemove.add(i);
+
+                const survivorIdx = seenKeys.get(key);
+                const isSurvivorFeatured = firstFeatJoinIdx !== -1 && survivorIdx > firstFeatJoinIdx;
+                const isDuplicateFeatured = firstFeatJoinIdx !== -1 && i > firstFeatJoinIdx;
+
+                if (!isSurvivorFeatured && isDuplicateFeatured) {
+                    // Standard dedup keeps the first occurrence (survivor) and removes the duplicate.
+                    // But if the duplicate is featured (at the end) and the survivor is primary (at the beginning),
+                    // we want to move the artist to the featured position.
+                    // To do this, we mark the survivor for removal, and keep this duplicate as the new survivor.
+                    // We copy the artist entity data (which contains MBID/GID) and the credited name from the survivor.
+                    dedupedNames[i] = {
+                        ...dedupedNames[i],
+                        name: names[survivorIdx].name,
+                        artist: names[survivorIdx].artist || names[i].artist
+                    };
+                    toRemove.add(survivorIdx);
+                    seenKeys.set(key, i);
+                } else {
+                    // Keep the survivor and remove the duplicate.
+                    // If the duplicate has the artist object but the survivor doesn't, propagate it to the survivor!
+                    if (!dedupedNames[survivorIdx].artist && names[i].artist) {
+                        dedupedNames[survivorIdx] = {
+                            ...dedupedNames[survivorIdx],
+                            artist: names[i].artist
+                        };
+                    }
+                    toRemove.add(i);
+                }
             } else {
                 seenKeys.set(key, i);
             }
@@ -876,34 +930,25 @@
 
         info(`deduplicateACFromObservable: Removing ${toRemove.size} duplicate(s). Feat join phrase: "${featJoinPhrase}"`);
 
-        const dedupedNames = [...names];
-
         // Propagate join phrases from duplicate entries to their survivors
         for (const dupIdx of toRemove) {
             const key = getKey(names[dupIdx]);
             const survivorIdx = seenKeys.get(key);
             if (survivorIdx !== undefined) {
-                const dupJoin = names[dupIdx].joinPhrase ?? '';
-                const survivorJoin = names[survivorIdx].joinPhrase ?? '';
+                const isDupFeatured = firstFeatJoinIdx !== -1 && dupIdx > firstFeatJoinIdx;
+                const isSurvivorFeatured = firstFeatJoinIdx !== -1 && survivorIdx > firstFeatJoinIdx;
 
-                // Find the index of the first featured join phrase in the array
-                let firstFeatJoinIdx = -1;
-                for (let idx = 0; idx < names.length; idx++) {
-                    const join = names[idx].joinPhrase ?? '';
-                    if (FEAT_PATTERN.test(join)) {
-                        firstFeatJoinIdx = idx;
-                        break;
+                // Only propagate join phrases within the same domain (primary vs featured)
+                if (isDupFeatured === isSurvivorFeatured) {
+                    const dupJoin = names[dupIdx].joinPhrase ?? '';
+                    const survivorJoin = names[survivorIdx].joinPhrase ?? '';
+
+                    if (isSurvivorFeatured || !FEAT_PATTERN.test(survivorJoin)) {
+                        dedupedNames[survivorIdx] = {
+                            ...dedupedNames[survivorIdx],
+                            joinPhrase: dupJoin
+                        };
                     }
-                }
-
-                // Copy duplicate's join phrase if survivor is featured or doesn't have a featured join phrase
-                const isSurvivorFeatured = firstFeatJoinIdx !== -1 && survivorIdx >= firstFeatJoinIdx;
-
-                if (isSurvivorFeatured || !FEAT_PATTERN.test(survivorJoin)) {
-                    dedupedNames[survivorIdx] = {
-                        ...dedupedNames[survivorIdx],
-                        joinPhrase: dupJoin
-                    };
                 }
             }
         }
@@ -913,18 +958,18 @@
         // Repair the join phrase at the true feat boundary.
         if (featJoinPhrase !== null) {
             // Find the index of the first featured join phrase in the original names array
-            let firstFeatJoinIdx = -1;
+            let firstFeatJoinIdxOrig = -1;
             for (let idx = 0; idx < names.length; idx++) {
                 const join = names[idx].joinPhrase ?? '';
                 if (FEAT_PATTERN.test(join)) {
-                    firstFeatJoinIdx = idx;
+                    firstFeatJoinIdxOrig = idx;
                     break;
                 }
             }
 
             let firstFeatIdx = filteredNames.length;
-            if (firstFeatJoinIdx !== -1) {
-                const firstFeatStartIdx = firstFeatJoinIdx + 1;
+            if (firstFeatJoinIdxOrig !== -1) {
+                const firstFeatStartIdx = firstFeatJoinIdxOrig + 1;
                 const featuredOriginalIndices = new Set();
 
                 for (let idx = firstFeatStartIdx; idx < names.length; idx++) {
@@ -1515,10 +1560,15 @@
                 if (primaryArtist) {
                     const artistPartLower = parts[artistPartIndex].toLowerCase();
                     const primaryNames = parseArtistNamesFromString(primaryArtist);
-                    const isPrimaryInPart = primaryNames.some(name => artistPartLower.includes(name)) || artistPartLower.includes(primaryArtist);
+                    const cleanStrForCompare = (str) => str.toLowerCase().replace(/\s+/g, '');
+                    const isPrimaryInPart = primaryNames.some(name => cleanStrForCompare(artistPartLower).includes(cleanStrForCompare(name))) || cleanStrForCompare(artistPartLower).includes(cleanStrForCompare(primaryArtist));
                     if (!isPrimaryInPart) {
-                        log('cleanTrackModelAfterGuessFeat: Matched artist part does not contain the primary artist. Rejecting hyphen split.');
-                        artistPartIndex = -1;
+                        const remixKeywords = ['remix', 'rework', 'edit', 'mix', 'flip', 'bootleg', 'mashup', 'vip', 'dub', 'version'];
+                        const hasRemixKeyword = remixKeywords.some(kw => new RegExp(`\\b${kw}\\b`, 'i').test(artistPartLower));
+                        if (hasRemixKeyword) {
+                            log('cleanTrackModelAfterGuessFeat: Matched artist part contains a remix keyword. Rejecting hyphen split.');
+                            artistPartIndex = -1;
+                        }
                     }
                 }
             }
@@ -1556,6 +1606,9 @@
                 }
                 info(`Removed artist part from title (model): "${titleVal}" -> "${finalTitle}"`);
                 track.name(finalTitle.trim());
+            } else {
+                log('cleanTrackModelAfterGuessFeat: Restoring original title.');
+                track.name(originalTitle);
             }
         }
     }
