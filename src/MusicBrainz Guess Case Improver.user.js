@@ -908,22 +908,49 @@
         const fmtAC = (arr) => arr.map(n => ({ name: n.name, join: n.joinPhrase, gid: n.artist?.gid ?? null }));
         log('deduplicateACFromObservable: names before dedup:', fmtAC(names));
 
-        const getKey = (entry) => cleanStringForComparison(entry.name);
-
         // Find the index of the first featured join phrase in the array
         const firstFeatJoinIdx = names.findIndex(n => FEAT_PATTERN.test(n.joinPhrase ?? ''));
 
-        const seenKeys = new Map(); // key → index of first occurrence in names
+        const getMatchKeys = (entry) => {
+            const keys = new Set();
+            const addNameKeys = (nameStr) => {
+                if (!nameStr) return;
+                keys.add(cleanStringForComparison(nameStr));
+                if (nameStr.includes(',')) {
+                    const parts = nameStr.split(',').map(p => p.trim());
+                    if (parts.length === 2) {
+                        keys.add(cleanStringForComparison(parts[0] + parts[1]));
+                        keys.add(cleanStringForComparison(parts[1] + parts[0]));
+                    }
+                }
+            };
+
+            addNameKeys(entry.name);
+            addNameKeys(entry.artist?.name);
+            addNameKeys(entry.artist?.sort_name);
+            if (entry.artist?.gid) keys.add(entry.artist.gid.toLowerCase());
+            return [...keys];
+        };
+
+        const seenEntries = []; // array of { index: number, keys: string[] }
+        const survivorMap = new Map(); // dupIdx -> survivorIdx
         const toRemove = new Set();
         const dedupedNames = [...names];
 
         let featJoinPhrase = null;
 
         for (let i = 0; i < names.length; i++) {
-            const key = getKey(names[i]);
-            if (!key) continue;
+            const keys = getMatchKeys(names[i]);
+            if (keys.length === 0) continue;
 
-            if (seenKeys.has(key)) {
+            const duplicateMatch = seenEntries.find(seen =>
+                seen.keys.some(k => keys.includes(k))
+            );
+
+            if (duplicateMatch) {
+                const survivorIdx = duplicateMatch.index;
+                survivorMap.set(i, survivorIdx);
+
                 if (featJoinPhrase === null && i > 0) {
                     const prevPhrase = names[i - 1].joinPhrase ?? '';
                     if (FEAT_PATTERN.test(prevPhrase)) {
@@ -931,7 +958,6 @@
                     }
                 }
 
-                const survivorIdx = seenKeys.get(key);
                 const isSurvivorFeatured = firstFeatJoinIdx !== -1 && survivorIdx > firstFeatJoinIdx;
                 const isDuplicateFeatured = firstFeatJoinIdx !== -1 && i > firstFeatJoinIdx;
 
@@ -942,7 +968,12 @@
                         artist: names[survivorIdx].artist || names[i].artist
                     };
                     toRemove.add(survivorIdx);
-                    seenKeys.set(key, i);
+                    survivorMap.set(survivorIdx, i);
+
+                    duplicateMatch.index = i;
+                    keys.forEach(k => {
+                        if (!duplicateMatch.keys.includes(k)) duplicateMatch.keys.push(k);
+                    });
                 } else {
                     const hasRealSurvivorArtist = dedupedNames[survivorIdx].artist && (dedupedNames[survivorIdx].artist.id || dedupedNames[survivorIdx].artist.gid);
                     const hasRealDuplicateArtist = names[i].artist && (names[i].artist.id || names[i].artist.gid);
@@ -951,11 +982,14 @@
                             ...dedupedNames[survivorIdx],
                             artist: names[i].artist
                         };
+                        keys.forEach(k => {
+                            if (!duplicateMatch.keys.includes(k)) duplicateMatch.keys.push(k);
+                        });
                     }
                     toRemove.add(i);
                 }
             } else {
-                seenKeys.set(key, i);
+                seenEntries.push({ index: i, keys });
             }
         }
 
@@ -968,8 +1002,7 @@
 
         // Propagate join phrases from duplicate entries to their survivors
         toRemove.forEach(dupIdx => {
-            const key = getKey(names[dupIdx]);
-            const survivorIdx = seenKeys.get(key);
+            const survivorIdx = survivorMap.get(dupIdx);
             if (survivorIdx !== undefined) {
                 const isDupFeatured = firstFeatJoinIdx !== -1 && dupIdx > firstFeatJoinIdx;
                 const isSurvivorFeatured = firstFeatJoinIdx !== -1 && survivorIdx > firstFeatJoinIdx;
@@ -1001,8 +1034,7 @@
                     Array.from({ length: names.length - firstFeatStartIdx }, (_, i) => firstFeatStartIdx + i)
                         .map(idx => {
                             if (toRemove.has(idx)) {
-                                const key = getKey(names[idx]);
-                                return seenKeys.get(key);
+                                return survivorMap.get(idx);
                             }
                             return idx;
                         })

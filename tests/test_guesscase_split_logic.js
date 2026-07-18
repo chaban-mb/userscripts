@@ -787,6 +787,73 @@ runTestCase('22. Sort-name based matching from parsed artists in title', () => {
     assert.strictEqual(this.recordingModel.name(), 'Abenteuerland', 'Should match sort_name and strip it from the title.');
 });
 
+// Case 23
+runTestCase('23. Deduplicate romanized/foreign name credits via sort_name in deduplicateACFromObservable', () => {
+    this.recordingModel = {
+        name: makeObservable('In The Field Like (Feat. Solaria & Hatsune Miku)'),
+        artistCredit: makeObservable({
+            names: [
+                {
+                    name: 'Cereal Experiments',
+                    joinPhrase: ' feat. ',
+                    artist: {
+                        id: 3037978,
+                        gid: '059483fe-9f3c-4130-a7ad-28b60c526182',
+                        name: 'Cereal Experiments',
+                        sort_name: 'Cereal Experiments',
+                        entityType: 'artist'
+                    }
+                },
+                {
+                    name: '初音ミク',
+                    joinPhrase: ' & ',
+                    artist: {
+                        id: 491324,
+                        gid: '130d679a-9a92-4373-8348-0800b6b93a30',
+                        name: '初音ミク',
+                        sort_name: 'Hatsune, Miku',
+                        entityType: 'artist'
+                    }
+                },
+                {
+                    name: 'SOLARIA',
+                    joinPhrase: ' feat. ',
+                    artist: {
+                        id: 2277141,
+                        gid: '259a4a61-f9e7-444a-a4d3-608eb71f0e29',
+                        name: 'SOLARIA',
+                        sort_name: 'SOLARIA',
+                        entityType: 'artist'
+                    }
+                },
+                {
+                    name: 'Solaria',
+                    joinPhrase: ' & ',
+                    artist: null
+                },
+                {
+                    name: 'Hatsune Miku',
+                    joinPhrase: '',
+                    artist: null
+                }
+            ]
+        })
+    };
+
+    lib.deduplicateACFromObservable(this.recordingModel.artistCredit);
+}, () => {
+    const ac = this.recordingModel.artistCredit();
+    assert.strictEqual(ac.names.length, 3);
+    assert.strictEqual(ac.names[0].name, 'Cereal Experiments');
+    assert.strictEqual(ac.names[0].joinPhrase, ' feat. ');
+    assert.strictEqual(ac.names[1].name, '初音ミク');
+    assert.strictEqual(ac.names[1].joinPhrase, ' & ');
+    assert.strictEqual(ac.names[1].artist.gid, '130d679a-9a92-4373-8348-0800b6b93a30');
+    assert.strictEqual(ac.names[2].name, 'SOLARIA');
+    assert.strictEqual(ac.names[2].joinPhrase, '');
+    assert.strictEqual(ac.names[2].artist.gid, '259a4a61-f9e7-444a-a4d3-608eb71f0e29');
+});
+
 console.log('\n--- Scenario B: Knockout Observable is Unavailable (DOM Fallback) ---');
 
 console.log(`\nTest Suite Complete: ${green(passedTestsCount)} passed, ${red(failedTestsCount)} failed.`);
