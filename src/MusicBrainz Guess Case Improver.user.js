@@ -98,35 +98,31 @@
     // ====================================================================================
 
     /**
-     * Retrieves the current artist names from the most reliable source available.
-     * It checks track-specific inputs, the main page's artist credit editor, and falls back to the page stash.
-     * @param {HTMLButtonElement} button The button that triggered the action, used for context.
-     * @returns {string[]} An array of artist names, trimmed and in lowercase.
+     * @summary Programmatically resolves the relevant Knockout viewmodel based on context.
+     * @param {HTMLButtonElement} [button] - The trigger button context.
+     * @returns {object|null} The resolved Knockout model.
      */
-    function getCurrentArtistNames(button) {
-        // Priority 1: Track-specific viewmodel check (Knockout model of the track row)
+    function resolveModelFromContext(button) {
         const trackRow = button?.closest?.('tr.track');
-        let koTrackFound = false;
         if (window.ko && trackRow) {
             try {
-                const trackViewModel = window.ko.dataFor(trackRow);
-                if (trackViewModel?.artistCredit) {
-                    koTrackFound = true;
-                    const ac = trackViewModel.artistCredit();
-                    if (ac?.names?.length > 0) {
-                        const names = ac.names.map(n => n.name).filter(Boolean);
-                        if (names.length > 0) {
-                            log('Found artist(s) from track viewmodel:', names.join('; '));
-                            return names.flatMap(name => parseArtistNamesFromString(name));
-                        }
-                    }
-                }
+                return window.ko.dataFor(trackRow);
             } catch (e) {
-                warn('Error reading track viewmodel:', e);
+                warn('Error reading track viewmodel via ko.dataFor:', e);
             }
         }
+        return window.MB?._releaseEditor?.rootField?.release?.()
+            || window.MB?.releaseEditor?.rootField?.release?.()
+            || window.MB?.getSourceEntityInstance?.();
+    }
 
-        // Priority 2: Track-specific DOM check (fallback)
+    /**
+     * @summary Extracts artist names from DOM input fields when Knockout models are unavailable.
+     * @param {HTMLButtonElement} [button] - The trigger button context.
+     * @returns {string[]} Trimmed, lowercase artist names.
+     */
+    function getDOMFallbackArtistNames(button) {
+        const trackRow = button?.closest?.('tr.track');
         if (trackRow) {
             const trackArtistInput = trackRow.querySelector('.artist .autocomplete2 input');
             if (trackArtistInput?.value) {
@@ -135,35 +131,8 @@
             }
         }
 
-        // Priority 3: Global Release-level viewmodel check (Knockout release model)
-        let koReleaseFound = false;
-        if (window.MB?._releaseEditor?.rootField?.release) {
-            try {
-                const release = window.MB._releaseEditor.rootField.release();
-                if (release?.artistCredit) {
-                    koReleaseFound = true;
-                    const ac = release.artistCredit();
-                    if (ac?.names?.length > 0) {
-                        const names = ac.names.map(n => n.name).filter(Boolean);
-                        if (names.length > 0) {
-                            log('Found artist(s) from release viewmodel:', names.join('; '));
-                            return names.flatMap(name => parseArtistNamesFromString(name));
-                        }
-                    }
-                }
-            } catch (e) {
-                warn('Error reading release viewmodel:', e);
-            }
-        }
-
-        // Priority 4: Main artist credit editor (Standalone Recording, Release Editor global AC)
         const artistCreditEditor = document.getElementById('artist-credit-editor');
-        let acEditorFound = false;
         if (artistCreditEditor) {
-            acEditorFound = true;
-            // The hidden inputs hold the definitive state of the AC.
-            // We target both the canonical artist name (.artist.name) and the "credited as" name (.name).
-            // The credited name is crucial for matching what's usually in the title.
             const nameInputs = artistCreditEditor.querySelectorAll('input[name*=".artist_credit.names."][name$=".name"]');
             const names = Array.from(nameInputs)
                 .flatMap(input => parseArtistNamesFromString(input.value))
@@ -175,7 +144,6 @@
                 return uniqueNames;
             }
 
-            // Fallback for single-artist AC on standalone recording page before full editor is opened
             const singleArtistInput = document.getElementById('ac-source-single-artist');
             if (singleArtistInput?.value) {
                 log('Found artist from single artist input field:', singleArtistInput.value);
@@ -183,14 +151,11 @@
             }
         }
 
-        // Priority 5: Fallback to seeded data in the stash
-        let stashFound = false;
         try {
             const namesData = window?.__MB__?.$c?.stash?.artist_credit?.names ??
                 window?.__MB__?.$c?.stash?.source_entity?.artistCredit?.names;
 
             if (namesData?.length > 0) {
-                stashFound = true;
                 const names = namesData.flatMap(part => [
                     ...(parseArtistNamesFromString(part.name)),
                     ...(parseArtistNamesFromString(part.artist?.name))
@@ -206,13 +171,37 @@
             err('Error accessing __MB__ stash:', e);
         }
 
-        log('getCurrentArtistNames trace:');
-        log(`- Priority 1 (Track VM): ${koTrackFound ? 'Found VM, but names empty' : 'VM not found/applicable'}`);
-        log(`- Priority 2 (Track DOM): ${trackRow ? 'Found row, but input empty or missing' : 'Not in a track row'}`);
-        log(`- Priority 3 (Release VM): ${koReleaseFound ? 'Found VM, but names empty' : 'VM not found/applicable'}`);
-        log(`- Priority 4 (AC Editor / Single Input): ${acEditorFound ? 'Found editor, but inputs empty' : 'Editor not found'}`);
-        log(`- Priority 5 (MB Stash): ${stashFound ? 'Found stash, but empty or missing names' : 'Stash not found'}`);
-        log('-> Falling back to regex-only title parsing.');
+        return [];
+    }
+
+    /**
+     * @summary Retrieves the current artist names from the most reliable source available.
+     * @param {HTMLButtonElement} [button] The button that triggered the action, used for context.
+     * @returns {string[]} An array of artist names, trimmed and in lowercase.
+     */
+    function getCurrentArtistNames(button) {
+        // Priority 1: Programmatic viewmodel check (Track, Release, or Standalone Recording model)
+        const model = resolveModelFromContext(button);
+        if (model?.artistCredit) {
+            try {
+                const ac = model.artistCredit();
+                if (ac?.names?.length > 0) {
+                    const names = ac.names.map(n => n.name).filter(Boolean);
+                    if (names.length > 0) {
+                        log('Found artist(s) from resolved viewmodel:', names.join('; '));
+                        return names.flatMap(name => parseArtistNamesFromString(name));
+                    }
+                }
+            } catch (e) {
+                warn('Error reading artistCredit from resolved viewmodel:', e);
+            }
+        }
+
+        // Priority 2: Fallback to DOM input fields
+        const fallbackNames = getDOMFallbackArtistNames(button);
+        if (fallbackNames.length > 0) {
+            return fallbackNames;
+        }
 
         warn('Could not determine current artists from any source. Falling back to regex-only title parsing.');
         return [];
@@ -410,19 +399,8 @@
      * @returns {Function|null} The Knockout observable function for artistCredit, or null if not found.
      */
     function getACObservable(input, button) {
-        const trackRow = (input || button).closest('tr.track');
-        if (trackRow) {
-            const track = getTrackModel(trackRow);
-            if (track?.artistCredit) return track.artistCredit;
-        }
-
-        const release = window.MB?.releaseEditor?.rootField?.release?.();
-        if (release?.artistCredit) return release.artistCredit;
-
-        const source = window.MB?.getSourceEntityInstance?.();
-        if (source?.artistCredit) return source.artistCredit;
-
-        return null;
+        const model = resolveModelFromContext(input || button);
+        return model?.artistCredit || null;
     }
 
     function syncAutocompleteInputs(artistNodes) {
