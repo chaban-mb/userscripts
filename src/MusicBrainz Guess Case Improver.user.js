@@ -868,7 +868,7 @@
             return;
         }
 
-        info(`deduplicateACFromObservable: Removing ${toRemove.size} duplicate(s). Feat join phrase: "${featJoinPhrase}"`);
+        log(`deduplicateACFromObservable: Removing ${toRemove.size} duplicate(s). Feat join phrase: "${featJoinPhrase}"`);
 
         // Propagate join phrases from duplicate entries to their survivors
         toRemove.forEach(dupIdx => {
@@ -952,7 +952,7 @@
         });
 
         acObservable({ ...ac, names: repairedNames });
-        info('deduplicateACFromObservable: Done.', fmtAC(repairedNames));
+        log('deduplicateACFromObservable: Done.', fmtAC(repairedNames));
     }
 
     /**
@@ -1296,7 +1296,7 @@
                 if (currentAC?.names) {
                     const updatedNames = mergeArtistCredits(currentAC.names, parsedTitleArtists, originalArtists);
                     if (updatedNames !== currentAC.names) {
-                        info('Updating AC observable with merged artists:', updatedNames);
+                        log('Updating AC observable with merged artists:', updatedNames);
                         model.artistCredit({
                             ...currentAC,
                             names: updatedNames
