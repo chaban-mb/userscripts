@@ -93,60 +93,6 @@
     }
 
 
-
-    // ====================================================================================
-    // --- Editor Control Class ---
-    // ====================================================================================
-
-
-    /**
-     * @class ArtistCreditsEditor
-     * @summary Utility wrapper to programmatically open, close, and inspect the MusicBrainz Artist Credits dialog.
-     */
-    class ArtistCreditsEditor {
-        #bubble;
-
-        /**
-         * Opens the artist credit dialog by simulating a click on the edit button.
-         * @param {HTMLElement} openButton - The button element that opens the dialog.
-         * @returns {Promise<boolean>} A promise resolving to true if the dialog opened successfully, or false if it timed out.
-         */
-        async open(openButton) {
-            openButton.click();
-            return new Promise(resolve => {
-                const observer = new MutationObserver(() => {
-                    const bubble = document.getElementById('artist-credit-bubble');
-                    if (bubble) {
-                        this.#bubble = bubble;
-                        observer.disconnect();
-                        resolve(true);
-                    }
-                });
-                observer.observe(document.body, { childList: true, subtree: true });
-                setTimeout(() => { observer.disconnect(); resolve(false); }, 1000); // Failsafe timeout
-            });
-        }
-
-        /**
-         * Closes the artist credit dialog by simulating a click on the positive action button.
-         */
-        close() {
-            if (!this.#bubble) return;
-            this.#bubble.querySelector('.buttons .positive')?.click();
-            this.#bubble = null;
-        }
-
-        /**
-         * Retrieves all artist row elements in the currently open editor dialog.
-         * @returns {HTMLElement[]} An array of table row elements matching the artist rows.
-         */
-        getArtistRows() {
-            if (!this.#bubble) return [];
-            return Array.from(this.#bubble.querySelectorAll('tbody > tr:has(div.autocomplete2)'));
-        }
-    }
-
-
     // ====================================================================================
     // --- Core Logic & Helper Functions
     // ====================================================================================
@@ -1062,273 +1008,131 @@
             .find(track => track.elementID === id) ?? null;
     }
 
-    function deduplicateTrackAC(trackRow) {
-        // Try model-level dedup first (fast, no DOM/timing issues).
-        const track = getTrackModel(trackRow);
-        if (track) {
-            deduplicateACFromObservable(track.artistCredit);
-            if (getBooleanCookie('guesscase_remove_remixers')) {
-                removeRemixersFromAC(track.artistCredit, track.name() || '');
-            }
-            return;
-        }
-        // Fallback: DOM bubble (standalone recording page, no release editor model).
-        log('No track model found for row, falling back to bubble dedup.', trackRow);
-        const openBubbleButton = trackRow.querySelector('.artist .open-ac');
-        if (!openBubbleButton) return;
-        const editor = new ArtistCreditsEditor();
-        editor.open(openBubbleButton).then(opened => {
-            if (!opened) { log('Failed to open AC bubble (fallback).'); return; }
-            // Minimal bubble dedup for the fallback path.
-            const titleInput = trackRow.querySelector('input.track-name');
-            const title = titleInput ? titleInput.value : '';
-            const removeRemixers = getBooleanCookie('guesscase_remove_remixers');
-            const seen = new Set();
-            editor.getArtistRows().forEach(row => {
-                const inp = row.querySelector('div.autocomplete2 input[type="text"]');
-                const name = inp?.value ? cleanStringForComparison(inp.value) : '';
-                const isRemixer = name && removeRemixers && isArtistRemixerInTitle(name, title);
-                if (isRemixer || (name && seen.has(name))) {
-                    row.querySelector('.remove-artist-credit')?.click();
-                } else if (name) {
-                    seen.add(name);
-                }
-            });
-            editor.close();
-        });
-    }
 
-    /**
-     * @summary Enhances a track-specific "Guess Feat" button.
-     * @param {HTMLElement} button - The track-specific guess feat button element.
-     */
-    function enhanceTrackGuessFeat(button) {
-        if (button.dataset.enhanced) return;
-        log('Found track "Guess Feat." button to enhance.', button);
-        const trackRow = button.closest('tr.track');
-        if (!trackRow) return;
-
-        button.addEventListener('click', () => {
-            log(`'Guess Feat.' click detected for track. Allowing native script to run first.`);
-            const input = trackRow.querySelector('input.track-name');
-            if (input) {
-                pristineValues.set(input, input.value);
-                pristineArtistNames.set(input, getCurrentArtistNames(button));
-            }
-            setTimeout(() => {
-                const releaseEditor = window.MB?._releaseEditor;
-                if (releaseEditor?.guessTrackFeatArtists?.isEnhanced) return;
-                deduplicateTrackAC(trackRow);
-                if (input) removeArtistFromTitle(input, button);
-            }, 100);
-        }, true);
-
-        button.dataset.enhanced = 'true';
-    }
-
-    /**
-     * @summary Enhances a medium-wide "Guess Feat" button.
-     * @param {HTMLElement} button - The medium-wide guess feat button element.
-     */
-    function enhanceMediumGuessFeat(button) {
-        if (button.dataset.enhanced) return;
-        log('Found medium-wide "Guess Feat." button to enhance.', button);
-
-        button.addEventListener('click', () => {
-            log('Medium-wide "Guess Feat." clicked. Allowing native script to run first.');
-            const medium = button.closest('fieldset.advanced-medium');
-            if (!medium) return;
-
-            // Capture all pristine values before native script modifies them
-            const inputs = Array.from(medium.querySelectorAll('tr.track input.track-name'));
-            inputs.forEach(input => {
-                pristineValues.set(input, input.value);
-                pristineArtistNames.set(input, getCurrentArtistNames(button));
-            });
-
-            setTimeout(() => {
-                const releaseEditor = window.MB?._releaseEditor;
-                if (releaseEditor?.guessMediumFeatArtists?.isEnhanced) return;
-
-                log('Applying de-duplication and title cleanup to all tracks in this medium.');
-                medium.querySelectorAll('tr.track').forEach(trackRow => {
-                    deduplicateTrackAC(trackRow);
-                    const input = trackRow.querySelector('input.track-name');
-                    if (input) removeArtistFromTitle(input, button);
-                });
-                log('De-duplication and title sweep complete for medium.');
-            }, 100);
-        }, true);
-
-        button.dataset.enhanced = 'true';
-    }
-
-    /**
-     * @summary Enhances the release-wide or global "Guess Feat" button.
-     * @param {HTMLElement} button - The release-wide or global guess feat button element.
-     */
     function enhanceReleaseGuessFeat(button) {
-        if (button.dataset.enhanced) return;
-        log('Found Release/Recording "Guess Feat." button to enhance.', button);
+        if (!IS_RECORDING_CREATE_PAGE || button.dataset.enhanced) return;
+        log('Found Standalone Recording "Guess Feat." button to enhance.', button);
 
         button.addEventListener('click', (event) => {
             const input = findAssociatedInput(button);
-            if (input) {
-                pristineValues.set(input, input.value);
-                pristineArtistNames.set(input, getCurrentArtistNames(button));
-            }
+            if (!input) return;
 
-            // --- Standalone Form Advanced Correction Interception ---
-            if (input && IS_RECORDING_CREATE_PAGE) {
-                const titleVal = input.value.trim();
+            pristineValues.set(input, input.value);
+            pristineArtistNames.set(input, getCurrentArtistNames(button));
 
-                const patterns = [
-                    // Layout Style A: "Artist - Title feat. Guest 1, Guest 2 (ETI)"
-                    {
-                        regex: /^(.*?)\s+-\s+([^([]+?)\s+(?:feat\.?|ft\.?|featuring)\s+([^([]+?)((?:\s*(?:\([^)]+\)|\[[^\]]+\]))*)$/i,
-                        parse: (m) => ({ main: m[1], join: ' feat. ', guests: m[3], title: m[2], eti: m[4] || '' })
-                    },
-                    // Layout Style B: "Artist feat. Guest - Title (ETI)"
-                    {
-                        regex: /^(.*?)\s+(?:feat\.?|ft\.?|featuring)\s+([^([]+?)\s+-\s+(.*)$/i,
-                        parse: (m) => ({ main: m[1], join: ' feat. ', guests: m[2], title: m[3], eti: '' })
-                    },
-                    // Layout Style C: Braced hyphen layout "Artist (feat. Guest - Title) (ETI)"
-                    {
-                        regex: /^(.*?)\s+\((?:feat\.?|ft\.?|featuring)\s+(.*?)\s+-\s+(.*?)\)((?:\s*(?:\([^)]+\)|\[[^\]]+\]))*)$/i,
-                        parse: (m) => ({ main: m[1], join: ' feat. ', guests: m[2], title: m[3], eti: m[4] || '' })
-                    },
-                    // Layout Style D: Suffix "with" addition "Artist - Title (with Guest) (ETI)"
-                    {
-                        regex: /^(.*?)\s+-\s+(.*)\s+\((with|and|feat\.?|ft\.?|featuring)\s+([^)]+)\)((?:\s*(?:\([^)]+\)|\[[^\]]+\]))*)$/i,
-                        parse: (m) => ({ main: m[1], join: ` ${m[3]} `, guests: m[4], title: m[2], eti: m[5] || '' })
-                    }
-                ];
-
-                let matchedData = null;
-                patterns.some(p => {
-                    const m = titleVal.match(p.regex);
-                    if (m) {
-                        matchedData = p.parse(m);
-                        return true;
-                    }
-                    return false;
-                });
-
-                if (matchedData) {
-                    const artistsInEditor = getCurrentArtistNames(button);
-                    const editorLower = artistsInEditor.map(a => a.toLowerCase());
-
-                    let validated = true;
-                    let swapMainAndTitle = false;
-
-                    if (editorLower.length > 0) {
-                        const mainArtists = parseArtistNamesFromString(matchedData.main);
-                        const titleArtists = parseArtistNamesFromString(matchedData.title);
-                        const mainMatches = mainArtists.some(a => editorLower.includes(a.toLowerCase()));
-                        const titleMatches = titleArtists.some(a => editorLower.includes(a.toLowerCase()));
-
-                        if (mainMatches || titleMatches) {
-                            if (titleMatches && !mainMatches) {
-                                swapMainAndTitle = true;
-                            }
-                        } else {
-                            validated = false;
-                        }
-                    }
-
-                    if (validated) {
-                        log('Intercepting standalone seeded formatting pattern via custom structural layout rules.');
-                        event.stopImmediatePropagation(); // Disarm standard misbehaving script execution loop completely
-
-                        let mainArtistText = matchedData.main.trim();
-                        const joinPhraseText = matchedData.join;
-                        let trackTitle = matchedData.title.trim();
-                        let trailingEti = matchedData.eti ? matchedData.eti.trim() : '';
-
-                        if (swapMainAndTitle) {
-                            log('Reversed title/artist layout detected. Swapping candidates.');
-                            const tmp = mainArtistText;
-                            mainArtistText = trackTitle;
-                            trackTitle = tmp;
-                        }
-
-                        // Fall-through safety check to pick up any nested trailing parentheticals
-                        const iEtiMatch = trackTitle.match(/\s*(\[[^\]]+\]|\([^)]+\)|【[^】]+】)$/);
-                        if (iEtiMatch && !trailingEti) {
-                            trailingEti = iEtiMatch[1];
-                            trackTitle = trackTitle.substring(0, trackTitle.lastIndexOf(trailingEti)).trim();
-                        }
-
-                        const finalTrackTitleText = trailingEti ? `${trackTitle} ${trailingEti}` : trackTitle;
-                        setInputValue(input, finalTrackTitleText);
-
-                        const sourceInstance = window.MB?.getSourceEntityInstance?.();
-                        if (sourceInstance && sourceInstance.artistCredit) {
-                            const acObservable = sourceInstance.artistCredit;
-                            const currentAC = acObservable();
-
-                            if (currentAC && currentAC.names && currentAC.names.length > 0) {
-                                const parsedMainArtists = parseArtistsAndJoins(mainArtistText);
-                                if (parsedMainArtists.length > 0) {
-                                    parsedMainArtists[parsedMainArtists.length - 1].joinPhrase = joinPhraseText;
-                                }
-                                const guestList = parseArtistsAndJoins(matchedData.guests);
-                                const parsedTitleArtists = [...parsedMainArtists, ...guestList];
-
-                                const parsedArtistNodes = mergeArtistCredits(currentAC.names, parsedTitleArtists, artistsInEditor);
-
-                                acObservable({
-                                    ...currentAC,
-                                    names: parsedArtistNodes
-                                });
-
-                                syncAutocompleteInputs(parsedArtistNodes);
-                            }
-                        }
-
-                        setTimeout(() => {
-                            pristineValues.set(input, input.value);
-                            pristineArtistNames.set(input, getCurrentArtistNames(button));
-                        }, 50);
-                        return;
-                    }
+            const titleVal = input.value.trim();
+            const patterns = [
+                // Layout Style A: "Artist - Title feat. Guest 1, Guest 2 (ETI)"
+                {
+                    regex: /^(.*?)\s+-\s+([^([]+?)\s+(?:feat\.?|ft\.?|featuring)\s+([^([]+?)((?:\s*(?:\([^)]+\)|\[[^\]]+\]))*)$/i,
+                    parse: (m) => ({ main: m[1], join: ' feat. ', guests: m[3], title: m[2], eti: m[4] || '' })
+                },
+                // Layout Style B: "Artist feat. Guest - Title (ETI)"
+                {
+                    regex: /^(.*?)\s+(?:feat\.?|ft\.?|featuring)\s+([^([]+?)\s+-\s+(.*)$/i,
+                    parse: (m) => ({ main: m[1], join: ' feat. ', guests: m[2], title: m[3], eti: '' })
+                },
+                // Layout Style C: Braced hyphen layout "Artist (feat. Guest - Title) (ETI)"
+                {
+                    regex: /^(.*?)\s+\((?:feat\.?|ft\.?|featuring)\s+(.*?)\s+-\s+(.*?)\)((?:\s*(?:\([^)]+\)|\[[^\]]+\]))*)$/i,
+                    parse: (m) => ({ main: m[1], join: ' feat. ', guests: m[2], title: m[3], eti: m[4] || '' })
+                },
+                // Layout Style D: Suffix "with" addition "Artist - Title (with Guest) (ETI)"
+                {
+                    regex: /^(.*?)\s+-\s+(.*)\s+\((with|and|feat\.?|ft\.?|featuring)\s+([^)]+)\)((?:\s*(?:\([^)]+\)|\[[^\]]+\]))*)$/i,
+                    parse: (m) => ({ main: m[1], join: ` ${m[3]} `, guests: m[4], title: m[2], eti: m[5] || '' })
                 }
-            }
+            ];
 
-            log(`'Guess Feat.' click detected for release/recording. Allowing native script to run first.`);
+            let matchedData = null;
+            patterns.some(p => {
+                const m = titleVal.match(p.regex);
+                if (m) {
+                    matchedData = p.parse(m);
+                    return true;
+                }
+                return false;
+            });
 
-            // Deduplicate the global artist credit editor and clean up title
-            setTimeout(() => {
-                const release = window.MB?.releaseEditor?.rootField?.release?.();
-                if (release?.artistCredit) {
-                    try {
-                        propagateGidsFromTracksToRelease(release);
-                    } catch (e) {
-                        err('Error propagating GIDs from tracks to release:', e);
-                    }
-                    log('Deduplicating release AC via Knockout model.');
-                    deduplicateACFromObservable(release.artistCredit);
-                } else {
-                    const source = window.MB?.getSourceEntityInstance?.();
-                    if (source?.artistCredit) {
-                        log('Deduplicating standalone entity AC via Knockout model.');
-                        deduplicateACFromObservable(source.artistCredit);
+            if (matchedData) {
+                const artistsInEditor = getCurrentArtistNames(button);
+                const editorLower = artistsInEditor.map(a => a.toLowerCase());
+
+                let validated = true;
+                let swapMainAndTitle = false;
+
+                if (editorLower.length > 0) {
+                    const mainArtists = parseArtistNamesFromString(matchedData.main);
+                    const titleArtists = parseArtistNamesFromString(matchedData.title);
+                    const mainMatches = mainArtists.some(a => editorLower.includes(a.toLowerCase()));
+                    const titleMatches = titleArtists.some(a => editorLower.includes(a.toLowerCase()));
+
+                    if (mainMatches || titleMatches) {
+                        if (titleMatches && !mainMatches) {
+                            swapMainAndTitle = true;
+                        }
                     } else {
-                        log('No Knockout AC observable found for release/recording dedup.');
+                        validated = false;
                     }
                 }
 
-                const associatedInput = findAssociatedInput(button);
-                if (associatedInput) {
-                    removeArtistFromTitle(associatedInput, button);
-                    pristineValues.set(associatedInput, associatedInput.value);
-                    pristineArtistNames.set(associatedInput, getCurrentArtistNames(button));
-                    log(`Updated pristine value for ${associatedInput.name || associatedInput.id} after Guess Feat cleanup: "${associatedInput.value}"`);
-                }
-            }, 100);
+                if (validated) {
+                    log('Intercepting standalone seeded formatting pattern via custom structural layout rules.');
+                    event.stopImmediatePropagation(); // Disarm standard misbehaving script execution loop completely
 
-        }, true);
+                    let mainArtistText = matchedData.main.trim();
+                    const joinPhraseText = matchedData.join;
+                    let trackTitle = matchedData.title.trim();
+                    let trailingEti = matchedData.eti ? matchedData.eti.trim() : '';
+
+                    if (swapMainAndTitle) {
+                        log('Reversed title/artist layout detected. Swapping candidates.');
+                        const tmp = mainArtistText;
+                        mainArtistText = trackTitle;
+                        trackTitle = tmp;
+                    }
+
+                    // Fall-through safety check to pick up any nested trailing parentheticals
+                    const iEtiMatch = trackTitle.match(/\s*(\[[^\]]+\]|\([^)]+\)|【[^】]+】)$/);
+                    if (iEtiMatch && !trailingEti) {
+                        trailingEti = iEtiMatch[1];
+                        trackTitle = trackTitle.substring(0, trackTitle.lastIndexOf(trailingEti)).trim();
+                    }
+
+                    const finalTrackTitleText = trailingEti ? `${trackTitle} ${trailingEti}` : trackTitle;
+                    setInputValue(input, finalTrackTitleText);
+
+                    const sourceInstance = window.MB?.getSourceEntityInstance?.();
+                    if (sourceInstance && sourceInstance.artistCredit) {
+                        const acObservable = sourceInstance.artistCredit;
+                        const currentAC = acObservable();
+
+                        if (currentAC && currentAC.names && currentAC.names.length > 0) {
+                            const parsedMainArtists = parseArtistsAndJoins(mainArtistText);
+                            if (parsedMainArtists.length > 0) {
+                                parsedMainArtists[parsedMainArtists.length - 1].joinPhrase = joinPhraseText;
+                            }
+                            const guestList = parseArtistsAndJoins(matchedData.guests);
+                            const parsedTitleArtists = [...parsedMainArtists, ...guestList];
+
+                            const parsedArtistNodes = mergeArtistCredits(currentAC.names, parsedTitleArtists, artistsInEditor);
+
+                            acObservable({
+                                ...currentAC,
+                                names: parsedArtistNodes
+                            });
+
+                            syncAutocompleteInputs(parsedArtistNodes);
+                        }
+                    }
+
+                    setTimeout(() => {
+                        pristineValues.set(input, input.value);
+                        pristineArtistNames.set(input, getCurrentArtistNames(button));
+                    }, 50);
+                }
+            }
+        });
 
         button.dataset.enhanced = 'true';
     }
@@ -1703,33 +1507,18 @@
     const observer = new MutationObserver(() => {
         if (window.MB?._releaseEditor) enhanceReleaseEditorActions();
 
-        // We must be very specific. The 'legacy' enhancer handles track titles.
         // The 'react' enhancer handles all *other* titles (release, standalone recording).
-        // We can distinguish them by their `title` attribute.
         document.querySelectorAll('.guesscase-title:not([data-enhanced])').forEach(button => {
-            if (button.title === 'Guess case') { // e.g., Release Title, Recording Title
+            if (button.title === 'Guess case') {
                 enhanceReactGuessCase(button);
             }
-            // Buttons with `title="Guess case track"` are left alone,
-            // as they are handled by `enhanceLegacyGuessCase`.
         });
 
-        // Catch typical guessfeat icons, AND the standard MBS bottom-list action buttons
-        const guessFeatSelectors = [
-            'button.guessfeat:not([data-enhanced])',
-            'button[data-click="guessMediumFeatArtists"]:not([data-enhanced])',
-            'button[data-click="guessReleaseFeatArtists"]:not([data-enhanced])'
-        ].join(', ');
-
-        document.querySelectorAll(guessFeatSelectors).forEach(button => {
-            if (button.closest('tr.track') || button.dataset.click === 'guessTrackFeatArtists') {
-                enhanceTrackGuessFeat(button);
-            } else if (button.closest('fieldset.advanced-medium') || button.dataset.click === 'guessMediumFeatArtists') {
-                enhanceMediumGuessFeat(button);
-            } else {
+        if (IS_RECORDING_CREATE_PAGE) {
+            document.querySelectorAll('button.guessfeat:not([data-enhanced])').forEach(button => {
                 enhanceReleaseGuessFeat(button);
-            }
-        });
+            });
+        }
     });
 
     observer.observe(document.body, { childList: true, subtree: true });
