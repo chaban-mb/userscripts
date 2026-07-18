@@ -464,9 +464,13 @@
             if (ok && element.value !== value) ok = false;
         } catch (e) { ok = false; }
         if (!ok) {
-            const descriptor = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value')
-                || Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value');
-            descriptor.set.call(element, value);
+            const descriptor = (window.HTMLTextAreaElement && Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value'))
+                || (window.HTMLInputElement && Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value'));
+            if (descriptor?.set) {
+                descriptor.set.call(element, value);
+            } else {
+                element.value = value;
+            }
             element.dispatchEvent(new Event('input', { bubbles: true }));
         }
         element.dispatchEvent(new Event('change', { bubbles: true }));
@@ -476,8 +480,21 @@
     function findAssociatedInput(button) {
         const trackRow = button.closest('tr.track');
         if (trackRow) return trackRow.querySelector('input.track-name');
+
         const parentContainer = button.closest('.row, td');
-        if (parentContainer) return parentContainer.querySelector('input[type="text"]');
+        if (parentContainer) {
+            const input = parentContainer.querySelector('input[type="text"]:not([class*="autocomplete"])');
+            if (input) return input;
+        }
+
+        if (IS_STANDALONE_RECORDING_PAGE) {
+            const standaloneInput = document.querySelector('input[name="edit-recording.name"]') || document.getElementById('id-edit-recording.name');
+            if (standaloneInput) return standaloneInput;
+        }
+
+        const releaseInput = document.getElementById('name') || document.querySelector('input[name="name"]');
+        if (releaseInput) return releaseInput;
+
         return null;
     }
 
@@ -1040,31 +1057,12 @@
             pristineValues.set(input, originalTitle);
             pristineArtistNames.set(input, originalArtists);
 
-            // Check if there is an active custom pattern match.
-            // If so, we intercept and perform the clean immediately on the model.
-            const source = window.MB?.getSourceEntityInstance?.();
-            if (source && IS_STANDALONE_RECORDING_PAGE) {
-                const patterns = [
-                    /^(.*?)\s+-\s+([^([]+?)\s+(?:feat\.?|ft\.?|featuring)\s+([^([]+?)((?:\s*(?:\([^)]+\)|\[[^\]]+\]))*)$/i,
-                    /^(.*?)\s+(?:feat\.?|ft\.?|featuring)\s+([^([]+?)\s+-\s+(.*)$/i,
-                    /^(.*?)\s+\((?:feat\.?|ft\.?|featuring)\s+(.*?)\s+-\s+(.*?)\)((?:\s*(?:\([^)]+\)|\[[^\]]+\]))*)$/i,
-                    /^(.*?)\s+-\s+(.*)\s+\((with|and|feat\.?|ft\.?|featuring)\s+([^)]+)\)((?:\s*(?:\([^)]+\)|\[[^\]]+\]))*)$/i
-                ];
-
-                const hasPatternMatch = patterns.some(regex => originalTitle.match(regex));
-                if (hasPatternMatch) {
-                    log('Intercepting standalone Guess Feat click with custom pattern.');
-                    event.stopImmediatePropagation();
-                    cleanEntityModel(source, originalTitle, originalArtists, input);
-                    return;
-                }
-            }
-
             log(`'Guess Feat.' click detected for release/recording. Allowing native script to run first.`);
 
             // Deduplicate the global artist credit editor and clean up title
             setTimeout(() => {
                 const release = window.MB?.releaseEditor?.rootField?.release?.();
+                const source = window.MB?.getSourceEntityInstance?.();
                 if (release?.artistCredit) {
                     try {
                         propagateGidsFromTracksToRelease(release);
@@ -1077,7 +1075,12 @@
                         removeRemixersFromAC(release.artistCredit, input.value);
                     }
                 } else if (source) {
-                    cleanEntityModel(source, originalTitle, originalArtists, input);
+                    cleanEntityModel({
+                        model: source,
+                        originalTitle,
+                        originalArtists,
+                        input
+                    });
                 }
 
                 if (input) {
@@ -1255,7 +1258,7 @@
      * @param {string[]} originalArtists - The original artist names before the action.
      * @param {HTMLInputElement} [input] - The associated DOM input element for the title.
      */
-    function cleanEntityModel(model, originalTitle, originalArtists, input) {
+    function cleanEntityModel({ model, originalTitle, originalArtists, input }) {
         if (!model) return;
         log('Starting cleanEntityModel for model:', model);
 
@@ -1355,7 +1358,7 @@
     }
 
     function cleanTrackModelAfterGuessFeat(track, originalTitle, originalArtists) {
-        cleanEntityModel(track, originalTitle, originalArtists);
+        cleanEntityModel({ model: track, originalTitle, originalArtists });
     }
 
 
