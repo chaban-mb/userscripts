@@ -1253,8 +1253,9 @@
      * @param {object} model - The Knockout model (must have name and artistCredit observables).
      * @param {string} originalTitle - The original title before the action.
      * @param {string[]} originalArtists - The original artist names before the action.
+     * @param {HTMLInputElement} [input] - The associated DOM input element for the title.
      */
-    function cleanEntityModel(model, originalTitle, originalArtists) {
+    function cleanEntityModel(model, originalTitle, originalArtists, input) {
         if (!model) return;
         log('Starting cleanEntityModel for model:', model);
 
@@ -1262,11 +1263,11 @@
         deduplicateACFromObservable(model.artistCredit);
 
         if (getBooleanCookie('guesscase_remove_remixers')) {
-            removeRemixersFromAC(model.artistCredit, originalTitle || model.name() || '');
+            removeRemixersFromAC(model.artistCredit, originalTitle || (input ? input.value : '') || (typeof model.name === 'function' ? model.name() : ''));
         }
 
         // 2. Perform advanced layout-based splits or fallback suffix splits
-        const titleVal = model.name() || '';
+        const titleVal = (input ? input.value : '') || (typeof model.name === 'function' ? model.name() : '') || '';
         let newText = originalTitle || titleVal;
 
         // Extract trailing ETIs recursively
@@ -1322,7 +1323,7 @@
                     }
 
                     if (getBooleanCookie('guesscase_remove_remixers')) {
-                        removeRemixersFromAC(model.artistCredit, originalTitle || model.name() || '');
+                        removeRemixersFromAC(model.artistCredit, originalTitle || (input ? input.value : '') || (typeof model.name === 'function' ? model.name() : ''));
                     }
 
                     if (IS_STANDALONE_RECORDING_PAGE) {
@@ -1335,10 +1336,20 @@
                     finalTitle += ' ' + eti;
                 }
                 info(`Removed artist part from title (model): "${titleVal}" -> "${finalTitle}"`);
-                model.name(finalTitle.trim());
+                if (typeof model.name === 'function') {
+                    model.name(finalTitle.trim());
+                }
+                if (input) {
+                    setInputValue(input, finalTitle.trim());
+                }
             } else {
                 log('cleanEntityModel: Restoring original title.');
-                model.name(originalTitle);
+                if (typeof model.name === 'function') {
+                    model.name(originalTitle);
+                }
+                if (input) {
+                    setInputValue(input, originalTitle);
+                }
             }
         }
     }
