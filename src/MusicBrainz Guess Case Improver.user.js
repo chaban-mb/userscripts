@@ -1548,13 +1548,15 @@
             }
         });
 
-        // Catch standalone guessfeat and global release-wide guessfeat buttons
-        const guessFeatSelectors = [
-            'button.guessfeat:not([data-enhanced])',
-            'button[data-click="guessReleaseFeatArtists"]:not([data-enhanced])'
-        ].join(', ');
+        // Catch standalone guessfeat buttons (only on standalone pages)
+        if (IS_RECORDING_CREATE_PAGE) {
+            document.querySelectorAll('button.guessfeat:not([data-enhanced])').forEach(button => {
+                enhanceReleaseGuessFeat(button);
+            });
+        }
 
-        document.querySelectorAll(guessFeatSelectors).forEach(button => {
+        // Catch global release-wide guessfeat buttons in the release editor
+        document.querySelectorAll('button[data-click="guessReleaseFeatArtists"]:not([data-enhanced])').forEach(button => {
             enhanceReleaseGuessFeat(button);
         });
     });
