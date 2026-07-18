@@ -752,9 +752,10 @@
      * @summary Applies advanced rule sets like French/Swedish apostrophe corrections and acronym fixes.
      * @param {string} text - The current guessed text string.
      * @param {HTMLElement} [button] - The button element that was clicked to trigger the guess case.
+     * @param {string} [originalTitle] - The original un-guessed title to preserve CamelCase.
      * @returns {string} The text processed by advanced rules.
      */
-    function applyAdvancedRules(text, button) {
+    function applyAdvancedRules(text, button, originalTitle) {
         if (typeof text !== 'string') return text;
         log('--- applyAdvancedRules START ---');
         let newText = text;
@@ -774,7 +775,7 @@
             const potentialEti = match[1];
             // Check if the native script made a mess by wrapping the title in "feat." parens
             const etiContent = potentialEti.slice(1, -1).trim();
-            const hasSeparator = etiContent.match(/\s+[-–]\s+/);
+            const hasSeparator = etiContent.match(/\s+[-–]/);
             const isFeat = potentialEti.match(ETI_FEAT_PATTERN);
 
             if (hasSeparator && isFeat) {
@@ -814,11 +815,28 @@
             return `(${processedEti})`;
         });
 
+        // Restore CamelCase words from originalTitle
+        if (keepUpperCase && originalTitle && typeof originalTitle === 'string') {
+            const camelCaseWords = [];
+            const matches = originalTitle.match(/\b[a-zA-Z\d]+\b/g);
+            if (matches) {
+                for (const word of matches) {
+                    const isCamelCase = /[a-z]+[A-Z]/.test(word);
+                    if (isCamelCase) {
+                        camelCaseWords.push(word);
+                    }
+                }
+            }
+            for (const camelWord of camelCaseWords) {
+                const regex = new RegExp(`\\b${camelWord}\\b`, 'i');
+                newText = newText.replace(regex, camelWord);
+            }
+        }
+
         // Restore square bracket exceptions
         bracketExceptions.forEach((val, index) => {
             newText = newText.replace(`___MB_GUESS_CASE_EXCEPTION_${index}___`, val);
         });
-
         log('--- applyAdvancedRules END ---');
         return newText.trim();
     }
@@ -1417,7 +1435,7 @@
                 if (!activePreview) return; // Mouse already left
 
                 const nativePreviewValue = input.value;
-                const enhancedPreviewValue = applyAdvancedRules(nativePreviewValue, button);
+                const enhancedPreviewValue = applyAdvancedRules(nativePreviewValue, button, originalValue);
 
                 if (enhancedPreviewValue !== originalValue) {
                     input.classList.add('preview');
@@ -1442,10 +1460,11 @@
         const handleClick = () => {
             log('"Guess Case" click detected.');
             activePreview = false;
+            const originalValue = pristineValues.get(input);
 
             setTimeout(() => {
                 const nativeValue = input.value;
-                const enhancedValue = applyAdvancedRules(nativeValue, button);
+                const enhancedValue = applyAdvancedRules(nativeValue, button, originalValue);
                 log(`Native: "${nativeValue}", Enhanced: "${enhancedValue}"`);
 
                 setInputValue(input, enhancedValue);
@@ -1628,13 +1647,14 @@
 
         const originalGuessCaseTrackName = releaseEditor.guessCaseTrackName;
         releaseEditor.guessCaseTrackName = function (track, event) {
+            const originalTitle = track.name.peek();
             originalGuessCaseTrackName.call(this, track, event);
             switch (event.type) {
                 case 'mouseenter':
-                    track.previewName(applyAdvancedRules(track.previewName.peek(), event.target));
+                    track.previewName(applyAdvancedRules(track.previewName.peek(), event.target, originalTitle));
                     break;
                 case 'click':
-                    track.name(applyAdvancedRules(track.name.peek(), event.target));
+                    track.name(applyAdvancedRules(track.name.peek(), event.target, originalTitle));
                     break;
             }
         };
@@ -1721,19 +1741,20 @@
         if (releaseEditor.guessCaseMediumName && !releaseEditor.guessCaseMediumName.isEnhanced) {
             const originalGuessCaseMediumName = releaseEditor.guessCaseMediumName;
             releaseEditor.guessCaseMediumName = function (medium, event) {
+                const originalTitle = medium.name.peek();
                 originalGuessCaseMediumName.call(this, medium, event);
                 switch (event.type) {
                     case 'mouseenter':
                         if (medium.previewName) {
-                            medium.previewName(applyAdvancedRules(medium.previewName.peek(), event.target));
+                            medium.previewName(applyAdvancedRules(medium.previewName.peek(), event.target, originalTitle));
                         }
                         break;
                     case 'click':
-                        medium.name(applyAdvancedRules(medium.name.peek(), event.target));
+                        medium.name(applyAdvancedRules(medium.name.peek(), event.target, originalTitle));
                         break;
                     default:
                         if (event.type !== 'mouseleave') {
-                            medium.name(applyAdvancedRules(medium.name.peek(), event.target));
+                            medium.name(applyAdvancedRules(medium.name.peek(), event.target, originalTitle));
                         }
                         break;
                 }
