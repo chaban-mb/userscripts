@@ -414,6 +414,26 @@
     }
 
     /**
+     * @summary Reconstructs and repairs standard join phrases for a list of artist credit nodes.
+     * @param {object[]} names - The list of artist credit objects.
+     * @returns {object[]} The repaired list of artist credit objects.
+     */
+    function repairStandardJoins(names) {
+        if (!names || names.length === 0) return [];
+        const isStandardJoin = (join) => !join || /^\s*(?:,|&|and|＆)\s*$/i.test(join);
+        const lastIdx = names.length - 1;
+        return names.map((node, i) => {
+            if (i === lastIdx) {
+                return { ...node, joinPhrase: '' };
+            }
+            if (isStandardJoin(node.joinPhrase)) {
+                return { ...node, joinPhrase: (i === lastIdx - 1) ? ' & ' : ', ' };
+            }
+            return node;
+        });
+    }
+
+    /**
      * @summary Removes detected remixers from a Knockout artist credit observable and normalizes standard join phrases.
      * @param {Function} acObservable - The Knockout observable function for the artist credit.
      * @param {string} title - The track title.
@@ -432,25 +452,7 @@
         });
 
         if (filteredNames.length !== ac.names.length) {
-            // Repair standard join phrases based on position/length
-            const isStandardJoin = (join) => !join || /^\s*(?:,|&|and|＆)\s*$/i.test(join);
-            for (let i = 0; i < filteredNames.length - 1; i++) {
-                const join = filteredNames[i].joinPhrase;
-                if (isStandardJoin(join)) {
-                    const isSecondToLast = (i === filteredNames.length - 2);
-                    filteredNames[i] = {
-                        ...filteredNames[i],
-                        joinPhrase: isSecondToLast ? ' & ' : ', '
-                    };
-                }
-            }
-            if (filteredNames.length > 0) {
-                filteredNames[filteredNames.length - 1] = {
-                    ...filteredNames[filteredNames.length - 1],
-                    joinPhrase: ''
-                };
-            }
-            acObservable({ ...ac, names: filteredNames });
+            acObservable({ ...ac, names: repairStandardJoins(filteredNames) });
         }
     }
 
@@ -776,8 +778,6 @@
             log('No ETI found.');
         }
 
-        log(`Text for ETI processing: "${newText}"`);
-
         if (extractedEtis) {
             newText += ` ${extractedEtis}`;
             log(`Re-added ETI(s). Final text before ETI processing: "${newText}"`);
@@ -785,32 +785,23 @@
 
         newText = newText.replace(/\[/g, '(').replace(/\]/g, ')');
         newText = newText.replace(PARENS_CONTENT_PATTERN, (match, etiContent) => {
-            let processedEti = etiContent;
-            for (const phrase of etiPhrasesToLowercase) {
-                processedEti = processedEti.replace(createSafeRegex(phrase), matched => {
+            const processedEti = etiPhrasesToLowercase.reduce((acc, phrase) => {
+                return acc.replace(createSafeRegex(phrase), matched => {
                     const isAllCaps = matched === matched.toUpperCase() && matched !== matched.toLowerCase();
                     return (keepUpperCase && isAllCaps) ? matched : phrase.toLowerCase();
                 });
-            }
+            }, etiContent);
             return `(${processedEti})`;
         });
 
         // Restore CamelCase words from originalTitle
         if (keepUpperCase && originalTitle && typeof originalTitle === 'string') {
-            const camelCaseWords = [];
-            const matches = originalTitle.match(/\b[a-zA-Z\d]+\b/g);
-            if (matches) {
-                for (const word of matches) {
-                    const isCamelCase = /[a-z]+[A-Z]/.test(word);
-                    if (isCamelCase) {
-                        camelCaseWords.push(word);
-                    }
-                }
-            }
-            for (const camelWord of camelCaseWords) {
+            const matches = originalTitle.match(/\b[a-zA-Z\d]+\b/g) ?? [];
+            const camelCaseWords = matches.filter(word => /[a-z]+[A-Z]/.test(word));
+            newText = camelCaseWords.reduce((accText, camelWord) => {
                 const regex = new RegExp(`\\b${camelWord}\\b`, 'i');
-                newText = newText.replace(regex, camelWord);
-            }
+                return accText.replace(regex, camelWord);
+            }, newText);
         }
 
         // Restore square bracket exceptions
@@ -922,7 +913,7 @@
         info(`deduplicateACFromObservable: Removing ${toRemove.size} duplicate(s). Feat join phrase: "${featJoinPhrase}"`);
 
         // Propagate join phrases from duplicate entries to their survivors
-        for (const dupIdx of toRemove) {
+        toRemove.forEach(dupIdx => {
             const key = getKey(names[dupIdx]);
             const survivorIdx = seenKeys.get(key);
             if (survivorIdx !== undefined) {
@@ -942,7 +933,7 @@
                     }
                 }
             }
-        }
+        });
 
         const filteredNames = dedupedNames.filter((_, i) => !toRemove.has(i));
 
@@ -954,34 +945,26 @@
             let firstFeatIdx = filteredNames.length;
             if (firstFeatJoinIdxOrig !== -1) {
                 const firstFeatStartIdx = firstFeatJoinIdxOrig + 1;
-                const featuredOriginalIndices = new Set();
-
-                for (let idx = firstFeatStartIdx; idx < names.length; idx++) {
-                    if (toRemove.has(idx)) {
-                        const key = getKey(names[idx]);
-                        const survivorIdx = seenKeys.get(key);
-                        if (survivorIdx !== undefined) {
-                            featuredOriginalIndices.add(survivorIdx);
-                        }
-                    } else {
-                        featuredOriginalIndices.add(idx);
-                    }
-                }
+                const featuredOriginalIndices = new Set(
+                    Array.from({ length: names.length - firstFeatStartIdx }, (_, i) => firstFeatStartIdx + i)
+                        .map(idx => {
+                            if (toRemove.has(idx)) {
+                                const key = getKey(names[idx]);
+                                return seenKeys.get(key);
+                            }
+                            return idx;
+                        })
+                        .filter(idx => idx !== undefined)
+                );
 
                 // Map original featured indices to filteredNames indices
-                for (const origIdx of featuredOriginalIndices) {
-                    if (!toRemove.has(origIdx)) {
-                        let filteredIdx = 0;
-                        for (let i = 0; i < origIdx; i++) {
-                            if (!toRemove.has(i)) {
-                                filteredIdx++;
-                            }
-                        }
-                        if (filteredIdx < firstFeatIdx) {
-                            firstFeatIdx = filteredIdx;
-                        }
-                    }
-                }
+                firstFeatIdx = Array.from(featuredOriginalIndices)
+                    .filter(origIdx => !toRemove.has(origIdx))
+                    .map(origIdx => {
+                        return Array.from({ length: origIdx }, (_, i) => i)
+                            .filter(i => !toRemove.has(i)).length;
+                    })
+                    .reduce((min, idx) => Math.min(min, idx), filteredNames.length);
             }
 
             const boundaryIdx = firstFeatIdx - 1;
@@ -994,26 +977,24 @@
             }
         }
 
-        // Apply default join phrase rules for empty join phrases
-        for (let i = 0; i < filteredNames.length - 1; i++) {
-            const currentJoin = (filteredNames[i].joinPhrase ?? '').trim();
+        // Apply default join phrase rules for empty join phrases and ensure the last entry is empty
+        const lastIdx = filteredNames.length - 1;
+        const repairedNames = filteredNames.map((node, i) => {
+            if (i === lastIdx) {
+                return { ...node, joinPhrase: '' };
+            }
+            const currentJoin = (node.joinPhrase ?? '').trim();
             if (!currentJoin) {
-                const isSecondToLast = (i === filteredNames.length - 2);
-                filteredNames[i] = {
-                    ...filteredNames[i],
-                    joinPhrase: isSecondToLast ? ' & ' : ', '
+                return {
+                    ...node,
+                    joinPhrase: i === lastIdx - 1 ? ' & ' : ', '
                 };
             }
-        }
+            return node;
+        });
 
-        // Ensure the last entry always has an empty join phrase.
-        const last = filteredNames.length - 1;
-        if (filteredNames[last]?.joinPhrase) {
-            filteredNames[last] = { ...filteredNames[last], joinPhrase: '' };
-        }
-
-        acObservable({ ...ac, names: filteredNames });
-        info('deduplicateACFromObservable: Done.', fmtAC(filteredNames));
+        acObservable({ ...ac, names: repairedNames });
+        info('deduplicateACFromObservable: Done.', fmtAC(repairedNames));
     }
 
     /**
@@ -1225,13 +1206,14 @@
                 ];
 
                 let matchedData = null;
-                for (const p of patterns) {
+                patterns.some(p => {
                     const m = titleVal.match(p.regex);
                     if (m) {
                         matchedData = p.parse(m);
-                        break;
+                        return true;
                     }
-                }
+                    return false;
+                });
 
                 if (matchedData) {
                     const artistsInEditor = getCurrentArtistNames(button);
@@ -1663,16 +1645,13 @@
             const originalGuessReleaseFeatArtists = releaseEditor.guessReleaseFeatArtists;
             releaseEditor.guessReleaseFeatArtists = function (release, event) {
                 log('Intercepted guessReleaseFeatArtists on model.');
-                const trackData = [];
-                for (const medium of release.mediums?.() ?? []) {
-                    for (const track of medium.tracks?.() ?? []) {
-                        trackData.push({
-                            track,
-                            originalTitle: track.name(),
-                            originalArtists: (track.artistCredit()?.names ?? []).map(n => n.name)
-                        });
-                    }
-                }
+                const trackData = (release.mediums?.() ?? [])
+                    .flatMap(medium => medium.tracks?.() ?? [])
+                    .map(track => ({
+                        track,
+                        originalTitle: track.name(),
+                        originalArtists: (track.artistCredit()?.names ?? []).map(n => n.name)
+                    }));
 
                 originalGuessReleaseFeatArtists.call(this, release, event);
 
