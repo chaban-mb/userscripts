@@ -969,12 +969,6 @@
                         artist: hasRealSurvivorArtist ? dedupedNames[survivorIdx].artist : (dedupedNames[i].artist || dedupedNames[survivorIdx].artist)
                     };
 
-                    const survNameClean = cleanStringForComparison(names[survivorIdx].name);
-                    const dupNameClean = cleanStringForComparison(names[i].name);
-                    if (survNameClean === dupNameClean) {
-                        dedupedNames[i].name = names[survivorIdx].name;
-                    }
-
                     toRemove.add(survivorIdx);
                     survivorMap.set(survivorIdx, i);
 
@@ -994,6 +988,10 @@
                             if (!duplicateMatch.keys.includes(k)) duplicateMatch.keys.push(k);
                         });
                     }
+                    dedupedNames[survivorIdx] = {
+                        ...dedupedNames[survivorIdx],
+                        name: names[i].name
+                    };
                     toRemove.add(i);
                 }
             } else {

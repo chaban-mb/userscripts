@@ -638,7 +638,7 @@ runTestCase('18. CamelCase word preservation in applyAdvancedRules', () => {
 });
 
 // Case 19
-runTestCase('19. Preserving existing credit casing/spelling over parsed title casing (sandbag Case)', () => {
+runTestCase('19. Overwriting spelling and casing with parsed title casing during deduplication (sandbag Case)', () => {
     this.track = {
         name: makeObservable('sandbag'),
         artistCredit: makeObservable({
@@ -662,7 +662,7 @@ runTestCase('19. Preserving existing credit casing/spelling over parsed title ca
     assert.strictEqual(ac.names.length, 3);
     assert.strictEqual(ac.names[0].name, 'Dada');
     assert.strictEqual(ac.names[0].joinPhrase, ', ');
-    assert.strictEqual(ac.names[1].name, 'Kasane Teto');
+    assert.strictEqual(ac.names[1].name, 'KASANE TETO');
     assert.strictEqual(ac.names[1].joinPhrase, ' & ');
     assert.strictEqual(ac.names[2].name, 'Una Otomachi');
     assert.strictEqual(ac.names[2].joinPhrase, '');
@@ -846,7 +846,7 @@ runTestCase('23. Deduplicate romanized/foreign name credits via sort_name in ded
     assert.strictEqual(ac.names.length, 3);
     assert.strictEqual(ac.names[0].name, 'Cereal Experiments');
     assert.strictEqual(ac.names[0].joinPhrase, ' feat. ');
-    assert.strictEqual(ac.names[1].name, 'SOLARIA');
+    assert.strictEqual(ac.names[1].name, 'Solaria');
     assert.strictEqual(ac.names[1].joinPhrase, ' & ');
     assert.strictEqual(ac.names[1].artist.gid, '259a4a61-f9e7-444a-a4d3-608eb71f0e29');
     assert.strictEqual(ac.names[2].name, 'Hatsune Miku');
