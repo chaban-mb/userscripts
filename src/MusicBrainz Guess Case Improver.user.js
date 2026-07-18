@@ -68,7 +68,7 @@
     const PARENS_CONTENT_PATTERN = /\(([^)]+)\)/g;
     const ETI_FEAT_PATTERN = new RegExp('^' + FEAT_TITLE_PATTERN.source, 'i');
     const REMIX_KEYWORDS = ['remix', 'rework', 'edit', 'mix', 'flip', 'bootleg', 'mashup', 'vip', 'dub', 'version'];
-    const IS_RECORDING_CREATE_PAGE = /[\/.]recording\/create/.test(window.location.pathname);
+    const IS_STANDALONE_RECORDING_PAGE = /[\/.]recording\/create|[\/.]recording\/[a-f0-9-]{36}\/edit/.test(window.location.pathname);
 
     log('User configuration loaded.');
 
@@ -616,8 +616,21 @@
             const pristineLower = (pristineArtists && pristineArtists.length > 0) ? pristineArtists.map(a => a.toLowerCase()) : [];
             const editorLower = getCurrentArtistNames(button).map(a => a.toLowerCase());
 
-            const artistPartIndex = findArtistPartIndex(parts, pristineLower, editorLower);
+            let artistPartIndex = findArtistPartIndex(parts, pristineLower, editorLower);
             log('removeArtistFromTitle: Artist part matching index:', artistPartIndex, artistPartIndex !== -1 ? `("${parts[artistPartIndex]}")` : '(no artist part match)');
+
+            if (artistPartIndex !== -1) {
+                const primaryArtist = pristineLower[0] || editorLower[0];
+                if (primaryArtist) {
+                    const artistPartLower = parts[artistPartIndex].toLowerCase();
+                    const primaryNames = parseArtistNamesFromString(primaryArtist);
+                    const isPrimaryInPart = primaryNames.some(name => cleanStringForComparison(artistPartLower).includes(cleanStringForComparison(name))) || cleanStringForComparison(artistPartLower).includes(cleanStringForComparison(primaryArtist));
+                    if (!isPrimaryInPart && hasRemixKeyword(artistPartLower)) {
+                        log('removeArtistFromTitle: Matched artist part contains a remix keyword. Rejecting hyphen split.');
+                        artistPartIndex = -1;
+                    }
+                }
+            }
 
             if (artistPartIndex !== -1) {
                 const artistPart = parts[artistPartIndex];
@@ -654,8 +667,12 @@
                                 names: updatedNames
                             });
 
-                            if (IS_RECORDING_CREATE_PAGE) {
-                                syncAutocompleteInputs(updatedNames);
+                            if (getBooleanCookie('guesscase_remove_remixers')) {
+                                removeRemixersFromAC(acObservable, input.value);
+                            }
+
+                            if (IS_STANDALONE_RECORDING_PAGE) {
+                                syncAutocompleteInputs(acObservable().names);
                             }
                         }
                     }
@@ -1021,7 +1038,7 @@
             }
 
             // --- Standalone Form Advanced Interception ---
-            if (input && IS_RECORDING_CREATE_PAGE) {
+            if (input && IS_STANDALONE_RECORDING_PAGE) {
                 const titleVal = input.value.trim();
                 const patterns = [
                     // Layout Style A: "Artist - Title feat. Guest 1, Guest 2 (ETI)"
@@ -1142,6 +1159,7 @@
             // Deduplicate the global artist credit editor and clean up title
             setTimeout(() => {
                 const release = window.MB?.releaseEditor?.rootField?.release?.();
+                const associatedInput = findAssociatedInput(button);
                 if (release?.artistCredit) {
                     try {
                         propagateGidsFromTracksToRelease(release);
@@ -1150,15 +1168,20 @@
                     }
                     log('Deduplicating release AC via Knockout model.');
                     deduplicateACFromObservable(release.artistCredit);
+                    if (getBooleanCookie('guesscase_remove_remixers') && associatedInput) {
+                        removeRemixersFromAC(release.artistCredit, associatedInput.value);
+                    }
                 } else {
                     const source = window.MB?.getSourceEntityInstance?.();
                     if (source?.artistCredit) {
                         log('Deduplicating standalone entity AC via Knockout model.');
                         deduplicateACFromObservable(source.artistCredit);
+                        if (getBooleanCookie('guesscase_remove_remixers') && associatedInput) {
+                            removeRemixersFromAC(source.artistCredit, associatedInput.value);
+                        }
                     }
                 }
 
-                const associatedInput = findAssociatedInput(button);
                 if (associatedInput) {
                     removeArtistFromTitle(associatedInput, button);
                     pristineValues.set(associatedInput, associatedInput.value);
@@ -1497,6 +1520,10 @@
                     propagateGidsFromTracksToRelease(release);
                     if (release.artistCredit) {
                         deduplicateACFromObservable(release.artistCredit);
+                        const releaseTitleInput = document.getElementById('name') || document.querySelector('input[name="name"]');
+                        if (getBooleanCookie('guesscase_remove_remixers') && releaseTitleInput) {
+                            removeRemixersFromAC(release.artistCredit, releaseTitleInput.value);
+                        }
                     }
                 } catch (e) {
                     err('Error propagating GIDs and deduplicating release AC:', e);
@@ -1549,7 +1576,7 @@
         });
 
         // Catch standalone guessfeat buttons (only on standalone pages)
-        if (IS_RECORDING_CREATE_PAGE) {
+        if (IS_STANDALONE_RECORDING_PAGE) {
             document.querySelectorAll('button.guessfeat:not([data-enhanced])').forEach(button => {
                 enhanceReleaseGuessFeat(button);
             });
