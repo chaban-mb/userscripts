@@ -898,7 +898,7 @@
      * @param {ko.Observable} acObservable - The entity.artistCredit ko.observable.
      * @returns {void}
      */
-    function deduplicateACFromObservable(acObservable) {
+    function deduplicateACFromObservable(acObservable, titleFeaturedCount = 0) {
         if (typeof acObservable !== 'function') return;
 
         const ac = acObservable();
@@ -932,6 +932,21 @@
             return [...keys];
         };
 
+        // Determine if all featured artists match
+        let allMatch = false;
+        if (titleFeaturedCount > 0 && firstFeatJoinIdx !== -1) {
+            const existingFeats = names.slice(firstFeatJoinIdx + 1, names.length - titleFeaturedCount);
+            const newFeats = names.slice(names.length - titleFeaturedCount);
+            allMatch = existingFeats.length === newFeats.length &&
+                       newFeats.every(nf => {
+                           const nfKeys = getMatchKeys(nf);
+                           return existingFeats.some(ef => {
+                               const efKeys = getMatchKeys(ef);
+                               return efKeys.some(k => nfKeys.includes(k));
+                           });
+                       });
+        }
+
         const seenEntries = []; // array of { index: number, keys: string[] }
         const survivorMap = new Map(); // dupIdx -> survivorIdx
         const toRemove = new Set();
@@ -961,7 +976,10 @@
                 const isSurvivorFeatured = firstFeatJoinIdx !== -1 && survivorIdx > firstFeatJoinIdx;
                 const isDuplicateFeatured = firstFeatJoinIdx !== -1 && i > firstFeatJoinIdx;
 
-                if (isDuplicateFeatured || isSurvivorFeatured) {
+                const keepDuplicate = (isDuplicateFeatured && !isSurvivorFeatured) ||
+                                      (isDuplicateFeatured && isSurvivorFeatured && allMatch);
+
+                if (keepDuplicate) {
                     const hasRealSurvivorArtist = dedupedNames[survivorIdx].artist && (dedupedNames[survivorIdx].artist.id || dedupedNames[survivorIdx].artist.gid);
                     
                     dedupedNames[i] = {
@@ -999,33 +1017,32 @@
             }
         }
 
-        if (toRemove.size === 0) {
-            log('deduplicateACFromObservable: No duplicates found.');
-            return;
-        }
+        if (toRemove.size > 0) {
+            log(`deduplicateACFromObservable: Removing ${toRemove.size} duplicate(s). Feat join phrase: "${featJoinPhrase}"`);
 
-        log(`deduplicateACFromObservable: Removing ${toRemove.size} duplicate(s). Feat join phrase: "${featJoinPhrase}"`);
+            // Propagate join phrases from duplicate entries to their survivors
+            toRemove.forEach(dupIdx => {
+                const survivorIdx = survivorMap.get(dupIdx);
+                if (survivorIdx !== undefined) {
+                    const isDupFeatured = firstFeatJoinIdx !== -1 && dupIdx > firstFeatJoinIdx;
+                    const isSurvivorFeatured = firstFeatJoinIdx !== -1 && survivorIdx > firstFeatJoinIdx;
 
-        // Propagate join phrases from duplicate entries to their survivors
-        toRemove.forEach(dupIdx => {
-            const survivorIdx = survivorMap.get(dupIdx);
-            if (survivorIdx !== undefined) {
-                const isDupFeatured = firstFeatJoinIdx !== -1 && dupIdx > firstFeatJoinIdx;
-                const isSurvivorFeatured = firstFeatJoinIdx !== -1 && survivorIdx > firstFeatJoinIdx;
+                    if (isDupFeatured === isSurvivorFeatured && survivorIdx < dupIdx) {
+                        const dupJoin = names[dupIdx].joinPhrase ?? '';
+                        const survivorJoin = names[survivorIdx].joinPhrase ?? '';
 
-                if (isDupFeatured === isSurvivorFeatured && survivorIdx < dupIdx) {
-                    const dupJoin = names[dupIdx].joinPhrase ?? '';
-                    const survivorJoin = names[survivorIdx].joinPhrase ?? '';
-
-                    if (isSurvivorFeatured || !FEAT_PATTERN.test(survivorJoin)) {
-                        dedupedNames[survivorIdx] = {
-                            ...dedupedNames[survivorIdx],
-                            joinPhrase: dupJoin
-                        };
+                        if (isSurvivorFeatured || !FEAT_PATTERN.test(survivorJoin)) {
+                            dedupedNames[survivorIdx] = {
+                                ...dedupedNames[survivorIdx],
+                                joinPhrase: dupJoin
+                            };
+                        }
                     }
                 }
-            }
-        });
+            });
+        } else {
+            log('deduplicateACFromObservable: No duplicates found.');
+        }
 
         const filteredNames = dedupedNames.filter((_, i) => !toRemove.has(i));
 
@@ -1066,20 +1083,42 @@
             }
         }
 
+        // Check if all featured join phrases are default ones (commas, ampersands, "and", feat, ft, or empty)
+        let allFeaturedJoinsAreDefault = true;
+        if (firstFeatJoinIdx !== -1) {
+            for (let i = firstFeatJoinIdx + 1; i < filteredNames.length - 1; i++) {
+                const join = (filteredNames[i].joinPhrase ?? '').trim().toLowerCase();
+                const isDefault = join === '' || join === ',' || join === '&' || join === 'and' ||
+                                  join === 'feat' || join === 'feat.' || join === 'ft' || join === 'ft.';
+                if (!isDefault) {
+                    allFeaturedJoinsAreDefault = false;
+                    break;
+                }
+            }
+        }
+
         // Apply default join phrase rules for empty join phrases and ensure the last entry is empty
         const lastIdx = filteredNames.length - 1;
         const repairedNames = filteredNames.map((node, i) => {
             if (i === lastIdx) {
                 return { ...node, joinPhrase: '' };
             }
-            const currentJoin = (node.joinPhrase ?? '').trim();
-            if (!currentJoin) {
+            let currentJoin = node.joinPhrase ?? '';
+
+            if (firstFeatJoinIdx !== -1 && i > firstFeatJoinIdx) {
+                if (allFeaturedJoinsAreDefault || FEAT_PATTERN.test(currentJoin)) {
+                    currentJoin = '';
+                }
+            }
+
+            const trimmedJoin = currentJoin.trim();
+            if (!trimmedJoin) {
                 return {
                     ...node,
                     joinPhrase: i === lastIdx - 1 ? ' & ' : ', '
                 };
             }
-            return node;
+            return { ...node, joinPhrase: currentJoin };
         });
 
         acObservable({ ...ac, names: repairedNames });
@@ -1360,14 +1399,8 @@
         if (!model) return;
         log('Starting cleanEntityModel for model:', model);
 
-        deduplicateACFromObservable(model.artistCredit);
-
         const titleVal = (input ? input.value : '') || (typeof model.name === 'function' ? model.name() : '') || '';
         let textToProcess = originalTitle || titleVal;
-
-        if (getBooleanCookie('guesscase_remove_remixers')) {
-            removeRemixersFromAC(model.artistCredit, textToProcess);
-        }
 
         const currentAC = model.artistCredit();
         const originalArtistsResolved = originalACNames ? originalACNames.map(n => n.name) : originalArtists;
@@ -1384,6 +1417,12 @@
 
         // Run structural pre-parsing
         const structure = parseTitleStructure(textToProcess, uniqueKnownArtists);
+
+        deduplicateACFromObservable(model.artistCredit, structure.featured.length);
+
+        if (getBooleanCookie('guesscase_remove_remixers')) {
+            removeRemixersFromAC(model.artistCredit, textToProcess);
+        }
 
         const parts = structure.core.split(SEPARATOR_PATTERN).map(p => p.trim()).filter(Boolean);
 

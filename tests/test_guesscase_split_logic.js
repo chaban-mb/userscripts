@@ -840,7 +840,7 @@ runTestCase('23. Deduplicate romanized/foreign name credits via sort_name in ded
         })
     };
 
-    lib.deduplicateACFromObservable(this.recordingModel.artistCredit);
+    lib.deduplicateACFromObservable(this.recordingModel.artistCredit, 2);
 }, () => {
     const ac = this.recordingModel.artistCredit();
     assert.strictEqual(ac.names.length, 3);
@@ -852,6 +852,63 @@ runTestCase('23. Deduplicate romanized/foreign name credits via sort_name in ded
     assert.strictEqual(ac.names[2].name, 'Hatsune Miku');
     assert.strictEqual(ac.names[2].joinPhrase, '');
     assert.strictEqual(ac.names[2].artist.gid, '130d679a-9a92-4373-8348-0800b6b93a30');
+});
+
+// Case 24
+runTestCase('24. Deduplicate partial-match features and format correctly when not all match', () => {
+    this.recordingModel = {
+        name: makeObservable('TALK (Feat. Solaria & Stardust)'),
+        artistCredit: makeObservable({
+            names: [
+                { name: 'Cereal Experiments', joinPhrase: ' feat. ', artist: { gid: '059483fe-9f3c-4130-a7ad-28b60c526182' } },
+                { name: 'SOLARIA', joinPhrase: ' & ', artist: { gid: '259a4a61-f9e7-444a-a4d3-608eb71f0e29' } },
+                { name: '星尘Infinity', joinPhrase: ' feat. ', artist: { gid: 'a3e8a29e-83e8-436f-9a64-37d28b5c5aff' } },
+                { name: 'Solaria', joinPhrase: ' & ', artist: null },
+                { name: 'Stardust', joinPhrase: '', artist: null }
+            ]
+        })
+    };
+
+    lib.deduplicateACFromObservable(this.recordingModel.artistCredit, 2);
+}, () => {
+    const ac = this.recordingModel.artistCredit();
+    assert.strictEqual(ac.names.length, 4);
+    assert.strictEqual(ac.names[0].name, 'Cereal Experiments');
+    assert.strictEqual(ac.names[0].joinPhrase, ' feat. ');
+    assert.strictEqual(ac.names[1].name, 'Solaria');
+    assert.strictEqual(ac.names[1].joinPhrase, ', ');
+    assert.strictEqual(ac.names[2].name, '星尘Infinity');
+    assert.strictEqual(ac.names[2].joinPhrase, ' & ');
+    assert.strictEqual(ac.names[3].name, 'Stardust');
+    assert.strictEqual(ac.names[3].joinPhrase, '');
+});
+
+// Case 25
+runTestCase('25. Normalize multiple ampersands to standard commas and ampersand list', () => {
+    this.recordingModel = {
+        name: makeObservable('sandbag'),
+        artistCredit: makeObservable({
+            names: [
+                { name: 'Cereal Experiments', joinPhrase: ' feat. ', artist: null },
+                { name: '星尘Infinity', joinPhrase: ' & ', artist: null },
+                { name: 'Stardust', joinPhrase: ' & ', artist: null },
+                { name: 'Hatsune Miku', joinPhrase: '', artist: null }
+            ]
+        })
+    };
+
+    lib.deduplicateACFromObservable(this.recordingModel.artistCredit, 0);
+}, () => {
+    const ac = this.recordingModel.artistCredit();
+    assert.strictEqual(ac.names.length, 4);
+    assert.strictEqual(ac.names[0].name, 'Cereal Experiments');
+    assert.strictEqual(ac.names[0].joinPhrase, ' feat. ');
+    assert.strictEqual(ac.names[1].name, '星尘Infinity');
+    assert.strictEqual(ac.names[1].joinPhrase, ', ');
+    assert.strictEqual(ac.names[2].name, 'Stardust');
+    assert.strictEqual(ac.names[2].joinPhrase, ' & ');
+    assert.strictEqual(ac.names[3].name, 'Hatsune Miku');
+    assert.strictEqual(ac.names[3].joinPhrase, '');
 });
 
 console.log('\n--- Scenario B: Knockout Observable is Unavailable (DOM Fallback) ---');
