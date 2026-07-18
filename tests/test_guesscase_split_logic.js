@@ -911,6 +911,56 @@ runTestCase('25. Normalize multiple ampersands to standard commas and ampersand 
     assert.strictEqual(ac.names[3].joinPhrase, '');
 });
 
+// Case 26
+runTestCase('26. Format primary artist join phrases standardly if they all match default styles (Atreyu Case)', () => {
+    this.recordingModel = {
+        name: makeObservable('Children of Light'),
+        artistCredit: makeObservable({
+            names: [
+                { name: 'Atreyu', joinPhrase: ', ', artist: null },
+                { name: 'Soulfly', joinPhrase: ' feat. ', artist: null },
+                { name: 'Max Cavalera', joinPhrase: '', artist: null }
+            ]
+        })
+    };
+
+    lib.deduplicateACFromObservable(this.recordingModel.artistCredit, 0);
+}, () => {
+    const ac = this.recordingModel.artistCredit();
+    assert.strictEqual(ac.names.length, 3);
+    assert.strictEqual(ac.names[0].name, 'Atreyu');
+    assert.strictEqual(ac.names[0].joinPhrase, ' & ');
+    assert.strictEqual(ac.names[1].name, 'Soulfly');
+    assert.strictEqual(ac.names[1].joinPhrase, ' feat. ');
+    assert.strictEqual(ac.names[2].name, 'Max Cavalera');
+    assert.strictEqual(ac.names[2].joinPhrase, '');
+});
+
+// Case 27
+runTestCase('27. Preserve non-standard primary join phrases (e.g. vs.)', () => {
+    this.recordingModel = {
+        name: makeObservable('Children of Light'),
+        artistCredit: makeObservable({
+            names: [
+                { name: 'Atreyu', joinPhrase: ' vs. ', artist: null },
+                { name: 'Soulfly', joinPhrase: ' feat. ', artist: null },
+                { name: 'Max Cavalera', joinPhrase: '', artist: null }
+            ]
+        })
+    };
+
+    lib.deduplicateACFromObservable(this.recordingModel.artistCredit, 0);
+}, () => {
+    const ac = this.recordingModel.artistCredit();
+    assert.strictEqual(ac.names.length, 3);
+    assert.strictEqual(ac.names[0].name, 'Atreyu');
+    assert.strictEqual(ac.names[0].joinPhrase, ' vs. ');
+    assert.strictEqual(ac.names[1].name, 'Soulfly');
+    assert.strictEqual(ac.names[1].joinPhrase, ' feat. ');
+    assert.strictEqual(ac.names[2].name, 'Max Cavalera');
+    assert.strictEqual(ac.names[2].joinPhrase, '');
+});
+
 console.log('\n--- Scenario B: Knockout Observable is Unavailable (DOM Fallback) ---');
 
 console.log(`\nTest Suite Complete: ${green(passedTestsCount)} passed, ${red(failedTestsCount)} failed.`);

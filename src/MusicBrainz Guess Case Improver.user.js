@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MusicBrainz: Guess Case Improver
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      0.10.0
+// @version      0.10.1
 // @tag          ai-created
 // @description  Improves the native "Guess Case" for release, recording and track titles with advanced artist and ETI parsing. Also removes artist from title and duplicate artists after using "Guess feat. artists" on tracklists.
 // @author       chaban
@@ -980,7 +980,7 @@
 
                 if (keepDuplicate) {
                     const hasRealSurvivorArtist = dedupedNames[survivorIdx].artist && (dedupedNames[survivorIdx].artist.id || dedupedNames[survivorIdx].artist.gid);
-                    
+
                     dedupedNames[i] = {
                         ...dedupedNames[i],
                         artist: hasRealSurvivorArtist ? dedupedNames[survivorIdx].artist : (dedupedNames[i].artist || dedupedNames[survivorIdx].artist)
@@ -1082,12 +1082,28 @@
             }
         }
 
-        // Check if all featured join phrases are default ones (commas, ampersands, "and", feat, ft, or empty)
+        // Find the boundary between primary and featured artists in the filtered array
+        const primaryBoundaryIdx = filteredNames.findIndex(n => FEAT_PATTERN.test(n.joinPhrase ?? ''));
+        const hasFeatures = primaryBoundaryIdx !== -1;
+        const numPrimary = hasFeatures ? primaryBoundaryIdx + 1 : filteredNames.length;
+
+        // Check if all primary join phrases are default ones (commas or ampersands)
+        let allPrimaryJoinsAreDefault = true;
+        for (let i = 0; i < numPrimary - 1; i++) {
+            const join = (filteredNames[i].joinPhrase ?? '').trim().toLowerCase();
+            const isDefault = join === ',' || join === '&';
+            if (!isDefault) {
+                allPrimaryJoinsAreDefault = false;
+                break;
+            }
+        }
+
+        // Check if all featured join phrases are default ones (commas, ampersands, feat, ft)
         let allFeaturedJoinsAreDefault = true;
         if (firstFeatJoinIdx !== -1) {
             for (let i = firstFeatJoinIdx + 1; i < filteredNames.length - 1; i++) {
                 const join = (filteredNames[i].joinPhrase ?? '').trim().toLowerCase();
-                const isDefault = join === '' || join === ',' || join === '&' || join === 'and' ||
+                const isDefault = join === ',' || join === '&' ||
                                   join === 'feat' || join === 'feat.' || join === 'ft' || join === 'ft.';
                 if (!isDefault) {
                     allFeaturedJoinsAreDefault = false;
@@ -1103,6 +1119,11 @@
                 return { ...node, joinPhrase: '' };
             }
             let currentJoin = node.joinPhrase ?? '';
+
+            // Reformat primary joins if all of them are default
+            if (allPrimaryJoinsAreDefault && i < numPrimary - 1) {
+                currentJoin = i === numPrimary - 2 ? ' & ' : ', ';
+            }
 
             if (firstFeatJoinIdx !== -1 && i > firstFeatJoinIdx) {
                 if (allFeaturedJoinsAreDefault || FEAT_PATTERN.test(currentJoin)) {
