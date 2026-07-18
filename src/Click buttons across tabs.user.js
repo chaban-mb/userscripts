@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Click buttons across tabs
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      4.9.2
+// @version      4.9.3
 // @tag          ai-created
 // @description  Clicks specified buttons across tabs using the Broadcast Channel API and closes tabs after successful submission.
 // @author       chaban
@@ -133,13 +133,15 @@
                 // 1. WAIT OUTSIDE LOCK: Pass 'false' to wait for button to be enabled ONLY
                 waitForButtonAndClick(config, null, false).then(() => {
 
-                    // 2. REQUEST LOCK: Now that we know it's ready, we queue up
-                    rateLimitedMBSubmit(async () => {
+                    setTimeout(() => {
+                        // 2. REQUEST LOCK: Now safely queue up under the rate limiter
+                        rateLimitedMBSubmit(async () => {
 
-                        // 3. CLICK INSIDE LOCK: Pass 'true' (or omit) to click
-                        // We reuse the function to be safe, in case the button state changed in the last millisecond
-                        await waitForButtonAndClick(config, null, true);
-                    });
+                            // 3. CLICK INSIDE LOCK: Pass 'true' (or omit) to click
+                            // We reuse the function to be safe, in case the button state changed in the last millisecond
+                            await waitForButtonAndClick(config, null, true);
+                        });
+                    }, 0);
                 });
             },
         },
@@ -312,15 +314,15 @@
                         });
                     }
                 });
-                
+
                 // Optimized config: only watch relevant attributes instead of every single one
-                const optimizedConfig = { 
-                    childList: true, 
-                    subtree: true, 
+                const optimizedConfig = {
+                    childList: true,
+                    subtree: true,
                     attributes: true,
                     attributeFilter: ['disabled', 'class', 'style', 'value']
                 };
-                
+
                 observer.observe(document.body, optimizedConfig);
             });
         });
