@@ -1055,7 +1055,7 @@
                 if (hasPatternMatch) {
                     log('Intercepting standalone Guess Feat click with custom pattern.');
                     event.stopImmediatePropagation();
-                    cleanEntityModel(source, originalTitle, originalArtists);
+                    cleanEntityModel(source, originalTitle, originalArtists, input);
                     return;
                 }
             }
@@ -1077,7 +1077,7 @@
                         removeRemixersFromAC(release.artistCredit, input.value);
                     }
                 } else if (source) {
-                    cleanEntityModel(source, originalTitle, originalArtists);
+                    cleanEntityModel(source, originalTitle, originalArtists, input);
                 }
 
                 if (input) {
