@@ -754,6 +754,39 @@ runTestCase('21. Seeded unlinked URL artists with blank entity placeholders (May
     assert.strictEqual(this.recordingModel.name(), 'I Should Kill Myself', 'Should isolate track title text completely.');
 });
 
+// Case 22
+runTestCase('22. Sort-name based matching from parsed artists in title', () => {
+    this.recordingModel = {
+        name: makeObservable('Abenteuerland'),
+        artistCredit: makeObservable({
+            names: [
+                {
+                    name: 'Die Ärzte',
+                    joinPhrase: '',
+                    artist: {
+                        id: 45678,
+                        gid: '20630420-6d43-4e4d-b6a6-0d69d79bc758',
+                        name: 'Die Ärzte',
+                        sort_name: 'Ärzte, Die',
+                        entityType: 'artist'
+                    }
+                }
+            ]
+        })
+    };
+
+    lib.cleanEntityModel({
+        model: this.recordingModel,
+        originalTitle: 'Ärzte, Die - Abenteuerland',
+        originalArtists: ['Ärzte, Die']
+    });
+}, () => {
+    const ac = this.recordingModel.artistCredit();
+    assert.strictEqual(ac.names.length, 1);
+    assert.strictEqual(ac.names[0].name, 'Die Ärzte', 'Should map sort_name in title back to credited name.');
+    assert.strictEqual(this.recordingModel.name(), 'Abenteuerland', 'Should match sort_name and strip it from the title.');
+});
+
 console.log('\n--- Scenario B: Knockout Observable is Unavailable (DOM Fallback) ---');
 
 console.log(`\nTest Suite Complete: ${green(passedTestsCount)} passed, ${red(failedTestsCount)} failed.`);

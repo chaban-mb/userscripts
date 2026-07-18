@@ -115,7 +115,7 @@
      * @param {string} text - The raw input title.
      * @returns {{ core: string, featured: object[], etis: string[], joinPhrase: string|null }}
      */
-    function parseTitleStructure(text) {
+    function parseTitleStructure(text, knownArtists) {
         if (!text) return { core: '', featured: [], etis: [], joinPhrase: null };
 
         let current = text.trim();
@@ -147,7 +147,7 @@
                     : ` ${joinWord} `;
 
             const guestStr = featMatch[2] ? featMatch[2].trim() : '';
-            featured = parseArtistsAndJoins(guestStr);
+            featured = parseArtistsAndJoins(guestStr, knownArtists);
 
             current = current.replace(fullFeatClause, '').replace(/\s+/g, ' ').trim();
         }
@@ -290,10 +290,22 @@
             try {
                 const ac = model.artistCredit();
                 if (ac?.names?.length > 0) {
-                    const names = ac.names.map(n => n.name).filter(Boolean);
-                    if (names.length > 0) {
-                        log('Found artist(s) from resolved viewmodel:', names.join('; '));
-                        return names.flatMap(name => parseArtistNamesFromString(name));
+                    const allNames = [];
+                    ac.names.forEach(n => {
+                        if (n.name) {
+                            allNames.push(...parseArtistNamesFromString(n.name));
+                        }
+                        if (n.artist?.name) {
+                            allNames.push(...parseArtistNamesFromString(n.artist.name));
+                        }
+                        if (n.artist?.sort_name) {
+                            allNames.push(...parseArtistNamesFromString(n.artist.sort_name));
+                        }
+                    });
+                    if (allNames.length > 0) {
+                        const uniqueNames = [...new Set(allNames)];
+                        log('Found artist(s) from resolved viewmodel:', uniqueNames.join('; '));
+                        return uniqueNames;
                     }
                 }
             } catch (e) {
@@ -323,8 +335,20 @@
      * @param {string} artistPartString - The string part containing one or more artists.
      * @returns {{name: string, joinPhrase: string}[]} Array of parsed artist and join phrase objects.
      */
-    function parseArtistsAndJoins(artistPartString) {
+    function parseArtistsAndJoins(artistPartString, knownArtists) {
         if (!artistPartString) return [];
+
+        if (knownArtists && knownArtists.length > 0) {
+            const cleanPart = cleanStringForComparison(artistPartString);
+            const isKnown = knownArtists.some(art => cleanStringForComparison(art) === cleanPart);
+            if (isKnown) {
+                return [{
+                    name: cleanTokenBoundaries(artistPartString),
+                    joinPhrase: ''
+                }];
+            }
+        }
+
         const names = artistPartString.split(JOIN_PHRASE_PATTERN);
         const joins = artistPartString.match(JOIN_PHRASE_PATTERN) ?? [];
         return names.map((name, index) => ({
@@ -346,8 +370,10 @@
             const cleanN = cleanStringForComparison(n.name);
             // Fallback safely if the linked artist property is just an empty placeholder
             const cleanArtistName = n.artist?.name ? cleanStringForComparison(n.artist.name) : '';
+            const cleanSortName = n.artist?.sort_name ? cleanStringForComparison(n.artist.sort_name) : '';
             return cleanN === cleanTA ||
                 cleanArtistName === cleanTA ||
+                cleanSortName === cleanTA ||
                 parseArtistNamesFromString(n.name).map(x => cleanStringForComparison(x)).includes(cleanTA);
         });
 
@@ -397,15 +423,27 @@
             }
             return updatedNames;
         } else {
-            const currentNamesLower = currentNames.map(n => cleanStringForComparison(n.name));
-            const newTitleArtists = parsedTitleArtists.filter(ta => !currentNamesLower.includes(cleanStringForComparison(ta.name)));
+            const knownNamesLower = [];
+            currentNames.forEach(n => {
+                if (n.name) knownNamesLower.push(cleanStringForComparison(n.name));
+                if (n.artist?.name) knownNamesLower.push(cleanStringForComparison(n.artist.name));
+                if (n.artist?.sort_name) knownNamesLower.push(cleanStringForComparison(n.artist.sort_name));
+            });
+            const newTitleArtists = parsedTitleArtists.filter(ta => !knownNamesLower.includes(cleanStringForComparison(ta.name)));
 
             if (newTitleArtists.length === 0) {
                 return currentNames;
             }
 
             const titleNamesLower = parsedTitleArtists.map(ta => cleanStringForComparison(ta.name));
-            const seededNames = currentNames.filter(n => !titleNamesLower.includes(cleanStringForComparison(n.name)));
+            const seededNames = currentNames.filter(n => {
+                const cleanN = n.name ? cleanStringForComparison(n.name) : '';
+                const cleanArt = n.artist?.name ? cleanStringForComparison(n.artist.name) : '';
+                const cleanSort = n.artist?.sort_name ? cleanStringForComparison(n.artist.sort_name) : '';
+                return !titleNamesLower.includes(cleanN) &&
+                    (!cleanArt || !titleNamesLower.includes(cleanArt)) &&
+                    (!cleanSort || !titleNamesLower.includes(cleanSort));
+            });
 
             const orderedTitleArtists = parsedTitleArtists.map(ta => mapParsedToCurrentArtist(ta, currentNames));
 
@@ -639,6 +677,11 @@
      */
     function findArtistPartIndex(parts, pristineLower, editorLower) {
         const getMatchCount = (part, artistList) => {
+            const cleanPart = cleanStringForComparison(part);
+            if (artistList.some(art => cleanStringForComparison(art) === cleanPart)) {
+                return 1;
+            }
+
             const artistsInPart = parseArtistNamesFromString(part);
             return artistsInPart.filter(name => {
                 const cleanName = cleanStringForComparison(name);
@@ -700,8 +743,12 @@
             removeRemixersFromAC(acObservable, initialText);
         }
 
+        const pristineArtists = pristineArtistNames.get(input);
+        const editorArtists = getCurrentArtistNames(button);
+        const knownArtists = [...new Set([...(pristineArtists || []), ...editorArtists])];
+
         // Run structural pre-parsing
-        const structure = parseTitleStructure(initialText);
+        const structure = parseTitleStructure(initialText, knownArtists);
         log('Parsed title structural map:', structure);
 
         // Split ONLY the clean, non-bracketed core string literal by hyphens
@@ -709,9 +756,8 @@
         log('removeArtistFromTitle: Core split parts:', parts);
 
         if (parts.length > 1) {
-            const pristineArtists = pristineArtistNames.get(input);
             const pristineLower = (pristineArtists && pristineArtists.length > 0) ? pristineArtists.map(a => a.toLowerCase()) : [];
-            const editorLower = getCurrentArtistNames(button).map(a => a.toLowerCase());
+            const editorLower = editorArtists.map(a => a.toLowerCase());
 
             // Call the centralized index resolver
             let artistPartIndex = resolveArtistPartIndex(parts, pristineLower, editorLower, structure, initialText);
@@ -731,7 +777,7 @@
 
             if (artistPartIndex !== -1) {
                 const artistPart = parts[artistPartIndex];
-                let parsedTitleArtists = parseArtistsAndJoins(artistPart);
+                let parsedTitleArtists = parseArtistsAndJoins(artistPart, knownArtists);
 
                 // Reassemble core title from parts excluding artist
                 const titleParts = parts.filter((_, index) => index !== artistPartIndex);
@@ -1285,8 +1331,21 @@
             removeRemixersFromAC(model.artistCredit, textToProcess);
         }
 
+        const currentAC = model.artistCredit();
+        const originalArtistsResolved = originalACNames ? originalACNames.map(n => n.name) : originalArtists;
+        const knownArtists = [];
+        if (originalArtistsResolved) knownArtists.push(...originalArtistsResolved);
+        if (currentAC?.names) {
+            currentAC.names.forEach(n => {
+                if (n.name) knownArtists.push(n.name);
+                if (n.artist?.name) knownArtists.push(n.artist.name);
+                if (n.artist?.sort_name) knownArtists.push(n.artist.sort_name);
+            });
+        }
+        const uniqueKnownArtists = [...new Set(knownArtists)];
+
         // Run structural pre-parsing
-        const structure = parseTitleStructure(textToProcess);
+        const structure = parseTitleStructure(textToProcess, uniqueKnownArtists);
 
         const parts = structure.core.split(SEPARATOR_PATTERN).map(p => p.trim()).filter(Boolean);
 
@@ -1314,7 +1373,7 @@
 
             if (artistPartIndex !== -1) {
                 const artistPart = parts[artistPartIndex];
-                let parsedTitleArtists = parseArtistsAndJoins(artistPart);
+                let parsedTitleArtists = parseArtistsAndJoins(artistPart, uniqueKnownArtists);
 
                 const titleParts = parts.filter((_, index) => index !== artistPartIndex);
                 let newCoreTitle = titleParts.join(' - ');
