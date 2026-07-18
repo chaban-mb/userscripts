@@ -875,9 +875,9 @@ runTestCase('24. Deduplicate partial-match features and format correctly when no
     assert.strictEqual(ac.names.length, 4);
     assert.strictEqual(ac.names[0].name, 'Cereal Experiments');
     assert.strictEqual(ac.names[0].joinPhrase, ' feat. ');
-    assert.strictEqual(ac.names[1].name, 'Solaria');
+    assert.strictEqual(ac.names[1].name, '星尘Infinity');
     assert.strictEqual(ac.names[1].joinPhrase, ', ');
-    assert.strictEqual(ac.names[2].name, '星尘Infinity');
+    assert.strictEqual(ac.names[2].name, 'Solaria');
     assert.strictEqual(ac.names[2].joinPhrase, ' & ');
     assert.strictEqual(ac.names[3].name, 'Stardust');
     assert.strictEqual(ac.names[3].joinPhrase, '');
