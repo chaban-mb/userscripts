@@ -846,12 +846,12 @@ runTestCase('23. Deduplicate romanized/foreign name credits via sort_name in ded
     assert.strictEqual(ac.names.length, 3);
     assert.strictEqual(ac.names[0].name, 'Cereal Experiments');
     assert.strictEqual(ac.names[0].joinPhrase, ' feat. ');
-    assert.strictEqual(ac.names[1].name, '初音ミク');
+    assert.strictEqual(ac.names[1].name, 'SOLARIA');
     assert.strictEqual(ac.names[1].joinPhrase, ' & ');
-    assert.strictEqual(ac.names[1].artist.gid, '130d679a-9a92-4373-8348-0800b6b93a30');
-    assert.strictEqual(ac.names[2].name, 'SOLARIA');
+    assert.strictEqual(ac.names[1].artist.gid, '259a4a61-f9e7-444a-a4d3-608eb71f0e29');
+    assert.strictEqual(ac.names[2].name, 'Hatsune Miku');
     assert.strictEqual(ac.names[2].joinPhrase, '');
-    assert.strictEqual(ac.names[2].artist.gid, '259a4a61-f9e7-444a-a4d3-608eb71f0e29');
+    assert.strictEqual(ac.names[2].artist.gid, '130d679a-9a92-4373-8348-0800b6b93a30');
 });
 
 console.log('\n--- Scenario B: Knockout Observable is Unavailable (DOM Fallback) ---');

@@ -961,12 +961,20 @@
                 const isSurvivorFeatured = firstFeatJoinIdx !== -1 && survivorIdx > firstFeatJoinIdx;
                 const isDuplicateFeatured = firstFeatJoinIdx !== -1 && i > firstFeatJoinIdx;
 
-                if (!isSurvivorFeatured && isDuplicateFeatured) {
+                if (isDuplicateFeatured || isSurvivorFeatured) {
+                    const hasRealSurvivorArtist = dedupedNames[survivorIdx].artist && (dedupedNames[survivorIdx].artist.id || dedupedNames[survivorIdx].artist.gid);
+                    
                     dedupedNames[i] = {
                         ...dedupedNames[i],
-                        name: names[survivorIdx].name,
-                        artist: names[survivorIdx].artist || names[i].artist
+                        artist: hasRealSurvivorArtist ? dedupedNames[survivorIdx].artist : (dedupedNames[i].artist || dedupedNames[survivorIdx].artist)
                     };
+
+                    const survNameClean = cleanStringForComparison(names[survivorIdx].name);
+                    const dupNameClean = cleanStringForComparison(names[i].name);
+                    if (survNameClean === dupNameClean) {
+                        dedupedNames[i].name = names[survivorIdx].name;
+                    }
+
                     toRemove.add(survivorIdx);
                     survivorMap.set(survivorIdx, i);
 
@@ -1007,7 +1015,7 @@
                 const isDupFeatured = firstFeatJoinIdx !== -1 && dupIdx > firstFeatJoinIdx;
                 const isSurvivorFeatured = firstFeatJoinIdx !== -1 && survivorIdx > firstFeatJoinIdx;
 
-                if (isDupFeatured === isSurvivorFeatured) {
+                if (isDupFeatured === isSurvivorFeatured && survivorIdx < dupIdx) {
                     const dupJoin = names[dupIdx].joinPhrase ?? '';
                     const survivorJoin = names[survivorIdx].joinPhrase ?? '';
 
