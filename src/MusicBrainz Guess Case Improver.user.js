@@ -67,9 +67,30 @@
     const ETI_PATTERN = /\s*(\[[^\]]+\]|\([^)]+\)|【[^】]+】)$/;
     const PARENS_CONTENT_PATTERN = /\(([^)]+)\)/g;
     const ETI_FEAT_PATTERN = new RegExp('^' + FEAT_TITLE_PATTERN.source, 'i');
+    const REMIX_KEYWORDS = ['remix', 'rework', 'edit', 'mix', 'flip', 'bootleg', 'mashup', 'vip', 'dub', 'version'];
     const IS_RECORDING_CREATE_PAGE = /[\/.]recording\/create/.test(window.location.pathname);
 
     log('User configuration loaded.');
+
+    /**
+     * @summary Cleans a string for comparison by lowercasing and stripping all whitespace.
+     * @param {string} str - The string to clean.
+     * @returns {string} The cleaned string.
+     */
+    function cleanStringForComparison(str) {
+        if (!str) return '';
+        return str.toLowerCase().replace(/\s+/g, '');
+    }
+
+    /**
+     * @summary Checks if a string contains any remix-related keyword.
+     * @param {string} str - The string to check.
+     * @returns {boolean} True if a remix keyword is found.
+     */
+    function hasRemixKeyword(str) {
+        if (!str) return false;
+        return REMIX_KEYWORDS.some(kw => new RegExp(`\\b${kw}\\b`, 'i').test(str));
+    }
 
 
 
@@ -265,17 +286,36 @@
      * @returns {{name: string, joinPhrase: string}[]} Array of parsed artist and join phrase objects.
      */
     function parseArtistsAndJoins(artistPartString) {
+        if (!artistPartString) return [];
         const names = artistPartString.split(JOIN_PHRASE_PATTERN);
-        const joins = [];
-        let match;
-        const regex = new RegExp(JOIN_PHRASE_PATTERN);
-        while ((match = regex.exec(artistPartString)) !== null) {
-            joins.push(match[0]);
-        }
+        const joins = artistPartString.match(JOIN_PHRASE_PATTERN) ?? [];
         return names.map((name, index) => ({
             name: name.trim(),
-            joinPhrase: index < joins.length ? joins[index] : ''
+            joinPhrase: joins[index] ?? ''
         })).filter(item => item.name !== '');
+    }
+
+    /**
+     * @summary Maps a parsed title artist to the corresponding existing editor artist credit node, preserving casing/MBID if matched.
+     * @param {object} ta - The parsed title artist object.
+     * @param {object[]} currentNames - Current artist credit objects in the editor viewmodel.
+     * @returns {object} The merged/mapped artist credit node.
+     */
+    function mapParsedToCurrentArtist(ta, currentNames) {
+        const cleanTA = cleanStringForComparison(ta.name);
+        const match = currentNames.find(n => {
+            const cleanN = cleanStringForComparison(n.name);
+            return cleanN === cleanTA || parseArtistNamesFromString(n.name).map(x => cleanStringForComparison(x)).includes(cleanTA);
+        });
+        const useExistingName = match && (
+            cleanStringForComparison(match.name) === cleanTA ||
+            parseArtistNamesFromString(match.name).length === 1
+        );
+        return {
+            artist: match ? match.artist : null,
+            name: useExistingName ? match.name : ta.name,
+            joinPhrase: ta.joinPhrase
+        };
     }
 
     /**
@@ -291,38 +331,23 @@
         const artistsToCheck = seededArtists || [];
         artistsToCheck.forEach(name => {
             const parsed = parseArtistNamesFromString(name);
-            seededIndividualNamesLower.push(...parsed);
+            seededIndividualNamesLower.push(...parsed.map(n => cleanStringForComparison(n)));
         });
 
         // Check if any parsed title artist is in the editor's individual seeded names
         const hasPartialMatch = parsedTitleArtists.some(ta =>
-            seededIndividualNamesLower.includes(ta.name.trim().toLowerCase())
+            seededIndividualNamesLower.includes(cleanStringForComparison(ta.name))
         );
 
         // We only trigger the overwrite/replace path if the primary artist is in the title's parsed guest artists.
         const containsPrimaryArtist = seededIndividualNamesLower && seededIndividualNamesLower.length > 0 && parsedTitleArtists.some(ta => {
-            const taLower = ta.name.trim().toLowerCase();
-            return taLower === seededIndividualNamesLower[0] || parseArtistNamesFromString(ta.name).includes(seededIndividualNamesLower[0]);
+            const cleanTA = cleanStringForComparison(ta.name);
+            return cleanTA === seededIndividualNamesLower[0] || parseArtistNamesFromString(ta.name).map(n => cleanStringForComparison(n)).includes(seededIndividualNamesLower[0]);
         });
 
         if (hasPartialMatch && containsPrimaryArtist) {
             // Precedence Rule: Overwrite/replace seeded credits with parsed title credits.
-            const updatedNames = parsedTitleArtists.map((ta) => {
-                const taLower = ta.name.trim().toLowerCase();
-                const match = currentNames.find(n => {
-                    const nLower = n.name.trim().toLowerCase();
-                    return nLower === taLower || parseArtistNamesFromString(n.name).includes(taLower);
-                });
-                const useExistingName = match && (
-                    match.name.trim().toLowerCase() === taLower ||
-                    parseArtistNamesFromString(match.name).length === 1
-                );
-                return {
-                    artist: match ? match.artist : null,
-                    name: useExistingName ? match.name : ta.name,
-                    joinPhrase: ta.joinPhrase
-                };
-            });
+            const updatedNames = parsedTitleArtists.map(ta => mapParsedToCurrentArtist(ta, currentNames));
 
             if (updatedNames.length > 0) {
                 updatedNames[updatedNames.length - 1].joinPhrase = '';
@@ -330,34 +355,19 @@
             return updatedNames;
         } else {
             // Append non-duplicate parsed artists while preserving the order defined by parsedTitleArtists
-            const currentNamesLower = currentNames.map(n => n.name.trim().toLowerCase());
-            const newTitleArtists = parsedTitleArtists.filter(ta => !currentNamesLower.includes(ta.name.trim().toLowerCase()));
+            const currentNamesLower = currentNames.map(n => cleanStringForComparison(n.name));
+            const newTitleArtists = parsedTitleArtists.filter(ta => !currentNamesLower.includes(cleanStringForComparison(ta.name)));
 
             if (newTitleArtists.length === 0) {
                 return currentNames;
             }
 
             // Partition currentNames: seeded (not in title) vs title artists (already in currentNames)
-            const titleNamesLower = parsedTitleArtists.map(ta => ta.name.trim().toLowerCase());
-            const seededNames = currentNames.filter(n => !titleNamesLower.includes(n.name.trim().toLowerCase()));
+            const titleNamesLower = parsedTitleArtists.map(ta => cleanStringForComparison(ta.name));
+            const seededNames = currentNames.filter(n => !titleNamesLower.includes(cleanStringForComparison(n.name)));
 
             // Re-assemble title artists in their correct order from parsedTitleArtists
-            const orderedTitleArtists = parsedTitleArtists.map(ta => {
-                const taLower = ta.name.trim().toLowerCase();
-                const match = currentNames.find(n => {
-                    const nLower = n.name.trim().toLowerCase();
-                    return nLower === taLower || parseArtistNamesFromString(n.name).includes(taLower);
-                });
-                const useExistingName = match && (
-                    match.name.trim().toLowerCase() === taLower ||
-                    parseArtistNamesFromString(match.name).length === 1
-                );
-                return {
-                    artist: match ? match.artist : null,
-                    name: useExistingName ? match.name : ta.name,
-                    joinPhrase: ta.joinPhrase
-                };
-            });
+            const orderedTitleArtists = parsedTitleArtists.map(ta => mapParsedToCurrentArtist(ta, currentNames));
 
             // Seeded artists should be joined to the title artists.
             // We set the join phrase of the last seeded artist to ' & '.
@@ -391,32 +401,16 @@
      */
     function isArtistRemixerInTitle(artistName, title) {
         if (!artistName || !title) return false;
-        const cleanName = artistName.trim().toLowerCase();
+        const cleanName = cleanStringForComparison(artistName);
         const cleanTitle = title.toLowerCase();
 
-        const remixKeywords = ['remix', 'rework', 'edit', 'mix', 'flip', 'bootleg', 'mashup', 'vip', 'dub', 'version'];
-        const hasRemixKeyword = (str) => remixKeywords.some(kw => new RegExp(`\\b${kw}\\b`, 'i').test(str));
+        const parenthesizedMatches = cleanTitle.match(/\(([^)]+)\)|\[([^\]]+)\]|【([^】]+)】/g) ?? [];
+        const hasRemixInParens = parenthesizedMatches.some(match => cleanStringForComparison(match).includes(cleanName) && hasRemixKeyword(match));
+        if (hasRemixInParens) return true;
 
-        // 1. Check parenthesized/bracketed ETIs
-        const parenthesizedMatches = cleanTitle.match(/\(([^)]+)\)|\[([^\]]+)\]|【([^】]+)】/g) || [];
-        for (const match of parenthesizedMatches) {
-            if (match.includes(cleanName) && hasRemixKeyword(match)) {
-                return true;
-            }
-        }
-
-        // 2. Check hyphen-separated parts
         const separatorPattern = /\s+[-–—/]\s+|\s+[-–—/]\s*|\s*[-–—/]\s+(?=.)/g;
         const parts = cleanTitle.split(separatorPattern).map(p => p.trim()).filter(Boolean);
-        if (parts.length > 1) {
-            for (const part of parts) {
-                if (part.includes(cleanName) && hasRemixKeyword(part)) {
-                    return true;
-                }
-            }
-        }
-
-        return false;
+        return parts.length > 1 && parts.some(part => cleanStringForComparison(part).includes(cleanName) && hasRemixKeyword(part));
     }
 
     /**
@@ -600,7 +594,10 @@
     function findArtistPartIndex(parts, pristineLower, editorLower) {
         const getMatchCount = (part, artistList) => {
             const artistsInPart = parseArtistNamesFromString(part);
-            return artistsInPart.filter(name => artistList.includes(name.toLowerCase())).length;
+            return artistsInPart.filter(name => {
+                const cleanName = cleanStringForComparison(name);
+                return artistList.some(art => cleanStringForComparison(art) === cleanName);
+            }).length;
         };
 
         const scoreParts = (artistList) => {
@@ -769,28 +766,11 @@
             return `___MB_GUESS_CASE_EXCEPTION_${index}___`;
         });
 
-        const trailingEtis = [];
-        let match;
-        while ((match = newText.match(ETI_PATTERN))) {
-            const potentialEti = match[1];
-            // Check if the native script made a mess by wrapping the title in "feat." parens
-            const etiContent = potentialEti.slice(1, -1).trim();
-            const hasSeparator = etiContent.match(/\s+[-–]/);
-            const isFeat = potentialEti.match(ETI_FEAT_PATTERN);
+        const { cleanTitle: cleanTitleWithoutEtis, eti: extractedEtis } = extractTrailingEtis(newText);
+        newText = cleanTitleWithoutEtis;
 
-            if (hasSeparator && isFeat) {
-                log(`Detected likely native MB mis-guess in ETI: "${potentialEti}". Flattening for reprocessing.`);
-                newText = newText.substring(0, newText.lastIndexOf(potentialEti)).trim() + ' ' + etiContent;
-            } else if (isFeat) {
-                break;
-            } else {
-                trailingEtis.unshift(potentialEti);
-                newText = newText.substring(0, newText.lastIndexOf(potentialEti)).trim();
-            }
-        }
-
-        if (trailingEtis.length > 0) {
-            log(`Found ETI(s): ${trailingEtis.join(' ')}`);
+        if (extractedEtis) {
+            log(`Found ETI(s): ${extractedEtis}`);
             log(`Text after ETI removal: "${newText}"`);
         } else {
             log('No ETI found.');
@@ -798,8 +778,8 @@
 
         log(`Text for ETI processing: "${newText}"`);
 
-        if (trailingEtis.length > 0) {
-            newText += ` ${trailingEtis.join(' ')}`;
+        if (extractedEtis) {
+            newText += ` ${extractedEtis}`;
             log(`Re-added ETI(s). Final text before ETI processing: "${newText}"`);
         }
 
@@ -873,17 +853,10 @@
         // no relatedArtists are available, even if the original seeded entry
         // has a linked MBID. Keying by MBID would miss those cross-MBID/no-MBID
         // duplicates.
-        const getKey = (entry) => entry.name.trim().toLowerCase();
+        const getKey = (entry) => cleanStringForComparison(entry.name);
 
         // Find the index of the first featured join phrase in the array
-        let firstFeatJoinIdx = -1;
-        for (let idx = 0; idx < names.length; idx++) {
-            const join = names[idx].joinPhrase ?? '';
-            if (FEAT_PATTERN.test(join)) {
-                firstFeatJoinIdx = idx;
-                break;
-            }
-        }
+        const firstFeatJoinIdx = names.findIndex(n => FEAT_PATTERN.test(n.joinPhrase ?? ''));
 
         const seenKeys = new Map(); // key → index of first occurrence in names
         const toRemove = new Set();
@@ -976,14 +949,7 @@
         // Repair the join phrase at the true feat boundary.
         if (featJoinPhrase !== null) {
             // Find the index of the first featured join phrase in the original names array
-            let firstFeatJoinIdxOrig = -1;
-            for (let idx = 0; idx < names.length; idx++) {
-                const join = names[idx].joinPhrase ?? '';
-                if (FEAT_PATTERN.test(join)) {
-                    firstFeatJoinIdxOrig = idx;
-                    break;
-                }
-            }
+            const firstFeatJoinIdxOrig = names.findIndex(n => FEAT_PATTERN.test(n.joinPhrase ?? ''));
 
             let firstFeatIdx = filteredNames.length;
             if (firstFeatJoinIdxOrig !== -1) {
@@ -1061,17 +1027,15 @@
         if (!releaseAC?.names?.length) return;
 
         // 1. Build a map of lowercased artist name to artist entity (which contains the GID) from tracks
-        const artistMap = new Map();
-        for (const medium of release.mediums?.() ?? []) {
-            for (const track of medium.tracks?.() ?? []) {
-                const trackAC = track.artistCredit?.();
-                for (const nameNode of trackAC?.names ?? []) {
-                    if (nameNode.artist?.gid && nameNode.name) {
-                        artistMap.set(nameNode.name.trim().toLowerCase(), nameNode.artist);
-                    }
-                }
-            }
-        }
+        const mediums = release.mediums?.() ?? [];
+        const trackNodesWithGids = mediums
+            .flatMap(medium => medium.tracks?.() ?? [])
+            .flatMap(track => track.artistCredit?.()?.names ?? [])
+            .filter(nameNode => nameNode.artist?.gid && nameNode.name);
+
+        const artistMap = new Map(
+            trackNodesWithGids.map(node => [cleanStringForComparison(node.name), node.artist])
+        );
 
         if (artistMap.size === 0) return;
 
@@ -1079,7 +1043,7 @@
         let modified = false;
         const updatedNames = releaseAC.names.map(nameNode => {
             if (!nameNode.artist && nameNode.name) {
-                const key = nameNode.name.trim().toLowerCase();
+                const key = cleanStringForComparison(nameNode.name);
                 const matchedArtist = artistMap.get(key);
                 if (matchedArtist) {
                     log(`Propagating GID for artist "${nameNode.name}" from tracks to release:`, matchedArtist.gid);
@@ -1111,12 +1075,10 @@
         if (!id) return null;
         const release = window.MB?.releaseEditor?.rootField?.release?.();
         if (!release) return null;
-        for (const medium of release.mediums?.() ?? []) {
-            for (const track of medium.tracks?.() ?? []) {
-                if (track.elementID === id) return track;
-            }
-        }
-        return null;
+
+        return (release.mediums?.() ?? [])
+            .flatMap(medium => medium.tracks?.() ?? [])
+            .find(track => track.elementID === id) ?? null;
     }
 
     function deduplicateTrackAC(trackRow) {
@@ -1140,18 +1102,17 @@
             const titleInput = trackRow.querySelector('input.track-name');
             const title = titleInput ? titleInput.value : '';
             const removeRemixers = getBooleanCookie('guesscase_remove_remixers');
-            const rows = editor.getArtistRows();
             const seen = new Set();
-            for (const row of rows) {
+            editor.getArtistRows().forEach(row => {
                 const inp = row.querySelector('div.autocomplete2 input[type="text"]');
-                const name = inp?.value.trim().toLowerCase();
+                const name = inp?.value ? cleanStringForComparison(inp.value) : '';
                 const isRemixer = name && removeRemixers && isArtistRemixerInTitle(name, title);
                 if (isRemixer || (name && seen.has(name))) {
                     row.querySelector('.remove-artist-credit')?.click();
                 } else if (name) {
                     seen.add(name);
                 }
-            }
+            });
             editor.close();
         });
     }
@@ -1579,12 +1540,9 @@
                 if (primaryArtist) {
                     const artistPartLower = parts[artistPartIndex].toLowerCase();
                     const primaryNames = parseArtistNamesFromString(primaryArtist);
-                    const cleanStrForCompare = (str) => str.toLowerCase().replace(/\s+/g, '');
-                    const isPrimaryInPart = primaryNames.some(name => cleanStrForCompare(artistPartLower).includes(cleanStrForCompare(name))) || cleanStrForCompare(artistPartLower).includes(cleanStrForCompare(primaryArtist));
+                    const isPrimaryInPart = primaryNames.some(name => cleanStringForComparison(artistPartLower).includes(cleanStringForComparison(name))) || cleanStringForComparison(artistPartLower).includes(cleanStringForComparison(primaryArtist));
                     if (!isPrimaryInPart) {
-                        const remixKeywords = ['remix', 'rework', 'edit', 'mix', 'flip', 'bootleg', 'mashup', 'vip', 'dub', 'version'];
-                        const hasRemixKeyword = remixKeywords.some(kw => new RegExp(`\\b${kw}\\b`, 'i').test(artistPartLower));
-                        if (hasRemixKeyword) {
+                        if (hasRemixKeyword(artistPartLower)) {
                             log('cleanTrackModelAfterGuessFeat: Matched artist part contains a remix keyword. Rejecting hyphen split.');
                             artistPartIndex = -1;
                         }
