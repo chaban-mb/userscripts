@@ -1410,7 +1410,10 @@
                 let newCoreTitle = titleParts.join(' - ');
 
                 if (structure.joinPhrase && parsedTitleArtists.length > 0) {
-                    parsedTitleArtists[parsedTitleArtists.length - 1].joinPhrase = structure.joinPhrase;
+                    const last = parsedTitleArtists.length - 1;
+                    parsedTitleArtists = parsedTitleArtists.map((a, i) =>
+                        i === last ? { ...a, joinPhrase: structure.joinPhrase } : a
+                    );
                 }
                 parsedTitleArtists = [...parsedTitleArtists, ...structure.featured];
 
