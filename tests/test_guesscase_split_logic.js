@@ -1199,6 +1199,32 @@ runTestCase('33. Single-track release guessFeat with remix removal OFF (Mr Sandm
     assert.strictEqual(trackAc.names[1].joinPhrase, ' feat. ');
 });
 
+// Case 34
+runTestCase('34. Multi-title split release title with slash separator (Mirror Mirror / STAR! (feat. Hatsune Miku))', () => {
+    this.release = {
+        name: makeObservable('Mirror Mirror / STAR! (feat. Hatsune Miku)'),
+        artistCredit: makeObservable({
+            names: [
+                { name: 'YENA', joinPhrase: '', artist: { name: 'YENA', gid: '745c5b92-325f-451d-bd52-e6b95229c776' } }
+            ]
+        })
+    };
+
+    lib.cleanEntityModel({
+        model: this.release,
+        originalTitle: 'Mirror Mirror / STAR! (feat. Hatsune Miku)',
+        originalArtists: ['YENA'],
+        input: { value: 'Mirror Mirror / STAR! (feat. Hatsune Miku)', dispatchEvent: () => {} }
+    });
+}, () => {
+    const ac = this.release.artistCredit();
+    assert.strictEqual(this.release.name(), 'Mirror Mirror / STAR!', 'Slash-separated split release title preserved without stripping / STAR!');
+    assert.strictEqual(ac.names.length, 2, 'Featured artist Hatsune Miku appended to release AC');
+    assert.strictEqual(ac.names[0].name, 'YENA');
+    assert.strictEqual(ac.names[0].joinPhrase, ' feat. ');
+    assert.strictEqual(ac.names[1].name, 'Hatsune Miku');
+});
+
 console.log('\n--- Scenario B: Knockout Observable is Unavailable (DOM Fallback) ---');
 
 console.log(`\nTest Suite Complete: ${green(passedTestsCount)} passed, ${red(failedTestsCount)} failed.`);

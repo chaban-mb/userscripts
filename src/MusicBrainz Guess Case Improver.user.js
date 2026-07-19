@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MusicBrainz: Guess Case Improver
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      0.10.4
+// @version      0.10.5
 // @tag          ai-created
 // @description  Improves the native "Guess Case" for release, recording and track titles with advanced artist and ETI parsing. Also removes artist from title and duplicate artists after using "Guess feat. artists" on tracklists.
 // @author       chaban
@@ -187,18 +187,25 @@
             const joinPhraseStr = structure.joinPhrase.trim();
             const lowerRaw = rawText.toLowerCase();
 
-            const part0HasFeat = lowerRaw.includes(parts[0].toLowerCase() + ' (' + joinPhraseStr) ||
-                                 lowerRaw.includes(parts[0].toLowerCase() + structure.joinPhrase.toLowerCase());
+            const escapedPart0 = parts[0].replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            const escapedPart1 = parts[1].replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            const sepMatch = rawText.match(new RegExp(`${escapedPart0}\\s*([\\/\\-–—])\\s*${escapedPart1}`, 'i'));
+            const isSlashSeparator = sepMatch && sepMatch[1] === '/';
 
-            const part1HasFeat = lowerRaw.includes(parts[1].toLowerCase() + ' (' + joinPhraseStr) ||
-                                 lowerRaw.includes(parts[1].toLowerCase() + structure.joinPhrase.toLowerCase());
+            if (!isSlashSeparator) {
+                const part0HasFeat = lowerRaw.includes(parts[0].toLowerCase() + ' (' + joinPhraseStr) ||
+                                     lowerRaw.includes(parts[0].toLowerCase() + structure.joinPhrase.toLowerCase());
 
-            if (part1HasFeat && !part0HasFeat) {
-                return 1;
-            }
+                const part1HasFeat = lowerRaw.includes(parts[1].toLowerCase() + ' (' + joinPhraseStr) ||
+                                     lowerRaw.includes(parts[1].toLowerCase() + structure.joinPhrase.toLowerCase());
 
-            if (part0HasFeat) {
-                return -1;
+                if (part1HasFeat && !part0HasFeat) {
+                    return 1;
+                }
+
+                if (part0HasFeat) {
+                    return -1;
+                }
             }
         }
 
