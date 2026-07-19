@@ -444,29 +444,48 @@ def do_release():
                 default_type = "feat"
                 default_desc = f"release version {new_version}"
 
-            # Check if the last commit was about this script (contains slug)
-            last_commit_subject = run_cmd("git log -n 1 --format=%s").strip()
-            suggest_amend = False
-            if f"({slug})" in last_commit_subject:
-                suggest_amend = True
+            # Find the latest unpushed commit touching this script file
+            remote_tracking = run_cmd("git rev-parse --abbrev-ref --symbolic-full-name @{u}").strip()
+            if not remote_tracking or remote_tracking.startswith("fatal"):
+                remote_tracking = f"{remote}/{release_branch}"
 
-            amend = False
-            if suggest_amend:
-                amend_choice = input(f"Last commit matches this script's slug. Amend the version bump to '{last_commit_subject}'? (Y/n): ").strip().lower() or 'y'
+            file_commits_out = get_git_stdout([
+                'git', 'log', f'{remote_tracking}..HEAD',
+                '--format=%H %s', '--', str(script['rel_path'])
+            ]).strip()
+            file_commits = [l.strip() for l in file_commits_out.splitlines() if l.strip()]
+
+            head_hash = run_cmd("git rev-parse HEAD").strip()
+            target_line = file_commits[0] if file_commits else None
+            target_hash = target_line.split(' ', 1)[0] if target_line else None
+            target_subject = (target_line.split(' ', 1)[1] if target_line and ' ' in target_line else '')
+
+            committed = False
+            if target_hash == head_hash:
+                # HEAD is the latest commit for this script — standard amend
+                amend_choice = input(f"Last commit matches this script's slug. Amend version bump into '{target_subject}'? (Y/n): ").strip().lower() or 'y'
                 if amend_choice == 'y':
-                    amend = True
+                    print("Amending last commit to include version bump...")
+                    subprocess.run(['git', 'commit', '--amend', '--no-edit'], check=True)
+                    committed = True
+            elif target_hash:
+                # Non-HEAD unpushed commit exists — fold via fixup rebase
+                print(f"Found unpushed commit for this script:\n  {target_subject}")
+                fixup_choice = input("Fold version bump into it via fixup rebase? (Y/n): ").strip().lower() or 'y'
+                if fixup_choice == 'y':
+                    print(f"Creating fixup commit and squashing into '{target_subject}'...")
+                    subprocess.run(['git', 'commit', '--fixup', target_hash], check=True)
+                    env = os.environ.copy()
+                    env['GIT_SEQUENCE_EDITOR'] = 'true'
+                    subprocess.run(['git', 'rebase', '-i', '--autosquash', f'{target_hash}^'], env=env, check=True)
+                    committed = True
 
-            if amend:
-                print(f"Amending last commit to include version bump...")
-                subprocess.run(['git', 'commit', '--amend', '--no-edit'], check=True)
-            else:
+            if not committed:
                 print(f"\nEnter commit message details for {script['name']}.")
                 print(f"Format: <type>({slug}): <description>")
                 commit_type = input(f"Commit type (fix/feat/chore/refactor/style, default: {default_type}): ").strip().lower() or default_type
                 commit_desc = input(f"Description (default: {default_desc}): ").strip()
-
                 commit_msg = f"{commit_type}({slug}): {commit_desc or default_desc}"
-
                 print(f"Committing changes: '{commit_msg}'")
                 subprocess.run(['git', 'commit', '-m', commit_msg], check=True)
                 commits_created += 1
@@ -668,16 +687,20 @@ def main():
 
     args = parser.parse_args()
 
-    if not args.command:
-        sys.exit(do_check())
-    elif args.command == "check":
-        sys.exit(do_check())
-    elif args.command == "cleanup":
-        do_cleanup(args.branch, args.main_branch)
-    elif args.command == "release":
-        do_release()
-    elif args.command == "build":
-        do_build()
+    try:
+        if not args.command:
+            sys.exit(do_check())
+        elif args.command == "check":
+            sys.exit(do_check())
+        elif args.command == "cleanup":
+            do_cleanup(args.branch, args.main_branch)
+        elif args.command == "release":
+            do_release()
+        elif args.command == "build":
+            do_build()
+    except KeyboardInterrupt:
+        print(f"\n{COLOR_YELLOW}Aborted.{COLOR_RESET}\n")
+        sys.exit(1)
 
 if __name__ == "__main__":
     main()
