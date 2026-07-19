@@ -27,7 +27,10 @@ const hookText = `
         enhanceReactGuessCase,
         cleanTokenBoundaries,
         parseTitleStructure,
-        resolveArtistPartIndex
+        resolveArtistPartIndex,
+        findDuplicateACNodes,
+        repairFeatBoundary,
+        transformEntityTitleAndCredits
     };
 `;
 code = code.replace(/\n\s*\}\)\(\);\s*$/, `\n${hookText}\n})();`);

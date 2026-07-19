@@ -1486,6 +1486,122 @@
     // ====================================================================================
 
     /**
+     * @summary Pure transformation function that parses title structure, extracts featured/part artists, merges artist credits, and reconstructs title.
+     * @param {object} params - Options object.
+     * @param {string} params.title - The title text to process.
+     * @param {object[]} [params.acNames] - Current artist credit names array.
+     * @param {string[]} [params.knownArtists] - Known artist names for parsing.
+     * @param {string[]} [params.pristineArtists] - Pristine artist names.
+     * @param {string[]} [params.editorArtists] - Active editor artist names.
+     * @returns {{finalTitle: string, updatedACNames: object[]|null, modified: boolean}} Transformed title and repaired AC array.
+     */
+    function transformEntityTitleAndCredits({ title, acNames, knownArtists = [], pristineArtists = [], editorArtists = [] }) {
+        if (!title) return { finalTitle: title, updatedACNames: null, modified: false };
+
+        const structure = parseTitleStructure(title, knownArtists);
+        const parts = structure.core.split(SEPARATOR_PATTERN).map(p => p.trim()).filter(Boolean);
+
+        let updatedACNames = null;
+        let finalTitle = title;
+        let modified = false;
+
+        if (parts.length > 1 || structure.featured.length > 0) {
+            const pristineLower = pristineArtists.map(a => a.toLowerCase());
+            const editorLower = editorArtists.map(a => a.toLowerCase());
+
+            let artistPartIndex = resolveArtistPartIndex(parts, pristineLower, editorLower, structure, title);
+
+            if (artistPartIndex !== -1) {
+                const artistPart = parts[artistPartIndex];
+                let parsedTitleArtists = parseArtistsAndJoins(artistPart, knownArtists);
+                const titleParts = parts.filter((_, index) => index !== artistPartIndex);
+                let newCoreTitle = titleParts.join(' - ');
+
+                if (structure.joinPhrase && parsedTitleArtists.length > 0) {
+                    parsedTitleArtists[parsedTitleArtists.length - 1].joinPhrase = structure.joinPhrase;
+                }
+                parsedTitleArtists = [...parsedTitleArtists, ...structure.featured];
+
+                if (acNames?.length) {
+                    updatedACNames = mergeArtistCredits(acNames, parsedTitleArtists, pristineArtists);
+                }
+
+                finalTitle = newCoreTitle;
+                if (structure.etis.length > 0) {
+                    finalTitle += ' ' + structure.etis.join(' ');
+                }
+                finalTitle = finalTitle.trim();
+                modified = true;
+            } else if (structure.featured.length > 0) {
+                const featJoinPhrase = structure.joinPhrase || ' feat. ';
+                const featNamesLower = structure.featured.map(f => cleanStringForComparison(f.name));
+
+                if (acNames?.length) {
+                    const firstFeatIdxInAC = acNames.findIndex(n =>
+                        featNamesLower.includes(cleanStringForComparison(n.name))
+                    );
+                    const preppedACNames = acNames.map((n, i) => {
+                        if (firstFeatIdxInAC > 0 && i === firstFeatIdxInAC - 1) {
+                            return { ...n, joinPhrase: featJoinPhrase };
+                        } else if (firstFeatIdxInAC === -1 && i === acNames.length - 1) {
+                            return { ...n, joinPhrase: featJoinPhrase };
+                        }
+                        return n;
+                    });
+                    updatedACNames = mergeArtistCredits(preppedACNames, structure.featured, pristineArtists);
+                }
+
+                finalTitle = structure.core;
+                if (structure.etis.length > 0) {
+                    finalTitle += ' ' + structure.etis.join(' ');
+                }
+                finalTitle = finalTitle.trim();
+                modified = true;
+            }
+        }
+
+        return { finalTitle, updatedACNames, modified };
+    }
+
+    function removeArtistFromTitle(input, button) {
+        if (!input || !button) return;
+        let initialText = pristineValues.get(input) || input.value;
+        log('removeArtistFromTitle: Initial text:', initialText);
+
+        initialText = flattenEtiMisguess(initialText);
+
+        const acObservable = getACObservable(input, button);
+        if (acObservable && typeof acObservable === 'function' && getBooleanCookie('guesscase_remove_remixers')) {
+            removeRemixersFromAC(acObservable, initialText);
+        }
+
+        const pristineArtists = pristineArtistNames.get(input) || [];
+        const editorArtists = getCurrentArtistNames(button);
+        const knownArtists = [...new Set([...pristineArtists, ...editorArtists])];
+        const currentAC = (acObservable && typeof acObservable === 'function') ? acObservable() : null;
+
+        const { finalTitle, updatedACNames, modified } = transformEntityTitleAndCredits({
+            title: initialText,
+            acNames: currentAC?.names ?? null,
+            knownArtists,
+            pristineArtists,
+            editorArtists
+        });
+
+        if (modified) {
+            if (acObservable && typeof acObservable === 'function' && updatedACNames && updatedACNames !== currentAC.names) {
+                acObservable({ ...currentAC, names: updatedACNames });
+                if (IS_STANDALONE_RECORDING_PAGE) {
+                    syncAutocompleteInputs(acObservable().names);
+                }
+            }
+            info(`Removed artist part from title: "${input.value}" -> "${finalTitle}"`);
+            setInputValue(input, finalTitle);
+            pristineValues.set(input, input.value);
+        }
+    }
+
+    /**
      * @summary Cleans a Knockout entity model (Track or Standalone Recording) after a Guess Feat action.
      * @param {object} model - The Knockout model (must have name and artistCredit observables).
      * @param {string} originalTitle - The original title before the action.
@@ -1501,9 +1617,8 @@
         let textToProcess = originalTitle || titleVal;
 
         const currentAC = model.artistCredit();
-        const originalArtistsResolved = originalACNames ? originalACNames.map(n => n.name) : originalArtists;
-        const knownArtists = [];
-        if (originalArtistsResolved) knownArtists.push(...originalArtistsResolved);
+        const originalArtistsResolved = originalACNames ? originalACNames.map(n => n.name) : (originalArtists || []);
+        const knownArtists = [...originalArtistsResolved];
         if (currentAC?.names) {
             currentAC.names.forEach(n => {
                 if (n.name) knownArtists.push(n.name);
@@ -1512,107 +1627,44 @@
             });
         }
         const uniqueKnownArtists = [...new Set(knownArtists)];
-
-        // Run structural pre-parsing
-        const structure = parseTitleStructure(textToProcess, uniqueKnownArtists);
-
-        deduplicateACFromObservable(model.artistCredit, structure.featured.length);
+        
+        deduplicateACFromObservable(model.artistCredit);
 
         if (getBooleanCookie('guesscase_remove_remixers')) {
             removeRemixersFromAC(model.artistCredit, textToProcess);
         }
 
-        const parts = structure.core.split(SEPARATOR_PATTERN).map(p => p.trim()).filter(Boolean);
+        const editorArtists = (model.artistCredit()?.names ?? []).map(n => n.name);
 
-        if (parts.length > 1 || structure.featured.length > 0) {
-            const currentAC = model.artistCredit();
-            const originalArtistsResolved = originalACNames ? originalACNames.map(n => n.name) : originalArtists;
-            const pristineLower = (originalArtistsResolved && originalArtistsResolved.length > 0) ? originalArtistsResolved.map(a => a.toLowerCase()) : [];
-            const editorLower = (currentAC?.names ?? []).map(n => n.name.toLowerCase());
+        const { finalTitle, updatedACNames, modified } = transformEntityTitleAndCredits({
+            title: textToProcess,
+            acNames: model.artistCredit()?.names ?? null,
+            knownArtists: uniqueKnownArtists,
+            pristineArtists: originalArtistsResolved,
+            editorArtists
+        });
 
-            let artistPartIndex = resolveArtistPartIndex(parts, pristineLower, editorLower, structure, textToProcess);
-            log('cleanEntityModel: Resolved artist part index:', artistPartIndex);
-
-            if (artistPartIndex !== -1) {
-                const artistPart = parts[artistPartIndex];
-                let parsedTitleArtists = parseArtistsAndJoins(artistPart, uniqueKnownArtists);
-
-                const titleParts = parts.filter((_, index) => index !== artistPartIndex);
-                let newCoreTitle = titleParts.join(' - ');
-
-                if (structure.joinPhrase && parsedTitleArtists.length > 0) {
-                    parsedTitleArtists[parsedTitleArtists.length - 1].joinPhrase = structure.joinPhrase;
+        if (modified) {
+            if (updatedACNames && updatedACNames !== model.artistCredit()?.names) {
+                model.artistCredit({ ...model.artistCredit(), names: updatedACNames });
+                if (IS_STANDALONE_RECORDING_PAGE) {
+                    syncAutocompleteInputs(model.artistCredit().names);
                 }
-
-                parsedTitleArtists = [...parsedTitleArtists, ...structure.featured];
-
-                if (currentAC?.names) {
-                    const updatedNames = mergeArtistCredits(currentAC.names, parsedTitleArtists, originalArtistsResolved);
-                    if (updatedNames !== currentAC.names) {
-                        model.artistCredit({ ...currentAC, names: updatedNames });
-                    }
-                    if (IS_STANDALONE_RECORDING_PAGE) {
-                        syncAutocompleteInputs(model.artistCredit().names);
-                    }
-                }
-
-                let finalTitle = newCoreTitle;
-                if (structure.etis.length > 0) {
-                    finalTitle += ' ' + structure.etis.join(' ');
-                }
-                info(`Removed artist part from title (model): "${titleVal}" -> "${finalTitle}"`);
-                if (typeof model.name === 'function') {
-                    model.name(finalTitle.trim());
-                }
-                if (input) {
-                    setInputValue(input, finalTitle.trim());
-                }
-            } else {
-                if (structure.featured.length > 0) {
-                    const featJoinPhrase = structure.joinPhrase || ' feat. ';
-                    const featNamesLower = structure.featured.map(f => cleanStringForComparison(f.name));
-                    const currentAC = model.artistCredit();
-                    if (currentAC?.names && currentAC.names.length > 0) {
-                        const firstFeatIdxInAC = currentAC.names.findIndex(n =>
-                            featNamesLower.includes(cleanStringForComparison(n.name))
-                        );
-                        const acNames = currentAC.names.map((n, i) => {
-                            if (firstFeatIdxInAC > 0 && i === firstFeatIdxInAC - 1) {
-                                return { ...n, joinPhrase: featJoinPhrase };
-                            } else if (firstFeatIdxInAC === -1 && i === currentAC.names.length - 1) {
-                                return { ...n, joinPhrase: featJoinPhrase };
-                            }
-                            return n;
-                        });
-                        const updatedNames = mergeArtistCredits(acNames, structure.featured, originalArtistsResolved);
-                        if (updatedNames !== currentAC.names) {
-                            model.artistCredit({ ...currentAC, names: updatedNames });
-                        }
-                        if (IS_STANDALONE_RECORDING_PAGE) {
-                            syncAutocompleteInputs(model.artistCredit().names);
-                        }
-                    }
-
-                    let finalTitle = structure.core;
-                    if (structure.etis.length > 0) {
-                        finalTitle += ' ' + structure.etis.join(' ');
-                    }
-                    info(`Removed featured artist from title (model): "${titleVal}" -> "${finalTitle}"`);
-                    if (typeof model.name === 'function') {
-                        model.name(finalTitle.trim());
-                    }
-                    if (input) {
-                        setInputValue(input, finalTitle.trim());
-                    }
-                } else {
-                    log('cleanEntityModel: Restoring original title.');
-                    if (typeof model.name === 'function') {
-                        model.name(originalTitle);
-                    }
-                    if (input) {
-                        setInputValue(input, originalTitle);
-                    }
-                }
+            }
+            info(`Removed artist part from title (model): "${titleVal}" -> "${finalTitle}"`);
+            if (typeof model.name === 'function') {
+                model.name(finalTitle);
+            }
+            if (input) {
+                setInputValue(input, finalTitle);
+            }
+        } else {
+            log('cleanEntityModel: Restoring original title.');
+            if (typeof model.name === 'function') {
+                model.name(originalTitle);
+            }
+            if (input) {
+                setInputValue(input, originalTitle);
             }
         }
     }
