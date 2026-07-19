@@ -801,70 +801,29 @@
             removeRemixersFromAC(acObservable, initialText);
         }
 
-        const pristineArtists = pristineArtistNames.get(input);
+        const pristineArtists = pristineArtistNames.get(input) || [];
         const editorArtists = getCurrentArtistNames(button);
-        const knownArtists = [...new Set([...(pristineArtists || []), ...editorArtists])];
+        const knownArtists = [...new Set([...pristineArtists, ...editorArtists])];
+        const currentAC = (acObservable && typeof acObservable === 'function') ? acObservable() : null;
 
-        // Run structural pre-parsing
-        const structure = parseTitleStructure(initialText, knownArtists);
-        log('Parsed title structural map:', structure);
+        const { finalTitle, updatedACNames, modified } = transformEntityTitleAndCredits({
+            title: initialText,
+            acNames: currentAC?.names ?? null,
+            knownArtists,
+            pristineArtists,
+            editorArtists
+        });
 
-        // Split ONLY the clean, non-bracketed core string literal by hyphens
-        const parts = structure.core.split(SEPARATOR_PATTERN).map(p => p.trim()).filter(Boolean);
-        log('removeArtistFromTitle: Core split parts:', parts);
-
-        if (parts.length > 1 || structure.featured.length > 0) {
-            const pristineLower = (pristineArtists && pristineArtists.length > 0) ? pristineArtists.map(a => a.toLowerCase()) : [];
-            const editorLower = editorArtists.map(a => a.toLowerCase());
-
-            let artistPartIndex = resolveArtistPartIndex(parts, pristineLower, editorLower, structure, initialText);
-            log('removeArtistFromTitle: Resolved artist part index:', artistPartIndex);
-
-            if (artistPartIndex !== -1) {
-                const artistPart = parts[artistPartIndex];
-                let parsedTitleArtists = parseArtistsAndJoins(artistPart, knownArtists);
-
-                // Reassemble core title from parts excluding artist
-                const titleParts = parts.filter((_, index) => index !== artistPartIndex);
-                let newCoreTitle = titleParts.join(' - ');
-
-                if (structure.joinPhrase && parsedTitleArtists.length > 0) {
-                    parsedTitleArtists[parsedTitleArtists.length - 1].joinPhrase = structure.joinPhrase;
+        if (modified) {
+            if (acObservable && typeof acObservable === 'function' && updatedACNames && updatedACNames !== currentAC.names) {
+                acObservable({ ...currentAC, names: updatedACNames });
+                if (IS_STANDALONE_RECORDING_PAGE) {
+                    syncAutocompleteInputs(acObservable().names);
                 }
-
-                parsedTitleArtists = [...parsedTitleArtists, ...structure.featured];
-
-                if (acObservable && typeof acObservable === 'function') {
-                    const currentAC = acObservable();
-                    if (currentAC?.names) {
-                        const seededArtists = pristineArtistNames.get(input) || getCurrentArtistNames(button);
-                        const updatedNames = mergeArtistCredits(currentAC.names, parsedTitleArtists, seededArtists);
-                        if (updatedNames !== currentAC.names) {
-                            acObservable({ ...currentAC, names: updatedNames });
-                            if (IS_STANDALONE_RECORDING_PAGE) {
-                                syncAutocompleteInputs(acObservable().names);
-                            }
-                        }
-                    }
-
-                    // Reconstruct title using structural components
-                    let finalTitle = newCoreTitle;
-                    if (structure.etis.length > 0) {
-                        finalTitle += ' ' + structure.etis.join(' ');
-                    }
-                    info(`Removed artist part from title: "${input.value}" -> "${finalTitle}"`);
-                    setInputValue(input, finalTitle.trim());
-                    pristineValues.set(input, input.value);
-                }
-            } else if (structure.featured.length > 0) {
-                let finalTitle = structure.core;
-                if (structure.etis.length > 0) {
-                    finalTitle += ' ' + structure.etis.join(' ');
-                }
-                info(`Removed featured artist from title: "${input.value}" -> "${finalTitle}"`);
-                setInputValue(input, finalTitle.trim());
-                pristineValues.set(input, input.value);
             }
+            info(`Removed artist part/featured from title: "${input.value}" -> "${finalTitle}"`);
+            setInputValue(input, finalTitle);
+            pristineValues.set(input, input.value);
         }
     }
 
