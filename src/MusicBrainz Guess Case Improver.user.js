@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MusicBrainz: Guess Case Improver
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      0.10.1
+// @version      0.10.2
 // @tag          ai-created
 // @description  Improves the native "Guess Case" for release, recording and track titles with advanced artist and ETI parsing. Also removes artist from title and duplicate artists after using "Guess feat. artists" on tracklists.
 // @author       chaban
@@ -171,26 +171,35 @@
      */
     function resolveArtistPartIndex(parts, pristineLower, editorLower, structure, rawText) {
         let idx = findArtistPartIndex(parts, pristineLower, editorLower);
-        if (idx !== -1) return idx;
+        if (idx !== -1) {
+            const primaryArtist = pristineLower[0] || editorLower[0];
+            if (primaryArtist) {
+                const artistPartLower = parts[idx].toLowerCase();
+                const primaryNames = parseArtistNamesFromString(primaryArtist);
+                const isPrimaryInPart = primaryNames.some(name => cleanStringForComparison(artistPartLower).includes(cleanStringForComparison(name)));
+                if (!isPrimaryInPart && hasRemixKeyword(artistPartLower)) {
+                    return -1;
+                }
+            }
+            return idx;
+        }
 
         if (parts.length === 2 && structure.joinPhrase) {
             const joinPhraseStr = structure.joinPhrase.trim();
             const lowerRaw = rawText.toLowerCase();
 
-            // 1. Check if it's a bracketed feature attached to a part: "Part (feat. Guest)"
-            const bracketedTitleIdx = parts.findIndex(part =>
-                lowerRaw.includes(part.toLowerCase() + ' (' + joinPhraseStr)
-            );
-            if (bracketedTitleIdx !== -1) {
-                return bracketedTitleIdx === 0 ? 1 : 0;
+            const part0HasFeat = lowerRaw.includes(parts[0].toLowerCase() + ' (' + joinPhraseStr) ||
+                                 lowerRaw.includes(parts[0].toLowerCase() + structure.joinPhrase.toLowerCase());
+
+            const part1HasFeat = lowerRaw.includes(parts[1].toLowerCase() + ' (' + joinPhraseStr) ||
+                                 lowerRaw.includes(parts[1].toLowerCase() + structure.joinPhrase.toLowerCase());
+
+            if (part1HasFeat && !part0HasFeat) {
+                return 1;
             }
 
-            // 2. Check if it's an unbracketed feature attached to a part: "Part feat. Guest"
-            const unbracketedArtistIdx = parts.findIndex(part =>
-                lowerRaw.includes(part.toLowerCase() + structure.joinPhrase.toLowerCase())
-            );
-            if (unbracketedArtistIdx !== -1) {
-                return unbracketedArtistIdx;
+            if (part0HasFeat) {
+                return -1;
             }
         }
 
@@ -364,6 +373,29 @@
      * @returns {object} The merged/mapped artist credit node.
      */
 
+    /**
+     * Checks if fullName starts with baseName followed by a title/remix separator (whitespace, hyphen, bracket, etc.).
+     * Used to detect native guessFeat mis-parsed strings like "ひかり - Jafunk Remix".
+     * @param {string} fullName
+     * @param {string} baseName
+     * @returns {boolean}
+     */
+    function isPrefixWithSeparator(fullName, baseName) {
+        if (!fullName || !baseName) return false;
+        const lowerFull = fullName.trim().toLowerCase();
+        const lowerBase = baseName.trim().toLowerCase();
+        if (lowerFull === lowerBase) return false;
+        if (!lowerFull.startsWith(lowerBase)) return false;
+        const rest = lowerFull.slice(lowerBase.length);
+        return /^[\s\-_(\[\/]/.test(rest);
+    }
+
+    /**
+     * @summary Maps a parsed artist credit object from a title to an existing credit in the editor viewmodel.
+     * @param {object} ta - The parsed title artist object.
+     * @param {object[]} currentNames - Current artist credit objects in the editor viewmodel.
+     * @returns {object} The merged/mapped artist credit node.
+     */
     function mapParsedToCurrentArtist(ta, currentNames) {
         const cleanTA = cleanStringForComparison(ta.name);
         const match = currentNames.find(n => {
@@ -374,7 +406,9 @@
             return cleanN === cleanTA ||
                 cleanArtistName === cleanTA ||
                 cleanSortName === cleanTA ||
-                parseArtistNamesFromString(n.name).map(x => cleanStringForComparison(x)).includes(cleanTA);
+                parseArtistNamesFromString(n.name).map(x => cleanStringForComparison(x)).includes(cleanTA) ||
+                isPrefixWithSeparator(n.name, ta.name) ||
+                isPrefixWithSeparator(n.artist?.name, ta.name);
         });
 
         // Explicitly check if the match has a real entity database link (non-empty ID)
@@ -382,7 +416,7 @@
         const useExistingName = match && (
             cleanStringForComparison(match.name) === cleanTA ||
             parseArtistNamesFromString(match.name).length === 1
-        );
+        ) && !isPrefixWithSeparator(match.name, ta.name);
 
         return {
             artist: hasRealArtistEntity ? match.artist : null,
@@ -449,10 +483,14 @@
 
             const updatedSeeded = [...seededNames];
             if (updatedSeeded.length > 0) {
-                updatedSeeded[updatedSeeded.length - 1] = {
-                    ...updatedSeeded[updatedSeeded.length - 1],
-                    joinPhrase: ' & '
-                };
+                const lastJoin = updatedSeeded[updatedSeeded.length - 1].joinPhrase ?? '';
+                const titleHasFeatBoundary = orderedTitleArtists.some(ta => FEAT_PATTERN.test(ta.joinPhrase ?? ''));
+                if (!FEAT_PATTERN.test(lastJoin) || titleHasFeatBoundary) {
+                    updatedSeeded[updatedSeeded.length - 1] = {
+                        ...updatedSeeded[updatedSeeded.length - 1],
+                        joinPhrase: ' & '
+                    };
+                }
             }
 
             const updatedNames = [...updatedSeeded, ...orderedTitleArtists];
@@ -759,21 +797,8 @@
             const pristineLower = (pristineArtists && pristineArtists.length > 0) ? pristineArtists.map(a => a.toLowerCase()) : [];
             const editorLower = editorArtists.map(a => a.toLowerCase());
 
-            // Call the centralized index resolver
             let artistPartIndex = resolveArtistPartIndex(parts, pristineLower, editorLower, structure, initialText);
             log('removeArtistFromTitle: Resolved artist part index:', artistPartIndex);
-
-            if (artistPartIndex !== -1) {
-                const primaryArtist = pristineLower[0] || editorLower[0];
-                if (primaryArtist) {
-                    const artistPartLower = parts[artistPartIndex].toLowerCase();
-                    const primaryNames = parseArtistNamesFromString(primaryArtist);
-                    const isPrimaryInPart = primaryNames.some(name => cleanStringForComparison(artistPartLower).includes(cleanStringForComparison(name)));
-                    if (!isPrimaryInPart && hasRemixKeyword(artistPartLower)) {
-                        artistPartIndex = -1;
-                    }
-                }
-            }
 
             if (artistPartIndex !== -1) {
                 const artistPart = parts[artistPartIndex];
@@ -811,6 +836,14 @@
                     setInputValue(input, finalTitle.trim());
                     pristineValues.set(input, input.value);
                 }
+            } else if (structure.featured.length > 0) {
+                let finalTitle = structure.core;
+                if (structure.etis.length > 0) {
+                    finalTitle += ' ' + structure.etis.join(' ');
+                }
+                info(`Removed featured artist from title: "${input.value}" -> "${finalTitle}"`);
+                setInputValue(input, finalTitle.trim());
+                pristineValues.set(input, input.value);
             }
         }
     }
@@ -947,7 +980,7 @@
                        });
         }
 
-        const seenEntries = []; // array of { index: number, keys: string[] }
+        const seenEntries = []; // array of { index: number, keys: string[], name: string, artistName: string }
         const survivorMap = new Map(); // dupIdx -> survivorIdx
         const toRemove = new Set();
         const dedupedNames = [...names];
@@ -958,9 +991,16 @@
             const keys = getMatchKeys(names[i]);
             if (keys.length === 0) continue;
 
-            const duplicateMatch = seenEntries.find(seen =>
-                seen.keys.some(k => keys.includes(k))
-            );
+            const duplicateMatch = seenEntries.find(seen => {
+                if (seen.keys.some(k => keys.includes(k))) return true;
+                if (!names[i].artist?.gid && !names[i].artist?.id) {
+                    const entryName = names[i].name;
+                    if (isPrefixWithSeparator(entryName, seen.name) || isPrefixWithSeparator(entryName, seen.artistName)) {
+                        return true;
+                    }
+                }
+                return false;
+            });
 
             if (duplicateMatch) {
                 const survivorIdx = duplicateMatch.index;
@@ -976,7 +1016,9 @@
                 const isSurvivorFeatured = firstFeatJoinIdx !== -1 && survivorIdx > firstFeatJoinIdx;
                 const isDuplicateFeatured = firstFeatJoinIdx !== -1 && i > firstFeatJoinIdx;
 
-                const keepDuplicate = isDuplicateFeatured;
+                const isMisparsedSuffix = isPrefixWithSeparator(names[i].name, dedupedNames[survivorIdx].name) ||
+                    isPrefixWithSeparator(names[i].name, dedupedNames[survivorIdx].artist?.name);
+                const keepDuplicate = isDuplicateFeatured && !isMisparsedSuffix;
 
                 if (keepDuplicate) {
                     const hasRealSurvivorArtist = dedupedNames[survivorIdx].artist && (dedupedNames[survivorIdx].artist.id || dedupedNames[survivorIdx].artist.gid);
@@ -1005,14 +1047,21 @@
                             if (!duplicateMatch.keys.includes(k)) duplicateMatch.keys.push(k);
                         });
                     }
-                    dedupedNames[survivorIdx] = {
-                        ...dedupedNames[survivorIdx],
-                        name: names[i].name
-                    };
+                    if (!isMisparsedSuffix) {
+                        dedupedNames[survivorIdx] = {
+                            ...dedupedNames[survivorIdx],
+                            name: names[i].name
+                        };
+                    }
                     toRemove.add(i);
                 }
             } else {
-                seenEntries.push({ index: i, keys });
+                seenEntries.push({
+                    index: i,
+                    keys,
+                    name: names[i].name,
+                    artistName: names[i].artist?.name ?? ''
+                });
             }
         }
 
@@ -1452,21 +1501,8 @@
             const pristineLower = (originalArtistsResolved && originalArtistsResolved.length > 0) ? originalArtistsResolved.map(a => a.toLowerCase()) : [];
             const editorLower = (currentAC?.names ?? []).map(n => n.name.toLowerCase());
 
-            // Call the exact same centralized index resolver
             let artistPartIndex = resolveArtistPartIndex(parts, pristineLower, editorLower, structure, textToProcess);
             log('cleanEntityModel: Resolved artist part index:', artistPartIndex);
-
-            if (artistPartIndex !== -1) {
-                const primaryArtist = pristineLower[0] || editorLower[0];
-                if (primaryArtist) {
-                    const artistPartLower = parts[artistPartIndex].toLowerCase();
-                    const primaryNames = parseArtistNamesFromString(primaryArtist);
-                    const isPrimaryInPart = primaryNames.some(name => cleanStringForComparison(artistPartLower).includes(cleanStringForComparison(name)));
-                    if (!isPrimaryInPart && hasRemixKeyword(artistPartLower)) {
-                        artistPartIndex = -1;
-                    }
-                }
-            }
 
             if (artistPartIndex !== -1) {
                 const artistPart = parts[artistPartIndex];
@@ -1503,12 +1539,50 @@
                     setInputValue(input, finalTitle.trim());
                 }
             } else {
-                log('cleanEntityModel: Restoring original title.');
-                if (typeof model.name === 'function') {
-                    model.name(originalTitle);
-                }
-                if (input) {
-                    setInputValue(input, originalTitle);
+                if (structure.featured.length > 0) {
+                    const featJoinPhrase = structure.joinPhrase || ' feat. ';
+                    const featNamesLower = structure.featured.map(f => cleanStringForComparison(f.name));
+                    const currentAC = model.artistCredit();
+                    if (currentAC?.names && currentAC.names.length > 0) {
+                        const firstFeatIdxInAC = currentAC.names.findIndex(n =>
+                            featNamesLower.includes(cleanStringForComparison(n.name))
+                        );
+                        const acNames = currentAC.names.map((n, i) => {
+                            if (firstFeatIdxInAC > 0 && i === firstFeatIdxInAC - 1) {
+                                return { ...n, joinPhrase: featJoinPhrase };
+                            } else if (firstFeatIdxInAC === -1 && i === currentAC.names.length - 1) {
+                                return { ...n, joinPhrase: featJoinPhrase };
+                            }
+                            return n;
+                        });
+                        const updatedNames = mergeArtistCredits(acNames, structure.featured, originalArtistsResolved);
+                        if (updatedNames !== currentAC.names) {
+                            model.artistCredit({ ...currentAC, names: updatedNames });
+                        }
+                        if (IS_STANDALONE_RECORDING_PAGE) {
+                            syncAutocompleteInputs(model.artistCredit().names);
+                        }
+                    }
+
+                    let finalTitle = structure.core;
+                    if (structure.etis.length > 0) {
+                        finalTitle += ' ' + structure.etis.join(' ');
+                    }
+                    info(`Removed featured artist from title (model): "${titleVal}" -> "${finalTitle}"`);
+                    if (typeof model.name === 'function') {
+                        model.name(finalTitle.trim());
+                    }
+                    if (input) {
+                        setInputValue(input, finalTitle.trim());
+                    }
+                } else {
+                    log('cleanEntityModel: Restoring original title.');
+                    if (typeof model.name === 'function') {
+                        model.name(originalTitle);
+                    }
+                    if (input) {
+                        setInputValue(input, originalTitle);
+                    }
                 }
             }
         }

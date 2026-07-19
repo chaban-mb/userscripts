@@ -961,6 +961,101 @@ runTestCase('27. Preserve non-standard primary join phrases (e.g. vs.)', () => {
     assert.strictEqual(ac.names[2].joinPhrase, '');
 });
 
+// Case 28
+runTestCase('28. Unbracketed feat. with hyphenated remixer ETI (Sweet Escape feat. ひかり - Jafunk Remix)', () => {
+    const originalCookie = context.document.cookie;
+    context.document.cookie = 'guesscase_remove_remixers=true';
+
+    this.trackModel = {
+        name: makeObservable('Sweet Escape feat. ひかり - Jafunk Remix'),
+        artistCredit: makeObservable({
+            names: [
+                { name: 'Tokimeki Records', joinPhrase: ', ', artist: { gid: '8ce93222-45d1-4c31-9b49-58f1426e9e6b' } },
+                { name: 'Jafunk', joinPhrase: ' & ', artist: { gid: 'e3950364-490a-4852-8880-f74034e92762' } },
+                { name: 'ひかり', joinPhrase: '', artist: { gid: '652e65c8-370f-4e0c-bb83-5f512536ba6a' } }
+            ]
+        })
+    };
+
+    lib.cleanEntityModel({
+        model: this.trackModel,
+        originalTitle: 'Sweet Escape feat. ひかり - Jafunk Remix',
+        originalArtists: ['Tokimeki Records', 'Jafunk']
+    });
+
+    context.document.cookie = originalCookie;
+}, () => {
+    const ac = this.trackModel.artistCredit();
+    assert.strictEqual(this.trackModel.name(), 'Sweet Escape - Jafunk Remix', 'Should preserve title core and ETI, removing only feat.ひかり');
+    assert.strictEqual(ac.names.length, 2, 'Should remove remixer Jafunk from AC');
+    assert.strictEqual(ac.names[0].name, 'Tokimeki Records');
+    assert.strictEqual(ac.names[0].joinPhrase, ' feat. ');
+    assert.strictEqual(ac.names[1].name, 'ひかり');
+    assert.strictEqual(ac.names[1].joinPhrase, '');
+});
+
+// Case 29
+runTestCase('29. Unbracketed feat. with custom non-keyword ETI (Sweet Escape feat. ひかり - Jafunk Special)', () => {
+    this.trackModel = {
+        name: makeObservable('Sweet Escape feat. ひかり - Jafunk Special'),
+        artistCredit: makeObservable({
+            names: [
+                { name: 'Tokimeki Records', joinPhrase: '', artist: { gid: '8ce93222-45d1-4c31-9b49-58f1426e9e6b' } }
+            ]
+        })
+    };
+
+    lib.cleanEntityModel({
+        model: this.trackModel,
+        originalTitle: 'Sweet Escape feat. ひかり - Jafunk Special',
+        originalArtists: ['Tokimeki Records']
+    });
+}, () => {
+    const ac = this.trackModel.artistCredit();
+    assert.strictEqual(this.trackModel.name(), 'Sweet Escape - Jafunk Special', 'Should preserve title core and custom ETI without deleting title');
+    assert.strictEqual(ac.names.length, 2);
+    assert.strictEqual(ac.names[0].name, 'Tokimeki Records');
+    assert.strictEqual(ac.names[0].joinPhrase, ' feat. ');
+    assert.strictEqual(ac.names[1].name, 'ひかり');
+    assert.strictEqual(ac.names[1].joinPhrase, '');
+});
+
+// Case 30
+runTestCase('30. Deduplicate native guessFeat mis-parsed title suffix artist credit (ひかり - Jafunk Remix)', () => {
+    const originalCookie = context.document.cookie;
+    context.document.cookie = 'guesscase_remove_remixers=true';
+
+    // Simulate state right after native MB guessFeat ran and appended unlinked "ひかり - Jafunk Remix"
+    this.trackModel = {
+        name: makeObservable('Sweet Escape feat. ひかり - Jafunk Remix'),
+        artistCredit: makeObservable({
+            names: [
+                { name: 'Tokimeki Records', joinPhrase: ', ', artist: { gid: '8ce93222-45d1-4c31-9b49-58f1426e9e6b' } },
+                { name: 'Jafunk', joinPhrase: ' & ', artist: { gid: 'e3950364-490a-4852-8880-f74034e92762' } },
+                { name: 'ひかり', joinPhrase: ' feat. ', artist: { gid: '652e65c8-370f-4e0c-bb83-5f512536ba6a' } },
+                { name: 'ひかり - Jafunk Remix', joinPhrase: '', artist: null }
+            ]
+        })
+    };
+
+    lib.cleanTrackModelAfterGuessFeat(
+        this.trackModel,
+        'Sweet Escape feat. ひかり - Jafunk Remix',
+        ['Tokimeki Records', 'Jafunk']
+    );
+
+    context.document.cookie = originalCookie;
+}, () => {
+    const ac = this.trackModel.artistCredit();
+    assert.strictEqual(this.trackModel.name(), 'Sweet Escape - Jafunk Remix', 'Should preserve title core and ETI');
+    assert.strictEqual(ac.names.length, 2, 'Should remove remixer Jafunk and deduplicate mis-parsedひかり - Jafunk Remix');
+    assert.strictEqual(ac.names[0].name, 'Tokimeki Records');
+    assert.strictEqual(ac.names[0].joinPhrase, ' feat. ');
+    assert.strictEqual(ac.names[1].name, 'ひかり');
+    assert.strictEqual(ac.names[1].artist.gid, '652e65c8-370f-4e0c-bb83-5f512536ba6a', 'Should keep linked artist node GID');
+    assert.strictEqual(ac.names[1].joinPhrase, '');
+});
+
 console.log('\n--- Scenario B: Knockout Observable is Unavailable (DOM Fallback) ---');
 
 console.log(`\nTest Suite Complete: ${green(passedTestsCount)} passed, ${red(failedTestsCount)} failed.`);
