@@ -485,11 +485,16 @@ def do_release():
         subprocess.run(['git', 'commit', '-m', "chore(docs): update userscripts list"], check=True)
         commits_created += 1
 
-    print(f"\n{COLOR_CYAN}{COLOR_BOLD}--- Finalizing Release Workflow ---{COLOR_RESET}")
+    is_full_release = (len(selected_scripts) == len(unreleased_info))
+
+    mode_label = f"{COLOR_GREEN}[Fast-Forward Release]{COLOR_RESET}" if is_full_release else f"{COLOR_YELLOW}[Selective Rebase Release]{COLOR_RESET}"
+    print(f"\n{COLOR_CYAN}{COLOR_BOLD}--- Finalizing Release Workflow {mode_label} ---{COLOR_RESET}")
     print(f"{COLOR_BOLD}Preview of actions to perform:{COLOR_RESET}")
 
-    # Show commits that will be cherry-picked into main_branch
-    print(f"\n  * Commits to cherry-pick into '{main_branch}':")
+    if is_full_release:
+        print(f"\n  * Releasing all unreleased scripts from '{release_branch}' into '{main_branch}'.")
+    else:
+        print(f"\n  * Commits to cherry-pick into '{main_branch}':")
 
     # Limit the preview to commits that touch the selected scripts (and description/docs if applicable)
     paths = []
@@ -516,19 +521,25 @@ def do_release():
         for commit in commit_lines:
             print(f"      {COLOR_GREEN}{commit}{COLOR_RESET}")
     else:
-        print(f"      {COLOR_YELLOW}No new commits to cherry-pick ({release_branch} and {main_branch} are already in sync).{COLOR_RESET}")
+        print(f"      {COLOR_YELLOW}No new commits ({release_branch} and {main_branch} are already in sync).{COLOR_RESET}")
 
     # Show branch updates
     print(f"\n  * Git operations to run:")
     print(f"      {COLOR_CYAN}git checkout {main_branch}{COLOR_RESET}")
-    for commit_id in commit_ids:
-        print(f"      {COLOR_CYAN}git cherry-pick -x {commit_id}{COLOR_RESET}")
-    print(f"      {COLOR_CYAN}git push {remote} {main_branch}{COLOR_RESET}")
-    print(f"      {COLOR_CYAN}git checkout {release_branch}{COLOR_RESET}")
-    print(f"      {COLOR_CYAN}git merge {main_branch}{COLOR_RESET}")
-    print(f"      {COLOR_CYAN}git push {remote} {release_branch}{COLOR_RESET}\n")
+    if is_full_release:
+        print(f"      {COLOR_CYAN}git merge --ff-only {release_branch}{COLOR_RESET}")
+        print(f"      {COLOR_CYAN}git push {remote} {main_branch}{COLOR_RESET}")
+        print(f"      {COLOR_CYAN}git checkout {release_branch}{COLOR_RESET}")
+        print(f"      {COLOR_CYAN}git push {remote} {release_branch}{COLOR_RESET}\n")
+    else:
+        for commit_id in commit_ids:
+            print(f"      {COLOR_CYAN}git cherry-pick -x {commit_id}{COLOR_RESET}")
+        print(f"      {COLOR_CYAN}git push {remote} {main_branch}{COLOR_RESET}")
+        print(f"      {COLOR_CYAN}git checkout {release_branch}{COLOR_RESET}")
+        print(f"      {COLOR_CYAN}git rebase {main_branch}{COLOR_RESET}")
+        print(f"      {COLOR_CYAN}git push {remote} {release_branch} --force-with-lease{COLOR_RESET}\n")
 
-    confirm = input(f"{COLOR_BOLD}Do you want to cherry-pick these selected commits into '{main_branch}' and push changes? (y/N):{COLOR_RESET} ").strip().lower()
+    confirm = input(f"{COLOR_BOLD}Do you want to apply these operations and push changes? (y/N):{COLOR_RESET} ").strip().lower()
     if confirm != 'y':
         print(f"\n{COLOR_YELLOW}Release finalized locally on current branch. Merging and pushing skipped.{COLOR_RESET}")
         if commits_created > 0:
@@ -570,12 +581,16 @@ def do_release():
         print(f"\n{COLOR_CYAN}Checking out {main_branch}...{COLOR_RESET}")
         subprocess.run(['git', 'checkout', main_branch], check=True)
 
-        if commit_ids:
-            print(f"\n{COLOR_CYAN}Cherry-picking selected release commits into {main_branch}...{COLOR_RESET}")
-            for commit_id in commit_ids:
-                subprocess.run(['git', 'cherry-pick', '-x', commit_id], check=True)
+        if is_full_release:
+            print(f"\n{COLOR_CYAN}Fast-forward merging {release_branch} into {main_branch}...{COLOR_RESET}")
+            subprocess.run(['git', 'merge', '--ff-only', release_branch], check=True)
         else:
-            print(f"\n{COLOR_YELLOW}No commits selected for cherry-pick. Skipping release commit application.{COLOR_RESET}")
+            if commit_ids:
+                print(f"\n{COLOR_CYAN}Cherry-picking selected release commits into {main_branch}...{COLOR_RESET}")
+                for commit_id in commit_ids:
+                    subprocess.run(['git', 'cherry-pick', '-x', commit_id], check=True)
+            else:
+                print(f"\n{COLOR_YELLOW}No commits selected for cherry-pick. Skipping release commit application.{COLOR_RESET}")
 
         print(f"\n{COLOR_CYAN}Pushing {main_branch} to {remote}...{COLOR_RESET}")
         subprocess.run(['git', 'push', remote, main_branch], check=True)
@@ -584,8 +599,16 @@ def do_release():
         subprocess.run(['git', 'checkout', release_branch], check=True)
 
         print(f"\n{COLOR_CYAN}Syncing {release_branch} with {main_branch}...{COLOR_RESET}")
-        subprocess.run(['git', 'merge', main_branch], check=True)
-        subprocess.run(['git', 'push', remote, release_branch], check=True)
+        if is_full_release:
+            subprocess.run(['git', 'push', remote, release_branch], check=True)
+        else:
+            ff_res = subprocess.run(['git', 'merge', '--ff-only', main_branch], capture_output=True, text=True)
+            if ff_res.returncode != 0:
+                print(f"{COLOR_CYAN}Rebasing {release_branch} onto {main_branch} to maintain clean linear history...{COLOR_RESET}")
+                subprocess.run(['git', 'rebase', main_branch], check=True)
+                subprocess.run(['git', 'push', remote, release_branch, '--force-with-lease'], check=True)
+            else:
+                subprocess.run(['git', 'push', remote, release_branch], check=True)
 
         print(f"\n{COLOR_GREEN}{COLOR_BOLD}Release completed successfully!{COLOR_RESET}\n")
 
