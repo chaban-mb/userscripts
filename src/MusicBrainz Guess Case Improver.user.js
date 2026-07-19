@@ -792,7 +792,7 @@
         const parts = structure.core.split(SEPARATOR_PATTERN).map(p => p.trim()).filter(Boolean);
         log('removeArtistFromTitle: Core split parts:', parts);
 
-        if (parts.length > 1) {
+        if (parts.length > 1 || structure.featured.length > 0) {
             const pristineLower = (pristineArtists && pristineArtists.length > 0) ? pristineArtists.map(a => a.toLowerCase()) : [];
             const editorLower = editorArtists.map(a => a.toLowerCase());
 
@@ -1494,7 +1494,7 @@
 
         const parts = structure.core.split(SEPARATOR_PATTERN).map(p => p.trim()).filter(Boolean);
 
-        if (parts.length > 1) {
+        if (parts.length > 1 || structure.featured.length > 0) {
             const currentAC = model.artistCredit();
             const originalArtistsResolved = originalACNames ? originalACNames.map(n => n.name) : originalArtists;
             const pristineLower = (originalArtistsResolved && originalArtistsResolved.length > 0) ? originalArtistsResolved.map(a => a.toLowerCase()) : [];

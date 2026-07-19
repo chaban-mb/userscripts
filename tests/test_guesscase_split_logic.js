@@ -661,7 +661,7 @@ runTestCase('19. Overwriting spelling and casing with parsed title casing during
     assert.strictEqual(this.track.name(), 'sandbag');
     assert.strictEqual(ac.names.length, 3);
     assert.strictEqual(ac.names[0].name, 'Dada');
-    assert.strictEqual(ac.names[0].joinPhrase, ', ');
+    assert.strictEqual(ac.names[0].joinPhrase, ' feat. ');
     assert.strictEqual(ac.names[1].name, 'KASANE TETO');
     assert.strictEqual(ac.names[1].joinPhrase, ' & ');
     assert.strictEqual(ac.names[2].name, 'Una Otomachi');
@@ -1054,6 +1054,52 @@ runTestCase('30. Deduplicate native guessFeat mis-parsed title suffix artist cre
     assert.strictEqual(ac.names[1].name, 'ひかり');
     assert.strictEqual(ac.names[1].artist.gid, '652e65c8-370f-4e0c-bb83-5f512536ba6a', 'Should keep linked artist node GID');
     assert.strictEqual(ac.names[1].joinPhrase, '');
+});
+
+// Case 31
+runTestCase('31. Full release and track model guessFeat for Substitution (feat. Julian Perretta)', () => {
+    this.track1 = {
+        name: makeObservable('Substitution (feat. Julian Perretta)'),
+        artistCredit: makeObservable({
+            names: [
+                { name: 'Purple Disco Machine', joinPhrase: ', ', artist: { gid: 'dc71939a-416f-4804-b031-5749287943f9' } },
+                { name: 'Kungs', joinPhrase: ' & ', artist: { gid: 'a125cd83-a379-4935-a7ec-beaa778bad70' } },
+                { name: 'Julian Perretta', joinPhrase: '', artist: { gid: '3b8022ff-19c5-46df-9de2-966d0a95b084' } }
+            ]
+        })
+    };
+    this.track2 = {
+        name: makeObservable('Substitution (feat. Julian Perretta) - Extended'),
+        artistCredit: makeObservable({
+            names: [
+                { name: 'Purple Disco Machine', joinPhrase: ', ', artist: { gid: 'dc71939a-416f-4804-b031-5749287943f9' } },
+                { name: 'Kungs', joinPhrase: ' & ', artist: { gid: 'a125cd83-a379-4935-a7ec-beaa778bad70' } },
+                { name: 'Julian Perretta', joinPhrase: '', artist: { gid: '3b8022ff-19c5-46df-9de2-966d0a95b084' } }
+            ]
+        })
+    };
+
+    lib.cleanTrackModelAfterGuessFeat(this.track1, 'Substitution (feat. Julian Perretta)', ['Purple Disco Machine', 'Kungs']);
+    lib.cleanTrackModelAfterGuessFeat(this.track2, 'Substitution (feat. Julian Perretta) - Extended', ['Purple Disco Machine', 'Kungs']);
+}, () => {
+    const ac1 = this.track1.artistCredit();
+    const ac2 = this.track2.artistCredit();
+
+    assert.strictEqual(this.track1.name(), 'Substitution', 'Track 1 title should strip featured artist clause');
+    assert.strictEqual(ac1.names.length, 3);
+    assert.strictEqual(ac1.names[0].name, 'Purple Disco Machine');
+    assert.strictEqual(ac1.names[0].joinPhrase, ', ');
+    assert.strictEqual(ac1.names[1].name, 'Kungs');
+    assert.strictEqual(ac1.names[1].joinPhrase, ' feat. ');
+    assert.strictEqual(ac1.names[2].name, 'Julian Perretta');
+
+    assert.strictEqual(this.track2.name(), 'Substitution - Extended', 'Track 2 title should strip featured artist clause while preserving ETI');
+    assert.strictEqual(ac2.names.length, 3);
+    assert.strictEqual(ac2.names[0].name, 'Purple Disco Machine');
+    assert.strictEqual(ac2.names[0].joinPhrase, ', ');
+    assert.strictEqual(ac2.names[1].name, 'Kungs');
+    assert.strictEqual(ac2.names[1].joinPhrase, ' feat. ');
+    assert.strictEqual(ac2.names[2].name, 'Julian Perretta');
 });
 
 console.log('\n--- Scenario B: Knockout Observable is Unavailable (DOM Fallback) ---');
