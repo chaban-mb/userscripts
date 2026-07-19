@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MusicBrainz: Artwork Uploader Turbo
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      3.3.7
+// @version      3.3.8
 // @tag          ai-created
 // @description  Allows for multiple artwork images to be uploaded simultaneously and recursively upload directories.
 // @author       chaban
@@ -135,6 +135,7 @@
                         item.className = 'status-list-item';
                         const status = file.status();
                         const stage = file._script?.stage ?? 'Pending';
+                        const errorDetail = file._script?.errorDetail ?? '';
                         let statusText = '';
 
                         if (stage === 'Failed' && file._script?.httpStatus !== undefined) {
@@ -144,8 +145,12 @@
                         }
 
                         item.textContent = `${file.name}: ${stage}${statusText ? ' ' + statusText : ''}`;
+                        if (errorDetail) {
+                            item.title = errorDetail;
+                        }
+
                         if (status === 'done') item.classList.add('done');
-                        else if (status?.includes('error')) item.classList.add('error');
+                        else if (status?.includes('error') || stage === 'Failed') item.classList.add('error');
                         fileList.append(item);
                     }
                 });
@@ -279,6 +284,7 @@
                 };
             },
 
+
             _getPageInfo(actionName) {
                 let entityType, archiveName;
                 switch (actionName) {
@@ -356,28 +362,79 @@
                 }
 
                 /**
-                 * @summary Determines if a failed request is retriable (HTTP 5xx, 429, etc.) and handles the exponential backoff.
+                 * @summary Determines if a failed request is retriable (HTTP 5xx, 429, etc.) and handles exponential backoff.
                  * @param {Object} file - The file object being processed.
-                 * @param {Array} error - The jQuery deferred error array or custom error.
+                 * @param {Array|Error|Object} error - The jQuery deferred error array, Error object, or custom error.
                  * @returns {Promise<boolean>} True if the request should be retried, false if it's a fatal error.
                  */
                 async _handleRetry(file, error) {
-                    let httpStatus = error[0]?.status ?? null;
-                    if (httpStatus === null && typeof error[1] === 'number') {
-                        httpStatus = error[1];
-                    } else if (httpStatus === null && typeof error[0] === 'string') {
-                        const match = error[0].match(/error (?:creating edit|obtaining signature|uploading image):.*?(\d{3})/i) || error[0].match(/(\d{3})/);
-                        if (match) httpStatus = parseInt(match[1], 10);
+                    const errorList = Array.isArray(error) ? error : [error];
+                    let httpStatus = null;
+
+                    const textSources = [];
+                    for (const err of errorList) {
+                        if (typeof err === 'string') textSources.push(err);
+                        else if (err instanceof Error) textSources.push(err.message);
+                        else if (err && typeof err.responseText === 'string') textSources.push(err.responseText);
+                        else if (err && typeof err.statusText === 'string') textSources.push(err.statusText);
                     }
 
-                    ArtworkUploaderTurbo.logger.error(`[DEBUG] _handleRetry called for file ${file.name}. Raw error object:`, error);
-                    ArtworkUploaderTurbo.logger.error(`[DEBUG] Parsed HTTP Status code:`, httpStatus);
+                    if (typeof file.signErrorMessage === 'function') textSources.push(file.signErrorMessage());
+                    if (typeof file.editErrorMessage === 'function') textSources.push(file.editErrorMessage());
 
-                    const isRetriable = (httpStatus >= 500 || httpStatus === 429 || httpStatus === 408 || httpStatus === 0 || httpStatus === null);
+                    // Prioritize upstream 5xx / 429 / 408 status codes embedded in error strings (e.g. upload_image: "error uploading image: 503 ...")
+                    for (const text of textSources) {
+                        if (!text) continue;
+                        const match = text.match(/\b([5]\d{2}|429|408)\b/);
+                        if (match) {
+                            httpStatus = parseInt(match[1], 10);
+                            break;
+                        }
+                    }
+
+                    if (httpStatus === null) {
+                        for (const err of errorList) {
+                            if (typeof err === 'number' && err >= 0) { httpStatus = err; break; }
+                            if (err && typeof err.status === 'number' && err.status >= 0) { httpStatus = err.status; break; }
+                        }
+                    }
+
+                    const signMsg = typeof file.signErrorMessage === 'function' ? file.signErrorMessage() : '';
+                    const editMsg = typeof file.editErrorMessage === 'function' ? file.editErrorMessage() : '';
+                    // Fall back to the raw rejection string for upload-phase errors (upload_image sets no observables)
+                    const rawStr = errorList.find(e => typeof e === 'string' && e) ?? '';
+                    const errorDetail = [signMsg, editMsg].filter(Boolean).join(' - ') || rawStr;
+
+                    // Recognize temporary Internet Archive or server timeout error phrases suggesting retry
+                    const hasRetryPhrase = textSources.some(text =>
+                        /\b(try again|temporary delay|Internet Archive|timeout|timed out)\b/i.test(text)
+                    );
+
+                    const isRetriable = (
+                        httpStatus >= 500 ||
+                        httpStatus === 429 ||
+                        httpStatus === 408 ||
+                        httpStatus === 0 ||
+                        httpStatus === null ||
+                        hasRetryPhrase
+                    );
+
+                    if (isRetriable && (httpStatus === null || httpStatus === 400)) {
+                        const match5xx = textSources.map(t => t.match(/\b([5]\d{2}|429|408)\b/)).find(Boolean);
+                        if (match5xx) {
+                            httpStatus = parseInt(match5xx[1], 10);
+                        } else if (hasRetryPhrase) {
+                            httpStatus = 503;
+                        }
+                    }
+
+                    const logDetail = errorDetail.replace(/\s{2,}/g, ' ').trim().slice(0, 200);
 
                     if (isRetriable) {
                         file._script.retryDelay = file._script.retryDelay || ArtworkUploaderTurbo.INITIAL_RETRY_DELAY_MS;
                         file._script.stage = `Retrying (HTTP ${httpStatus ?? 'N/A'})...`;
+                        file._script.errorDetail = logDetail;
+                        ArtworkUploaderTurbo.logger.warn(`Retrying file "${file.name}" (HTTP ${httpStatus ?? 'N/A'})${logDetail ? ': ' + logDetail : ''}`);
                         ArtworkUploaderTurbo.UI.updateDebugUI();
                         await new Promise(resolve => setTimeout(resolve, file._script.retryDelay));
                         file._script.retryDelay = Math.min(file._script.retryDelay * 2, ArtworkUploaderTurbo.MAX_RETRY_DELAY_MS);
@@ -386,8 +443,9 @@
 
                     file._script.stage = `Failed`;
                     file._script.httpStatus = httpStatus;
+                    file._script.errorDetail = logDetail;
                     this.hasCriticalError = true;
-                    ArtworkUploaderTurbo.logger.error(`Unrecoverable error for file "${file.name}": ${file.status()} (HTTP Status: ${httpStatus ?? 'N/A'})`);
+                    ArtworkUploaderTurbo.logger.error(`Unrecoverable error for file "${file.name}": ${file.status()} (HTTP Status: ${httpStatus ?? 'N/A'})${logDetail ? ' - ' + logDetail : ''}`);
                     ArtworkUploaderTurbo.UI.updateDebugUI();
                     return false;
                 }
