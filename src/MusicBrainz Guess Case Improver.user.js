@@ -1,22 +1,20 @@
 // ==UserScript==
-// @name        MusicBrainz: Guess Case Improver
-// @namespace   https://musicbrainz.org/user/chaban
-// @version     0.10.9
-// @description Improves the native "Guess Case" for release, recording and track titles with advanced artist and ETI parsing. Also removes artist from title and duplicate artists after using "Guess feat. artists" on tracklists.
-// @tag         ai-created
-// @author      chaban
-// @license     MIT
-// @homepageURL https://github.com/chaban-mb/userscripts
-// @supportURL  https://github.com/chaban-mb/userscripts/issues
-// @match       https://*.musicbrainz.org/recording/create*
-// @match       https://*.musicbrainz.org/recording/*/edit
-// @match       https://*.musicbrainz.org/release/*/edit*
-// @match       https://*.musicbrainz.org/release/add*
-// @match       https://*.musicbrainz.org/artist/*/credit/*/edit
-// @icon        https://musicbrainz.org/static/images/favicons/android-chrome-512x512.png
-// @grant       none
-// @updateURL   https://github.com/chaban-mb/userscripts/raw/dist/src/MusicBrainz%20Guess%20Case%20Improver.user.js
-// @downloadURL https://github.com/chaban-mb/userscripts/raw/dist/src/MusicBrainz%20Guess%20Case%20Improver.user.js
+// @name         MusicBrainz: Guess Case Improver
+// @namespace    https://musicbrainz.org/user/chaban
+// @version      0.10.5
+// @tag          ai-created
+// @description  Improves the native "Guess Case" for release, recording and track titles with advanced artist and ETI parsing. Also removes artist from title and duplicate artists after using "Guess feat. artists" on tracklists.
+// @author       chaban
+// @license      MIT
+// @match        https://*.musicbrainz.org/recording/create*
+// @match        https://*.musicbrainz.org/recording/*/edit
+// @match        https://*.musicbrainz.org/release/*/edit*
+// @match        https://*.musicbrainz.org/release/add*
+// @match        https://*.musicbrainz.org/artist/*/credit/*/edit
+// @icon         https://musicbrainz.org/static/images/favicons/android-chrome-512x512.png
+// @grant        none
+// @updateURL    https://github.com/chaban-mb/userscripts/raw/dist/src/MusicBrainz%20Guess%20Case%20Improver.user.js
+// @downloadURL  https://github.com/chaban-mb/userscripts/raw/dist/src/MusicBrainz%20Guess%20Case%20Improver.user.js
 // ==/UserScript==
 
 (function () {
@@ -76,20 +74,13 @@
     log('User configuration loaded.');
 
     /**
-     * @summary Cleans a string for comparison by normalizing Unicode, removing diacritics,
-     * normalizing punctuation variants, lowercasing, and stripping all whitespace.
+     * @summary Cleans a string for comparison by lowercasing and stripping all whitespace.
      * @param {string} str - The string to clean.
      * @returns {string} The cleaned string.
      */
     function cleanStringForComparison(str) {
         if (!str) return '';
-        return str
-            .normalize('NFD')
-            .replace(/[\u0300-\u036f]/g, '')        // strip combining diacritics (e.g. à → a)
-            .replace(/[\u2010-\u2015\u2212]/g, '-') // normalize Unicode hyphens/dashes to ASCII -
-            .replace(/[\u2018\u2019\u201a\u201b\u02bc]/g, "'") // normalize Unicode apostrophes to '
-            .toLowerCase()
-            .replace(/\s+/g, '');
+        return str.toLowerCase().replace(/\s+/g, '');
     }
 
     /**
@@ -149,15 +140,14 @@
             const fullFeatClause = featMatch[0];
             const joinWord = featMatch[1].toLowerCase();
 
-            const rawWord = (featMatch[1] || featMatch[2] || '').trim().toLowerCase();
-            joinPhrase = rawWord ? ` ${rawWord} ` : ' feat. ';
+            joinPhrase = joinWord.startsWith('feat') || joinWord.startsWith('ft') ? ' feat. '
+                : joinWord.startsWith('with') ? ' with '
+                    : ` ${joinWord} `;
 
             const guestStr = featMatch[2] ? featMatch[2].trim() : '';
             featured = parseArtistsAndJoins(guestStr, knownArtists);
 
             current = current.replace(fullFeatClause, '').replace(/\s+/g, ' ').trim();
-            // strip any trailing orphaned opening bracket left when feat. was inside [...]
-            current = current.replace(/\s*[(\[【]\s*$/, '').trim();
         }
 
         return {
@@ -183,7 +173,7 @@
             const artistPartLower = parts[idx].toLowerCase();
             if (hasRemixKeyword(artistPartLower)) {
                 const isExactArtistMatch = pristineLower.some(a => cleanStringForComparison(artistPartLower) === cleanStringForComparison(a)) ||
-                    editorLower.some(a => cleanStringForComparison(artistPartLower) === cleanStringForComparison(a));
+                                            editorLower.some(a => cleanStringForComparison(artistPartLower) === cleanStringForComparison(a));
                 if (!isExactArtistMatch) {
                     idx = -1;
                 }
@@ -202,10 +192,10 @@
 
             if (!isSlashSeparator) {
                 const part0HasFeat = lowerRaw.includes(parts[0].toLowerCase() + ' (' + joinPhraseStr) ||
-                    lowerRaw.includes(parts[0].toLowerCase() + structure.joinPhrase.toLowerCase());
+                                     lowerRaw.includes(parts[0].toLowerCase() + structure.joinPhrase.toLowerCase());
 
                 const part1HasFeat = lowerRaw.includes(parts[1].toLowerCase() + ' (' + joinPhraseStr) ||
-                    lowerRaw.includes(parts[1].toLowerCase() + structure.joinPhrase.toLowerCase());
+                                     lowerRaw.includes(parts[1].toLowerCase() + structure.joinPhrase.toLowerCase());
 
                 if (part1HasFeat && !part0HasFeat) {
                     return 1;
@@ -779,8 +769,10 @@
         let joinPhrase = null;
 
         if (featMatch) {
-            const rawWord = (featMatch[1] || featMatch[2] || '').trim().toLowerCase();
-            joinPhrase = rawWord ? ` ${rawWord} ` : ' feat. ';
+            const joinWord = (featMatch[1] || featMatch[2]).toLowerCase();
+            joinPhrase = joinWord.startsWith('feat') || joinWord.startsWith('ft') ? ' feat. '
+                : joinWord.startsWith('with') ? ' with '
+                    : ` ${joinWord} `;
             const guestStr = featMatch[3] ? featMatch[3].trim() : '';
             titleGuests = parseArtistsAndJoins(guestStr);
             cleanTitle = cleanTitle.replace(featMatch[0], '').trim();
@@ -949,17 +941,13 @@
      * @param {ko.Observable} acObservable - The entity.artistCredit ko.observable.
      * @returns {void}
      */
-    function deduplicateACFromObservable(acObservable, titleFeaturedCount = 0) {
-        if (typeof acObservable !== 'function') return;
-
-        const ac = acObservable();
-        if (!ac?.names?.length) return;
-
-        const names = ac.names;
-        const fmtAC = (arr) => arr.map(n => ({ name: n.name, join: n.joinPhrase, gid: n.artist?.gid ?? null }));
-        log('deduplicateACFromObservable: names before dedup:', fmtAC(names));
-
-        // Find the index of the first featured join phrase in the array
+    /**
+     * @summary Pure function that identifies duplicate artist credit nodes and merges their properties.
+     * @param {object[]} names - List of artist credit nodes.
+     * @param {number} [titleFeaturedCount=0] - Number of featured artists parsed from title.
+     * @returns {{dedupedNames: object[], toRemove: Set<number>, survivorMap: Map<number, number>, firstFeatJoinIdx: number, featJoinPhrase: string|null}} Duplicate resolution map.
+     */
+    function findDuplicateACNodes(names, titleFeaturedCount = 0) {
         const firstFeatJoinIdx = names.findIndex(n => FEAT_PATTERN.test(n.joinPhrase ?? ''));
 
         const getMatchKeys = (entry) => {
@@ -983,23 +971,8 @@
             return [...keys];
         };
 
-        // Determine if all featured artists match
-        let allMatch = false;
-        if (titleFeaturedCount > 0 && firstFeatJoinIdx !== -1) {
-            const existingFeats = names.slice(firstFeatJoinIdx + 1, names.length - titleFeaturedCount);
-            const newFeats = names.slice(names.length - titleFeaturedCount);
-            allMatch = existingFeats.length === newFeats.length &&
-                newFeats.every(nf => {
-                    const nfKeys = getMatchKeys(nf);
-                    return existingFeats.some(ef => {
-                        const efKeys = getMatchKeys(ef);
-                        return efKeys.some(k => nfKeys.includes(k));
-                    });
-                });
-        }
-
-        const seenEntries = []; // array of { index: number, keys: string[], name: string, artistName: string }
-        const survivorMap = new Map(); // dupIdx -> survivorIdx
+        const seenEntries = [];
+        const survivorMap = new Map();
         const toRemove = new Set();
         const dedupedNames = [...names];
 
@@ -1084,9 +1057,6 @@
         }
 
         if (toRemove.size > 0) {
-            log(`deduplicateACFromObservable: Removing ${toRemove.size} duplicate(s). Feat join phrase: "${featJoinPhrase}"`);
-
-            // Propagate join phrases from duplicate entries to their survivors
             toRemove.forEach(dupIdx => {
                 const survivorIdx = survivorMap.get(dupIdx);
                 if (survivorIdx !== undefined) {
@@ -1106,13 +1076,22 @@
                     }
                 }
             });
-        } else {
-            log('deduplicateACFromObservable: No duplicates found.');
         }
 
-        const filteredNames = dedupedNames.filter((_, i) => !toRemove.has(i));
+        return { dedupedNames, toRemove, survivorMap, firstFeatJoinIdx, featJoinPhrase };
+    }
 
-        // Repair the join phrase at the true feat boundary.
+    /**
+     * @summary Pure function that repairs join phrases at featured artist boundaries.
+     * @param {object[]} filteredNames - Deduped artist credit nodes.
+     * @param {object[]} names - Original artist credit nodes before dedup.
+     * @param {Set<number>} toRemove - Indices of removed duplicate nodes.
+     * @param {Map<number, number>} survivorMap - Map of removed node indices to survivor indices.
+     * @param {string|null} featJoinPhrase - The original feat join phrase.
+     * @param {number} firstFeatJoinIdx - Index of first featured join phrase in original array.
+     * @returns {object[]} Array of artist credit nodes with repaired join phrases.
+     */
+    function repairFeatBoundary(filteredNames, names, toRemove, survivorMap, featJoinPhrase, firstFeatJoinIdx) {
         if (featJoinPhrase !== null) {
             const firstFeatJoinIdxOrig = names.findIndex(n => FEAT_PATTERN.test(n.joinPhrase ?? ''));
 
@@ -1149,12 +1128,10 @@
             }
         }
 
-        // Find the boundary between primary and featured artists in the filtered array
         const primaryBoundaryIdx = filteredNames.findIndex(n => FEAT_PATTERN.test(n.joinPhrase ?? ''));
         const hasFeatures = primaryBoundaryIdx !== -1;
         const numPrimary = hasFeatures ? primaryBoundaryIdx + 1 : filteredNames.length;
 
-        // Check if all primary join phrases are default ones (commas or ampersands)
         let allPrimaryJoinsAreDefault = true;
         for (let i = 0; i < numPrimary - 1; i++) {
             const join = (filteredNames[i].joinPhrase ?? '').trim().toLowerCase();
@@ -1165,13 +1142,12 @@
             }
         }
 
-        // Check if all featured join phrases are default ones (commas, ampersands, feat, ft)
         let allFeaturedJoinsAreDefault = true;
         if (firstFeatJoinIdx !== -1) {
             for (let i = firstFeatJoinIdx + 1; i < filteredNames.length - 1; i++) {
                 const join = (filteredNames[i].joinPhrase ?? '').trim().toLowerCase();
                 const isDefault = join === ',' || join === '&' ||
-                    join === 'feat' || join === 'feat.' || join === 'ft' || join === 'ft.';
+                                  join === 'feat' || join === 'feat.' || join === 'ft' || join === 'ft.';
                 if (!isDefault) {
                     allFeaturedJoinsAreDefault = false;
                     break;
@@ -1179,15 +1155,13 @@
             }
         }
 
-        // Apply default join phrase rules for empty join phrases and ensure the last entry is empty
         const lastIdx = filteredNames.length - 1;
-        const repairedNames = filteredNames.map((node, i) => {
+        return filteredNames.map((node, i) => {
             if (i === lastIdx) {
                 return { ...node, joinPhrase: '' };
             }
             let currentJoin = node.joinPhrase ?? '';
 
-            // Reformat primary joins if all of them are default
             if (allPrimaryJoinsAreDefault && i < numPrimary - 1) {
                 currentJoin = i === numPrimary - 2 ? ' & ' : ', ';
             }
@@ -1207,6 +1181,33 @@
             }
             return { ...node, joinPhrase: currentJoin };
         });
+    }
+
+    /**
+     * @summary Deduplicates and cleans up duplicate artists in the Knockout artist credit observable.
+     * @param {ko.Observable} acObservable - The entity.artistCredit ko.observable.
+     * @returns {void}
+     */
+    function deduplicateACFromObservable(acObservable, titleFeaturedCount = 0) {
+        if (typeof acObservable !== 'function') return;
+
+        const ac = acObservable();
+        if (!ac?.names?.length) return;
+
+        const names = ac.names;
+        const fmtAC = (arr) => arr.map(n => ({ name: n.name, join: n.joinPhrase, gid: n.artist?.gid ?? null }));
+        log('deduplicateACFromObservable: names before dedup:', fmtAC(names));
+
+        const { dedupedNames, toRemove, survivorMap, firstFeatJoinIdx, featJoinPhrase } = findDuplicateACNodes(names, titleFeaturedCount);
+
+        if (toRemove.size > 0) {
+            log(`deduplicateACFromObservable: Removing ${toRemove.size} duplicate(s). Feat join phrase: "${featJoinPhrase}"`);
+        } else {
+            log('deduplicateACFromObservable: No duplicates found.');
+        }
+
+        const filteredNames = dedupedNames.filter((_, i) => !toRemove.has(i));
+        const repairedNames = repairFeatBoundary(filteredNames, names, toRemove, survivorMap, featJoinPhrase, firstFeatJoinIdx);
 
         acObservable({ ...ac, names: repairedNames });
         log('deduplicateACFromObservable: Done.', fmtAC(repairedNames));
