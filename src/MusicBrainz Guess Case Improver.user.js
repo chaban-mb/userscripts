@@ -35,7 +35,7 @@
         console.error(`[${SCRIPT_NAME}]`, ...args);
     };
 
-    log('Script loaded and running.');
+    info('Script loaded and running.');
 
     // We use a WeakMap to store the "pristine" (original) value of an input,
     // side-stepping any event race conditions with native preview handlers.
@@ -72,7 +72,7 @@
     const REMIX_KEYWORDS = ['remix', 'rework', 'edit', 'mix', 'flip', 'bootleg', 'mashup', 'vip', 'dub', 'version'];
     const IS_STANDALONE_RECORDING_PAGE = /[\/.]recording\/create|[\/.]recording\/[a-f0-9-]{36}\/edit/.test(window.location.pathname);
 
-    log('User configuration loaded.');
+
 
     /**
      * @summary Cleans a string for comparison by lowercasing and stripping all whitespace.
@@ -246,7 +246,7 @@
         if (trackRow) {
             const trackArtistInput = trackRow.querySelector('.artist .autocomplete2 input');
             if (trackArtistInput?.value) {
-                log('Found artist from track row input:', trackArtistInput.value);
+
                 return parseArtistNamesFromString(trackArtistInput.value);
             }
         }
@@ -260,13 +260,13 @@
 
             const uniqueNames = [...new Set(names)];
             if (uniqueNames.length > 0) {
-                log('Found artist(s) from AC editor hidden inputs:', uniqueNames.join('; '));
+
                 return uniqueNames;
             }
 
             const singleArtistInput = document.getElementById('ac-source-single-artist');
             if (singleArtistInput?.value) {
-                log('Found artist from single artist input field:', singleArtistInput.value);
+
                 return parseArtistNamesFromString(singleArtistInput.value);
             }
         }
@@ -283,7 +283,6 @@
 
                 const uniqueNames = [...new Set(names)];
                 if (uniqueNames.length > 0) {
-                    log('Found artist(s) from __MB__ stash:', uniqueNames.join('; '));
                     return uniqueNames;
                 }
             }
@@ -319,7 +318,6 @@
                     });
                     if (allNames.length > 0) {
                         const uniqueNames = [...new Set(allNames)];
-                        log('Found artist(s) from resolved viewmodel:', uniqueNames.join('; '));
                         return uniqueNames;
                     }
                 }
@@ -775,7 +773,7 @@
      */
     function applyAdvancedRules(text, button, originalTitle) {
         if (typeof text !== 'string') return text;
-        log('--- applyAdvancedRules START ---');
+
         let newText = text;
         const keepUpperCase = getBooleanCookie('guesscase_keepuppercase');
 
@@ -791,15 +789,7 @@
         newText = cleanTitleWithoutEtis;
 
         if (extractedEtis) {
-            log(`Found ETI(s): ${extractedEtis}`);
-            log(`Text after ETI removal: "${newText}"`);
-        } else {
-            log('No ETI found.');
-        }
-
-        if (extractedEtis) {
             newText += ` ${extractedEtis}`;
-            log(`Re-added ETI(s). Final text before ETI processing: "${newText}"`);
         }
 
         newText = newText.replace(/\[/g, '(').replace(/\]/g, ')');
@@ -827,7 +817,6 @@
         bracketExceptions.forEach((val, index) => {
             newText = newText.replace(`___MB_GUESS_CASE_EXCEPTION_${index}___`, val);
         });
-        log('--- applyAdvancedRules END ---');
         return newText.trim();
     }
 
@@ -1097,22 +1086,16 @@
         if (!ac?.names?.length) return;
 
         const names = ac.names;
-        const fmtAC = (arr) => arr.map(n => ({ name: n.name, join: n.joinPhrase, gid: n.artist?.gid ?? null }));
-        log('deduplicateACFromObservable: names before dedup:', fmtAC(names));
-
         const { dedupedNames, toRemove, survivorMap, firstFeatJoinIdx, featJoinPhrase } = findDuplicateACNodes(names, titleFeaturedCount);
 
         if (toRemove.size > 0) {
-            log(`deduplicateACFromObservable: Removing ${toRemove.size} duplicate(s). Feat join phrase: "${featJoinPhrase}"`);
-        } else {
-            log('deduplicateACFromObservable: No duplicates found.');
+            log(`deduplicateACFromObservable: Removing ${toRemove.size} duplicate(s).`);
         }
 
         const filteredNames = dedupedNames.filter((_, i) => !toRemove.has(i));
         const repairedNames = repairFeatBoundary(filteredNames, names, toRemove, survivorMap, featJoinPhrase, firstFeatJoinIdx);
 
         acObservable({ ...ac, names: repairedNames });
-        log('deduplicateACFromObservable: Done.', fmtAC(repairedNames));
     }
 
     /**
@@ -1181,7 +1164,7 @@
 
     function enhanceReleaseGuessFeat(button) {
         if (button.dataset.enhanced) return;
-        log('Found Release/Recording "Guess Feat." button to enhance.', button);
+        info('Enhancing Release/Recording "Guess Feat." button.');
 
         button.addEventListener('click', (event) => {
             const input = findAssociatedInput(button);
@@ -1204,7 +1187,7 @@
                     } catch (e) {
                         err('Error propagating GIDs from tracks to release:', e);
                     }
-                    log('Deduplicating release AC via Knockout model.');
+
                     deduplicateACFromObservable(release.artistCredit);
                     if (getBooleanCookie('guesscase_remove_remixers') && input) {
                         removeRemixersFromAC(release.artistCredit, input.value);
@@ -1222,7 +1205,7 @@
                     removeArtistFromTitle(input, button);
                     pristineValues.set(input, input.value);
                     pristineArtistNames.set(input, getCurrentArtistNames(button));
-                    log(`Updated pristine value for ${input.name || input.id} after Guess Feat cleanup: "${input.value}"`);
+
                 }
             }, 100);
         }, true);
@@ -1237,7 +1220,7 @@
      */
     function enhanceReactGuessCase(button) {
         if (button.dataset.enhanced) return;
-        log('Found React-based "Guess Case" button to enhance.', button);
+        info('Enhancing React-based "Guess Case" button.');
 
         const input = findAssociatedInput(button);
         if (!input) {
@@ -1247,13 +1230,11 @@
 
         if (!pristineValues.has(input)) {
             pristineValues.set(input, input.value);
-            log(`Set initial pristine value for ${input.name || input.id}: "${input.value}"`);
         }
 
         const updatePristineValue = (event) => {
             if (event && !event.isTrusted) return;
             pristineValues.set(input, input.value);
-            log(`Updated pristine value for ${input.name || input.id}: "${input.value}"`);
         };
 
         input.addEventListener('focus', updatePristineValue);
@@ -1266,7 +1247,6 @@
 
             const originalValue = pristineValues.get(input);
             activePreview = true;
-            log(`Pristine value from map: "${originalValue}"`);
 
             setTimeout(() => {
                 if (!activePreview) return;
@@ -1286,7 +1266,6 @@
 
         const handleMouseLeave = () => {
             if (activePreview) {
-                log('Hiding preview and restoring original value.');
                 const originalValue = pristineValues.get(input);
                 setInputValue(input, originalValue);
                 input.classList.remove('preview');
@@ -1302,7 +1281,6 @@
             setTimeout(() => {
                 const nativeValue = input.value;
                 const enhancedValue = applyAdvancedRules(nativeValue, button, originalValue);
-                log(`Native: "${nativeValue}", Enhanced: "${enhancedValue}"`);
 
                 setInputValue(input, enhancedValue);
 
@@ -1340,12 +1318,11 @@
         const currentValue = creditedAsInput.value;
         if (!currentValue) return;
 
-        log(`Tracking 'credited as' field for selection overwrite: "${currentValue}"`);
+
 
         let attempts = 0;
         const interval = setInterval(() => {
             if (creditedAsInput.value !== currentValue) {
-                log(`Overwritten 'credited as' field detected. Restoring pristine value: "${currentValue}"`);
                 setInputValue(creditedAsInput, currentValue);
                 clearInterval(interval);
             }
@@ -1579,7 +1556,7 @@
     function enhanceReleaseEditorActions() {
         const releaseEditor = window.MB?._releaseEditor;
         if (!releaseEditor || releaseEditor.guessCaseTrackName.isEnhanced) return;
-        log('Found release editor, enhancing viewmodel actions.');
+        info('Enhancing release editor viewmodel actions.');
 
         const originalGuessCaseTrackName = releaseEditor.guessCaseTrackName;
         releaseEditor.guessCaseTrackName = function (track, event) {
