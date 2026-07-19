@@ -49,7 +49,7 @@ def get_slug(file_path, mapping):
     file_name = os.path.basename(file_path)
     if file_name in mapping:
         return mapping[file_name]
-    
+
     # Fallback slug generation
     name_without_ext = file_name.replace(".user.js", "")
     slug = re.sub(r'[^a-zA-Z0-9\s-]', '', name_without_ext)
@@ -107,7 +107,7 @@ def get_main_branch_name(remote="origin"):
         return "main"
     if "master" in local_branches:
         return "master"
-    
+
     # Fallback to check remote branches
     remote_branches = run_cmd(f"git branch -r --format='%(refname:short)'").splitlines()
     remote_branches = [b.strip() for b in remote_branches if b.strip()]
@@ -115,14 +115,14 @@ def get_main_branch_name(remote="origin"):
         return "main"
     if f"{remote}/master" in remote_branches:
         return "master"
-        
+
     return "main"
 
 def update_version_in_file(file_path, new_version):
     try:
         with open(file_path, 'r', encoding='utf-8') as f:
             content = f.read()
-        
+
         version_line_re = re.compile(r'(//\s*@version\s+)\S+')
         if version_line_re.search(content):
             new_content = version_line_re.sub(r'\g<1>' + new_version, content)
@@ -147,7 +147,7 @@ def do_build():
 def do_cleanup(branch_name=None, main_branch="main"):
     script_dir = os.path.dirname(os.path.abspath(__file__))
     git_cleanup_path = os.path.join(script_dir, "git_cleanup.py")
-    
+
     if branch_name:
         subprocess.run([sys.executable, git_cleanup_path, branch_name, main_branch])
         return
@@ -155,25 +155,25 @@ def do_cleanup(branch_name=None, main_branch="main"):
     # Auto-detect using gh CLI
     branches_raw = run_cmd("git branch --format='%(refname:short)'")
     local_branches = [b.strip("'") for b in branches_raw.split('\n') if b.strip()]
-    
+
     prs_json = run_cmd("gh pr list --state merged --limit 10 --json headRefName")
     if not prs_json:
         print("No recently merged PRs found or gh CLI is not authenticated.")
         return
-        
+
     try:
         prs = json.loads(prs_json)
     except Exception as e:
         print(f"Error parsing JSON from gh: {e}")
         return
-        
+
     merged_ref_names = [pr["headRefName"] for pr in prs]
     to_cleanup = [b for b in local_branches if b in merged_ref_names and b not in ["main", "master", "dev", "development"]]
-    
+
     if not to_cleanup:
         print("All local branches are in sync. No merged branches require cleanup.")
         return
-        
+
     print(f"Found merged branches ready for cleanup: {to_cleanup}")
     for branch in to_cleanup:
         print(f"\n--- Cleaning up branch: {branch} ---")
@@ -237,45 +237,45 @@ def do_release():
             return
 
     repo_root = Path(__file__).resolve().parent.parent
-    
+
     diff_files = get_git_stdout(['git', 'diff', '--name-only', main_branch, '--', 'src/', 'lib/']).splitlines()
     untracked_files = get_git_stdout(['git', 'ls-files', '--others', '--exclude-standard', '--', 'src/', 'lib/']).splitlines()
-    
+
     all_files = sorted(list(set(diff_files + untracked_files)))
     userscripts = [f for f in all_files if f.endswith('.user.js') or (f.startswith('lib/') and f.endswith('.js'))]
-    
+
     if not userscripts:
         print(f"\n{COLOR_CYAN}No unreleased changes found in src/ or lib/ compared to {main_branch}.{COLOR_RESET}\n")
         return
 
     print("Checking unreleased userscripts...")
     unreleased_info = []
-    
+
     mapping = parse_commit_scopes()
-    
+
     for rel_path_str in userscripts:
         full_path = repo_root / rel_path_str
         if not full_path.exists():
             continue
-            
+
         try:
             current_content = full_path.read_text(encoding='utf-8')
         except Exception as e:
             print(f"Error reading {rel_path_str}: {e}")
             continue
-            
+
         curr_ver, curr_name = extract_version_and_name(current_content)
         display_name = curr_name or full_path.name
         if rel_path_str.startswith('lib/'):
             display_name = f"[LIB] {display_name}"
-        
+
         main_content = get_main_file_content(rel_path_str, main_branch)
         main_ver = None
         if main_content is not None:
             main_ver, _ = extract_version_and_name(main_content)
-            
+
         needs_bump = (main_ver is not None) and (curr_ver == main_ver)
-        
+
         unreleased_info.append({
             'rel_path': rel_path_str,
             'full_path': full_path,
@@ -296,17 +296,17 @@ def do_release():
             status_str = f"{COLOR_GREEN}{COLOR_BOLD}[BUMPED]{COLOR_RESET}"
         ver_str = f"({info['main_version']} -> {info['curr_version']})" if info['main_version'] else f"(New: {info['curr_version']})"
         print(f"  {idx}) {status_str} {info['name']} {ver_str}")
-        
+
     print(f"\n{COLOR_CYAN}{COLOR_BOLD}Select scripts to release:{COLOR_RESET}")
     print("  Enter numbers separated by commas (e.g. 1,3)")
     print("  Enter 'all' to release all scripts")
     print("  Enter 'q' to quit")
-    
+
     choice = input(f"{COLOR_BOLD}Choice:{COLOR_RESET} ").strip().lower()
     if choice in ['q', 'quit', 'exit']:
         print(f"{COLOR_RED}Aborting.{COLOR_RESET}\n")
         return
-        
+
     selected_indices = []
     if choice in ['all', 'a'] or (choice == '' and len(unreleased_info) == 1):
         selected_indices = list(range(len(unreleased_info)))
@@ -316,21 +316,21 @@ def do_release():
         except ValueError:
             print(f"{COLOR_RED}Invalid input. Aborting.{COLOR_RESET}\n")
             return
-            
+
     selected_scripts = []
     for idx in selected_indices:
         if 0 <= idx < len(unreleased_info):
             selected_scripts.append(unreleased_info[idx])
         else:
             print(f"{COLOR_YELLOW}Invalid index {idx + 1}. Skipping.{COLOR_RESET}")
-            
+
     if not selected_scripts:
         print(f"{COLOR_YELLOW}No scripts selected.{COLOR_RESET}\n")
         return
- 
+
     for script in selected_scripts:
         print(f"\n{COLOR_CYAN}{COLOR_BOLD}Processing release for:{COLOR_RESET} {script['name']}")
-        
+
         # Check description file existence and warn if missing (only for non-library scripts)
         if not script['rel_path'].startswith('lib/'):
             script_base_name = script['full_path'].name.replace('.user.js', '')
@@ -342,14 +342,14 @@ def do_release():
                 print()
 
         current_version = script['curr_version']
-        
+
         if not current_version:
             print(f"{COLOR_YELLOW}Warning: No version tag found for {script['name']}.{COLOR_RESET}")
             current_version = input("Enter current/initial version (e.g. 1.0.0): ").strip()
             if not current_version:
                 print(f"{COLOR_RED}Skipping due to invalid version.{COLOR_RESET}")
                 continue
-                
+
         if script['needs_bump']:
             print(f"Version bump required. Current version is {current_version}.")
             print("Select version bump type:")
@@ -358,7 +358,7 @@ def do_release():
             print("  3) Major (incompatible UI/behavior changes)")
             print("  4) Manual (custom version)")
             print("  5) Skip bump (release as-is)")
-            
+
             bump_choice = input("Bump type (default: 1): ").strip()
             if not bump_choice:
                 bump_choice = '1'
@@ -373,7 +373,7 @@ def do_release():
                 new_version = input("Enter new version: ").strip()
             elif bump_choice == '5':
                 new_version = current_version
-                
+
             if not new_version:
                 print("Could not bump version. Skipping.")
                 continue
@@ -383,14 +383,14 @@ def do_release():
                 print(f"New script: releasing initial version {new_version}")
             else:
                 print(f"Version is already bumped relative to main: {script['main_version']} -> {new_version}")
-                
+
             print("Select action:")
             print("  k) Keep current version")
             print("  1) Patch (bug fix/minor tweaks)")
             print("  2) Minor (backwards-compatible enhancements)")
             print("  3) Major (incompatible UI/behavior changes)")
             print("  4) Custom version")
-            
+
             confirm = input("Choice (default: k): ").strip().lower() or 'k'
             if confirm == '1':
                 new_version = bump_version(new_version, 'patch')
@@ -416,14 +416,14 @@ def do_release():
 
         # Automatically stage the script file and its description
         subprocess.run(['git', 'add', str(script['rel_path'])], check=True)
-        
+
         if not script['rel_path'].startswith('lib/'):
             script_base_name = script['full_path'].name.replace('.user.js', '')
             desc_rel_path = f"docs/descriptions/{script_base_name}.md"
             desc_full_path = repo_root / desc_rel_path
             if desc_full_path.exists():
                 subprocess.run(['git', 'add', desc_rel_path], check=True)
-            
+
         # Check if there are staged changes for this script or its description
         # (avoid checking nonexistent description file for library scripts)
         desc_rel_path_to_check = f"docs/descriptions/{script['full_path'].name.replace('.user.js', '')}.md" if not script['rel_path'].startswith('lib/') else ""
@@ -431,7 +431,7 @@ def do_release():
         staged_changes = res.stdout.strip()
         if staged_changes:
             slug = script['slug']
-            
+
             # For new scripts, the commit type is always 'feat' and default description is adding the script.
             # Otherwise, if the version was updated during release, the default type is 'fix' and description is bumping version.
             if script['main_version'] is None:
@@ -476,7 +476,7 @@ def do_release():
     # Rebuild Markdown list of userscripts and commit it if changed
     print("\nRebuilding userscripts list (docs/USERSCRIPTS.md)...")
     do_build()
-    
+
     # Check if docs/USERSCRIPTS.md is modified
     list_changed = run_cmd("git status --porcelain docs/USERSCRIPTS.md")
     if list_changed:
@@ -487,16 +487,36 @@ def do_release():
 
     print(f"\n{COLOR_CYAN}{COLOR_BOLD}--- Finalizing Release Workflow ---{COLOR_RESET}")
     print(f"{COLOR_BOLD}Preview of actions to perform:{COLOR_RESET}")
-    
+
     # Show commits that will be merged into main_branch
     print(f"\n  * Commits to merge into '{main_branch}':")
-    commits_to_merge = get_git_stdout(['git', 'log', f'{main_branch}..HEAD', '--oneline']).splitlines()
+
+    # Limit the preview to commits that touch the selected scripts (and description/docs if applicable)
+    paths = []
+    for script in selected_scripts:
+        paths.append(script['rel_path'])
+        if not script['rel_path'].startswith('lib/'):
+            script_base_name = script['full_path'].name.replace('.user.js', '')
+            desc_rel_path = f"docs/descriptions/{script_base_name}.md"
+            paths.append(desc_rel_path)
+
+    # If the USERSCRIPTS.md list was changed during this run, include it in the preview
+    if list_changed:
+        paths.append('docs/USERSCRIPTS.md')
+
+    # Build git log command scoped to the selected paths. If no paths (shouldn't happen), fall back to full log
+    if paths:
+        cmd = ['git', 'log', f'{main_branch}..HEAD', '--oneline', '--'] + paths
+    else:
+        cmd = ['git', 'log', f'{main_branch}..HEAD', '--oneline']
+
+    commits_to_merge = get_git_stdout(cmd).splitlines()
     if commits_to_merge:
         for commit in commits_to_merge:
             print(f"      {COLOR_GREEN}{commit}{COLOR_RESET}")
     else:
         print(f"      {COLOR_YELLOW}No new commits to merge ({release_branch} and {main_branch} are already in sync).{COLOR_RESET}")
-        
+
     # Show branch updates
     print(f"\n  * Git operations to run:")
     print(f"      {COLOR_CYAN}git checkout {main_branch}{COLOR_RESET}")
@@ -505,7 +525,7 @@ def do_release():
     print(f"      {COLOR_CYAN}git checkout {release_branch}{COLOR_RESET}")
     print(f"      {COLOR_CYAN}git merge {main_branch}{COLOR_RESET}")
     print(f"      {COLOR_CYAN}git push {remote} {release_branch}{COLOR_RESET}\n")
-    
+
     confirm = input(f"{COLOR_BOLD}Do you want to merge '{release_branch}' into '{main_branch}' and push changes? (y/N):{COLOR_RESET} ").strip().lower()
     if confirm != 'y':
         print(f"\n{COLOR_YELLOW}Release finalized locally on current branch. Merging and pushing skipped.{COLOR_RESET}")
@@ -514,12 +534,12 @@ def do_release():
             if undo_confirm == 'y':
                 print(f"\n{COLOR_RED}Undoing last {commits_created} commits (git reset --soft)...{COLOR_RESET}")
                 subprocess.run(['git', 'reset', '--soft', f'HEAD~{commits_created}'], check=True)
-                
+
                 # Revert auto-generated docs/USERSCRIPTS.md changes
                 print(f"{COLOR_YELLOW}Reverting auto-generated changes to docs/USERSCRIPTS.md...{COLOR_RESET}")
                 subprocess.run(['git', 'restore', '--staged', 'docs/USERSCRIPTS.md'], capture_output=True)
                 subprocess.run(['git', 'restore', 'docs/USERSCRIPTS.md'], capture_output=True)
-                
+
                 # Unstage the script and description files that were released
                 print(f"{COLOR_YELLOW}Unstaging released script files...{COLOR_RESET}")
                 for script in selected_scripts:
@@ -531,36 +551,36 @@ def do_release():
                     if script.get('version_updated'):
                         print(f"{COLOR_YELLOW}Reverting version bump in {script['rel_path']} back to {script['curr_version']}...{COLOR_RESET}")
                         update_version_in_file(script['full_path'], script['curr_version'])
- 
+
                 print(f"{COLOR_GREEN}Commits reverted. Workspace changes preserved and unstaged.{COLOR_RESET}\n")
         return
- 
+
     # Check if working tree has dirty/uncommitted changes
     dirty = run_cmd("git status --porcelain").strip()
     stashed = False
-    
+
     try:
         if dirty:
             print(f"\n{COLOR_YELLOW}Working directory is dirty. Stashing local changes...{COLOR_RESET}")
             subprocess.run(['git', 'stash', '-u', '-m', 'workflow_release_stash'], check=True)
             stashed = True
- 
+
         print(f"\n{COLOR_CYAN}Checking out {main_branch}...{COLOR_RESET}")
         subprocess.run(['git', 'checkout', main_branch], check=True)
-        
+
         print(f"\n{COLOR_CYAN}Merging {release_branch} into {main_branch}...{COLOR_RESET}")
         subprocess.run(['git', 'merge', release_branch], check=True)
-        
+
         print(f"\n{COLOR_CYAN}Pushing {main_branch} to {remote}...{COLOR_RESET}")
         subprocess.run(['git', 'push', remote, main_branch], check=True)
-        
+
         print(f"\n{COLOR_CYAN}Checking out {release_branch}...{COLOR_RESET}")
         subprocess.run(['git', 'checkout', release_branch], check=True)
-        
+
         print(f"\n{COLOR_CYAN}Syncing {release_branch} with {main_branch}...{COLOR_RESET}")
         subprocess.run(['git', 'merge', main_branch], check=True)
         subprocess.run(['git', 'push', remote, release_branch], check=True)
-        
+
         print(f"\n{COLOR_GREEN}{COLOR_BOLD}Release completed successfully!{COLOR_RESET}\n")
 
         if merged_feature_branch:
@@ -587,7 +607,7 @@ def resolve_command(arg):
     commands = ['check', 'cleanup', 'release', 'build']
     if arg in commands:
         return arg
-        
+
     matches = [cmd for cmd in commands if cmd.startswith(arg)]
     if len(matches) == 1:
         return matches[0]
@@ -602,23 +622,23 @@ def main():
 
     parser = argparse.ArgumentParser(description="Git helper for MusicBrainz userscripts repository.")
     subparsers = parser.add_subparsers(dest="command", help="Command to run")
-    
+
     # Subcommand: check
     subparsers.add_parser("check", help="Check unreleased scripts and version bumps relative to main")
-    
+
     # Subcommand: cleanup
     cleanup_parser = subparsers.add_parser("cleanup", help="Clean up local/remote branches merged on GitHub")
     cleanup_parser.add_argument("branch", nargs="?", help="Specific feature branch to clean up")
     cleanup_parser.add_argument("--main-branch", default="main", help="The repository main branch (default: main)")
-    
+
     # Subcommand: release
     subparsers.add_parser("release", help="Interactive release assistant for version bumping, list rebuilding and branch syncing")
-    
+
     # Subcommand: build
     subparsers.add_parser("build", help="Rebuild docs/USERSCRIPTS.md markdown listing")
-    
+
     args = parser.parse_args()
-    
+
     if not args.command:
         sys.exit(do_check())
     elif args.command == "check":
