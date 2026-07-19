@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MusicBrainz: Guess Case Improver
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      0.10.3
+// @version      0.10.4
 // @tag          ai-created
 // @description  Improves the native "Guess Case" for release, recording and track titles with advanced artist and ETI parsing. Also removes artist from title and duplicate artists after using "Guess feat. artists" on tracklists.
 // @author       chaban
@@ -556,6 +556,9 @@
         const ac = acObservable();
         if (!ac?.names?.length) return;
 
+        const firstFeatIdxOrig = ac.names.findIndex(n => FEAT_PATTERN.test(n.joinPhrase ?? ''));
+        const featJoinPhrase = firstFeatIdxOrig !== -1 ? (ac.names[firstFeatIdxOrig].joinPhrase ?? ' feat. ') : null;
+
         const filteredNames = ac.names.filter(n => {
             const isRemixer = isArtistRemixerInTitle(n.name, title);
             if (isRemixer) {
@@ -565,7 +568,18 @@
         });
 
         if (filteredNames.length !== ac.names.length) {
-            acObservable({ ...ac, names: repairStandardJoins(filteredNames) });
+            let repaired = repairStandardJoins(filteredNames);
+            if (featJoinPhrase !== null && firstFeatIdxOrig !== -1) {
+                const featuredNamesSet = new Set(ac.names.slice(firstFeatIdxOrig + 1).map(n => n.name));
+                const firstRemainingFeatIdx = repaired.findIndex(n => featuredNamesSet.has(n.name));
+                if (firstRemainingFeatIdx > 0) {
+                    repaired[firstRemainingFeatIdx - 1] = {
+                        ...repaired[firstRemainingFeatIdx - 1],
+                        joinPhrase: featJoinPhrase
+                    };
+                }
+            }
+            acObservable({ ...ac, names: repaired });
         }
     }
 
@@ -984,7 +998,7 @@
         const toRemove = new Set();
         const dedupedNames = [...names];
 
-        let featJoinPhrase = null;
+        let featJoinPhrase = names.find(n => FEAT_PATTERN.test(n.joinPhrase ?? ''))?.joinPhrase ?? null;
 
         for (let i = 0; i < names.length; i++) {
             const keys = getMatchKeys(names[i]);
@@ -1678,9 +1692,14 @@
                     propagateGidsFromTracksToRelease(release);
                     if (release.artistCredit) {
                         deduplicateACFromObservable(release.artistCredit);
-                        const releaseTitleInput = document.getElementById('name') || document.querySelector('input[name="name"]');
-                        if (getBooleanCookie('guesscase_remove_remixers') && releaseTitleInput) {
-                            removeRemixersFromAC(release.artistCredit, releaseTitleInput.value);
+                        if (getBooleanCookie('guesscase_remove_remixers')) {
+                            const releaseTitleInput = document.getElementById('name') || document.querySelector('input[name="name"]');
+                            const releaseTitle = releaseTitleInput?.value || (typeof release.name === 'function' ? release.name() : '');
+                            const trackTitles = (release.mediums?.() ?? [])
+                                .flatMap(medium => medium.tracks?.() ?? [])
+                                .map(t => (typeof t.name === 'function' ? t.name() : ''));
+                            const allTitleText = [releaseTitle, ...trackTitles].join(' ');
+                            removeRemixersFromAC(release.artistCredit, allTitleText);
                         }
                     }
                 } catch (e) {

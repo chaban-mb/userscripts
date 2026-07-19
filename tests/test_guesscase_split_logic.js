@@ -1102,6 +1102,103 @@ runTestCase('31. Full release and track model guessFeat for Substitution (feat. 
     assert.strictEqual(ac2.names[2].name, 'Julian Perretta');
 });
 
+// Case 32
+runTestCase('32. Single-track release guessFeat with remix removal ON (Mr Sandman (HIGHSOCIETY remix))', () => {
+    const originalCookie = context.document.cookie;
+    context.document.cookie = 'guesscase_remove_remixers=true';
+
+    this.release = {
+        name: makeObservable('Mr Sandman (feat. Ashliann)'),
+        artistCredit: makeObservable({
+            names: [
+                { name: 'The Lifted', joinPhrase: ' & ', artist: { gid: 'cbd32590-d185-4bc4-b5d6-287c91d323c1' } },
+                { name: 'HIGHSOCIETY', joinPhrase: ' feat. ', artist: { gid: '5a1ec222-0457-4979-b465-378ff7a3d318' } },
+                { name: 'Ashliann', joinPhrase: '', artist: { gid: '660d2a02-bb15-4763-811f-5b1005a8c408' } }
+            ]
+        })
+    };
+    this.track = {
+        name: makeObservable('Mr Sandman (HIGHSOCIETY remix)'),
+        artistCredit: makeObservable({
+            names: [
+                { name: 'The Lifted', joinPhrase: ', ', artist: { gid: 'cbd32590-d185-4bc4-b5d6-287c91d323c1' } },
+                { name: 'HIGHSOCIETY', joinPhrase: ' feat. ', artist: { gid: '5a1ec222-0457-4979-b465-378ff7a3d318' } },
+                { name: 'Ashliann', joinPhrase: '', artist: { gid: '660d2a02-bb15-4763-811f-5b1005a8c408' } }
+            ]
+        })
+    };
+
+    // Simulate release-level remixer removal with combined titles
+    lib.deduplicateACFromObservable(this.release.artistCredit);
+    const combinedTitles = this.release.name() + ' ' + this.track.name();
+    lib.removeRemixersFromAC(this.release.artistCredit, combinedTitles);
+
+    // Track cleanup
+    lib.cleanTrackModelAfterGuessFeat(this.track, 'Mr Sandman (HIGHSOCIETY remix)', ['The Lifted', 'HIGHSOCIETY']);
+
+    context.document.cookie = originalCookie;
+}, () => {
+    const relAc = this.release.artistCredit();
+    const trackAc = this.track.artistCredit();
+
+    assert.strictEqual(relAc.names.length, 2, 'Remixer HIGHSOCIETY should be removed from release AC');
+    assert.strictEqual(relAc.names[0].name, 'The Lifted');
+    assert.strictEqual(relAc.names[0].joinPhrase, ' feat. ', 'Release AC join phrase repaired to feat.');
+    assert.strictEqual(relAc.names[1].name, 'Ashliann');
+
+    assert.strictEqual(trackAc.names.length, 2, 'Remixer HIGHSOCIETY should be removed from track AC');
+    assert.strictEqual(trackAc.names[0].name, 'The Lifted');
+    assert.strictEqual(trackAc.names[0].joinPhrase, ' feat. ', 'Track AC join phrase repaired to feat.');
+    assert.strictEqual(trackAc.names[1].name, 'Ashliann');
+});
+
+// Case 33
+runTestCase('33. Single-track release guessFeat with remix removal OFF (Mr Sandman (HIGHSOCIETY remix))', () => {
+    const originalCookie = context.document.cookie;
+    context.document.cookie = 'guesscase_remove_remixers=false';
+
+    this.release = {
+        name: makeObservable('Mr Sandman (feat. Ashliann)'),
+        artistCredit: makeObservable({
+            names: [
+                { name: 'The Lifted', joinPhrase: ' & ', artist: { gid: 'cbd32590-d185-4bc4-b5d6-287c91d323c1' } },
+                { name: 'HIGHSOCIETY', joinPhrase: ' feat. ', artist: { gid: '5a1ec222-0457-4979-b465-378ff7a3d318' } },
+                { name: 'Ashliann', joinPhrase: '', artist: { gid: '660d2a02-bb15-4763-811f-5b1005a8c408' } }
+            ]
+        })
+    };
+    this.track = {
+        name: makeObservable('Mr Sandman (HIGHSOCIETY remix)'),
+        artistCredit: makeObservable({
+            names: [
+                { name: 'The Lifted', joinPhrase: ', ', artist: { gid: 'cbd32590-d185-4bc4-b5d6-287c91d323c1' } },
+                { name: 'HIGHSOCIETY', joinPhrase: ' feat. ', artist: { gid: '5a1ec222-0457-4979-b465-378ff7a3d318' } },
+                { name: 'Ashliann', joinPhrase: '', artist: { gid: '660d2a02-bb15-4763-811f-5b1005a8c408' } }
+            ]
+        })
+    };
+
+    lib.deduplicateACFromObservable(this.release.artistCredit);
+    lib.cleanTrackModelAfterGuessFeat(this.track, 'Mr Sandman (HIGHSOCIETY remix)', ['The Lifted', 'HIGHSOCIETY']);
+
+    context.document.cookie = originalCookie;
+}, () => {
+    const relAc = this.release.artistCredit();
+    const trackAc = this.track.artistCredit();
+
+    assert.strictEqual(relAc.names.length, 3, 'Release AC retains HIGHSOCIETY when feature is OFF');
+    assert.strictEqual(relAc.names[0].name, 'The Lifted');
+    assert.strictEqual(relAc.names[0].joinPhrase, ' & ');
+    assert.strictEqual(relAc.names[1].name, 'HIGHSOCIETY');
+    assert.strictEqual(relAc.names[1].joinPhrase, ' feat. ');
+
+    assert.strictEqual(trackAc.names.length, 3, 'Track AC retains HIGHSOCIETY when feature is OFF');
+    assert.strictEqual(trackAc.names[0].name, 'The Lifted');
+    assert.strictEqual(trackAc.names[0].joinPhrase, ' & ');
+    assert.strictEqual(trackAc.names[1].name, 'HIGHSOCIETY');
+    assert.strictEqual(trackAc.names[1].joinPhrase, ' feat. ');
+});
+
 console.log('\n--- Scenario B: Knockout Observable is Unavailable (DOM Fallback) ---');
 
 console.log(`\nTest Suite Complete: ${green(passedTestsCount)} passed, ${red(failedTestsCount)} failed.`);
