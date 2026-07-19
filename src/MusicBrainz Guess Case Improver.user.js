@@ -767,68 +767,6 @@
     }
 
     /**
-     * @summary Parses featured guest artists out of the re-assembled title text.
-     * @param {string} title - The track/recording title text.
-     * @returns {{cleanTitle: string, titleGuests: {name: string, joinPhrase: string}[], joinPhrase: string|null}} The clean title and parsed guests.
-     */
-    function extractFeaturedFromTitle(title) {
-        let cleanTitle = title;
-        const featMatch = cleanTitle.match(STANDARD_FEAT_PATTERN) || cleanTitle.match(BRACKETED_WITH_PATTERN);
-        let titleGuests = [];
-        let joinPhrase = null;
-
-        if (featMatch) {
-            const joinWord = (featMatch[1] || featMatch[2]).toLowerCase();
-            joinPhrase = joinWord.startsWith('feat') || joinWord.startsWith('ft') ? ' feat. '
-                : joinWord.startsWith('with') ? ' with '
-                    : ` ${joinWord} `;
-            const guestStr = featMatch[3] ? featMatch[3].trim() : '';
-            titleGuests = parseArtistsAndJoins(guestStr);
-            cleanTitle = cleanTitle.replace(featMatch[0], '').trim();
-        }
-        return { cleanTitle, titleGuests, joinPhrase };
-    }
-
-    function removeArtistFromTitle(input, button) {
-        if (!input || !button) return;
-        let initialText = pristineValues.get(input) || input.value;
-        log('removeArtistFromTitle: Initial text:', initialText);
-
-        initialText = flattenEtiMisguess(initialText);
-
-        const acObservable = getACObservable(input, button);
-        if (acObservable && typeof acObservable === 'function' && getBooleanCookie('guesscase_remove_remixers')) {
-            removeRemixersFromAC(acObservable, initialText);
-        }
-
-        const pristineArtists = pristineArtistNames.get(input) || [];
-        const editorArtists = getCurrentArtistNames(button);
-        const knownArtists = [...new Set([...pristineArtists, ...editorArtists])];
-        const currentAC = (acObservable && typeof acObservable === 'function') ? acObservable() : null;
-
-        const { finalTitle, updatedACNames, modified } = transformEntityTitleAndCredits({
-            title: initialText,
-            acNames: currentAC?.names ?? null,
-            knownArtists,
-            pristineArtists,
-            editorArtists
-        });
-
-        if (modified) {
-            if (acObservable && typeof acObservable === 'function' && updatedACNames && updatedACNames !== currentAC.names) {
-                acObservable({ ...currentAC, names: updatedACNames });
-                if (IS_STANDALONE_RECORDING_PAGE) {
-                    syncAutocompleteInputs(acObservable().names);
-                }
-            }
-            info(`Removed artist part/featured from title: "${input.value}" -> "${finalTitle}"`);
-            setInputValue(input, finalTitle);
-            pristineValues.set(input, input.value);
-        }
-    }
-
-
-    /**
      * @summary Applies advanced rule sets like French/Swedish apostrophe corrections and acronym fixes.
      * @param {string} text - The current guessed text string.
      * @param {HTMLElement} [button] - The button element that was clicked to trigger the guess case.
