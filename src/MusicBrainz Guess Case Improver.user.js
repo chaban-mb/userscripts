@@ -1443,7 +1443,7 @@
             editorArtists
         });
 
-        if (modified) {
+        if (modified && finalTitle !== initialText) {
             if (acObservable && typeof acObservable === 'function' && updatedACNames && updatedACNames !== currentAC.names) {
                 acObservable({ ...currentAC, names: updatedACNames });
                 if (IS_STANDALONE_RECORDING_PAGE) {
@@ -1499,7 +1499,7 @@
             editorArtists
         });
 
-        if (modified) {
+        if (modified && finalTitle !== textToProcess) {
             if (updatedACNames && updatedACNames !== model.artistCredit()?.names) {
                 model.artistCredit({ ...model.artistCredit(), names: updatedACNames });
                 if (IS_STANDALONE_RECORDING_PAGE) {
