@@ -1537,7 +1537,7 @@
             if (input) {
                 setInputValue(input, finalTitle);
             }
-        } else {
+        } else if (originalTitle) {
             log('cleanEntityModel: Restoring original title.');
             if (typeof model.name === 'function') {
                 model.name(originalTitle);
