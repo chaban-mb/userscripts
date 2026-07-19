@@ -951,17 +951,13 @@
      * @param {ko.Observable} acObservable - The entity.artistCredit ko.observable.
      * @returns {void}
      */
-    function deduplicateACFromObservable(acObservable, titleFeaturedCount = 0) {
-        if (typeof acObservable !== 'function') return;
-
-        const ac = acObservable();
-        if (!ac?.names?.length) return;
-
-        const names = ac.names;
-        const fmtAC = (arr) => arr.map(n => ({ name: n.name, join: n.joinPhrase, gid: n.artist?.gid ?? null }));
-        log('deduplicateACFromObservable: names before dedup:', fmtAC(names));
-
-        // Find the index of the first featured join phrase in the array
+    /**
+     * @summary Pure function that identifies duplicate artist credit nodes and merges their properties.
+     * @param {object[]} names - List of artist credit nodes.
+     * @param {number} [titleFeaturedCount=0] - Number of featured artists parsed from title.
+     * @returns {{dedupedNames: object[], toRemove: Set<number>, survivorMap: Map<number, number>, firstFeatJoinIdx: number, featJoinPhrase: string|null}} Duplicate resolution map.
+     */
+    function findDuplicateACNodes(names, titleFeaturedCount = 0) {
         const firstFeatJoinIdx = names.findIndex(n => FEAT_PATTERN.test(n.joinPhrase ?? ''));
 
         const getMatchKeys = (entry) => {
@@ -985,23 +981,8 @@
             return [...keys];
         };
 
-        // Determine if all featured artists match
-        let allMatch = false;
-        if (titleFeaturedCount > 0 && firstFeatJoinIdx !== -1) {
-            const existingFeats = names.slice(firstFeatJoinIdx + 1, names.length - titleFeaturedCount);
-            const newFeats = names.slice(names.length - titleFeaturedCount);
-            allMatch = existingFeats.length === newFeats.length &&
-                       newFeats.every(nf => {
-                           const nfKeys = getMatchKeys(nf);
-                           return existingFeats.some(ef => {
-                               const efKeys = getMatchKeys(ef);
-                               return efKeys.some(k => nfKeys.includes(k));
-                           });
-                       });
-        }
-
-        const seenEntries = []; // array of { index: number, keys: string[], name: string, artistName: string }
-        const survivorMap = new Map(); // dupIdx -> survivorIdx
+        const seenEntries = [];
+        const survivorMap = new Map();
         const toRemove = new Set();
         const dedupedNames = [...names];
 
@@ -1086,9 +1067,6 @@
         }
 
         if (toRemove.size > 0) {
-            log(`deduplicateACFromObservable: Removing ${toRemove.size} duplicate(s). Feat join phrase: "${featJoinPhrase}"`);
-
-            // Propagate join phrases from duplicate entries to their survivors
             toRemove.forEach(dupIdx => {
                 const survivorIdx = survivorMap.get(dupIdx);
                 if (survivorIdx !== undefined) {
@@ -1108,13 +1086,22 @@
                     }
                 }
             });
-        } else {
-            log('deduplicateACFromObservable: No duplicates found.');
         }
 
-        const filteredNames = dedupedNames.filter((_, i) => !toRemove.has(i));
+        return { dedupedNames, toRemove, survivorMap, firstFeatJoinIdx, featJoinPhrase };
+    }
 
-        // Repair the join phrase at the true feat boundary.
+    /**
+     * @summary Pure function that repairs join phrases at featured artist boundaries.
+     * @param {object[]} filteredNames - Deduped artist credit nodes.
+     * @param {object[]} names - Original artist credit nodes before dedup.
+     * @param {Set<number>} toRemove - Indices of removed duplicate nodes.
+     * @param {Map<number, number>} survivorMap - Map of removed node indices to survivor indices.
+     * @param {string|null} featJoinPhrase - The original feat join phrase.
+     * @param {number} firstFeatJoinIdx - Index of first featured join phrase in original array.
+     * @returns {object[]} Array of artist credit nodes with repaired join phrases.
+     */
+    function repairFeatBoundary(filteredNames, names, toRemove, survivorMap, featJoinPhrase, firstFeatJoinIdx) {
         if (featJoinPhrase !== null) {
             const firstFeatJoinIdxOrig = names.findIndex(n => FEAT_PATTERN.test(n.joinPhrase ?? ''));
 
@@ -1151,12 +1138,10 @@
             }
         }
 
-        // Find the boundary between primary and featured artists in the filtered array
         const primaryBoundaryIdx = filteredNames.findIndex(n => FEAT_PATTERN.test(n.joinPhrase ?? ''));
         const hasFeatures = primaryBoundaryIdx !== -1;
         const numPrimary = hasFeatures ? primaryBoundaryIdx + 1 : filteredNames.length;
 
-        // Check if all primary join phrases are default ones (commas or ampersands)
         let allPrimaryJoinsAreDefault = true;
         for (let i = 0; i < numPrimary - 1; i++) {
             const join = (filteredNames[i].joinPhrase ?? '').trim().toLowerCase();
@@ -1167,7 +1152,6 @@
             }
         }
 
-        // Check if all featured join phrases are default ones (commas, ampersands, feat, ft)
         let allFeaturedJoinsAreDefault = true;
         if (firstFeatJoinIdx !== -1) {
             for (let i = firstFeatJoinIdx + 1; i < filteredNames.length - 1; i++) {
@@ -1181,15 +1165,13 @@
             }
         }
 
-        // Apply default join phrase rules for empty join phrases and ensure the last entry is empty
         const lastIdx = filteredNames.length - 1;
-        const repairedNames = filteredNames.map((node, i) => {
+        return filteredNames.map((node, i) => {
             if (i === lastIdx) {
                 return { ...node, joinPhrase: '' };
             }
             let currentJoin = node.joinPhrase ?? '';
 
-            // Reformat primary joins if all of them are default
             if (allPrimaryJoinsAreDefault && i < numPrimary - 1) {
                 currentJoin = i === numPrimary - 2 ? ' & ' : ', ';
             }
@@ -1209,6 +1191,33 @@
             }
             return { ...node, joinPhrase: currentJoin };
         });
+    }
+
+    /**
+     * @summary Deduplicates and cleans up duplicate artists in the Knockout artist credit observable.
+     * @param {ko.Observable} acObservable - The entity.artistCredit ko.observable.
+     * @returns {void}
+     */
+    function deduplicateACFromObservable(acObservable, titleFeaturedCount = 0) {
+        if (typeof acObservable !== 'function') return;
+
+        const ac = acObservable();
+        if (!ac?.names?.length) return;
+
+        const names = ac.names;
+        const fmtAC = (arr) => arr.map(n => ({ name: n.name, join: n.joinPhrase, gid: n.artist?.gid ?? null }));
+        log('deduplicateACFromObservable: names before dedup:', fmtAC(names));
+
+        const { dedupedNames, toRemove, survivorMap, firstFeatJoinIdx, featJoinPhrase } = findDuplicateACNodes(names, titleFeaturedCount);
+
+        if (toRemove.size > 0) {
+            log(`deduplicateACFromObservable: Removing ${toRemove.size} duplicate(s). Feat join phrase: "${featJoinPhrase}"`);
+        } else {
+            log('deduplicateACFromObservable: No duplicates found.');
+        }
+
+        const filteredNames = dedupedNames.filter((_, i) => !toRemove.has(i));
+        const repairedNames = repairFeatBoundary(filteredNames, names, toRemove, survivorMap, featJoinPhrase, firstFeatJoinIdx);
 
         acObservable({ ...ac, names: repairedNames });
         log('deduplicateACFromObservable: Done.', fmtAC(repairedNames));
