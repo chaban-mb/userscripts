@@ -947,11 +947,6 @@
      * @param {ko.Observable} acObservable - The entity.artistCredit ko.observable.
      */
     /**
-     * @summary Deduplicates and cleans up duplicate artists in the Knockout artist credit observable.
-     * @param {ko.Observable} acObservable - The entity.artistCredit ko.observable.
-     * @returns {void}
-     */
-    /**
      * @summary Pure function that identifies duplicate artist credit nodes and merges their properties.
      * @param {object[]} names - List of artist credit nodes.
      * @param {number} [titleFeaturedCount=0] - Number of featured artists parsed from title.
