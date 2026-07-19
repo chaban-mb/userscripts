@@ -488,8 +488,8 @@ def do_release():
     print(f"\n{COLOR_CYAN}{COLOR_BOLD}--- Finalizing Release Workflow ---{COLOR_RESET}")
     print(f"{COLOR_BOLD}Preview of actions to perform:{COLOR_RESET}")
 
-    # Show commits that will be merged into main_branch
-    print(f"\n  * Commits to merge into '{main_branch}':")
+    # Show commits that will be cherry-picked into main_branch
+    print(f"\n  * Commits to cherry-pick into '{main_branch}':")
 
     # Limit the preview to commits that touch the selected scripts (and description/docs if applicable)
     paths = []
@@ -506,27 +506,29 @@ def do_release():
 
     # Build git log command scoped to the selected paths. If no paths (shouldn't happen), fall back to full log
     if paths:
-        cmd = ['git', 'log', f'{main_branch}..HEAD', '--oneline', '--'] + paths
+        cmd = ['git', 'log', f'{main_branch}..HEAD', '--format=%H %s', '--'] + paths
     else:
-        cmd = ['git', 'log', f'{main_branch}..HEAD', '--oneline']
+        cmd = ['git', 'log', f'{main_branch}..HEAD', '--format=%H %s']
 
-    commits_to_merge = get_git_stdout(cmd).splitlines()
-    if commits_to_merge:
-        for commit in commits_to_merge:
+    commit_lines = [line.strip() for line in get_git_stdout(cmd).splitlines() if line.strip()]
+    commit_ids = [line.split(' ', 1)[0] for line in commit_lines]
+    if commit_lines:
+        for commit in commit_lines:
             print(f"      {COLOR_GREEN}{commit}{COLOR_RESET}")
     else:
-        print(f"      {COLOR_YELLOW}No new commits to merge ({release_branch} and {main_branch} are already in sync).{COLOR_RESET}")
+        print(f"      {COLOR_YELLOW}No new commits to cherry-pick ({release_branch} and {main_branch} are already in sync).{COLOR_RESET}")
 
     # Show branch updates
     print(f"\n  * Git operations to run:")
     print(f"      {COLOR_CYAN}git checkout {main_branch}{COLOR_RESET}")
-    print(f"      {COLOR_CYAN}git merge {release_branch}{COLOR_RESET}")
+    for commit_id in commit_ids:
+        print(f"      {COLOR_CYAN}git cherry-pick -x {commit_id}{COLOR_RESET}")
     print(f"      {COLOR_CYAN}git push {remote} {main_branch}{COLOR_RESET}")
     print(f"      {COLOR_CYAN}git checkout {release_branch}{COLOR_RESET}")
     print(f"      {COLOR_CYAN}git merge {main_branch}{COLOR_RESET}")
     print(f"      {COLOR_CYAN}git push {remote} {release_branch}{COLOR_RESET}\n")
 
-    confirm = input(f"{COLOR_BOLD}Do you want to merge '{release_branch}' into '{main_branch}' and push changes? (y/N):{COLOR_RESET} ").strip().lower()
+    confirm = input(f"{COLOR_BOLD}Do you want to cherry-pick these selected commits into '{main_branch}' and push changes? (y/N):{COLOR_RESET} ").strip().lower()
     if confirm != 'y':
         print(f"\n{COLOR_YELLOW}Release finalized locally on current branch. Merging and pushing skipped.{COLOR_RESET}")
         if commits_created > 0:
@@ -568,8 +570,12 @@ def do_release():
         print(f"\n{COLOR_CYAN}Checking out {main_branch}...{COLOR_RESET}")
         subprocess.run(['git', 'checkout', main_branch], check=True)
 
-        print(f"\n{COLOR_CYAN}Merging {release_branch} into {main_branch}...{COLOR_RESET}")
-        subprocess.run(['git', 'merge', release_branch], check=True)
+        if commit_ids:
+            print(f"\n{COLOR_CYAN}Cherry-picking selected release commits into {main_branch}...{COLOR_RESET}")
+            for commit_id in commit_ids:
+                subprocess.run(['git', 'cherry-pick', '-x', commit_id], check=True)
+        else:
+            print(f"\n{COLOR_YELLOW}No commits selected for cherry-pick. Skipping release commit application.{COLOR_RESET}")
 
         print(f"\n{COLOR_CYAN}Pushing {main_branch} to {remote}...{COLOR_RESET}")
         subprocess.run(['git', 'push', remote, main_branch], check=True)
