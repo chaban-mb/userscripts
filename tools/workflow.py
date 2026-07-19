@@ -444,13 +444,9 @@ def do_release():
                 default_type = "feat"
                 default_desc = f"release version {new_version}"
 
-            # Find the latest unpushed commit touching this script file
-            remote_tracking = run_cmd("git rev-parse --abbrev-ref --symbolic-full-name @{u}").strip()
-            if not remote_tracking or remote_tracking.startswith("fatal"):
-                remote_tracking = f"{remote}/{release_branch}"
-
+            # Find the latest unreleased commit touching this script file (unreleased = not yet on main)
             file_commits_out = get_git_stdout([
-                'git', 'log', f'{remote_tracking}..HEAD',
+                'git', 'log', f'{remote}/{main_branch}..HEAD',
                 '--format=%H %s', '--', str(script['rel_path'])
             ]).strip()
             file_commits = [l.strip() for l in file_commits_out.splitlines() if l.strip()]
@@ -477,7 +473,7 @@ def do_release():
                     subprocess.run(['git', 'commit', '--fixup', target_hash], check=True)
                     env = os.environ.copy()
                     env['GIT_SEQUENCE_EDITOR'] = 'true'
-                    subprocess.run(['git', 'rebase', '-i', '--autosquash', f'{target_hash}^'], env=env, check=True)
+                    subprocess.run(['git', 'rebase', '-i', '--autosquash', '--autostash', f'{target_hash}^'], env=env, check=True)
                     committed = True
 
             if not committed:
