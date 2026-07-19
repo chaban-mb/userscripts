@@ -1467,7 +1467,7 @@
                     syncAutocompleteInputs(acObservable().names);
                 }
             }
-            info(`Removed artist part from title: "${input.value}" -> "${finalTitle}"`);
+            info(`Removed artist part from title: "${initialText}" -> "${finalTitle}"`);
             setInputValue(input, finalTitle);
             pristineValues.set(input, input.value);
         }
