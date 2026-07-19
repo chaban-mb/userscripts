@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MusicBrainz: Guess Case Improver
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      0.10.2
+// @version      0.10.3
 // @tag          ai-created
 // @description  Improves the native "Guess Case" for release, recording and track titles with advanced artist and ETI parsing. Also removes artist from title and duplicate artists after using "Guess feat. artists" on tracklists.
 // @author       chaban
@@ -172,17 +172,16 @@
     function resolveArtistPartIndex(parts, pristineLower, editorLower, structure, rawText) {
         let idx = findArtistPartIndex(parts, pristineLower, editorLower);
         if (idx !== -1) {
-            const primaryArtist = pristineLower[0] || editorLower[0];
-            if (primaryArtist) {
-                const artistPartLower = parts[idx].toLowerCase();
-                const primaryNames = parseArtistNamesFromString(primaryArtist);
-                const isPrimaryInPart = primaryNames.some(name => cleanStringForComparison(artistPartLower).includes(cleanStringForComparison(name)));
-                if (!isPrimaryInPart && hasRemixKeyword(artistPartLower)) {
-                    return -1;
+            const artistPartLower = parts[idx].toLowerCase();
+            if (hasRemixKeyword(artistPartLower)) {
+                const isExactArtistMatch = pristineLower.some(a => cleanStringForComparison(artistPartLower) === cleanStringForComparison(a)) ||
+                                            editorLower.some(a => cleanStringForComparison(artistPartLower) === cleanStringForComparison(a));
+                if (!isExactArtistMatch) {
+                    idx = -1;
                 }
             }
-            return idx;
         }
+        if (idx !== -1) return idx;
 
         if (parts.length === 2 && structure.joinPhrase) {
             const joinPhraseStr = structure.joinPhrase.trim();
