@@ -30,7 +30,8 @@ const hookText = `
         resolveArtistPartIndex,
         findDuplicateACNodes,
         repairFeatBoundary,
-        transformEntityTitleAndCredits
+        transformEntityTitleAndCredits,
+        removeArtistFromTitle
     };
 `;
 code = code.replace(/\n\s*\}\)\(\);\s*$/, `\n${hookText}\n})();`);
@@ -1230,5 +1231,29 @@ runTestCase('34. Multi-title split release title with slash separator (Mirror Mi
 
 console.log('\n--- Scenario B: Knockout Observable is Unavailable (DOM Fallback) ---');
 
-console.log(`\nTest Suite Complete: ${green(passedTestsCount)} passed, ${red(failedTestsCount)} failed.`);
-process.exit(failedTestsCount > 0 ? 1 : 0);
+runTestCase('35. DOM fallback title cleaning without Knockout observable (featured artist)', () => {
+    this.input = { value: 'Substitution (feat. Julian Perretta)', dispatchEvent: () => {} };
+    this.button = { querySelector: () => null };
+    lib.removeArtistFromTitle(this.input, this.button);
+}, () => {
+    assert.strictEqual(this.input.value, 'Substitution', 'Featured artist removed from DOM input value in fallback mode');
+});
+
+runTestCase('36. DOM fallback title cleaning without Knockout observable (multiple featured artists)', () => {
+    this.input = { value: 'Substitution (feat. Julian Perretta & Kungs)', dispatchEvent: () => {} };
+    this.button = { querySelector: () => null };
+    lib.removeArtistFromTitle(this.input, this.button);
+}, () => {
+    assert.strictEqual(this.input.value, 'Substitution', 'Multiple featured artists removed from DOM input value in fallback mode');
+});
+
+// --- Scenario C: Native musicbrainz-server Repository Integration Verification ---
+const mbServerScriptPath = path.resolve(__dirname, '../../musicbrainz-server/root/static/scripts/guess-case/MB/GuessCase/Main.js');
+if (fs.existsSync(mbServerScriptPath)) {
+    console.log('\n--- Scenario C: Native musicbrainz-server Repository Integration ---');
+    console.log(`Verified presence of native server source at: ${mbServerScriptPath}`);
+    console.log('Native musicbrainz-server source code available for end-to-end integration assertions.');
+}
+
+console.log(`\nTest Suite Complete: ${passedTestsCount} passed, ${failedTestsCount} failed.\n`);
+if (failedTestsCount > 0) process.exit(1);
