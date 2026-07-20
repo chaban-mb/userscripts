@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        MusicBrainz: Reports Statistics
 // @namespace   https://musicbrainz.org/user/chaban
-// @version     2.1.0
+// @version     2.1.1
 // @description Indicates report changes since the last visit and hides reports without items.
 // @tag         ai-created
 // @author      chaban
@@ -136,44 +136,60 @@
     }
 
     /**
-     * Parses the "Generated on" timestamp string from report HTML.
-     * Example: "Generated on 2025-05-25 02:20 GMT+2"
-     * @param {string} htmlContent The HTML content of the report page.
-     * @returns {number|null} UTC milliseconds timestamp, or null if not found/parsed.
-     */
-    function parseGeneratedOnTimestamp(htmlContent) {
-        const match = htmlContent.match(/Generated on (\d{4}-\d{2}-\d{2} \d{2}:\d{2} (?:GMT[+-]\d{1,2}|UTC))/);
-        if (match && match[1]) {
-            try {
-                const dateString = match[1].replace(/GMT([+-]\d{1,2})/, '$1:00');
-                const date = new Date(dateString);
-                return date.getTime();
-            } catch (e) {
-                error("Error parsing generated timestamp:", match[1], e);
-            }
-        }
-        return null;
-    }
-
-    /**
      * Extracts item count and generated timestamp from report HTML.
+     * Uses the DOM structure to anchor directly on metadata list items.
      * @param {string} htmlContent The HTML content of the report page.
      * @returns {{itemCount: number, mbGeneratedTimestamp: number|null}}
      */
     function extractReportData(htmlContent) {
-        let itemCount = 0;
-        const countMatch = htmlContent.match(/Total\s+[\w\s-]+?\s+found:\s*(\d+)/i);
-        if (countMatch && countMatch[1]) {
-            itemCount = parseInt(countMatch[1], 10);
-        } else {
+        let itemCount = -1; // Default to -1 (unknown) instead of 0 to avoid false-positive hiding
+        let mbGeneratedTimestamp = null;
+
+        try {
             const parser = new DOMParser();
             const doc = parser.parseFromString(htmlContent, 'text/html');
-            const tableBody = doc.querySelector('table.tbl tbody');
-            if (tableBody && tableBody.children.length === 0) {
-                itemCount = 0;
+
+            // Find the <li> element containing the Generation timestamp
+            const generatedLi = Array.from(doc.getElementsByTagName('li'))
+                .find(li => li.textContent.includes('Generated on'));
+
+            if (generatedLi) {
+                // Parse timestamp (e.g., "Generated on 2026-07-20 00:24 UTC")
+                const match = generatedLi.textContent.match(/Generated on (\d{4}-\d{2}-\d{2} \d{2}:\d{2} (?:GMT[+-]\d{1,2}|UTC))/);
+                if (match && match[1]) {
+                    try {
+                        const dateString = match[1].replace(/GMT([+-]\d{1,2})/, '$1:00');
+                        mbGeneratedTimestamp = new Date(dateString).getTime();
+                    } catch (e) {
+                        error("Error parsing generated timestamp:", match[1], e);
+                    }
+                }
+
+                // The item count is consistently the list item immediately preceding the timestamp
+                const prevLi = generatedLi.previousElementSibling;
+                if (prevLi && prevLi.textContent.toLowerCase().includes('total')) {
+                    // Extract the first sequence of digits (removing format punctuation like commas)
+                    const cleanText = prevLi.textContent.replace(/,/g, '');
+                    const countMatch = cleanText.match(/\d+/);
+                    if (countMatch) {
+                        itemCount = parseInt(countMatch[0], 10);
+                    }
+                }
             }
+
+            // Fallback: Check if the table body exists and is completely empty
+            if (itemCount === -1) {
+                const tableBody = doc.querySelector('table.tbl tbody');
+                if (tableBody) {
+                    if (tableBody.querySelectorAll('tr').length === 0) {
+                        itemCount = 0; // Confirmed 0 items
+                    }
+                }
+            }
+        } catch (e) {
+            error("Error parsing DOM data:", e);
         }
-        const mbGeneratedTimestamp = parseGeneratedOnTimestamp(htmlContent);
+
         return { itemCount, mbGeneratedTimestamp };
     }
 
