@@ -62,8 +62,6 @@
                 playlistInProgress: 'Processing...',
                 tokenMissing: 'Set LB Token!',
                 tokenMissingTitle: 'Click to set your ListenBrainz token',
-                tokenMissing: 'Set LB Token!',
-                tokenMissingTitle: 'Click to set your ListenBrainz token',
                 viewReport: 'View Report',
                 viewReportTitle: 'View list of unmatched/unparsed tracks from the video description.',
             },
@@ -632,22 +630,6 @@
             return data.playlist;
         },
 
-        async addMetadataToPlaylist(token, mbid, existingPlaylist, description) {
-            const jspf = {
-                playlist: {
-                    title: existingPlaylist.title,
-                    annotation: existingPlaylist.annotation || '',
-                    extension: {
-                        "https://musicbrainz.org/doc/jspf#playlist": {
-                            public: existingPlaylist.extension["https://musicbrainz.org/doc/jspf#playlist"].public,
-                            additional_metadata: { "youtube_description": description }
-                        }
-                    }
-                }
-            };
-            return this.apiRequest(`playlist/edit/${mbid}`, { method: 'POST', token, body: jspf });
-        },
-
         async deletePlaylistItems(token, mbid, index, count) {
             if (count === 0) return;
             return this.apiRequest(`playlist/${mbid}/item/delete`, { method: 'POST', token, body: { index, count } });
@@ -660,7 +642,6 @@
 
         /**
          * Edits a playlist's core metadata, including title, annotation, visibility, and description.
-         * This function replaces the previous addMetadataToPlaylist.
          * @param {string} token - The user's ListenBrainz token.
          * @param {string} mbid - The MBID of the playlist to edit.
          * @param {Object} details - The metadata to update.
@@ -1602,9 +1583,6 @@
                     }
                     .${Config.CLASS_NAMES.PLAYLIST_BUTTON}.${Config.CLASS_NAMES.PLAYLIST_BUTTON_SYNC} {
                         background-color: #007bff;
-                    }
-                    .${Config.CLASS_NAMES.PLAYLIST_BUTTON}.${Config.CLASS_NAMES.PLAYLIST_BUTTON_SYNC}:hover {
-                        background-color: #0069d9;
                     }
                     .${Config.CLASS_NAMES.PLAYLIST_BUTTON}.${Config.CLASS_NAMES.PLAYLIST_BUTTON_SYNC}:hover {
                         background-color: #0069d9;
