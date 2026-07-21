@@ -1,14 +1,13 @@
 // ==UserScript==
 // @name         YouTube: MusicBrainz Importer
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      2.9.1
+// @version      2.10.1
 // @description  Imports YouTube videos to MusicBrainz as a new standalone recording
 // @tag          ai-created
 // @author       nikki, RustyNova, chaban
 // @license      MIT
 // @match        *://www.youtube.com/*
 // @match        *://*.musicbrainz.org/recording/create*
-// @connect      googleapis.com
 // @connect      musicbrainz.org
 // @connect      listenbrainz.org
 // @icon         https://www.google.com/s2/favicons?sz=256&domain=youtube.com
@@ -110,12 +109,9 @@
      */
     const Config = {
         SHORT_APP_NAME: 'UserJS.YoutubeImport',
-        GOOGLE_API_KEY: 'AIzaSyCOb5XdjfRz1TYDk21_wb0K3KnFf0EguDU',
         MUSICBRAINZ_API_ROOT: 'https://musicbrainz.org/ws/2/',
         LISTENBRAINZ_API_ROOT: 'https://api.listenbrainz.org/1/',
         TOKEN_STORAGE_KEY: 'listenbrainz_user_token',
-        YOUTUBE_API_ROOT: 'https://www.googleapis.com/youtube/v3/',
-        YOUTUBE_API_VIDEO_PARTS: 'snippet,id,contentDetails',
 
         MAX_RETRIES: 5,
         INITIAL_RETRY_DELAY_MS: 1000,
@@ -206,9 +202,12 @@
          * @returns {Promise<Element>} A promise that resolves with the element once found, or rejects on timeout.
          */
         waitForElement: function (selector, timeout = 15000) {
+            const start = performance.now();
             return new Promise((resolve, reject) => {
                 const element = document.querySelector(selector);
                 if (element) {
+                    const elapsed = (performance.now() - start).toFixed(2);
+                    console.debug(`[${GM.info.script.name}] Found element '${selector}' instantly (${elapsed}ms).`);
                     resolve(element);
                     return;
                 }
@@ -224,6 +223,8 @@
                     if (targetElement) {
                         clearTimeout(timer);
                         obs.disconnect();
+                        const elapsed = (performance.now() - start).toFixed(2);
+                        console.debug(`[${GM.info.script.name}] Found element '${selector}' after MutationObserver wait (${elapsed}ms).`);
                         resolve(targetElement);
                     }
                 });
@@ -249,98 +250,87 @@
             };
 
             return new Promise((resolve, reject) => {
-                GM.xmlHttpRequest({
-                    method: details.method || 'GET',
-                    url: details.url,
-                    headers: headers,
-                    data: details.data || null,
-                    anonymous: details.anonymous || false,
-                    onload: (response) => {
-                        if (response.status >= 200 && response.status < 300) {
-                            resolve(response);
-                        } else if (response.status === 503 && currentRetry < Config.MAX_RETRIES) {
-                            const delay = Config.INITIAL_RETRY_DELAY_MS * Math.pow(Config.RETRY_BACKOFF_FACTOR, currentRetry);
-                            console.warn(`[${GM.info.script.name}] ${apiName} returned 503. Retrying in ${delay}ms (attempt ${currentRetry + 1}/${Config.MAX_RETRIES}).`);
-                            setTimeout(() => {
-                                Utils.gmXmlHttpRequest(details, apiName, currentRetry + 1)
-                                    .then(resolve)
-                                    .catch(reject);
-                            }, delay);
-                        } else {
-                            if (!(response.status === 404 && apiName === 'MusicBrainz API')) {
-                                console.error(`[${GM.info.script.name}] ${apiName} request failed with status ${response.status}.`);
+                console.debug(`[${GM.info.script.name}] [XHR Start] Sending request for ${apiName}. URL: ${details.url}`);
+                try {
+                    GM.xmlHttpRequest({
+                        method: details.method || 'GET',
+                        url: details.url,
+                        headers: headers,
+                        data: details.data || null,
+                        anonymous: details.anonymous || false,
+                        timeout: details.timeout || 10000,
+                        onload: (response) => {
+                            console.debug(`[${GM.info.script.name}] [XHR Callback] onload received for ${apiName}. Status: ${response.status}`);
+                            if (response.status >= 200 && response.status < 300) {
+                                resolve(response);
+                            } else if (response.status === 503 && currentRetry < Config.MAX_RETRIES) {
+                                const delay = Config.INITIAL_RETRY_DELAY_MS * Math.pow(Config.RETRY_BACKOFF_FACTOR, currentRetry);
+                                console.warn(`[${GM.info.script.name}] ${apiName} returned 503. Retrying in ${delay}ms (attempt ${currentRetry + 1}/${Config.MAX_RETRIES}).`);
+                                setTimeout(() => {
+                                    Utils.gmXmlHttpRequest(details, apiName, currentRetry + 1)
+                                        .then(resolve)
+                                        .catch(reject);
+                                }, delay);
+                            } else {
+                                if (!(response.status === 404 && apiName === 'MusicBrainz API')) {
+                                    console.error(`[${GM.info.script.name}] ${apiName} request failed with status ${response.status}.`);
+                                }
+                                const error = new Error(`Request to ${apiName} failed with status ${response.status}: ${response.responseText}`);
+                                error.status = response.status;
+                                error.apiName = apiName;
+                                reject(error);
                             }
-                            const error = new Error(`Request to ${apiName} failed with status ${response.status}: ${response.responseText}`);
+                        },
+                        onerror: (response) => {
+                            console.error(`[${GM.info.script.name}] [XHR Callback] onerror received for ${apiName}. Response details:`, response);
+                            if (!navigator.onLine) {
+                                console.debug(`[${GM.info.script.name}] Offline detected. Waiting for network...`);
+                                const waitForOnline = () => new Promise(resolve => {
+                                    const handler = () => {
+                                        window.removeEventListener('online', handler);
+                                        resolve();
+                                    };
+                                    window.addEventListener('online', handler);
+                                });
+
+                                waitForOnline().then(() => {
+                                    console.debug(`[${GM.info.script.name}] Network restored. Retrying...`);
+                                    Utils.gmXmlHttpRequest(details, apiName, currentRetry)
+                                        .then(resolve)
+                                        .catch(reject);
+                                });
+                                return;
+                            }
+
+                            const error = new Error(`Network error for ${apiName}: ${response.statusText}`);
                             error.status = response.status;
                             error.apiName = apiName;
                             reject(error);
+                        },
+                        ontimeout: () => {
+                            console.error(`[${GM.info.script.name}] [XHR Callback] ontimeout received for ${apiName}.`);
+                            const error = new Error(`Request to ${apiName} timed out`);
+                            error.status = 408;
+                            error.apiName = apiName;
+                            reject(error);
+                        },
+                        onabort: () => {
+                            console.error(`[${GM.info.script.name}] [XHR Callback] onabort received for ${apiName}.`);
+                            const error = new Error(`Request to ${apiName} aborted`);
+                            error.status = 0;
+                            error.apiName = apiName;
+                            reject(error);
                         }
-                    },
-                    onerror: (response) => {
-                        if (!navigator.onLine) {
-                            console.log(`[${GM.info.script.name}] Offline detected. Waiting for network...`);
-                            const waitForOnline = () => new Promise(resolve => {
-                                const handler = () => {
-                                    window.removeEventListener('online', handler);
-                                    resolve();
-                                };
-                                window.addEventListener('online', handler);
-                            });
-
-                            waitForOnline().then(() => {
-                                console.log(`[${GM.info.script.name}] Network restored. Retrying...`);
-                                Utils.gmXmlHttpRequest(details, apiName, currentRetry)
-                                    .then(resolve)
-                                    .catch(reject);
-                            });
-                            return;
-                        }
-
-                        console.error(`[${GM.info.script.name}] ${apiName} network error:`, response);
-                        const error = new Error(`Network error for ${apiName}: ${response.statusText}`);
-                        error.status = response.status;
-                        error.apiName = apiName;
-                        reject(error);
-                    },
-                    ontimeout: () => {
-                        console.error(`[${GM.info.script.name}] ${apiName} request timed out.`);
-                        const error = new Error(`Request to ${apiName} timed out`);
-                        error.status = 408;
-                        error.apiName = apiName;
-                        reject(error);
-                    }
-                });
+                    });
+                    console.debug(`[${GM.info.script.name}] [XHR Scheduled] GM.xmlHttpRequest scheduled successfully for ${apiName}.`);
+                } catch (err) {
+                    console.error(`[${GM.info.script.name}] [XHR Exception] Direct crash scheduling GM.xmlHttpRequest for ${apiName}:`, err);
+                    reject(err);
+                }
             });
         },
 
-        /**
-         * Converts ISO8601 duration to milliseconds using a single regular expression.
-         * Handles durations with date and time parts (e.g., P1DT12H30M5.5S).
-         * https://en.wikipedia.org/wiki/ISO_8601#Durations
-         * @param {string} str - The ISO8601 duration string.
-         * @returns {number} The duration in milliseconds, or NaN if invalid.
-         */
-        ISO8601toMilliSeconds: function (str) {
-            // This single regex captures the optional Day part, and the optional Time part (which must be preceded by 'T').
-            // Groups: 1=Days, 2=Hours, 3=Minutes, 4=Seconds
-            const regex = /^P(?:(\d*\.?\d*)D)?(?:T(?:(\d*\.?\d*)H)?(?:(\d*\.?\d*)M)?(?:(\d*\.?\d*)S)?)?$/;
 
-            const matches = str.replace(',', '.').match(regex);
-
-            // If the regex doesn't match, or if it matches but finds no duration components (e.g., input is "P" or "PT"), return NaN.
-            if (!matches || matches.slice(1).every(part => part === undefined)) {
-                return NaN;
-            }
-
-            const days = parseFloat(matches[1] || 0);
-            const hours = parseFloat(matches[2] || 0);
-            const minutes = parseFloat(matches[3] || 0);
-            const seconds = parseFloat(matches[4] || 0);
-
-            const totalSeconds = (days * 86400) + (hours * 3600) + (minutes * 60) + seconds;
-
-            return totalSeconds * 1000;
-        },
         /**
          * Parses a block of text for track information using multiple regex patterns.
          * @param {string} text The raw text (e.g., YouTube description).
@@ -485,52 +475,129 @@
         }
     };
 
+
+
     /**
-     * Handles all interactions with the YouTube Data API.
+     * Diagnostic module to extract YouTube video metadata directly from in-page window objects / DOM
+     * and compare it against the YouTube Data API response.
      */
-    const YouTubeAPI = {
-        _videoDataCache: new Map(),
+    const InPageDataExtractor = {
+        _lastEventDetail: null,
+
+        initEventListeners() {
+            document.addEventListener('yt-navigate-finish', (event) => {
+                this._lastEventDetail = event.detail;
+            });
+        },
 
         /**
-         * Fetches video data from the YouTube Data API.
-         * @param {string} videoId - The YouTube video ID.
-         * @returns {Promise<Object|null>} A promise that resolves with the video data, or null if not found/error.
+         * Returns the raw player response currently cached or stored in window variables.
+         * @returns {Object|null}
          */
-        fetchVideoData: async function (videoId) {
-            if (this._videoDataCache.has(videoId)) {
-                const cachedData = this._videoDataCache.get(videoId);
-                console.log(`[${GM.info.script.name}] YouTube API response found in cache for video ID: ${videoId}.`);
-                return cachedData !== false ? cachedData : null;
+        getRawPlayerResponse() {
+            let playerResponse = null;
+            if (this._lastEventDetail?.response) {
+                const resp = this._lastEventDetail.response;
+                playerResponse = resp.playerResponse || resp.endpoint?.watchEndpoint?.playerResponse;
             }
-
-            const url = new URL('videos', Config.YOUTUBE_API_ROOT);
-            url.searchParams.append('part', Config.YOUTUBE_API_VIDEO_PARTS);
-            url.searchParams.append('id', videoId);
-            url.searchParams.append('key', Config.GOOGLE_API_KEY);
-
-            console.log(`[${GM.info.script.name}] Calling YouTube API for video ID:`, videoId);
-            try {
-                const response = await Utils.gmXmlHttpRequest({
-                    method: 'GET',
-                    url: url.toString(),
-                }, 'YouTube API');
-
-                const parsedFullResponse = JSON.parse(response.responseText);
-                if (parsedFullResponse.items && parsedFullResponse.items.length > 0) {
-                    const videoData = parsedFullResponse.items[0];
-                    this._videoDataCache.set(videoId, videoData);
-                    return videoData;
-                } else {
-                    console.log(`[${GM.info.script.name}] YouTube API returned no items for video ID: ${videoId}.`);
-                    this._videoDataCache.set(videoId, false);
-                    return null;
-                }
-            } catch (error) {
-                console.error(`[${GM.info.script.name}] Error fetching YouTube video data for ${videoId}:`, error);
-                // Do not cache errors to allow retries on subsequent navigations
-                throw error;
+            if (!playerResponse && window.ytInitialPlayerResponse) {
+                playerResponse = window.ytInitialPlayerResponse;
             }
+            return playerResponse;
         },
+
+        /**
+         * Extracts video data from in-page player objects or window globals for a given video ID.
+         * @param {string} videoId
+         * @returns {Object|null}
+         */
+        extractVideoData(videoId) {
+            const startTime = performance.now();
+            const playerResponse = this.getRawPlayerResponse();
+
+            // 3. Check movie_player DOM component fallback
+            const moviePlayer = document.getElementById('movie_player');
+            const moviePlayerData = moviePlayer?.getVideoData?.();
+
+            const videoDetails = playerResponse?.videoDetails;
+
+            const title = videoDetails?.title || moviePlayerData?.title || document.querySelector('h1.ytd-watch-metadata yt-formatted-string')?.innerText || '';
+            const channelTitle = videoDetails?.author || moviePlayerData?.author || document.querySelector('#owner #channel-name a')?.innerText || '';
+            const channelId = videoDetails?.channelId || '';
+
+            let durationSeconds = 0;
+            const microformatSec = playerResponse?.microformat?.playerMicroformatRenderer?.lengthSeconds;
+            if (microformatSec) {
+                durationSeconds = parseInt(microformatSec, 10);
+            }
+
+            // Extract direct milliseconds strictly from adaptiveFormats.approxDurationMs without video element fallback
+            let directMs = 0;
+            const adaptiveFormat = playerResponse?.streamingData?.adaptiveFormats?.[0];
+            if (adaptiveFormat?.approxDurationMs) {
+                directMs = parseInt(adaptiveFormat.approxDurationMs, 10);
+            }
+
+            const description = (
+                videoDetails?.shortDescription
+                ?? playerResponse?.microformat?.playerMicroformatRenderer?.description?.simpleText
+                ?? document.querySelector('meta[name="description"]')?.content
+                ?? document.querySelector('#description-inline-expander #plain-snippet-text')?.innerText
+                ?? document.querySelector('#description-inline-expander yt-attributed-string')?.innerText
+                ?? ''
+            ).trim();
+
+            const category = playerResponse?.microformat?.playerMicroformatRenderer?.category
+                || document.querySelector('meta[itemprop="genre"]')?.content
+                || '';
+
+            if (!title && !channelTitle) {
+                return null;
+            }
+
+            // Synthesize YouTube API shape for compatibility and validation
+            return {
+                id: videoId,
+                snippet: {
+                    title,
+                    channelTitle,
+                    channelId,
+                    description,
+                    category,
+                },
+                contentDetails: {
+                    duration: `PT${durationSeconds}S`,
+                    durationMs: durationSeconds * 1000,
+                    directMs,
+                }
+            };
+        },
+
+        logExtractionSummary(domData, rawPlayerResponse, videoId) {
+            console.group(`[${GM.info.script.name}] Video ID: ${videoId}`);
+
+            if (!domData) {
+                console.warn('[In-Page Data Extraction FAIL] Could not extract video metadata from in-page sources or DOM.');
+            } else {
+                const formatMsToHms = (ms) => {
+                    if (ms === null || ms === undefined || isNaN(ms)) return 'N/A';
+                    const totalSec = Math.floor(ms / 1000);
+                    const h = Math.floor(totalSec / 3600);
+                    const m = Math.floor((totalSec % 3600) / 60);
+                    const s = totalSec % 60;
+                    const pad = (n) => String(n).padStart(2, '0');
+                    return h > 0 ? `${h}:${pad(m)}:${pad(s)}` : `${m}:${pad(s)}`;
+                };
+
+                console.log(`Title: "${domData.snippet?.title || ''}"`);
+                console.log(`Channel: "${domData.snippet?.channelTitle || ''}" (ID: "${domData.snippet?.channelId || ''}")`);
+                console.log(`Duration: ${formatMsToHms(domData.contentDetails?.durationMs)} (${domData.contentDetails?.durationMs || 0}ms)`);
+
+                console.debug('Extracted Video Metadata:', domData);
+                console.debug('Raw Video Player Response:', rawPlayerResponse);
+            }
+            console.groupEnd();
+        }
     };
 
     /**
@@ -687,7 +754,7 @@
         getButtonAnchorElement: async function () {
             try {
                 const dock = await Utils.waitForElement(Config.SELECTORS.BUTTON_DOCK);
-                console.log(`[${GM.info.script.name}] Found button dock:`, dock);
+                console.debug(`[${GM.info.script.name}] Found button dock:`, dock);
                 return dock;
             } catch (e) {
                 console.error(`[${GM.info.script.name}] Could not find button dock element:`, e);
@@ -788,7 +855,7 @@
                 this._containerDiv.style.borderRadius = '';
 
                 dockElement.appendChild(this._containerDiv);
-                console.log(`[${GM.info.script.name}] Button UI appended to dock.`);
+                console.debug(`[${GM.info.script.name}] Button UI appended to dock.`);
             } else {
                 // Only fallback if it's not already attached anywhere in the document
                 if (document.body.contains(this._containerDiv)) {
@@ -818,8 +885,8 @@
             const artist = youtubeVideoData.snippet.channelTitle;
 
             let length = 0;
-            if (youtubeVideoData.contentDetails && typeof youtubeVideoData.contentDetails.duration === 'string') {
-                length = Utils.ISO8601toMilliSeconds(youtubeVideoData.contentDetails.duration);
+            if (youtubeVideoData.contentDetails && typeof youtubeVideoData.contentDetails.durationMs === 'number') {
+                length = youtubeVideoData.contentDetails.durationMs;
             }
 
             this._addField('edit-recording.name', title);
@@ -846,15 +913,18 @@
             this._submitButton.disabled = false;
             this._form.style.display = 'flex';
 
-            this._submitButton.onclick = () => {
-                console.log(`[${GM.info.script.name}] Import button clicked. Clearing cache for video ID: ${videoId}`);
+            const invalidateCacheAndPrefetch = () => {
+                console.debug(`[${GM.info.script.name}] Import button clicked. Clearing cache for video ID: ${videoId}`);
                 YouTubeMusicBrainzImporter._mbApi.invalidateCacheForUrl(canonicalYtUrl);
 
                 if (youtubeVideoData.snippet.channelId) {
                     const youtubeChannelUrl = new URL(`https://www.youtube.com/channel/${youtubeVideoData.snippet.channelId}`).toString();
                     YouTubeMusicBrainzImporter._mbApi.invalidateCacheForUrl(youtubeChannelUrl);
                 }
+                YouTubeMusicBrainzImporter._prefetchedVideoId = null;
+                YouTubeMusicBrainzImporter._prefetchedDataPromise = null;
             };
+            this._submitButton.addEventListener('mousedown', invalidateCacheAndPrefetch);
         },
 
         /**
@@ -881,11 +951,11 @@
                 const recordingMBID = existingRecordingRelation.recording.id;
                 const recordingTitle = existingRecordingRelation.recording.title || "View Recording";
                 const hasLength = existingRecordingRelation.recording.length != null;
-                const ytHasLength = youtubeVideoData && youtubeVideoData.contentDetails && youtubeVideoData.contentDetails.duration;
+                const ytHasLength = youtubeVideoData && youtubeVideoData.contentDetails && (youtubeVideoData.contentDetails.durationMs > 0 || youtubeVideoData.contentDetails.directMs > 0);
 
                 // Check if the recording is missing the length and we have a length from YouTube
                 if (!hasLength && ytHasLength) {
-                    const lengthInMs = Utils.ISO8601toMilliSeconds(youtubeVideoData.contentDetails.duration);
+                    const lengthInMs = youtubeVideoData.contentDetails.durationMs || youtubeVideoData.contentDetails.directMs;
                     const scriptInfo = GM_info.script;
                     const editNote = `${canonicalYtUrl}\n—\n${scriptInfo.name} (v${scriptInfo.version})`;
                     const encodedEditNote = encodeURIComponent(editNote);
@@ -895,7 +965,7 @@
                     });
                     span.textContent = L10n.getString('updateLength');
                     button.className = `${Config.CLASS_NAMES.BUTTON} ${Config.CLASS_NAMES.BUTTON_UPDATE}`;
-                    console.log(`[${GM.info.script.name}] Displaying 'Update Length' button for recording ${recordingMBID}.`);
+                    console.debug(`[${GM.info.script.name}] Displaying 'Update Length' button for recording ${recordingMBID}.`);
                 } else {
                     // Default behavior: link to the recording page
                     link.href = `//musicbrainz.org/recording/${recordingMBID}`;
@@ -906,14 +976,14 @@
                     button.className = `${Config.CLASS_NAMES.BUTTON} ${Config.CLASS_NAMES.BUTTON_ADDED}`;
                 }
             } else {
-                console.log(`[${GM.info.script.name}] Multiple recording relations found. Linking to URL entity page.`);
+                console.debug(`[${GM.info.script.name}] Multiple recording relations found. Linking to URL entity page.`);
                 link.href = `//musicbrainz.org/url/${urlEntityId}`;
                 link.title = L10n.getString('linkedToMultiTitle');
                 span.textContent = L10n.getString('onMBMulti');
                 button.className = `${Config.CLASS_NAMES.BUTTON} ${Config.CLASS_NAMES.BUTTON_ADDED}`;
             }
             this._containerDiv.appendChild(link);
-            console.log(`[${GM.info.script.name}] Displaying existing link button.`);
+            console.debug(`[${GM.info.script.name}] Displaying existing link button.`);
         },
 
         /**
@@ -978,7 +1048,7 @@
                 this._containerDiv.style.borderRadius = '';
 
                 dockElement.appendChild(this._containerDiv);
-                console.log(`[${GM.info.script.name}] Playlist UI appended to dock.`);
+                console.debug(`[${GM.info.script.name}] Playlist UI appended to dock.`);
             } else {
                 // Only fallback to body if it's not already attached anywhere in the DOM
                 if (document.body.contains(this._containerDiv)) {
@@ -1169,9 +1239,9 @@
                 : false;
 
             if (parserIsLikelySwapped) {
-                console.log(`[${GM.info.script.name}] Tracklist heuristic: uniqueArtists=${uniqueArtists}, uniqueTitles=${uniqueTitles}. Parser output likely swapped. Prioritizing swapped lookup.`);
+                console.debug(`[${GM.info.script.name}] Tracklist heuristic: uniqueArtists=${uniqueArtists}, uniqueTitles=${uniqueTitles}. Parser output likely swapped. Prioritizing swapped lookup.`);
             } else {
-                console.log(`[${GM.info.script.name}] Tracklist heuristic: uniqueArtists=${uniqueArtists}, uniqueTitles=${uniqueTitles}. Parser output seems correct. Prioritizing parser order lookup.`);
+                console.debug(`[${GM.info.script.name}] Tracklist heuristic: uniqueArtists=${uniqueArtists}, uniqueTitles=${uniqueTitles}. Parser output seems correct. Prioritizing parser order lookup.`);
             }
             // --- End of heuristic ---
 
@@ -1223,7 +1293,7 @@
             let finalNotFoundTracks = potentiallyNotFound; // Assume all potential misses are final unless found in pass 2
 
             if (foundTracks.length === 0 && potentiallyNotFound.length > 0) {
-                console.log(`[${GM.info.script.name}] First pass found no tracks. Starting second pass with swapped order.`);
+                console.debug(`[${GM.info.script.name}] First pass found no tracks. Starting second pass with swapped order.`);
                 foundTracks = []; // Reset foundTracks for the second pass results
                 finalNotFoundTracks = []; // Reset finalNotFoundTracks for the second pass results
                 let j = 0;
@@ -1238,7 +1308,7 @@
                             foundTracks.push(result);
                         } else {
                             // Track still not found, add its *heuristic guess* to final report list
-                            console.log(`[${GM.info.script.name}] Track still not found on Pass 2: "${trackInfo.artist} - ${trackInfo.title}" (Original line: ${trackInfo.originalLine})`);
+                            console.debug(`[${GM.info.script.name}] Track still not found on Pass 2: "${trackInfo.artist} - ${trackInfo.title}" (Original line: ${trackInfo.originalLine})`);
                             finalNotFoundTracks.push({
                                 artist: trackInfo.artist, // Report using heuristic guess
                                 title: trackInfo.title,   // Report using heuristic guess
@@ -1271,7 +1341,7 @@
                     timestampSeconds: trackInfo.timestampSeconds,
                     originalLine: trackInfo.originalLine
                 }));
-                console.log(`[${GM.info.script.name}] First pass found ${foundTracks.length} tracks. Skipping second pass.`);
+                console.debug(`[${GM.info.script.name}] First pass found ${foundTracks.length} tracks. Skipping second pass.`);
             }
 
             return { foundTracks, notFoundTracks: finalNotFoundTracks, unparsedLines };
@@ -1459,7 +1529,7 @@
                 return await this._mbApi.lookupUrl(canonicalUrls, ['recording-rels', 'artist-rels']);
             } catch (error) {
                 if (error.name === 'PermanentError') {
-                    console.log(`[${GM.info.script.name}] A URL was not found in MusicBrainz (404), which is expected.`);
+                    console.debug(`[${GM.info.script.name}] A URL was not found in MusicBrainz (404), which is expected.`);
                 } else {
                     console.error(`[${GM.info.script.name}] An unexpected error occurred looking up MusicBrainz URLs:`, error);
                 }
@@ -1483,6 +1553,7 @@
          */
         init: function () {
             this._mbApi = new MusicBrainzAPI({ user_agent: USER_AGENT });
+            InPageDataExtractor.initEventListeners();
             this._injectCSS();
             TokenManager.init(); // Initialize token manager
             RecordingButtonManager.init();
@@ -1604,12 +1675,12 @@
          */
         _setupObservers: function () {
             document.addEventListener('yt-navigate-finish', (event) => {
-                console.log(`[${GM.info.script.name}] 'yt-navigate-finish' event detected.`);
+                console.debug(`[${GM.info.script.name}] 'yt-navigate-finish' event detected.`);
 
                 if (this._navigationTimeoutId) {
                     clearTimeout(this._navigationTimeoutId);
                     this._navigationTimeoutId = null;
-                    console.log(`[${GM.info.script.name}] Cleared previous navigation timeout.`);
+                    console.debug(`[${GM.info.script.name}] Cleared previous navigation timeout.`);
                 }
 
                 this._navigationTimeoutId = setTimeout(() => {
@@ -1624,13 +1695,14 @@
          */
         _setupUrlChangeListeners: function () {
             document.addEventListener('yt-navigate-start', () => {
+                this._lastNavStartTimestamp = performance.now();
                 const currentVideoId = DOMScanner.getVideoId();
                 if (currentVideoId && currentVideoId !== this._prefetchedVideoId) {
-                    console.log(`[${GM.info.script.name}] 'yt-navigate-start' detected for video ID: ${currentVideoId}. Initiating pre-fetch.`);
+                    console.debug(`[${GM.info.script.name}] 'yt-navigate-start' detected for video ID: ${currentVideoId}. Initiating pre-fetch.`);
                     this._prefetchedVideoId = currentVideoId;
                     this._prefetchedDataPromise = this._startPrefetching(currentVideoId);
                 } else if (!currentVideoId && this._prefetchedVideoId) {
-                    console.log(`[${GM.info.script.name}] Navigated away from video page. Clearing pre-fetch state.`);
+                    console.debug(`[${GM.info.script.name}] Navigated away from video page. Clearing pre-fetch state.`);
                     this._prefetchedVideoId = null;
                     this._prefetchedDataPromise = null;
                 }
@@ -1639,17 +1711,17 @@
             window.addEventListener('popstate', () => {
                 const currentVideoId = DOMScanner.getVideoId();
                 if (currentVideoId && currentVideoId !== this._prefetchedVideoId) {
-                    console.log(`[${GM.info.script.name}] 'popstate' detected for video ID: ${currentVideoId}. Initiating pre-fetch.`);
+                    console.debug(`[${GM.info.script.name}] 'popstate' detected for video ID: ${currentVideoId}. Initiating pre-fetch.`);
                     this._prefetchedVideoId = currentVideoId;
                     this._prefetchedDataPromise = this._startPrefetching(currentVideoId);
                 } else if (!currentVideoId && this._prefetchedVideoId) {
-                    console.log(`[${GM.info.script.name}] Navigated away from video page. Clearing pre-fetch state.`);
+                    console.debug(`[${GM.info.script.name}] Navigated away from video page. Clearing pre-fetch state.`);
                     this._prefetchedVideoId = null;
                     this._prefetchedDataPromise = null;
                 }
             });
 
-            console.log(`[${GM.info.script.name}] URL change listeners (yt-navigate-start, popstate) set up.`);
+            console.debug(`[${GM.info.script.name}] URL change listeners (yt-navigate-start, popstate) set up.`);
         },
 
 
@@ -1661,29 +1733,14 @@
          */
         _startPrefetching: async function (videoId) {
             try {
-                const ytDataPromise = YouTubeAPI.fetchVideoData(videoId);
                 const canonicalYtUrl = new URL(`https://www.youtube.com/watch?v=${videoId}`).toString();
-
-                const ytData = await ytDataPromise;
-
-                if (!ytData) {
-                    console.warn(`[${GM.info.script.name}] YT data not available for pre-fetching ${videoId}. Skipping MB pre-fetch.`);
-                    return [null, null];
-                }
-
-                const youtubeChannelUrl = ytData.snippet.channelId ? new URL(`https://www.youtube.com/channel/${ytData.snippet.channelId}`).toString() : null;
                 const urlsToQuery = [canonicalYtUrl];
-                if (youtubeChannelUrl) {
-                    urlsToQuery.push(youtubeChannelUrl);
-                }
-                const mbResultsPromise = this.lookupMbUrls(urlsToQuery);
-
-                const [finalYtData, finalMbResults] = await Promise.all([Promise.resolve(ytData), mbResultsPromise]);
-                console.log(`[${GM.info.script.name}] Pre-fetching completed for video ID: ${videoId}.`);
-                return [finalYtData, finalMbResults];
+                const mbResults = await this.lookupMbUrls(urlsToQuery);
+                console.debug(`[${GM.info.script.name}] Pre-fetching MusicBrainz URL lookups completed for video ID: ${videoId}.`);
+                return mbResults;
             } catch (error) {
                 console.error(`[${GM.info.script.name}] Error during pre-fetching for video ID: ${videoId}:`, error);
-                return [null, null];
+                return null;
             }
         },
 
@@ -1694,7 +1751,7 @@
          */
         triggerUpdate: function (videoId) {
             if (this._processingVideoId === videoId && this._currentProcessingPromise) {
-                console.log(`[${GM.info.script.name}] Already processing video ID: ${videoId}. Skipping trigger.`);
+                console.debug(`[${GM.info.script.name}] Already processing video ID: ${videoId}. Skipping trigger.`);
                 return;
             }
 
@@ -1703,17 +1760,17 @@
                 RecordingButtonManager._containerDiv.style.display = 'none';
                 this._processingVideoId = null;
                 this._currentProcessingPromise = null;
-                console.log(`[${GM.info.script.name}] Not a YouTube video page. Hiding button.`);
+                console.debug(`[${GM.info.script.name}] Not a YouTube video page. Hiding button.`);
                 return;
             }
 
             this._processingVideoId = videoId;
-            console.log(`[${GM.info.script.name}] Triggering update for video ID: ${videoId}`);
+            console.debug(`[${GM.info.script.name}] Triggering update for video ID: ${videoId}`);
 
             if (videoId === this._prefetchedVideoId && this._prefetchedDataPromise) {
-                console.log(`[${GM.info.script.name}] Using pre-fetched data for video ID: ${videoId}.`);
+                console.debug(`[${GM.info.script.name}] Using pre-fetched MusicBrainz lookup data for video ID: ${videoId}.`);
                 this._currentProcessingPromise = this._prefetchedDataPromise
-                    .then(([ytData, mbResults]) => this._performUpdate(videoId, ytData, mbResults))
+                    .then((mbResults) => this._performUpdate(videoId, mbResults))
                     .finally(() => {
                         if (this._processingVideoId === videoId) {
                             this._processingVideoId = null;
@@ -1723,7 +1780,7 @@
                         }
                     });
             } else {
-                console.log(`[${GM.info.script.name}] No pre-fetched data or different video. Performing full update for video ID: ${videoId}.`);
+                console.debug(`[${GM.info.script.name}] No pre-fetched data or different video. Performing full update for video ID: ${videoId}.`);
                 this._currentProcessingPromise = this._performUpdate(videoId)
                     .finally(() => {
                         if (this._processingVideoId === videoId) {
@@ -1741,40 +1798,55 @@
          * @param {Map<string, Object|null>|null} [prefetchedMbResults=null] - Optional pre-fetched MusicBrainz URL lookup results.
          * @returns {Promise<void>} A promise that resolves when the update is complete.
          */
-        _performUpdate: async function (videoId, prefetchedYtData = null, prefetchedMbResults = null) {
+        _performUpdate: async function (videoId, prefetchedMbResults = null) {
+            const updateStart = performance.now();
             const dockElement = await DOMScanner.getButtonAnchorElement();
             RecordingButtonManager.appendToDock(dockElement);
             PlaylistButtonManager.appendToDock(dockElement);
+            const initialDockMs = (performance.now() - updateStart).toFixed(2);
 
-            let ytData = prefetchedYtData;
-            if (!ytData) {
-                try {
-                    ytData = await YouTubeAPI.fetchVideoData(videoId);
-                } catch (error) {
-                    const apiName = error.apiName || 'API';
-                    const errorMessage = error.status === 503 ?
-                        L10n.getString('errorApiRateLimit', { apiName }) :
-                        L10n.getString('errorApiNetwork', { apiName });
-                    RecordingButtonManager.displayError(errorMessage);
-                    PlaylistButtonManager.hide();
-                    return;
-                }
-            }
+            const ytData = InPageDataExtractor.extractVideoData(videoId);
 
             if (!ytData) {
+                console.warn(`[${GM.info.script.name}] Could not extract metadata for video ID: ${videoId}`);
                 RecordingButtonManager.displayInfo(L10n.getString('errorVideoNotFound'));
                 PlaylistButtonManager.hide();
                 return;
+            }
+
+            try {
+                const rawPlayerResponse = InPageDataExtractor.getRawPlayerResponse();
+                InPageDataExtractor.logExtractionSummary(ytData, rawPlayerResponse, videoId);
+            } catch (diagError) {
+                console.error(`[${GM.info.script.name}] Error logging extraction summary:`, diagError);
             }
 
             const canonicalYtUrl = new URL(`https://www.youtube.com/watch?v=${videoId}`).toString();
             const youtubeChannelUrl = ytData.snippet.channelId ? new URL(`https://www.youtube.com/channel/${ytData.snippet.channelId}`).toString() : null;
 
             // ===== Run Recording Importer Logic and Playlist Logic in Parallel =====
-            const recordingPromise = this._handleRecordingImport(ytData, canonicalYtUrl, youtubeChannelUrl, prefetchedMbResults);
-            const playlistPromise = this._handlePlaylistLogic(ytData, canonicalYtUrl);
+            const recStart = performance.now();
+            let recDuration = '0';
+            const recordingPromise = this._handleRecordingImport(ytData, canonicalYtUrl, youtubeChannelUrl, prefetchedMbResults)
+                .then(() => {
+                    recDuration = (performance.now() - recStart).toFixed(2);
+                    console.debug(`[${GM.info.script.name}] Recording Importer Button Ready (${recDuration}ms)`);
+                });
+
+            const plStart = performance.now();
+            let plDuration = '0';
+            const playlistPromise = this._handlePlaylistLogic(ytData, canonicalYtUrl)
+                .then(() => {
+                    plDuration = (performance.now() - plStart).toFixed(2);
+                    console.debug(`[${GM.info.script.name}] Playlist Importer Button Ready (${plDuration}ms)`);
+                });
 
             await Promise.all([recordingPromise, playlistPromise]);
+
+            const totalUiRefreshMs = (performance.now() - updateStart).toFixed(2);
+            const totalEndToEndMs = this._lastNavStartTimestamp ? (performance.now() - this._lastNavStartTimestamp).toFixed(2) : totalUiRefreshMs;
+
+            console.debug(`[${GM.info.script.name}] UI Dock Attached: ${initialDockMs}ms | Full MB/LB State Resolution: ${totalUiRefreshMs}ms | End-to-End Navigation Delta: ${totalEndToEndMs}ms`);
         },
 
         _handleRecordingImport: async function (ytData, canonicalYtUrl, youtubeChannelUrl, prefetchedMbResults) {
@@ -1892,12 +1964,12 @@
                 this._externalLinksEditor = await Utils.waitForElement(Config.SELECTORS.MUSICBRAINZ_EXTERNAL_LINKS_EDITOR, 10000);
                 this._mainVideoCheckbox = await Utils.waitForElement(Config.SELECTORS.MUSICBRAINZ_MAIN_VIDEO_CHECKBOX, 10000);
 
-                console.log(`[${GM.info.script.name}] Initializing for MusicBrainz recording create page.`);
+                console.debug(`[${GM.info.script.name}] Initializing for MusicBrainz recording create page.`);
                 this._setupListeners();
                 this._setupMutationObserver();
                 this._initialSync();
             } catch (error) {
-                console.log(`[${GM.info.script.name}] Not on MusicBrainz recording create page or elements not found:`, error.message);
+                console.debug(`[${GM.info.script.name}] Not on MusicBrainz recording create page or elements not found:`, error.message);
             }
         },
 
@@ -1950,7 +2022,7 @@
             this._mainVideoCheckbox.addEventListener('change', () => {
                 this._withSyncGuard(() => {
                     this._syncMainToIndividual(this._mainVideoCheckbox.checked);
-                    console.log(`[${GM.info.script.name}] Main video checkbox toggled by user. Synced to individual checkboxes.`);
+                    console.debug(`[${GM.info.script.name}] Main video checkbox toggled by user. Synced to individual checkboxes.`);
                 });
             });
 
@@ -1958,11 +2030,11 @@
                 checkbox.addEventListener('change', () => {
                     this._withSyncGuard(() => {
                         this._syncIndividualToMain();
-                        console.log(`[${GM.info.script.name}] Individual video checkbox toggled by user. Synced to main checkbox.`);
+                        console.debug(`[${GM.info.script.name}] Individual video checkbox toggled by user. Synced to main checkbox.`);
                     });
                 });
             });
-            console.log(`[${GM.info.script.name}] Initial listeners set up.`);
+            console.debug(`[${GM.info.script.name}] Initial listeners set up.`);
         },
 
         /**
@@ -1981,11 +2053,11 @@
                                         checkbox.addEventListener('change', () => {
                                             this._withSyncGuard(() => {
                                                 this._syncIndividualToMain();
-                                                console.log(`[${GM.info.script.name}] New individual video checkbox toggled. Synced to main checkbox.`);
+                                                console.debug(`[${GM.info.script.name}] New individual video checkbox toggled. Synced to main checkbox.`);
                                             });
                                         });
                                         checkbox.dataset.mbSyncListenerAdded = 'true';
-                                        console.log(`[${GM.info.script.name}] Listener attached to new individual video checkbox.`);
+                                        console.debug(`[${GM.info.script.name}] Listener attached to new individual video checkbox.`);
 
                                         if (this._mainVideoCheckbox && this._mainVideoCheckbox.checked) {
                                             setCheckboxState(checkbox, true);
@@ -2002,7 +2074,7 @@
                 childList: true,
                 subtree: true
             });
-            console.log(`[${GM.info.script.name}] MutationObserver set up for external links editor.`);
+            console.debug(`[${GM.info.script.name}] MutationObserver set up for external links editor.`);
         },
 
         /**
@@ -2012,13 +2084,13 @@
             this._withSyncGuard(() => {
                 if (this._mainVideoCheckbox.checked) {
                     this._syncMainToIndividual(true);
-                    console.log(`[${GM.info.script.name}] Main video checkbox was pre-checked by URL. Synced all individual checkboxes to true.`);
+                    console.debug(`[${GM.info.script.name}] Main video checkbox was pre-checked by URL. Synced all individual checkboxes to true.`);
                 } else {
                     this._syncIndividualToMain();
-                    console.log(`[${GM.info.script.name}] Main video checkbox not pre-checked by URL. Synced main checkbox based on individual links.`);
+                    console.debug(`[${GM.info.script.name}] Main video checkbox not pre-checked by URL. Synced main checkbox based on individual links.`);
                 }
             });
-            console.log(`[${GM.info.script.name}] Initial sync completed.`);
+            console.debug(`[${GM.info.script.name}] Initial sync completed.`);
         }
     };
 
