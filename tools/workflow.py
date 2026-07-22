@@ -548,7 +548,7 @@ def do_release():
         print(f"      {COLOR_CYAN}git push {remote} {release_branch}{COLOR_RESET}\n")
     else:
         for commit_id in commit_ids:
-            print(f"      {COLOR_CYAN}git cherry-pick -x {commit_id}{COLOR_RESET}")
+            print(f"      {COLOR_CYAN}git cherry-pick {commit_id}{COLOR_RESET}")
         print(f"      {COLOR_CYAN}git push {remote} {main_branch}{COLOR_RESET}")
         print(f"      {COLOR_CYAN}git checkout {release_branch}{COLOR_RESET}")
         print(f"      {COLOR_CYAN}git rebase {main_branch}{COLOR_RESET}")
@@ -603,7 +603,7 @@ def do_release():
             if commit_ids:
                 print(f"\n{COLOR_CYAN}Cherry-picking selected release commits into {main_branch}...{COLOR_RESET}")
                 for commit_id in commit_ids:
-                    subprocess.run(['git', 'cherry-pick', '-x', commit_id], check=True)
+                    subprocess.run(['git', 'cherry-pick', commit_id], check=True)
             else:
                 print(f"\n{COLOR_YELLOW}No commits selected for cherry-pick. Skipping release commit application.{COLOR_RESET}")
 
