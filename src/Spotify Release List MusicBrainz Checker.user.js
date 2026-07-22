@@ -1,14 +1,15 @@
 // ==UserScript==
 // @name         Spotify Release List: MusicBrainz Checker
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      1.0.1
+// @version      1.0.2
 // @tag          ai-created
-// @description  Checks releases on spotifyreleaselist.netlify.app against MusicBrainz. Fades or hides found releases and collapses date groups where everything is catalogued.
+// @description  Checks releases on Spotify Release List instances against MusicBrainz. Fades or hides found releases and collapses date groups where everything is catalogued.
 // @author       chaban
 // @license      MIT
 // @icon         https://musicbrainz.org/static/images/favicons/android-chrome-512x512.png
 // @match        https://spotifyreleaselist.netlify.app/*
 // @match        https://*.spotifyreleaselist.netlify.app/*
+// @match        https://spotifylist.mybrainz.dev/*
 // @connect      musicbrainz.org
 // @grant        GM.xmlHttpRequest
 // @grant        GM.addStyle
