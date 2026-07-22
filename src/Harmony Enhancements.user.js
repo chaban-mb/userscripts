@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Harmony: Enhancements
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      1.27.7
+// @version      1.27.8
 // @tag          ai-created
 // @description  Adds some convenience features, various UI and behavior settings, as well as an improved language detection to Harmony.
 // @author       chaban
@@ -283,7 +283,7 @@
             key: 'enhancements.lang.techTerms',
             label: 'Technical Terms (one per line, regex supported)',
             description: 'Terms that are not specific to any language (like "remix" or "live") will be removed from titles before analysis.',
-            defaultValue: ['live', '(re)?mix(es)?', 'edit(ion)?', 'medley', 'version(s)?', 'instrumental', 'album', 'radio', 'single', 'vocal', 'dub', 'club', 'extended', 'original', 'acoustic', 'unplugged', 'mono', 'stereo', 'demo', '(re)?master(ed)?', 'f(ea)?t\\.?', 'spee?d up', 'slow(ed)?', 'chopped', 'screwed', '8d', 'fast', 'low pitched'],
+            defaultValue: ['live', '(re)?mix(es)?', 'edit(ion)?', 'medley', 'version(s)?', 'instrumental', 'album', 'radio', 'single', 'vocal', '(re)?dub', 'club', 'extended', 'original', 'acoustic', 'unplugged', 'mono', 'stereo', 'demo', '(re)?master(ed)?', 'f(ea)?t\\.?', 'spee?d up', 'slow(ed)?', 'chopped', 'screwed', '8d', 'fast', 'low pitched', 'rework'],
             section: 'Language Detection',
             type: 'textarea',
         },
@@ -2049,7 +2049,7 @@
             if (!releaseData?.media) return;
 
             // Keywords that indicate a remix/version string
-            const REMIX_KEYWORDS = ['Remix', 'Rework', 'Edit', 'Mix', 'Flip', 'Bootleg', 'Mashup', 'VIP', 'Dub', 'Version'];
+            const REMIX_KEYWORDS = ['Remix', 'Rework', 'Edit', 'Mix', 'Flip', 'Bootleg', 'Mashup', 'VIP', 'Dub', 'Version', 'Redub'];
             const KEYWORDS_REGEX = new RegExp(`\\b(${REMIX_KEYWORDS.join('|')})\\b`, 'i');
 
             // Regex to find content in parentheses or brackets at the end of the title
