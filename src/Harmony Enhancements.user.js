@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Harmony: Enhancements
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      1.27.8
+// @version      1.27.9
 // @tag          ai-created
 // @description  Adds some convenience features, various UI and behavior settings, as well as an improved language detection to Harmony.
 // @author       chaban
@@ -537,7 +537,17 @@
             return true;
         });
     }
-
+    /**
+     * Reads the 'seeder.target' setting from localStorage, falling back to '_blank'.
+     * @returns {string} Target attribute value (e.g., '_blank', '_self').
+     */
+    function getSeederTarget() {
+        try {
+            return localStorage.getItem('seeder.target') || '_blank';
+        } catch (e) {
+            return '_blank';
+        }
+    }
     async function getSettings() {
         const settings = {};
         for (const config of Object.values(SETTINGS_CONFIG)) {
@@ -2545,14 +2555,9 @@
      * @param {Event} event - The form submission event.
      */
     function handleSeederFormSubmit(event) {
-        event.preventDefault();
-        event.stopPropagation();
-
         const form = event.target.closest('form');
-        if (!form) {
-            warn('Event target has no parent form, ignoring.');
-            return;
-        }
+        if (!form) return;
+
         const formName = form.getAttribute('name');
 
         for (const [funcName, config] of Object.entries(SETTINGS_CONFIG)) {
@@ -2573,7 +2578,7 @@
             buildSeederParameters(form, AppState.data.release, AppState.data.originalRelease, null);
         }
 
-        form.submit();
+        form.target = getSeederTarget();
     }
 
     // --- INITIALIZATION AND ROUTING ---
