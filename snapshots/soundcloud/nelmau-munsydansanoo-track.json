@@ -1,0 +1,140 @@
+{
+  "artwork_url": "https://i1.sndcdn.com/artworks-6j6AoNVKsfCB-0-large.jpg",
+  "caption": null,
+  "commentable": true,
+  "comment_count": 0,
+  "created_at": "2024-04-08T19:19:58Z",
+  "description": null,
+  "downloadable": false,
+  "download_count": 0,
+  "duration": 30000,
+  "full_duration": 123376,
+  "embeddable_by": "all",
+  "genre": "Pop",
+  "has_downloads_left": false,
+  "id": 1796301289,
+  "kind": "track",
+  "label_name": "WM Finland",
+  "last_modified": "2025-12-17T22:57:41Z",
+  "license": "all-rights-reserved",
+  "likes_count": 0,
+  "permalink": "mun-syda-n-sanoo",
+  "permalink_url": "https://soundcloud.com/nelmau-music/mun-syda-n-sanoo",
+  "playback_count": 113,
+  "public": true,
+  "publisher_metadata": {
+    "id": 1796301289,
+    "urn": "soundcloud:tracks:1796301289",
+    "artist": "Nelma U",
+    "album_title": "Pakene",
+    "contains_music": true,
+    "upc_or_ean": "615625649765",
+    "isrc": "FIS202400020",
+    "explicit": false,
+    "p_line": "℗ 2024 Warner Music Finland & Skorpioni",
+    "p_line_for_display": "℗ 2024 Warner Music Finland & Skorpioni",
+    "c_line": "© 2024 Warner Music Finland & Skorpioni",
+    "c_line_for_display": "© 2024 Warner Music Finland & Skorpioni",
+    "writer_composer": "Tuure Uimonen",
+    "release_title": "Mun sydän sanoo"
+  },
+  "purchase_title": null,
+  "purchase_url": null,
+  "release_date": "2024-04-19T00:00:00Z",
+  "reposts_count": 0,
+  "secret_token": null,
+  "sharing": "public",
+  "state": "finished",
+  "streamable": true,
+  "tag_list": "",
+  "title": "Mun sydän sanoo",
+  "uri": "https://api.soundcloud.com/tracks/soundcloud%3Atracks%3A1796301289",
+  "urn": "soundcloud:tracks:1796301289",
+  "user_id": 927398554,
+  "visuals": null,
+  "waveform_url": "https://wave.sndcdn.com/Ren50z1jON7w_m.json",
+  "display_date": "2024-04-19T00:00:00Z",
+  "media": {
+    "transcodings": [
+      {
+        "url": "https://api-v2.soundcloud.com/media/soundcloud:tracks:1796301289/95a9ee03-703d-49df-a366-5869aed0dd92/preview/hls",
+        "preset": "mp3_1_0",
+        "duration": 30000,
+        "snipped": true,
+        "format": {
+          "protocol": "hls",
+          "mime_type": "audio/mpeg"
+        },
+        "quality": "sq",
+        "is_legacy_transcoding": true
+      },
+      {
+        "url": "https://api-v2.soundcloud.com/media/soundcloud:tracks:1796301289/95a9ee03-703d-49df-a366-5869aed0dd92/preview/progressive",
+        "preset": "mp3_1_0",
+        "duration": 30000,
+        "snipped": true,
+        "format": {
+          "protocol": "progressive",
+          "mime_type": "audio/mpeg"
+        },
+        "quality": "sq",
+        "is_legacy_transcoding": true
+      }
+    ]
+  },
+  "station_urn": "soundcloud:system-playlists:track-stations:1796301289",
+  "station_permalink": "track-stations:1796301289",
+  "track_authorization": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJnZW8iOiJERSIsInN1YiI6IiIsInJpZCI6ImMxNWIyNDViLTUyZTUtNGQ0OC1hZjI1LWI4ZTgxZjBmNjM1OSIsImlhdCI6MTc4NDg0OTQ3OX0.KvVSv-UsCl9UUY3licxAChp3lh9QJ9PuqXdCkOA5JRU",
+  "monetization_model": "SUB_HIGH_TIER",
+  "policy": "SNIP",
+  "user": {
+    "avatar_url": "https://a1.sndcdn.com/images/default_avatar_large.png",
+    "city": null,
+    "comments_count": 0,
+    "country_code": null,
+    "created_at": null,
+    "creator_subscriptions": [
+      {
+        "product": {
+          "id": "free"
+        }
+      }
+    ],
+    "creator_subscription": {
+      "product": {
+        "id": "free"
+      }
+    },
+    "description": null,
+    "followers_count": 12,
+    "followings_count": 0,
+    "first_name": "",
+    "full_name": "",
+    "groups_count": 0,
+    "id": 927398554,
+    "kind": "user",
+    "last_modified": "2020-12-30T14:36:42Z",
+    "last_name": "",
+    "likes_count": 0,
+    "playlist_likes_count": 0,
+    "permalink": "nelmau-music",
+    "permalink_url": "https://soundcloud.com/nelmau-music",
+    "playlist_count": 6,
+    "reposts_count": null,
+    "track_count": 35,
+    "uri": "https://api.soundcloud.com/users/soundcloud%3Ausers%3A927398554",
+    "urn": "soundcloud:users:927398554",
+    "username": "Nelma U",
+    "verified": false,
+    "visuals": null,
+    "badges": {
+      "pro": false,
+      "creator_mid_tier": false,
+      "pro_unlimited": false,
+      "verified": false
+    },
+    "station_urn": "soundcloud:system-playlists:artist-stations:927398554",
+    "station_permalink": "artist-stations:927398554",
+    "date_of_birth": null
+  }
+}

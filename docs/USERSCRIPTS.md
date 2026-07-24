@@ -569,6 +569,22 @@ Injects MusicBrainz links into SecondHandSongs pages for artists, releases, and 
 ### Features
 - **Context-Aware:** Detects the type of entity (Artist, Work, Release) and adds the appropriate MusicBrainz icon link.
 
+## SoundCloud Metadata Inspector
+
+[![Install](https://img.shields.io/badge/Install-success.svg?style=for-the-badge&logo=tampermonkey)](https://github.com/chaban-mb/userscripts/raw/main/src/SoundCloud%20Metadata%20Inspector.user.js)
+[![Source](https://img.shields.io/badge/Source-grey.svg?style=for-the-badge&logo=github)](https://github.com/chaban-mb/userscripts/blob/main/src/SoundCloud%20Metadata%20Inspector.user.js)
+
+Metadata inspector dashboard for SoundCloud that extracts and displays hidden data such as ISRCs, UPCs, publisher copyright lines, exact release/upload timestamps, streaming presets, and technical entity identifiers.
+
+### Features
+- **Release Metadata:** View detailed release information including barcode (UPC/EAN), record label, ℗/© publisher lines, writer/composer, rights license, buy links, and full tag lists.
+- **Track-Level Metadata & ISRCs:** Inspect individual track ISRCs, track-level UPCs, BPM, key signature, monetization model, policy controls, and streaming/download availability.
+- **Unified Timeline:** View all timestamps (created, published, released, display, and last modified dates) side-by-side.
+- **Creator Metrics:** Displays creator pro status badges, real name, location base, follower/following counts, and activity metrics.
+- **Technical & Stream Presets:** Inspect available audio stream presets (protocols and quality tiers), secret tokens, URNs, and API URIs.
+- **Export Options:** Easily copy raw JSON metadata, formatted tab data, or MusicBrainz-formatted tracklists.
+- **Flexible UI:** Automatic track card field hoisting, collapse/minimize to a floating button, and seamless dark mode support matching browser preferences.
+
 ## Spotify Release List: MusicBrainz Checker
 
 [![Install](https://img.shields.io/badge/Install-success.svg?style=for-the-badge&logo=tampermonkey)](https://github.com/chaban-mb/userscripts/raw/main/src/Spotify%20Release%20List%20MusicBrainz%20Checker.user.js)

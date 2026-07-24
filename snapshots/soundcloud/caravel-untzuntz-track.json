@@ -1,0 +1,172 @@
+{
+  "artwork_url": "https://i1.sndcdn.com/artworks-9wnFzdLXQ3KfN5Md-qY0Y4Q-large.jpg",
+  "caption": null,
+  "commentable": true,
+  "comment_count": 1139,
+  "created_at": "2024-08-29T19:12:17Z",
+  "description": "",
+  "downloadable": false,
+  "download_count": 0,
+  "duration": 247014,
+  "full_duration": 247014,
+  "embeddable_by": "all",
+  "genre": "",
+  "has_downloads_left": false,
+  "id": 1906532912,
+  "kind": "track",
+  "label_name": null,
+  "last_modified": "2024-12-09T12:49:30Z",
+  "license": "all-rights-reserved",
+  "likes_count": 4708,
+  "permalink": "caravel-untz-untz",
+  "permalink_url": "https://soundcloud.com/caravel-haku/caravel-untz-untz",
+  "playback_count": 108868,
+  "public": true,
+  "publisher_metadata": null,
+  "purchase_title": "Free Download",
+  "purchase_url": "https://hypeddit.com/caravel/untzuntzz",
+  "release_date": null,
+  "reposts_count": 1072,
+  "secret_token": null,
+  "sharing": "public",
+  "state": "finished",
+  "streamable": true,
+  "tag_list": "",
+  "title": "Caravel - Untz Untz",
+  "uri": "https://api.soundcloud.com/tracks/soundcloud%3Atracks%3A1906532912",
+  "urn": "soundcloud:tracks:1906532912",
+  "user_id": 24615932,
+  "visuals": null,
+  "waveform_url": "https://wave.sndcdn.com/FetG1CMj21Hn_m.json",
+  "display_date": "2024-08-29T20:01:19Z",
+  "media": {
+    "transcodings": [
+      {
+        "url": "https://api-v2.soundcloud.com/media/soundcloud:tracks:1906532912/f09cca3e-f93c-49d5-8d35-097e6398d26f/stream/hls",
+        "preset": "aac_160k",
+        "duration": 247014,
+        "snipped": false,
+        "format": {
+          "protocol": "hls",
+          "mime_type": "audio/mp4; codecs=\"mp4a.40.2\""
+        },
+        "quality": "sq",
+        "is_legacy_transcoding": false
+      },
+      {
+        "url": "https://api-v2.soundcloud.com/media/soundcloud:tracks:1906532912/7acd8202-22ac-4e99-bef9-1e9fe7f49344/stream/hls",
+        "preset": "aac_96k",
+        "duration": 247014,
+        "snipped": false,
+        "format": {
+          "protocol": "hls",
+          "mime_type": "audio/mp4; codecs=\"mp4a.40.2\""
+        },
+        "quality": "lq",
+        "is_legacy_transcoding": false
+      },
+      {
+        "url": "https://api-v2.soundcloud.com/media/soundcloud:tracks:1906532912/a3d70644-a672-45c8-902b-299990a7ac98/stream/hls",
+        "preset": "abr_sq",
+        "duration": 247014,
+        "snipped": false,
+        "format": {
+          "protocol": "hls",
+          "mime_type": "audio/mpegurl"
+        },
+        "quality": "sq",
+        "is_legacy_transcoding": false
+      },
+      {
+        "url": "https://api-v2.soundcloud.com/media/soundcloud:tracks:1906532912/98328362-23f6-4e97-92e2-cce745328957/stream/hls",
+        "preset": "mp3_1_0",
+        "duration": 247014,
+        "snipped": false,
+        "format": {
+          "protocol": "hls",
+          "mime_type": "audio/mpeg"
+        },
+        "quality": "sq",
+        "is_legacy_transcoding": true
+      },
+      {
+        "url": "https://api-v2.soundcloud.com/media/soundcloud:tracks:1906532912/98328362-23f6-4e97-92e2-cce745328957/stream/progressive",
+        "preset": "mp3_1_0",
+        "duration": 247014,
+        "snipped": false,
+        "format": {
+          "protocol": "progressive",
+          "mime_type": "audio/mpeg"
+        },
+        "quality": "sq",
+        "is_legacy_transcoding": true
+      }
+    ]
+  },
+  "station_urn": "soundcloud:system-playlists:track-stations:1906532912",
+  "station_permalink": "track-stations:1906532912",
+  "track_authorization": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJnZW8iOiJERSIsInN1YiI6IiIsInJpZCI6IjQ3MThkNGI2LTZjZTAtNGRkMi05OGMyLWFhOTEwM2EzYzNlNiIsImlhdCI6MTc4NDg1MDE5MX0.VO-ZKO1AGZoXYIaAsUglFB-Gd78Tv9QP1tYWTuvxJGg",
+  "monetization_model": "BLACKBOX",
+  "policy": "MONETIZE",
+  "user": {
+    "avatar_url": "https://i1.sndcdn.com/avatars-OZYwnuLZ9B1OypIh-k1cLJQ-large.jpg",
+    "city": null,
+    "comments_count": 0,
+    "country_code": null,
+    "created_at": null,
+    "creator_subscriptions": [
+      {
+        "product": {
+          "id": "creator-pro-unlimited"
+        }
+      }
+    ],
+    "creator_subscription": {
+      "product": {
+        "id": "creator-pro-unlimited"
+      }
+    },
+    "description": "ʜᴀᴋᴜ ʀᴇᴄᴏʀᴅꜱ\n\nFounder of Resilience\n\nPromos : caravelfr@gmail.com\n\nBookings : thomas.reade@allofloride.eu\n\nMgmt : anna@pixelmusicgroup.com\n\nDemos : hakubycara@gmail.com",
+    "followers_count": 18817,
+    "followings_count": 1034,
+    "first_name": "",
+    "full_name": "",
+    "groups_count": 0,
+    "id": 24615932,
+    "kind": "user",
+    "last_modified": "2026-04-23T18:15:08Z",
+    "last_name": "",
+    "likes_count": 292,
+    "playlist_likes_count": 23,
+    "permalink": "caravel-haku",
+    "permalink_url": "https://soundcloud.com/caravel-haku",
+    "playlist_count": 22,
+    "reposts_count": null,
+    "track_count": 25,
+    "uri": "https://api.soundcloud.com/users/soundcloud%3Ausers%3A24615932",
+    "urn": "soundcloud:users:24615932",
+    "username": "CARAVEL",
+    "verified": true,
+    "visuals": {
+      "urn": "soundcloud:users:24615932",
+      "enabled": true,
+      "visuals": [
+        {
+          "urn": "soundcloud:visuals:218355081",
+          "entry_time": 0,
+          "visual_url": "https://i1.sndcdn.com/visuals-PglDwN9ujQXlzVq4-W1CjeA-original.jpg"
+        }
+      ],
+      "tracking": null
+    },
+    "badges": {
+      "pro": false,
+      "creator_mid_tier": false,
+      "pro_unlimited": true,
+      "verified": true
+    },
+    "station_urn": "soundcloud:system-playlists:artist-stations:24615932",
+    "station_permalink": "artist-stations:24615932",
+    "date_of_birth": null
+  }
+}

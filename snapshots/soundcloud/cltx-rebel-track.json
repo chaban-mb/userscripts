@@ -1,0 +1,150 @@
+{
+  "artwork_url": "https://i1.sndcdn.com/artworks-FdhdcTJiqzTr-0-large.jpg",
+  "caption": null,
+  "commentable": true,
+  "comment_count": 3,
+  "created_at": "2026-06-12T03:21:15Z",
+  "description": null,
+  "downloadable": false,
+  "download_count": 0,
+  "duration": 30000,
+  "full_duration": 219959,
+  "embeddable_by": "all",
+  "genre": "Electronic",
+  "has_downloads_left": false,
+  "id": 2337859364,
+  "kind": "track",
+  "label_name": "Hyper Dreams",
+  "last_modified": "2026-06-12T03:33:01Z",
+  "license": "all-rights-reserved",
+  "likes_count": 12,
+  "permalink": "rebel",
+  "permalink_url": "https://soundcloud.com/cltxx/rebel",
+  "playback_count": 156,
+  "public": true,
+  "publisher_metadata": {
+    "id": 2337859364,
+    "urn": "soundcloud:tracks:2337859364",
+    "artist": "CLTX",
+    "album_title": "Real",
+    "contains_music": true,
+    "upc_or_ean": "00199957867160",
+    "isrc": "DECE72601846",
+    "explicit": false,
+    "p_line": "℗ 2026 Hyper Dreams",
+    "p_line_for_display": "℗ 2026 Hyper Dreams",
+    "c_line": "© 2026 Hyper Dreams",
+    "c_line_for_display": "© 2026 Hyper Dreams",
+    "release_title": "Rebel"
+  },
+  "purchase_title": null,
+  "purchase_url": null,
+  "release_date": "2026-06-19T00:00:00Z",
+  "reposts_count": 2,
+  "secret_token": null,
+  "sharing": "public",
+  "state": "finished",
+  "streamable": true,
+  "tag_list": "",
+  "title": "Rebel",
+  "uri": "https://api.soundcloud.com/tracks/soundcloud%3Atracks%3A2337859364",
+  "urn": "soundcloud:tracks:2337859364",
+  "user_id": 68199111,
+  "visuals": null,
+  "waveform_url": "https://wave.sndcdn.com/3eBeEUoInndv_m.json",
+  "display_date": "2026-06-19T00:00:00Z",
+  "media": {
+    "transcodings": [
+      {
+        "url": "https://api-v2.soundcloud.com/media/soundcloud:tracks:2337859364/4926a24a-0c16-4f10-ae6c-2e6c0e9d26d0/preview/hls",
+        "preset": "mp3_1_0",
+        "duration": 30000,
+        "snipped": true,
+        "format": {
+          "protocol": "hls",
+          "mime_type": "audio/mpeg"
+        },
+        "quality": "sq",
+        "is_legacy_transcoding": true
+      },
+      {
+        "url": "https://api-v2.soundcloud.com/media/soundcloud:tracks:2337859364/4926a24a-0c16-4f10-ae6c-2e6c0e9d26d0/preview/progressive",
+        "preset": "mp3_1_0",
+        "duration": 30000,
+        "snipped": true,
+        "format": {
+          "protocol": "progressive",
+          "mime_type": "audio/mpeg"
+        },
+        "quality": "sq",
+        "is_legacy_transcoding": true
+      }
+    ]
+  },
+  "station_urn": "soundcloud:system-playlists:track-stations:2337859364",
+  "station_permalink": "track-stations:2337859364",
+  "track_authorization": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJnZW8iOiJERSIsInN1YiI6IiIsInJpZCI6ImM0NmVhNTA0LTM4YTAtNDhiOS04OGRjLTgxOGEwNDE2ZWI2ZiIsImlhdCI6MTc4NDg0OTQ3NH0.5mmwB1xwnO8FnHIPuux8UvpBkLPEFkN5fk4BFEi2_ao",
+  "monetization_model": "SUB_HIGH_TIER",
+  "policy": "SNIP",
+  "user": {
+    "avatar_url": "https://i1.sndcdn.com/avatars-Y8ghRRqKRNFuWfXs-syn3xA-large.jpg",
+    "city": "",
+    "comments_count": 0,
+    "country_code": null,
+    "created_at": null,
+    "creator_subscriptions": [
+      {
+        "product": {
+          "id": "creator-pro-unlimited"
+        }
+      }
+    ],
+    "creator_subscription": {
+      "product": {
+        "id": "creator-pro-unlimited"
+      }
+    },
+    "description": "P/nk & @txrecords\nAll inquiries: fabio@hyper-dreams.com",
+    "followers_count": 36533,
+    "followings_count": 1235,
+    "first_name": "P/NK",
+    "full_name": "P/NK REC.",
+    "groups_count": 0,
+    "id": 68199111,
+    "kind": "user",
+    "last_modified": "2026-07-16T10:41:48Z",
+    "last_name": "REC.",
+    "likes_count": 8319,
+    "playlist_likes_count": 262,
+    "permalink": "cltxx",
+    "permalink_url": "https://soundcloud.com/cltxx",
+    "playlist_count": 13,
+    "reposts_count": null,
+    "track_count": 77,
+    "uri": "https://api.soundcloud.com/users/soundcloud%3Ausers%3A68199111",
+    "urn": "soundcloud:users:68199111",
+    "username": "CLTX",
+    "verified": true,
+    "visuals": {
+      "urn": "soundcloud:users:68199111",
+      "enabled": true,
+      "visuals": [
+        {
+          "urn": "soundcloud:visuals:268075305",
+          "entry_time": 0,
+          "visual_url": "https://i1.sndcdn.com/visuals-000068199111-fZp4eu-original.jpg"
+        }
+      ],
+      "tracking": null
+    },
+    "badges": {
+      "pro": false,
+      "creator_mid_tier": false,
+      "pro_unlimited": true,
+      "verified": true
+    },
+    "station_urn": "soundcloud:system-playlists:artist-stations:68199111",
+    "station_permalink": "artist-stations:68199111",
+    "date_of_birth": null
+  }
+}
