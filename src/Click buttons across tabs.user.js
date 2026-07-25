@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Click buttons across tabs
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      4.9.3
+// @version      4.10.0
 // @tag          ai-created
 // @description  Clicks specified buttons across tabs using the Broadcast Channel API and closes tabs after successful submission.
 // @author       chaban
@@ -130,19 +130,254 @@
                 );
             },
             submissionHandler: (config, _ignoredTrigger) => {
-                // 1. WAIT OUTSIDE LOCK: Pass 'false' to wait for button to be enabled ONLY
-                waitForButtonAndClick(config, null, false).then(() => {
+                const isRelationshipEditor = location.pathname.endsWith('/edit-relationships');
+                const isCoverArtPage = location.pathname.endsWith('/add-cover-art');
+                const hasSeedingHash = location.hash.includes('seed-urls-v1') || location.hash.includes('seed-');
 
-                    setTimeout(() => {
-                        // 2. REQUEST LOCK: Now safely queue up under the rate limiter
-                        rateLimitedMBSubmit(async () => {
+                /**
+                 * Detects if the current page was opened with seeded or injected parameters.
+                 * @returns {boolean} True if page has URL parameters or hash indicating external seeding/injection.
+                 */
+                const hasSeededOrInjectedParams = () => {
+                    if (hasSeedingHash) return true;
+                    const search = location.search;
+                    return search.includes('x_seed') || search.includes('seed') || search.includes('add-link') || search.includes('edit-artist.url');
+                };
 
-                            // 3. CLICK INSIDE LOCK: Pass 'true' (or omit) to click
-                            // We reuse the function to be safe, in case the button state changed in the last millisecond
-                            await waitForButtonAndClick(config, null, true);
+                /**
+                 * Validates if the location.hash contains a parseable JSON seeding payload.
+                 * @returns {boolean} True if hash is valid JSON or not present.
+                 */
+                const isValidSeedingHash = () => {
+                    if (!hasSeedingHash) return true;
+                    try {
+                        const hash = location.hash.startsWith('#') ? location.hash.slice(1) : location.hash;
+                        const urlParams = new URLSearchParams(hash);
+                        const rawJson = urlParams.get('seed-urls-v1') || urlParams.get('seed');
+                        if (rawJson) {
+                            JSON.parse(rawJson);
+                        }
+                        return true;
+                    } catch (e) {
+                        debugLog('Malformed/truncated seeding JSON hash detected in URL.', 'red');
+                        return false;
+                    }
+                };
+
+                /**
+                 * Inspects Relationship Editor state for newly added/edited relationships (_status > 0).
+                 * @returns {number} Count of active pending relationship edits.
+                 */
+                const getPendingRelationshipEditsCount = () => {
+                    const editor = window.MB?.relationshipEditor;
+                    const tree = window.MB?.tree;
+                    if (!editor?.state || !tree) return 0;
+
+                    let count = 0;
+                    const stateTree = editor.state.relationshipStateTree || editor.state.relationships;
+                    if (stateTree) {
+                        for (const relState of tree.iterate(stateTree)) {
+                            const rel = relState[1] || relState;
+                            if (rel._status > 0 || rel.status > 0) count++;
+                        }
+                    }
+                    if (count === 0 && editor.state.mediums) {
+                        for (const [_, trackList] of tree.iterate(editor.state.mediums)) {
+                            for (const track of tree.iterate(trackList)) {
+                                if (track.recording?.relationships) {
+                                    count += track.recording.relationships.filter(r => r._status > 0).length;
+                                }
+                            }
+                        }
+                    }
+                    return count;
+                };
+
+                /**
+                 * Inspects ExternalLinksEditor state and form inputs for pending edits (Artist, Event, Series edit forms).
+                 * @returns {boolean} True if there are pending external link or form edits.
+                 */
+                const hasPendingExternalLinkOrFormEdits = () => {
+                    const editor = document.getElementById('external-links-editor');
+
+                    // 1. Check visual DOM classes applied by ExternalLinksEditor
+                    if (editor) {
+                        if (editor.querySelectorAll('.relationship-edited, .relationship-added, .relationship-removed').length > 0) return true;
+
+                        // 2. Inspect React Fiber state on container
+                        const fiberKey = Object.keys(editor).find(k => k.startsWith('__reactFiber$') || k.startsWith('__reactContainer$'));
+                        if (fiberKey && window.MB?.tree) {
+                            let node = editor[fiberKey];
+                            while (node) {
+                                const state = node.memoizedState?.memoizedState || node.memoizedState;
+                                if (state?.links && state.links.size > 0) {
+                                    for (const link of window.MB.tree.iterate(state.links)) {
+                                        for (const rel of link.relationships || []) {
+                                            const orig = rel.originalState;
+                                            if (orig === null || rel.removed) return true;
+                                            if (orig && (
+                                                rel.url !== orig.url ||
+                                                rel.linkTypeID !== orig.linkTypeID ||
+                                                rel.ended !== orig.ended ||
+                                                rel.entityCredit !== orig.entityCredit
+                                            )) return true;
+                                        }
+                                    }
+                                }
+                                node = node.return;
+                            }
+                        }
+                    }
+
+                    // 3. Audit modified form input fields against initial default values (excluding edit note)
+                    const formElements = document.querySelectorAll('#page form input:not([type="hidden"]), #page form select, #page form textarea:not([name*="edit_note"])');
+                    for (const el of formElements) {
+                        if (el.tagName === 'INPUT') {
+                            if (el.type === 'checkbox' || el.type === 'radio') {
+                                if (el.checked !== el.defaultChecked) return true;
+                            } else if (el.value !== el.defaultValue) {
+                                return true;
+                            }
+                        } else if (el.tagName === 'TEXTAREA') {
+                            if (el.value !== el.defaultValue) return true;
+                        } else if (el.tagName === 'SELECT') {
+                            const defaultOpt = Array.from(el.options).find(opt => opt.defaultSelected);
+                            if (defaultOpt && el.value !== defaultOpt.value) return true;
+                        }
+                    }
+                    return false;
+                };
+
+                /**
+                 * Determines total pending edits count for current page type.
+                 * @returns {number} Count of pending edits (or >0 if edits exist).
+                 */
+                const getPendingEditsCount = () => {
+                    if (isRelationshipEditor) {
+                        return getPendingRelationshipEditsCount();
+                    }
+                    if (isCoverArtPage) {
+                        const submitBtn = document.querySelector('button#add-cover-art-submit, button.submit.positive[type="submit"]');
+                        return (submitBtn && !submitBtn.disabled) ? 1 : 0;
+                    }
+                    return hasPendingExternalLinkOrFormEdits() ? 1 : 0;
+                };
+
+                /**
+                 * Locates third-party seeding button specifically (e.g. rinsuki's script).
+                 * @returns {HTMLButtonElement|null}
+                 */
+                const findSeedButton = () => {
+                    return Array.from(document.querySelectorAll('button'))
+                        .find(btn => btn.textContent.includes('Seed URLs to Recordings') || btn.textContent.includes('URLs seeded successfully')) || null;
+                };
+
+                const seedingStartTime = Date.now();
+                const SEEDING_TIMEOUT_MS = 15000; // 15-second safety fallback timeout
+
+                const waitForSeedingAndProceed = () => {
+                    const validHash = isValidSeedingHash();
+                    const isSeededOrInjected = hasSeededOrInjectedParams();
+
+                    // If NOT seeding (or hash is invalid), evaluate general page state
+                    if (!isRelationshipEditor || !hasSeedingHash || !validHash) {
+                        const pendingEdits = getPendingEditsCount();
+
+                        // Only auto-close as a pre-submission no-op if the tab has seeded/injected parameters!
+                        if (pendingEdits === 0 && isSeededOrInjected) {
+                            debugLog('No edits present (0 changes) on seeded/injected tab. Closing tab cleanly as a no-op...', 'orange');
+                            const noOpState = JSON.stringify({
+                                channel: config.channelName,
+                                messageTrigger: config.messageTrigger,
+                                isPreSubmissionNoOp: true,
+                            });
+                            sessionStorage.setItem(SUBMISSION_TRIGGERED_FLAG, noOpState);
+                            evaluatePageForClosure();
+                            return;
+                        }
+
+                        // If unseeded tab has 0 edits, do not submit or close; ignore trigger
+                        if (pendingEdits === 0 && !isSeededOrInjected) {
+                            debugLog('Unseeded tab has 0 edits. Skipping submit trigger to preserve tab for user...', 'orange');
+                            return;
+                        }
+
+                        waitForButtonAndClick(config, null, false).then(() => {
+                            setTimeout(() => {
+                                rateLimitedMBSubmit(async () => {
+                                    await waitForButtonAndClick(config, null, true);
+                                });
+                            }, 0);
                         });
-                    }, 0);
-                });
+                        return;
+                    }
+
+                    const seedBtn = findSeedButton();
+
+                    // Phase 1: If seed button is not in DOM yet, wait for it to be injected
+                    if (!seedBtn) {
+                        if (Date.now() - seedingStartTime > SEEDING_TIMEOUT_MS) {
+                            debugLog('Timed out waiting for seed button injection (15s). Auditing state...', 'red');
+                            evaluateSeedingResultAndSubmit();
+                            return;
+                        }
+                        debugLog('Waiting for seed button to be injected into DOM...', 'orange');
+                        setTimeout(waitForSeedingAndProceed, 200);
+                        return;
+                    }
+
+                    // Phase 1b: Expand all collapsed mediums before seeding execution
+                    const expandAllBtn = Array.from(document.querySelectorAll('button'))
+                        .find(btn => btn.textContent.includes('Expand medium') || btn.textContent.includes('Expand all'));
+                    if (expandAllBtn && !expandAllBtn.disabled && !expandAllBtn.dataset.importerExpanded) {
+                        expandAllBtn.dataset.importerExpanded = 'true';
+                        debugLog('Expanding collapsed mediums before seeding...', 'green');
+                        expandAllBtn.click();
+                    }
+
+                    // Phase 2: If seed button exists, wait until it has been clicked and completed
+                    const seedFinished = seedBtn.disabled || seedBtn.textContent.includes('URLs seeded successfully');
+
+                    if (!seedFinished) {
+                        if (Date.now() - seedingStartTime > SEEDING_TIMEOUT_MS) {
+                            debugLog('Timed out waiting for seed execution (15s, possible seed script crash). Auditing state...', 'red');
+                            evaluateSeedingResultAndSubmit();
+                            return;
+                        }
+                        debugLog('Seed button found. Waiting for seeding execution to complete...', 'orange');
+                        setTimeout(waitForSeedingAndProceed, 200);
+                        return;
+                    }
+
+                    // Phase 3: Seeding finished.
+                    evaluateSeedingResultAndSubmit();
+                };
+
+                const evaluateSeedingResultAndSubmit = () => {
+                    const pendingEdits = getPendingEditsCount();
+
+                    if (pendingEdits > 0) {
+                        debugLog(`Seeding finished with ${pendingEdits} pending relationship edits. Proceeding to submit...`, 'green');
+                        waitForButtonAndClick(config, null, false).then(() => {
+                            setTimeout(() => {
+                                rateLimitedMBSubmit(async () => {
+                                    await waitForButtonAndClick(config, null, true);
+                                });
+                            }, 0);
+                        });
+                    } else {
+                        debugLog('Seeding finished with 0 changes (No-Op). Closing tab cleanly without submitting...', 'orange');
+                        const noOpState = JSON.stringify({
+                            channel: config.channelName,
+                            messageTrigger: config.messageTrigger,
+                            isPreSubmissionNoOp: true,
+                        });
+                        sessionStorage.setItem(SUBMISSION_TRIGGERED_FLAG, noOpState);
+                        evaluatePageForClosure();
+                    }
+                };
+
+                waitForSeedingAndProceed();
             },
         },
         {
