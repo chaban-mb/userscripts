@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MusicBrainz: Guess Case Improver
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      0.10.5
+// @version      0.10.6
 // @tag          ai-created
 // @description  Improves the native "Guess Case" for release, recording and track titles with advanced artist and ETI parsing. Also removes artist from title and duplicate artists after using "Guess feat. artists" on tracklists.
 // @author       chaban
@@ -75,13 +75,20 @@
     log('User configuration loaded.');
 
     /**
-     * @summary Cleans a string for comparison by lowercasing and stripping all whitespace.
+     * @summary Cleans a string for comparison by normalizing Unicode, removing diacritics,
+     * normalizing punctuation variants, lowercasing, and stripping all whitespace.
      * @param {string} str - The string to clean.
      * @returns {string} The cleaned string.
      */
     function cleanStringForComparison(str) {
         if (!str) return '';
-        return str.toLowerCase().replace(/\s+/g, '');
+        return str
+            .normalize('NFD')
+            .replace(/[\u0300-\u036f]/g, '')        // strip combining diacritics (e.g. à → a)
+            .replace(/[\u2010-\u2015\u2212]/g, '-') // normalize Unicode hyphens/dashes to ASCII -
+            .replace(/[\u2018\u2019\u201a\u201b\u02bc]/g, "'") // normalize Unicode apostrophes to '
+            .toLowerCase()
+            .replace(/\s+/g, '');
     }
 
     /**
@@ -150,6 +157,8 @@
             featured = parseArtistsAndJoins(guestStr, knownArtists);
 
             current = current.replace(fullFeatClause, '').replace(/\s+/g, ' ').trim();
+            // strip any trailing orphaned opening bracket left when feat. was inside [...]
+            current = current.replace(/\s*[(\[【]\s*$/, '').trim();
         }
 
         return {
@@ -175,7 +184,7 @@
             const artistPartLower = parts[idx].toLowerCase();
             if (hasRemixKeyword(artistPartLower)) {
                 const isExactArtistMatch = pristineLower.some(a => cleanStringForComparison(artistPartLower) === cleanStringForComparison(a)) ||
-                                            editorLower.some(a => cleanStringForComparison(artistPartLower) === cleanStringForComparison(a));
+                    editorLower.some(a => cleanStringForComparison(artistPartLower) === cleanStringForComparison(a));
                 if (!isExactArtistMatch) {
                     idx = -1;
                 }
@@ -194,10 +203,10 @@
 
             if (!isSlashSeparator) {
                 const part0HasFeat = lowerRaw.includes(parts[0].toLowerCase() + ' (' + joinPhraseStr) ||
-                                     lowerRaw.includes(parts[0].toLowerCase() + structure.joinPhrase.toLowerCase());
+                    lowerRaw.includes(parts[0].toLowerCase() + structure.joinPhrase.toLowerCase());
 
                 const part1HasFeat = lowerRaw.includes(parts[1].toLowerCase() + ' (' + joinPhraseStr) ||
-                                     lowerRaw.includes(parts[1].toLowerCase() + structure.joinPhrase.toLowerCase());
+                    lowerRaw.includes(parts[1].toLowerCase() + structure.joinPhrase.toLowerCase());
 
                 if (part1HasFeat && !part0HasFeat) {
                     return 1;
@@ -991,13 +1000,13 @@
             const existingFeats = names.slice(firstFeatJoinIdx + 1, names.length - titleFeaturedCount);
             const newFeats = names.slice(names.length - titleFeaturedCount);
             allMatch = existingFeats.length === newFeats.length &&
-                       newFeats.every(nf => {
-                           const nfKeys = getMatchKeys(nf);
-                           return existingFeats.some(ef => {
-                               const efKeys = getMatchKeys(ef);
-                               return efKeys.some(k => nfKeys.includes(k));
-                           });
-                       });
+                newFeats.every(nf => {
+                    const nfKeys = getMatchKeys(nf);
+                    return existingFeats.some(ef => {
+                        const efKeys = getMatchKeys(ef);
+                        return efKeys.some(k => nfKeys.includes(k));
+                    });
+                });
         }
 
         const seenEntries = []; // array of { index: number, keys: string[], name: string, artistName: string }
@@ -1173,7 +1182,7 @@
             for (let i = firstFeatJoinIdx + 1; i < filteredNames.length - 1; i++) {
                 const join = (filteredNames[i].joinPhrase ?? '').trim().toLowerCase();
                 const isDefault = join === ',' || join === '&' ||
-                                  join === 'feat' || join === 'feat.' || join === 'ft' || join === 'ft.';
+                    join === 'feat' || join === 'feat.' || join === 'ft' || join === 'ft.';
                 if (!isDefault) {
                     allFeaturedJoinsAreDefault = false;
                     break;
