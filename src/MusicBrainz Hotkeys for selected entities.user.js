@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         MusicBrainz: Hotkeys for selected entities
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      1.6.1
-// @description  Adds hotkeys to perform actions on selected entities. "A" = Artwork, "D" = Delete, "E" = Edit, "W" = Merge, "Q" = Aliases, "R" = Relationship Editor
+// @version      1.6.2
+// @description  Adds hotkeys to perform actions on selected entities. "A" = Artwork, "D" = Delete, "E" = Edit, "W" = Merge, "Q" = Aliases, "R" = Relationship Editor, "H" = Editing History
 // @tag          ai-created
 // @author       chaban
 // @license      MIT
@@ -38,18 +38,18 @@
     'use strict';
 
     const entityTypes = {
-        artist: { actions: ['edit', 'aliases'] },
-        release: { actions: ['delete', 'edit', 'viewArtwork', 'aliases', 'edit-relationships'] },
-        recording: { actions: ['delete', 'edit', 'aliases'] },
-        work: { actions: ['edit', 'aliases'] },
-        area: { actions: ['delete', 'edit', 'aliases'] },
-        instrument: { actions: ['delete', 'edit', 'aliases'] },
-        genre: { actions: ['delete', 'edit', 'aliases'] },
-        'release-group': { actions: ['edit', 'aliases'] },
-        event: { actions: ['edit', 'viewArtwork', 'aliases'] },
-        place: { actions: ['edit', 'aliases'] },
-        label: { actions: ['edit', 'aliases'] },
-        series: { actions: ['edit', 'aliases'] }
+        artist: { actions: ['edit', 'aliases', 'edits'] },
+        release: { actions: ['delete', 'edit', 'viewArtwork', 'aliases', 'edit-relationships', 'edits'] },
+        recording: { actions: ['delete', 'edit', 'aliases', 'edits'] },
+        work: { actions: ['edit', 'aliases', 'edits'] },
+        area: { actions: ['delete', 'edit', 'aliases', 'edits'] },
+        instrument: { actions: ['delete', 'edit', 'aliases', 'edits'] },
+        genre: { actions: ['delete', 'edit', 'aliases', 'edits'] },
+        'release-group': { actions: ['edit', 'aliases', 'edits'] },
+        event: { actions: ['edit', 'viewArtwork', 'aliases', 'edits'] },
+        place: { actions: ['edit', 'aliases', 'edits'] },
+        label: { actions: ['edit', 'aliases', 'edits'] },
+        series: { actions: ['edit', 'aliases', 'edits'] }
     };
 
     /**
@@ -188,7 +188,11 @@
                 case 'r':
                     openPages(checkboxes, 'edit-relationships');
                     break;
+                case 'h':
+                    openPages(checkboxes, 'edits');
+                    break;
             }
+
         } else {
             // No items selected, try to perform action on the current page entity.
             const currentEntity = getCurrentEntity();
@@ -217,6 +221,9 @@
                     break;
                 case 'r':
                     action = 'edit-relationships';
+                    break;
+                case 'h':
+                    action = 'edits';
                     break;
             }
 
