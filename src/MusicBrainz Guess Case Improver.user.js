@@ -142,9 +142,8 @@
             const fullFeatClause = featMatch[0];
             const joinWord = featMatch[1].toLowerCase();
 
-            joinPhrase = joinWord.startsWith('feat') || joinWord.startsWith('ft') ? ' feat. '
-                : joinWord.startsWith('with') ? ' with '
-                    : ` ${joinWord} `;
+            const rawWord = (featMatch[1] || featMatch[2] || '').trim().toLowerCase();
+            joinPhrase = rawWord ? ` ${rawWord} ` : ' feat. ';
 
             const guestStr = featMatch[2] ? featMatch[2].trim() : '';
             featured = parseArtistsAndJoins(guestStr, knownArtists);
