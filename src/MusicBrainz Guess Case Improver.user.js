@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MusicBrainz: Guess Case Improver
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      0.10.6
+// @version      0.10.7
 // @tag          ai-created
 // @description  Improves the native "Guess Case" for release, recording and track titles with advanced artist and ETI parsing. Also removes artist from title and duplicate artists after using "Guess feat. artists" on tracklists.
 // @author       chaban
@@ -149,9 +149,8 @@
             const fullFeatClause = featMatch[0];
             const joinWord = featMatch[1].toLowerCase();
 
-            joinPhrase = joinWord.startsWith('feat') || joinWord.startsWith('ft') ? ' feat. '
-                : joinWord.startsWith('with') ? ' with '
-                    : ` ${joinWord} `;
+            const rawWord = (featMatch[1] || featMatch[2] || '').trim().toLowerCase();
+            joinPhrase = rawWord ? ` ${rawWord} ` : ' feat. ';
 
             const guestStr = featMatch[2] ? featMatch[2].trim() : '';
             featured = parseArtistsAndJoins(guestStr, knownArtists);
@@ -787,10 +786,8 @@
         let joinPhrase = null;
 
         if (featMatch) {
-            const joinWord = (featMatch[1] || featMatch[2]).toLowerCase();
-            joinPhrase = joinWord.startsWith('feat') || joinWord.startsWith('ft') ? ' feat. '
-                : joinWord.startsWith('with') ? ' with '
-                    : ` ${joinWord} `;
+            const rawWord = (featMatch[1] || featMatch[2] || '').trim().toLowerCase();
+            joinPhrase = rawWord ? ` ${rawWord} ` : ' feat. ';
             const guestStr = featMatch[3] ? featMatch[3].trim() : '';
             titleGuests = parseArtistsAndJoins(guestStr);
             cleanTitle = cleanTitle.replace(featMatch[0], '').trim();
