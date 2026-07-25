@@ -7,6 +7,8 @@
 // @author      nikki, RustyNova, chaban
 // @license     MIT
 // @match       *://www.youtube.com/*
+// @match       *://*.musicbrainz.org/release/add*
+// @match       *://*.musicbrainz.org/release/*/edit*
 // @match       *://*.musicbrainz.org/recording/create*
 // @connect     musicbrainz.org
 // @connect     listenbrainz.org
@@ -40,10 +42,12 @@
             en: {
                 loading: 'Loading...',
                 addRecording: 'Add Recording',
+                addRelease: 'Add Release',
                 updateLength: 'Update Length',
                 onMB: 'On MB ✓',
                 onMBMulti: 'On MB (Multi) ✓',
                 addRecordingTitle: 'Add to MusicBrainz as recording',
+                addReleaseTitle: 'Add to MusicBrainz as release',
                 updateLengthTitle: 'The linked MusicBrainz recording is missing its length. Click to update it to {length}s.',
                 linkedToRecordingTitle: 'This YouTube video is linked to MusicBrainz recording: {title}',
                 linkedToMultiTitle: 'This YouTube video is linked to multiple recordings on MusicBrainz.\nClick to view URL entity page.',
@@ -67,10 +71,12 @@
             de: {
                 loading: 'Wird geladen...',
                 addRecording: 'Aufnahme hinzufügen',
+                addRelease: 'Release hinzufügen',
                 updateLength: 'Länge aktualisieren',
                 onMB: 'Auf MB ✓',
                 onMBMulti: 'Auf MB (Multi) ✓',
                 addRecordingTitle: 'Als Aufnahme zu MusicBrainz hinzufügen',
+                addReleaseTitle: 'Als Release zu MusicBrainz hinzufügen',
                 updateLengthTitle: 'Bei der verknüpften MusicBrainz-Aufnahme fehlt die Länge. Klicken, um sie auf {length}s zu aktualisieren.',
                 linkedToRecordingTitle: 'Dieses YouTube-Video ist mit der MusicBrainz-Aufnahme verknüpft: {title}',
                 linkedToMultiTitle: 'Dieses YouTube-Video ist mit mehreren Aufnahmen auf MusicBrainz verknüpft.\nKlicken, um die URL-Entitätsseite anzuzeigen.',
@@ -138,6 +144,7 @@
 
         MUSICBRAINZ_FREE_STREAMING_LINK_TYPE_ID: '268',
         MUSICBRAINZ_FREE_STREAMING_RELATION_TYPE_ID: '7e41ef12-a124-4324-afdb-fdbae687a89c',
+        SEED_PARSED_TRACKLIST: false,
     };
 
     const USER_AGENT = `${Config.SHORT_APP_NAME}/${GM_info.script.version} ( ${GM_info.script.namespace} )`;
@@ -769,6 +776,9 @@
         _form: null,
         _submitButton: null,
         _textElement: null,
+        _releaseForm: null,
+        _releaseSubmitButton: null,
+        _releaseTextElement: null,
         _containerDiv: null,
 
         /**
@@ -779,6 +789,7 @@
             this._containerDiv.setAttribute("class", `holder ${Config.CLASS_NAMES.CONTAINER}`);
             this._containerDiv.style.display = 'none';
 
+            // 1. Standalone Recording form
             this._form = document.createElement("form");
             this._form.method = "get";
             this._form.action = "//musicbrainz.org/recording/create";
@@ -797,9 +808,31 @@
             buttonContent.style.alignItems = 'center';
             buttonContent.appendChild(this._textElement);
             this._submitButton.appendChild(buttonContent);
-
             this._form.appendChild(this._submitButton);
+
+            // 2. Release seeding form
+            this._releaseForm = document.createElement("form");
+            this._releaseForm.method = "post";
+            this._releaseForm.action = "//musicbrainz.org/release/add";
+            this._releaseForm.acceptCharset = "UTF-8";
+            this._releaseForm.target = "_blank";
+
+            this._releaseSubmitButton = document.createElement("button");
+            this._releaseSubmitButton.type = "submit";
+            this._releaseSubmitButton.title = L10n.getString('addReleaseTitle');
+            this._releaseSubmitButton.setAttribute("class", Config.CLASS_NAMES.BUTTON);
+            this._releaseTextElement = document.createElement("span");
+            this._releaseTextElement.innerText = L10n.getString('addRelease');
+
+            const releaseButtonContent = document.createElement('div');
+            releaseButtonContent.style.display = 'flex';
+            releaseButtonContent.style.alignItems = 'center';
+            releaseButtonContent.appendChild(this._releaseTextElement);
+            this._releaseSubmitButton.appendChild(releaseButtonContent);
+            this._releaseForm.appendChild(this._releaseSubmitButton);
+
             this._containerDiv.appendChild(this._form);
+            this._containerDiv.appendChild(this._releaseForm);
         },
 
         setPending: function () {
@@ -808,6 +841,9 @@
                 this._containerDiv.style.pointerEvents = 'none';
                 if (this._submitButton) {
                     this._submitButton.disabled = true;
+                }
+                if (this._releaseSubmitButton) {
+                    this._releaseSubmitButton.disabled = true;
                 }
             }
         },
@@ -823,22 +859,28 @@
          */
         resetState: function () {
             Array.from(this._form.querySelectorAll('input[type="hidden"]')).forEach(input => this._form.removeChild(input));
+            Array.from(this._releaseForm.querySelectorAll('input[type="hidden"]')).forEach(input => this._releaseForm.removeChild(input));
             while (this._containerDiv.firstChild) {
                 this._containerDiv.removeChild(this._containerDiv.firstChild);
             }
             this._containerDiv.appendChild(this._form);
+            this._containerDiv.appendChild(this._releaseForm);
 
             this._textElement.innerText = L10n.getString('loading');
             this._submitButton.className = Config.CLASS_NAMES.BUTTON;
             this._submitButton.disabled = true;
+            this._releaseTextElement.innerText = L10n.getString('addRelease');
+            this._releaseSubmitButton.className = Config.CLASS_NAMES.BUTTON;
+            this._releaseSubmitButton.disabled = true;
             this._form.style.display = 'none';
+            this._releaseForm.style.display = 'none';
             this._containerDiv.style.display = 'none';
             this._containerDiv.style.opacity = '1';
             this._containerDiv.style.pointerEvents = 'auto';
         },
 
         /**
-         * Appends a hidden input field to the form.
+         * Appends a hidden input field to the recording form.
          * @param {string} name - The name attribute of the input field.
          * @param {string} value - The value attribute of the input field.
          */
@@ -849,6 +891,20 @@
             field.name = name;
             field.value = value;
             this._form.insertBefore(field, this._submitButton);
+        },
+
+        /**
+         * Appends a hidden input field to the release form.
+         * @param {string} name - The name attribute of the input field.
+         * @param {string} value - The value attribute of the input field.
+         */
+        _addReleaseField: function (name, value) {
+            if (!this._releaseForm) return;
+            const field = document.createElement("input");
+            field.type = "hidden";
+            field.name = name;
+            field.value = value;
+            this._releaseForm.insertBefore(field, this._releaseSubmitButton);
         },
 
         /**
@@ -891,7 +947,7 @@
         },
 
         /**
-         * Prepares the form with YouTube video data and displays the "Add Recording" button.
+         * Prepares the form with YouTube video data and displays the "Add Recording" and "Add Release" buttons.
          * @param {Object} youtubeVideoData - The minimalist YouTube video data.
          * @param {string} canonicalYtUrl - The canonical YouTube URL.
          * @param {string|null} artistMbid - The MusicBrainz Artist MBID if found.
@@ -900,10 +956,16 @@
         prepareAddButton: function (youtubeVideoData, canonicalYtUrl, artistMbid, videoId) {
             // Clear any previous form fields and link elements
             Array.from(this._form.querySelectorAll('input[type="hidden"]')).forEach(input => this._form.removeChild(input));
+            if (this._releaseForm) {
+                Array.from(this._releaseForm.querySelectorAll('input[type="hidden"]')).forEach(input => this._releaseForm.removeChild(input));
+            }
             while (this._containerDiv.firstChild) {
                 this._containerDiv.removeChild(this._containerDiv.firstChild);
             }
             this._containerDiv.appendChild(this._form);
+            if (this._releaseForm) {
+                this._containerDiv.appendChild(this._releaseForm);
+            }
 
             const title = youtubeVideoData.snippet.title;
             const artist = youtubeVideoData.snippet.channelTitle;
@@ -913,6 +975,7 @@
                 length = youtubeVideoData.contentDetails.durationMs;
             }
 
+            // 1. Populate Recording form
             this._addField('edit-recording.name', title);
             if (artistMbid) {
                 this._addField('artist', artistMbid);
@@ -936,6 +999,50 @@
             this._submitButton.className = `${Config.CLASS_NAMES.BUTTON} ${Config.CLASS_NAMES.BUTTON_READY}`;
             this._submitButton.disabled = false;
             this._form.style.display = 'flex';
+
+            // 2. Populate Release Seeding form
+            this._addReleaseField('name', title);
+            if (artistMbid) {
+                this._addReleaseField('artist_credit.names.0.artist.name', artist);
+                this._addReleaseField('artist_credit.names.0.mbid', artistMbid);
+            } else {
+                this._addReleaseField('artist_credit.names.0.name', artist);
+            }
+
+            this._addReleaseField('urls.0.url', canonicalYtUrl);
+            this._addReleaseField('mediums.0.format', 'Digital Media');
+
+            const parsedTracks = Config.SEED_PARSED_TRACKLIST
+                ? Utils.parseTracklist(youtubeVideoData.snippet.description, artist).parsedTracks
+                : [];
+
+            if (parsedTracks && parsedTracks.length > 0) {
+                parsedTracks.forEach((track, idx) => {
+                    this._addReleaseField(`mediums.0.track.${idx}.name`, track.title);
+                    if (track.artist) {
+                        this._addReleaseField(`mediums.0.track.${idx}.artist_credit.names.0.name`, track.artist);
+                    }
+                    if (track.timestampSeconds) {
+                        const trackLengthMs = Math.round(track.timestampSeconds * 1000);
+                        if (trackLengthMs > 0) {
+                            this._addReleaseField(`mediums.0.track.${idx}.length`, trackLengthMs);
+                        }
+                    }
+                });
+            } else {
+                this._addReleaseField('mediums.0.track.0.name', title);
+                if (typeof length === 'number' && !isNaN(length) && length > 0) {
+                    this._addReleaseField('mediums.0.track.0.length', length);
+                }
+            }
+
+            this._addReleaseField('edit_note', editNote);
+
+            this._releaseTextElement.innerText = L10n.getString('addRelease');
+            this._releaseSubmitButton.className = `${Config.CLASS_NAMES.BUTTON} ${Config.CLASS_NAMES.BUTTON_READY}`;
+            this._releaseSubmitButton.disabled = false;
+            this._releaseForm.style.display = 'flex';
+
             this._containerDiv.style.display = 'flex';
             this._containerDiv.style.opacity = '1';
             this._containerDiv.style.pointerEvents = 'auto';
@@ -950,6 +1057,7 @@
                 }
             };
             this._submitButton.addEventListener('mousedown', invalidateCacheAndPrefetch);
+            this._releaseSubmitButton.addEventListener('mousedown', invalidateCacheAndPrefetch);
         },
 
         /**
@@ -962,6 +1070,9 @@
          */
         displayExistingButton: function (allRelevantRecordingRelations, urlEntityId, youtubeVideoData, canonicalYtUrl) {
             this._form.style.display = 'none';
+            if (this._releaseForm) {
+                this._releaseForm.style.display = 'none';
+            }
             while (this._containerDiv.firstChild) {
                 this._containerDiv.removeChild(this._containerDiv.firstChild);
             }
@@ -2050,9 +2161,80 @@
         }
     };
 
+    /**
+     * Handles logic for MusicBrainz Release Editor pages.
+     */
+    const MusicBrainzReleaseEditorPage = {
+        init: async function () {
+            try {
+                const externalLinksEditor = await Utils.waitForElement(Config.SELECTORS.MUSICBRAINZ_EXTERNAL_LINKS_EDITOR, 10000);
+                const win = (typeof unsafeWindow !== 'undefined') ? unsafeWindow : window;
+                const processedLinks = new Set();
 
-    if (window.location.href.includes('musicbrainz.org/recording/create')) {
+                const syncReleaseEditorLinks = () => {
+                    const editorRef = win.MB?.releaseEditor?.externalLinks?.externalLinksEditorRef?.current
+                        || win.MB?.sourceExternalLinksEditor?.current;
+
+                    let changed = false;
+
+                    if (editorRef?.state?.links) {
+                        editorRef.state.links.forEach((link, linkKey) => {
+                            const rawUrl = link.rawUrl || link.url || '';
+                            if ((rawUrl.includes('youtube.com') || rawUrl.includes('youtu.be')) && !processedLinks.has(linkKey)) {
+                                processedLinks.add(linkKey);
+                                const videoCheckbox = externalLinksEditor.querySelector(`#external-link-${linkKey} .attribute-container input[type="checkbox"]`);
+                                if (videoCheckbox && !videoCheckbox.checked) {
+                                    setCheckboxState(videoCheckbox, true);
+                                    changed = true;
+                                    console.debug(`[${GM.info.script.name}] Set video attribute in React state for YouTube link: ${rawUrl}`);
+                                }
+                            }
+                        });
+                    } else {
+                        // Fallback DOM traversal for un-mounted state
+                        const rows = externalLinksEditor.querySelectorAll('.relationship-item');
+                        rows.forEach(row => {
+                            let linkRow = row.previousElementSibling;
+                            while (linkRow && !linkRow.classList.contains('external-link-item')) {
+                                linkRow = linkRow.previousElementSibling;
+                            }
+                            const href = linkRow?.querySelector('a.url')?.href || linkRow?.querySelector('input.value')?.value || '';
+                            const linkId = linkRow?.id || href;
+                            if ((href.includes('youtube.com') || href.includes('youtu.be')) && !processedLinks.has(linkId)) {
+                                processedLinks.add(linkId);
+                                const videoCheckbox = row.querySelector('.attribute-container input[type="checkbox"]');
+                                if (videoCheckbox && !videoCheckbox.checked) {
+                                    setCheckboxState(videoCheckbox, true);
+                                    changed = true;
+                                    console.debug(`[${GM.info.script.name}] Set video attribute for YouTube link: ${href}`);
+                                }
+                            }
+                        });
+                    }
+
+                    if (changed && win.MB?.releaseEditor?.getEditPreviews) {
+                        win.MB.releaseEditor.getEditPreviews();
+                    }
+                };
+
+                // Initial sync
+                syncReleaseEditorLinks();
+
+                // Observe new links added dynamically
+                const observer = new MutationObserver(() => syncReleaseEditorLinks());
+                observer.observe(externalLinksEditor, { childList: true, subtree: true });
+            } catch (error) {
+                console.debug(`[${GM.info.script.name}] Not on MusicBrainz release editor or elements not found:`, error.message);
+            }
+        }
+    };
+
+
+    const currentHref = window.location.href;
+    if (currentHref.includes('musicbrainz.org/recording/create')) {
         MusicBrainzRecordingCreatePage.init();
+    } else if (currentHref.includes('musicbrainz.org/release/add') || currentHref.includes('musicbrainz.org/release/')) {
+        MusicBrainzReleaseEditorPage.init();
     } else if (window.location.hostname.includes('youtube.com')) {
         YouTubeMusicBrainzImporter.init();
     }
