@@ -1,49 +1,41 @@
 // ==UserScript==
-// @name        MusicBrainz: Hotkeys for selected entities
-// @namespace   https://musicbrainz.org/user/chaban
-// @version     1.8.2
-// @description Adds hotkeys to perform actions on selected entities. "A" = Artwork, "D" = Delete, "E" = Edit, "W" = Merge, "Q" = Aliases, "R" = Relationship Editor, "H" = Editing History
-// @tag         ai-created
-// @author      chaban
-// @license     MIT
-// @homepageURL https://github.com/chaban-mb/userscripts
-// @supportURL  https://github.com/chaban-mb/userscripts/issues
-// @match       *://*.musicbrainz.org/artist*
-// @match       *://*.musicbrainz.org/area/*
-// @match       *://*.musicbrainz.org/release-group/*
-// @match       *://*.musicbrainz.org/release/*
-// @match       *://*.musicbrainz.org/recording/*
-// @match       *://*.musicbrainz.org/work/*
-// @match       *://*.musicbrainz.org/label/*
-// @match       *://*.musicbrainz.org/place/*
-// @match       *://*.musicbrainz.org/instrument/*
-// @match       *://*.musicbrainz.org/genre/*
-// @match       *://*.musicbrainz.org/event/*
-// @match       *://*.musicbrainz.org/series/*
-// @match       *://*.musicbrainz.org/url/*
-// @match       *://*.musicbrainz.org/collection/*
-// @match       *://*.musicbrainz.org/isrc/*
-// @match       *://*.musicbrainz.org/iswc/*
-// @match       *://*.musicbrainz.org/report/*
-// @match       *://*.musicbrainz.org/*/*/artists
-// @match       *://*.musicbrainz.org/*/*/releases
-// @match       *://*.musicbrainz.org/*/*/recordings
-// @match       *://*.musicbrainz.org/*/*/release-groups
-// @match       *://*.musicbrainz.org/*/*/events
-// @match       *://*.musicbrainz.org/*/*/labels
-// @match       *://*.musicbrainz.org/*/*/places
-// @icon        https://musicbrainz.org/static/images/favicons/android-chrome-512x512.png
-// @grant       none
-// @updateURL   https://github.com/chaban-mb/userscripts/raw/dist/src/MusicBrainz%20Hotkeys%20for%20selected%20entities.user.js
-// @downloadURL https://github.com/chaban-mb/userscripts/raw/dist/src/MusicBrainz%20Hotkeys%20for%20selected%20entities.user.js
+// @name         MusicBrainz: Hotkeys for selected entities
+// @namespace    https://musicbrainz.org/user/chaban
+// @version      1.6.2
+// @description  Adds hotkeys to perform actions on selected entities. "A" = Artwork, "D" = Delete, "E" = Edit, "W" = Merge, "Q" = Aliases, "R" = Relationship Editor, "H" = Editing History
+// @tag          ai-created
+// @author       chaban
+// @license      MIT
+// @match        *://*.musicbrainz.org/artist*
+// @match        *://*.musicbrainz.org/area/*
+// @match        *://*.musicbrainz.org/release-group/*
+// @match        *://*.musicbrainz.org/release/*
+// @match        *://*.musicbrainz.org/recording/*
+// @match        *://*.musicbrainz.org/work/*
+// @match        *://*.musicbrainz.org/label/*
+// @match        *://*.musicbrainz.org/place/*
+// @match        *://*.musicbrainz.org/instrument/*
+// @match        *://*.musicbrainz.org/genre/*
+// @match        *://*.musicbrainz.org/event/*
+// @match        *://*.musicbrainz.org/series/*
+// @match        *://*.musicbrainz.org/isrc/*
+// @match        *://*.musicbrainz.org/iswc/*
+// @match        *://*.musicbrainz.org/report/*
+// @match        *://*.musicbrainz.org/*/*/artists
+// @match        *://*.musicbrainz.org/*/*/releases
+// @match        *://*.musicbrainz.org/*/*/recordings
+// @match        *://*.musicbrainz.org/*/*/release-groups
+// @match        *://*.musicbrainz.org/*/*/events
+// @match        *://*.musicbrainz.org/*/*/labels
+// @match        *://*.musicbrainz.org/*/*/places
+// @icon         https://musicbrainz.org/static/images/favicons/android-chrome-512x512.png
+// @grant        none
+// @updateURL    https://github.com/chaban-mb/userscripts/raw/dist/src/MusicBrainz%20Hotkeys%20for%20selected%20entities.user.js
+// @downloadURL  https://github.com/chaban-mb/userscripts/raw/dist/src/MusicBrainz%20Hotkeys%20for%20selected%20entities.user.js
 // ==/UserScript==
 
 (function () {
     'use strict';
-
-    const SCRIPT_NAMESPACE = GM.info.script.namespace;
-    const SCRIPT_NAME = GM.info.script.name;
-    const ACTION_EVENT_NAME = 'UserJS:MusicBrainz';
 
     const entityTypes = {
         artist: { actions: ['edit', 'aliases', 'edits'] },
@@ -57,29 +49,8 @@
         event: { actions: ['edit', 'viewArtwork', 'aliases', 'edits'] },
         place: { actions: ['edit', 'aliases', 'edits'] },
         label: { actions: ['edit', 'aliases', 'edits'] },
-        series: { actions: ['edit', 'aliases', 'edits'] },
-        url: { actions: ['edit', 'edits'] }
+        series: { actions: ['edit', 'aliases', 'edits'] }
     };
-
-    /**
-     * Broadcasts an action event to check if another script can handle it.
-     * @param {string} action - The action identifier (e.g., 'delete').
-     * @param {Array<{type: string, mbid: string, url: string}>} items - List of entity objects.
-     * @returns {boolean} True if an external handler intercepted the action via preventDefault().
-     */
-    function dispatchEntityAction(action, items) {
-        const event = new CustomEvent(ACTION_EVENT_NAME, {
-            detail: {
-                namespace: SCRIPT_NAMESPACE,
-                origin: SCRIPT_NAME,
-                action,
-                items
-            },
-            bubbles: true,
-            cancelable: true
-        });
-        return !document.dispatchEvent(event);
-    }
 
     /**
      * Extracts the entity type and MBID from the URL.
@@ -122,35 +93,23 @@
     }
 
     /**
-     * Opens pages for selected entity checkboxes or dispatches action to external listeners.
-     * @param {NodeListOf<HTMLInputElement>|Array<HTMLInputElement>} checkboxes - Checkboxes of selected entities.
-     * @param {string} action - Type of action (edit, delete, viewArtwork, aliases, etc.).
+     * Opens pages based on action.
+     * @param {NodeListOf<HTMLInputElement>} checkboxes - Checkboxes of entities.
+     * @param {string} action - Type of action (edit, delete, viewArtwork, aliases).
      */
     function openPages(checkboxes, action) {
-        const items = [];
-        checkboxes.forEach((checkbox) => {
+        checkboxes.forEach((checkbox, index) => {
             const row = checkbox.closest('tr');
             if (row) {
-                const links = Array.from(row.querySelectorAll('a[href]'));
-                for (const link of links) {
-                    const entityInfo = extractEntityInfoFromLink(link);
-                    if (entityInfo && entityTypes[entityInfo.type]?.actions.includes(action) && entityInfo.mbid) {
-                        items.push(entityInfo);
-                        break;
-                    }
+                const entityLink = row.querySelector('a[href]');
+                const entityInfo = extractEntityInfoFromLink(entityLink);
+                if (entityInfo && entityTypes[entityInfo.type].actions.includes(action) && entityInfo.mbid) {
+                    const url = getUrlForAction(entityInfo, action);
+                    setTimeout(() => {
+                        window.open(url, '_blank');
+                    }, index * 1000);
                 }
             }
-        });
-
-        if (items.length > 0 && dispatchEntityAction(action, items)) {
-            return; // Intercepted by external script
-        }
-
-        items.forEach((item, index) => {
-            const url = getUrlForAction(item, action);
-            setTimeout(() => {
-                window.open(url, '_blank');
-            }, index * 1000);
         });
     }
 
@@ -173,7 +132,7 @@
 
         const tagName = activeElement.tagName.toLowerCase();
 
-        if (tagName === 'input' && (activeElement.name === 'add-to-merge' || activeElement.name === 'remove' || activeElement.parentElement.className === 'checkbox-cell') && activeElement.type === 'checkbox') {
+        if (tagName === 'input' && (activeElement.name === 'add-to-merge' || activeElement.parentElement.className === 'checkbox-cell') && activeElement.type === 'checkbox') {
             return false;
         }
 
@@ -197,7 +156,7 @@
             return;
         }
 
-        const checkedSelector = 'input[name="add-to-merge"]:checked, input[name="remove"]:checked';
+        const checkedSelector = 'input[name="add-to-merge"]:checked';
         const checkboxes = document.querySelectorAll(checkedSelector);
 
         // If items are selected, perform actions on them.
