@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Click buttons across tabs
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      4.10.1
+// @version      4.10.2
 // @tag          ai-created
 // @description  Clicks specified buttons across tabs using the Broadcast Channel API and closes tabs after successful submission.
 // @author       chaban
@@ -235,57 +235,44 @@
                 }
 
                 /**
-                 * Inspects ExternalLinksEditor state and form inputs for pending edits (Artist, Event, Series edit forms).
-                 * @returns {boolean} True if there are pending external link or form edits.
+                 * Programmatically checks if the External Links Editor has pending edits.
+                 * @returns {boolean} True if any link or relationship is new, removed, or modified.
                  */
-                const hasPendingExternalLinkOrFormEdits = () => {
+                const hasPendingExternalLinkEdits = () => {
+                    const win = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
                     const editor = document.getElementById('external-links-editor');
+                    if (!editor) return false;
 
-                    // 1. Check visual DOM classes applied by ExternalLinksEditor
-                    if (editor) {
-                        if (editor.querySelectorAll('.relationship-edited, .relationship-added, .relationship-removed').length > 0) return true;
+                    const fiberKey = Object.keys(editor).find(k =>
+                        k.startsWith('__reactFiber$') || k.startsWith('__reactContainer$')
+                    );
+                    if (!fiberKey) return false;
 
-                        // 2. Inspect React Fiber state on container
-                        const fiberKey = Object.keys(editor).find(k => k.startsWith('__reactFiber$') || k.startsWith('__reactContainer$'));
-                        if (fiberKey && window.MB?.tree) {
-                            let node = editor[fiberKey];
-                            while (node) {
-                                const state = node.memoizedState?.memoizedState || node.memoizedState;
-                                if (state?.links && state.links.size > 0) {
-                                    for (const link of window.MB.tree.iterate(state.links)) {
-                                        for (const rel of link.relationships || []) {
-                                            const orig = rel.originalState;
-                                            if (orig === null || rel.removed) return true;
-                                            if (orig && (
-                                                rel.url !== orig.url ||
-                                                rel.linkTypeID !== orig.linkTypeID ||
-                                                rel.ended !== orig.ended ||
-                                                rel.entityCredit !== orig.entityCredit
-                                            )) return true;
-                                        }
+                    let node = editor[fiberKey];
+                    while (node) {
+                        const state = node.memoizedState?.memoizedState || node.memoizedState;
+                        if (state?.links && state.links.size > 0) {
+                            const links = win.MB?.tree ? win.MB.tree.iterate(state.links) : state.links;
+
+                            for (const link of links) {
+                                // Ignore the empty placeholder field MB appends to the bottom
+                                if (!link.url && (!link.relationships || link.relationships.length === 0)) continue;
+
+                                if (link.isNew) return true;
+
+                                for (const rel of link.relationships || []) {
+                                    // Unchanged relationships maintain exact reference equality (rel.originalState === rel).
+                                    // Any edit creates a new object copy, breaking equality.
+                                    // Seeded/new relationships have orig === null.
+                                    if (rel.originalState !== rel || rel.removed) {
+                                        return true;
                                     }
                                 }
-                                node = node.return;
                             }
                         }
+                        node = node.return;
                     }
 
-                    // 3. Audit modified form input fields against initial default values (excluding edit note)
-                    const formElements = document.querySelectorAll('#page form input:not([type="hidden"]), #page form select, #page form textarea:not([name*="edit_note"])');
-                    for (const el of formElements) {
-                        if (el.tagName === 'INPUT') {
-                            if (el.type === 'checkbox' || el.type === 'radio') {
-                                if (el.checked !== el.defaultChecked) return true;
-                            } else if (el.value !== el.defaultValue) {
-                                return true;
-                            }
-                        } else if (el.tagName === 'TEXTAREA') {
-                            if (el.value !== el.defaultValue) return true;
-                        } else if (el.tagName === 'SELECT') {
-                            const defaultOpt = Array.from(el.options).find(opt => opt.defaultSelected);
-                            if (defaultOpt && el.value !== defaultOpt.value) return true;
-                        }
-                    }
                     return false;
                 };
 
@@ -300,7 +287,7 @@
                     if (isCoverArtPage) {
                         return document.querySelector(config.buttonSelector) ? 1 : 0;
                     }
-                    return hasPendingExternalLinkOrFormEdits() ? 1 : 0;
+                    return hasPendingExternalLinkEdits() ? 1 : 0;
                 };
 
                 /**
