@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Click buttons across tabs
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      4.10.0
+// @version      4.10.1
 // @tag          ai-created
 // @description  Clicks specified buttons across tabs using the Broadcast Channel API and closes tabs after successful submission.
 // @author       chaban
@@ -50,6 +50,14 @@
     let debugLogChannel;
     let activeClosureObserver = null;
     let activeKeepAlives = [];
+
+    const navEntry = performance.getEntriesByType('navigation')[0];
+    if (navEntry && navEntry.type === 'reload') {
+        sessionStorage.removeItem(SUBMISSION_TRIGGERED_FLAG);
+        console.log(`%c[${scriptName}] ${tabId} Manual reload detected — cleared ${SUBMISSION_TRIGGERED_FLAG}`, 'font-weight: bold; color: #d97706;');
+    } else {
+        console.log(`%c[${scriptName}] ${tabId} Navigation type "${navEntry?.type || 'navigate'}" — retaining session state`, 'font-weight: bold;');
+    }
 
     /**
      * @summary Initializes a WebRTC local loopback connection to force Chrome to classify the tab as "active"
@@ -290,8 +298,7 @@
                         return getPendingRelationshipEditsCount();
                     }
                     if (isCoverArtPage) {
-                        const submitBtn = document.querySelector('button#add-cover-art-submit, button.submit.positive[type="submit"]');
-                        return (submitBtn && !submitBtn.disabled) ? 1 : 0;
+                        return document.querySelector(config.buttonSelector) ? 1 : 0;
                     }
                     return hasPendingExternalLinkOrFormEdits() ? 1 : 0;
                 };
