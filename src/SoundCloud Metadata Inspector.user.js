@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SoundCloud Metadata Inspector
 // @namespace    https://github.com/chaban-mb/userscripts
-// @version      1.0.0
+// @version      1.1.0
 // @description  Metadata inspector for viewing hidden data like ISRC, UPCs, timestamps, etc.
 // @tag          ai-created
 // @author       chaban
@@ -22,6 +22,14 @@
     const SCRIPT_NAME = GM.info.script.name;
 
     /**
+     * Evaluates whether a metadata field value should be considered empty or unset.
+     * Checks for standard nullish/empty values as well as API/UI fallback placeholders ("—" and "null").
+     *
+     * @param {unknown} val - The field value to evaluate.
+     * @returns {boolean} `true` if the value is null, undefined, an empty string, "—", or "null"; otherwise `false`.
+     */
+    const isEmptyVal = (val) => val == null || val === "" || val === "—" || val === "null";    /**
+
      * @typedef {Object} InspectorSettings
      * @property {boolean} minimized - Whether the panel is currently minimized.
      * @property {boolean} showCommon - Whether common track fields are visible.
@@ -174,7 +182,7 @@
         } catch (e) {
             console.warn(`[${SCRIPT_NAME}] Failed to read settings from sessionStorage`, e);
         }
-        return { minimized: false };
+        return { minimized: true };
     }
 
     function saveSettings(settings) {
@@ -424,8 +432,6 @@
                 overflow-wrap: break-word;
             }
 
-
-
             .sc-meta-label {
                 color: var(--sc-text-muted);
                 font-weight: 500;
@@ -596,8 +602,9 @@
             .sc-tags-container {
                 display: flex;
                 flex-wrap: wrap;
+                justify-content: flex-end;
                 gap: 4px;
-                margin-top: 4px;
+                margin-top: 2px;
             }
 
             .sc-tag-pill {
@@ -605,8 +612,9 @@
                 background: var(--sc-btn-bg);
                 border: 1px solid var(--sc-card-border);
                 color: var(--sc-text-sub);
-                padding: 2px 8px;
+                padding: 2px 7px;
                 border-radius: 12px;
+                line-height: 1.3;
             }
 
             .sc-entity-header { display: flex; gap: 10px; align-items: center; }
@@ -726,6 +734,28 @@
     const formatDate = (dateStr) => dateStr ? dateStr.slice(0, 10) : null;
     const formatNumber = (num) => num != null ? num.toLocaleString() : "0";
 
+    /**
+     * Parses a raw space-delimited or double-quoted SoundCloud tag list string
+     * into clean, normalized hashtag strings.
+     *
+     * @param {string|null|undefined} tagStr - Raw `tag_list` payload string (e.g., `"hip hop" rap #electronic`).
+     * @returns {string[]} Array of formatted hashtag strings (e.g., `["#hip hop", "#rap", "#electronic"]`).
+     */
+    function parseTagList(tagStr) {
+        if (!tagStr || typeof tagStr !== "string") return [];
+        const tags = [];
+        const regex = /"([^"]+)"|(\S+)/g;
+        let match;
+        while ((match = regex.exec(tagStr)) !== null) {
+            const tag = match[1] || match[2];
+            if (tag) {
+                const clean = tag.replace(/^#/, "").replace(/[\"\\]/g, "").trim();
+                if (clean) tags.push(`#${clean}`);
+            }
+        }
+        return tags;
+    }
+
     function formatImgUrl(url, isAvatar = false) {
         if (!url) return "";
         if (isAvatar || url.includes("avatars-")) {
@@ -754,7 +784,7 @@
     }
 
     function formatUpcElement(upc) {
-        if (!upc || upc === "—") return null;
+        if (isEmptyVal(upc)) return null;
         if (upc === "Varied / Mixed Barcodes") {
             return badge("red", upc);
         }
@@ -890,20 +920,22 @@
         if (options.format === "isrc") {
             return formatIsrcElement(textVal);
         }
+        if (options.format === "tags" || (options.tags && Array.isArray(options.tags))) {
+            const tagArr = Array.isArray(options.tags) ? options.tags : parseTagList(String(textVal));
+            if (tagArr.length === 0) return null;
+            return el("div", { className: "sc-tags-container" }, tagArr.map(t => el("span", { className: "sc-tag-pill", textContent: t })));
+        }
         if (options.link) {
             return el("a", { href: options.link, target: "_blank", className: "sc-entity-subtitle-link", textContent: options.linkText || textVal });
         }
         if (options.mono) {
             return el("span", { className: "sc-meta-mono-sm sc-meta-value", textContent: String(textVal) });
         }
-        if (options.tags && Array.isArray(options.tags)) {
-            return el("div", { className: "sc-tags-container" }, options.tags.map(t => el("span", { className: "sc-tag-pill", textContent: t })));
-        }
         return null;
     }
 
     function metaRow(label, textVal, formatOpt = null, middleNode = null, isCommon = false) {
-        if (textVal == null || textVal === "—" || textVal === "null" || textVal === "") return null;
+        if (isEmptyVal(textVal)) return null;
 
         const options = (typeof formatOpt === "object" && formatOpt !== null && !(formatOpt instanceof Node))
             ? { ...formatOpt, isCommon: isCommon || formatOpt.isCommon }
@@ -915,14 +947,14 @@
                 valNode = formatOpt;
             } else if (typeof textVal === "string" && (textVal.startsWith("http://") || textVal.startsWith("https://"))) {
                 valNode = el("a", { href: textVal, target: "_blank", className: "sc-entity-subtitle-link sc-meta-mono-sm sc-meta-value", textContent: textVal });
-            } else {
+            } else if (options.format !== "tags") {
                 valNode = el("span", { className: "sc-meta-value", textContent: String(textVal) });
             }
         }
 
-        const extraClasses = [
-            options.isHoisted ? "sc-hoisted-row" : ""
-        ].filter(Boolean).join(" ");
+        if (!valNode) return null;
+
+        const extraClasses = [options.isHoisted ? "sc-hoisted-row" : ""].filter(Boolean).join(" ");
         const rowClassSuffix = extraClasses ? ` ${extraClasses}` : "";
 
         if (middleNode) {
@@ -949,18 +981,6 @@
         }
         childArr.forEach(c => group.appendChild(c));
         return group;
-    }
-
-    function getClientId() {
-        if (window.sc_client_id) return window.sc_client_id;
-        if (window.__sc_hydration) {
-            const apiClient = window.__sc_hydration.find((x) => x.hydratable === "apiClient")?.data;
-            if (apiClient?.id) {
-                window.sc_client_id = apiClient.id;
-                return apiClient.id;
-            }
-        }
-        return "";
     }
 
     function extractMeUser() {
@@ -1028,7 +1048,7 @@
             if (sec.title) lines.push(`## ${sec.title}`);
             if (sec.items && sec.items.length > 0) {
                 sec.items.forEach(([label, textVal]) => {
-                    if (label && textVal != null && textVal !== "—" && textVal !== "") {
+                    if (label && !isEmptyVal(textVal)) {
                         lines.push(`- **${label}:** ${textVal}`);
                     }
                 });
@@ -1271,7 +1291,7 @@
         const validTracks = tracks.filter(t => !t.isIncomplete);
         if (validTracks.length === 0) return null;
         const values = validTracks.map(getter);
-        const nonNullValues = values.filter(v => v != null && v !== "—" && v !== "");
+        const nonNullValues = values.filter(v => !isEmptyVal(v));
         if (nonNullValues.length !== validTracks.length) return null;
         const unique = [...new Set(nonNullValues)];
         return unique.length === 1 ? unique[0] : null;
@@ -1291,7 +1311,8 @@
             }
             return "Playlist";
         }
-        return "Single / Track";
+        if (entity.kind === "track") return "Single / Track";
+        return "Unknown Entity";
     }
 
     /**
@@ -1316,7 +1337,7 @@
         if (meta.tracks.length > 0) {
             const getCommonVal = (arr, key) => {
                 const first = arr[0]?.[key];
-                if (!first || first === "—") return null;
+                if (isEmptyVal(first)) return null;
                 return arr.every(t => t[key] === first) ? first : null;
             };
 
@@ -1360,34 +1381,12 @@
         return timelineItems;
     }
 
-    function resolveCommonAttribute(tracks, getter) {
-        if (!tracks || tracks.length === 0) return null;
-        const validTracks = tracks.filter(t => !t.isIncomplete);
-        if (validTracks.length === 0) return null;
-        const values = validTracks.map(getter);
-        const nonNullValues = values.filter(v => v != null && v !== "—" && v !== "");
-        if (nonNullValues.length !== validTracks.length) return null;
-        const unique = [...new Set(nonNullValues)];
-        return unique.length === 1 ? unique[0] : null;
-    }
-
-    /**
-     * @summary Determines a human-readable format type label for an entity.
-     * @param {Object} entity - Raw SoundCloud entity object.
-     * @returns {string} Human-readable format type.
-     */
-    function determineFormatType(entity) {
-        if (entity.kind === "user") return "Creator Profile";
-        if (entity.kind === "playlist") {
-            if (entity.is_album) {
-                const st = (entity.set_type || "").toLowerCase().trim();
-                return (st && st !== "album") ? `Album [${st.toUpperCase()}]` : "Album";
-            }
-            return "Playlist";
-        }
-        if (entity.kind === "track") return "Single / Track";
-        return "Unknown Entity";
-    }
+    /** Helper function for boolean to Content Type string parsing */
+    const resolveContentType = (val) => {
+        if (val == null) return null;
+        if (val === "Multiple") return "Multiple";
+        return val ? "Music Detected" : "Spoken / Other";
+    };
 
     /**
      * @summary Universal Single Source of Truth Field Registry for SoundCloud Metadata.
@@ -1400,6 +1399,7 @@
         label: { label: "Record Label", getValue: e => e.label || e.label_name || e.publisher_metadata?.publisher, hoistable: true, checkCommon: true },
         writerComposer: { label: "Writer / Composer", getValue: e => e.writerComposer || e.publisher_metadata?.writer_composer || e.writer_composer, hoistable: true, checkCommon: true },
         genre: { label: "Genre", getValue: e => e.genre, hoistable: true, checkCommon: true },
+        tags: { label: "Tags", getValue: e => e.tags || e.tag_list || null, format: "tags", hoistable: true, checkCommon: true },
         bpm: { label: "BPM", getValue: e => e.bpm ? String(e.bpm) : null, checkCommon: true },
         keySignature: { label: "Key Signature", getValue: e => e.keySignature || e.key_signature, checkCommon: true },
         pLine: { label: "℗ Line", getValue: e => e.pLine || e.publisher_metadata?.p_line || e.publisher_metadata?.p_line_for_display, hoistable: true, checkCommon: true },
@@ -1413,7 +1413,7 @@
         releasedDate: { label: "Released Date", getValue: e => e.releasedDate || (e.release_date ? formatDate(e.release_date) : (e.display_date ? formatDate(e.display_date) : null)), hoistable: true, checkCommon: true },
         displayDate: { label: "Displayed Date", getValue: e => e.displayDate || (e.display_date ? formatDate(e.display_date) : null), hoistable: true, checkCommon: true },
         lastModified: { label: "Last Modified", getValue: e => e.lastModified || (e.last_modified ? formatDate(e.last_modified) : null), hoistable: true, checkCommon: true },
-        containsMusic: { label: "Content Type", getValue: e => (e.containsMusic ?? e.contains_music ?? e.publisher_metadata?.contains_music) != null ? ((e.containsMusic ?? e.contains_music ?? e.publisher_metadata?.contains_music) === "Multiple" ? "Multiple" : ((e.containsMusic ?? e.contains_music ?? e.publisher_metadata?.contains_music) ? "Music Detected" : "Spoken / Other")) : null, badge: e => e.containsMusic === "Multiple" ? "orange" : (e.contains_music ? "teal" : "gray"), hoistable: true },
+        containsMusic: { label: "Content Type", getValue: e => resolveContentType(e.containsMusic ?? e.contains_music ?? e.publisher_metadata?.contains_music), badge: e => e.containsMusic === "Multiple" ? "orange" : (e.contains_music ? "teal" : "gray"), hoistable: true },
         policy: { label: "Policy", getValue: e => e.policy || null, badge: e => e.policy === "ALLOW" ? "blue" : (e.policy === "Multiple" ? "orange" : "red"), hoistable: true },
         monetizationModel: { label: "Monetization Model", getValue: e => e.monetizationModel || e.monetization_model || null, badge: e => e.monetizationModel === "Multiple" ? "orange" : "purple", hoistable: true },
         commentable: { label: "Comments Enabled", getValue: e => e.commentable != null ? (e.commentable === "Multiple" ? "Multiple" : (e.commentable ? "Yes" : "No")) : null, badge: e => e.commentable ? "green" : "gray", hoistable: true },
@@ -1468,6 +1468,7 @@
                 writerComposer: t.publisher_metadata?.writer_composer || t.writer_composer || null,
                 label: trackLabel,
                 genre: t.genre || null,
+                tags: t.tag_list || "",
                 bpm: t.bpm || null,
                 keySignature: t.key_signature || null,
                 duration: formatTime(t.duration),
@@ -1518,7 +1519,7 @@
         Object.entries(FIELD_REGISTRY).forEach(([key, spec]) => {
             if (!spec.hoistable) return;
             const rootVal = spec.getValue(entity);
-            if (rootVal != null && rootVal !== "—" && rootVal !== "") {
+            if (!isEmptyVal(rootVal)) {
                 hoistedValues[key] = rootVal;
                 if (isPlaylist) {
                     hoistedKeys.add(key);
@@ -1584,12 +1585,12 @@
             license: entity.license || hoistedValues.license || "all-rights-reserved",
             likesCount: entity.likes_count ?? 0,
             repostsCount: entity.reposts_count ?? 0,
-            trackCount: isPlaylist ? (entity.track_count ?? tracks.length) : (isUser ? (entity.track_count ?? 0) : 1),
+            trackCount: isPlaylist ? (entity.track_count ?? rawTracks.length) : (isUser ? (entity.track_count ?? 0) : 1),
             purchaseUrl: entity.purchase_url || null,
             purchaseTitle: entity.purchase_title || null,
             artworkUrl: entity.artwork_url || associatedUser.avatar_url || "",
             secretToken: entity.secret_token || null,
-            tags: entity.tag_list || "",
+            tags: entity.tag_list || hoistedValues.tags || "",
 
             createdDate: formatDate(entity.created_at) || hoistedValues.createdDate || null,
             publishedDate: formatDate(entity.published_at) || null,
@@ -1665,44 +1666,47 @@
         };
     }
 
-    function getReleaseSections(meta) {
+    function getCreatorSections(meta) {
         const c = meta.creator;
+        const proBadgesStr = formatProStatus(c);
+        const locationStr = [c.city, c.countryCode].filter(Boolean).join(", ");
 
+        return [
+            {
+                title: "CREATOR PROFILE",
+                items: [
+                    ["Name", meta.user],
+                    c.realName ? ["Real Name", c.realName] : null,
+                    locationStr ? ["Location Base", locationStr] : null,
+                    ["Followers", c.followers !== null ? formatNumber(c.followers) : "Loading..."],
+                    ["Following", c.followings !== null ? formatNumber(c.followings) : "Loading..."],
+                    ["Public Tracks", formatNumber(c.trackCount)],
+                    ["Playlists Formed", formatNumber(c.playlistCount)],
+                    ["Pro Status", proBadgesStr, { badge: proBadgesStr !== "Free Account" ? "indigo" : "gray" }],
+                    ["Account Created", c.createdDate],
+                    ["Account Modified", c.lastModified]
+                ].filter(item => item && !isEmptyVal(item[1]))
+            },
+            {
+                title: "ACTIVITY METRICS",
+                items: [
+                    ["Likes Submitted", formatNumber(c.likesCount)],
+                    ["Liked Playlists", formatNumber(c.playlistLikes)],
+                    ["Comments Written", c.commentsCount !== null ? formatNumber(c.commentsCount) : null],
+                    ["Groups Joined", c.groupsCount !== null ? formatNumber(c.groupsCount) : null]
+                ].filter(item => item && !isEmptyVal(item[1]))
+            },
+            c.description ? {
+                title: "CREATOR BIO",
+                items: [],
+                customText: c.description
+            } : null
+        ].filter(Boolean);
+    }
+
+    function getReleaseSections(meta) {
         if (meta.isUser) {
-            const proBadgesStr = formatProStatus(c);
-            const locationStr = [c.city, c.countryCode].filter(Boolean).join(", ");
-
-            return [
-                {
-                    title: "CREATOR PROFILE",
-                    items: [
-                        ["Name", meta.user],
-                        c.realName ? ["Real Name", c.realName] : null,
-                        locationStr ? ["Location Base", locationStr] : null,
-                        ["Followers", c.followers !== null ? formatNumber(c.followers) : "Loading..."],
-                        ["Following", c.followings !== null ? formatNumber(c.followings) : "Loading..."],
-                        ["Public Tracks", formatNumber(c.trackCount)],
-                        ["Playlists Formed", formatNumber(c.playlistCount)],
-                        ["Pro Status", proBadgesStr, { badge: proBadgesStr !== "Free Account" ? "indigo" : "gray" }],
-                        ["Account Created", c.createdDate],
-                        ["Account Modified", c.lastModified]
-                    ].filter(item => item && item[1] != null && item[1] !== "—")
-                },
-                {
-                    title: "ACTIVITY METRICS",
-                    items: [
-                        ["Likes Submitted", formatNumber(c.likesCount)],
-                        ["Liked Playlists", formatNumber(c.playlistLikes)],
-                        ["Comments Written", c.commentsCount !== null ? formatNumber(c.commentsCount) : null],
-                        ["Groups Joined", c.groupsCount !== null ? formatNumber(c.groupsCount) : null]
-                    ].filter(item => item && item[1] != null && item[1] !== "—")
-                },
-                c.description ? {
-                    title: "CREATOR BIO",
-                    items: [],
-                    customText: c.description
-                } : null
-            ].filter(Boolean);
+            return getCreatorSections(meta);
         }
 
         const showAlbumTitle = meta.albumTitle && (meta.albumTitle.trim().toLowerCase() !== meta.title.trim().toLowerCase());
@@ -1726,12 +1730,7 @@
             ["Rights License", meta.license, getFieldSpecOptions("license", meta)],
             ["UPC / EAN Barcode", meta.upc, meta.hasUpcVariations ? getFieldSpecOptions("upc", meta, { badge: "orange", switchTab: "tracks" }) : getFieldSpecOptions("upc", meta)],
             ["Buy Link", meta.purchaseUrl, meta.purchaseUrl ? { link: meta.purchaseUrl, linkText: meta.purchaseTitle || "Store Link" } : null]
-        ].filter(item => item && item[1] != null && item[1] !== "—" && item[1] !== "");
-
-        const tagPills = meta.tags ? meta.tags.split(" ").map(tag => {
-            const t = tag.replace(/["#]/g, "").trim();
-            return t ? `#${t}` : null;
-        }).filter(Boolean) : [];
+        ].filter(item => item && !isEmptyVal(item[1]));
 
         const releaseTimelineItems = parseReleaseTimeline(meta);
 
@@ -1749,9 +1748,9 @@
                 title: "TIMELINE",
                 items: releaseTimelineItems
             },
-            tagPills.length > 0 ? {
+            !isEmptyVal(meta.tags) ? {
                 title: "RELEASE TAGS",
-                items: [["Tags", tagPills.join(" "), { tags: tagPills }]]
+                items: [["Tags", meta.tags, { format: "tags" }]]
             } : null
         ].filter(Boolean);
     }
@@ -1770,7 +1769,7 @@
                         ["Liked Playlists", formatNumber(c.playlistLikes)],
                         ["Comments Written", formatNumber(c.commentsCount)],
                         ["Groups Joined", c.groupsCount !== null ? formatNumber(c.groupsCount) : null]
-                    ].filter(item => item && item[1] != null && item[1] !== "—")
+                    ].filter(item => item && !isEmptyVal(item[1]))
                 }
             ];
         }
@@ -1785,44 +1784,6 @@
                 trackIndex: i
             };
         });
-    }
-
-    function getCreatorSections(meta) {
-        const c = meta.creator;
-        const proBadgesStr = formatProStatus(c);
-        const locationStr = [c.city, c.countryCode].filter(Boolean).join(", ");
-
-        return [
-            {
-                title: "CREATOR PROFILE",
-                items: [
-                    ["Name", meta.user],
-                    c.realName ? ["Real Name", c.realName] : null,
-                    locationStr ? ["Location Base", locationStr] : null,
-                    ["Followers", c.followers !== null ? formatNumber(c.followers) : "Loading..."],
-                    ["Following", c.followings !== null ? formatNumber(c.followings) : "Loading..."],
-                    ["Public Tracks", formatNumber(c.trackCount)],
-                    ["Playlists Formed", formatNumber(c.playlistCount)],
-                    ["Pro Status", proBadgesStr, { badge: proBadgesStr !== "Free Account" ? "indigo" : "gray" }],
-                    ["Account Created", c.createdDate],
-                    ["Account Modified", c.lastModified]
-                ].filter(item => item && item[1] != null && item[1] !== "—")
-            },
-            {
-                title: "ACTIVITY METRICS",
-                items: [
-                    ["Likes Submitted", formatNumber(c.likesCount)],
-                    ["Liked Playlists", formatNumber(c.playlistLikes)],
-                    ["Comments Written", c.commentsCount !== null ? formatNumber(c.commentsCount) : null],
-                    ["Groups Joined", c.groupsCount !== null ? formatNumber(c.groupsCount) : null]
-                ].filter(item => item && item[1] != null && item[1] !== "—")
-            },
-            c.description ? {
-                title: "CREATOR BIO",
-                items: [],
-                customText: c.description
-            } : null
-        ].filter(Boolean);
     }
 
     function getTechSections(meta) {
@@ -1940,7 +1901,7 @@
             })
             .map(([key, spec]) => {
                 const val = spec.getValue(track);
-                if (val == null || val === "—" || val === "" || val === "null") return null;
+                if (isEmptyVal(val)) return null;
 
                 return [
                     spec.label,
