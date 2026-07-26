@@ -1,27 +1,24 @@
 // ==UserScript==
-// @name        Click buttons across tabs
-// @namespace   https://musicbrainz.org/user/chaban
-// @version     4.13.3
-// @description Clicks specified buttons across tabs using the Broadcast Channel API and closes tabs after successful submission.
-// @tag         ai-created
-// @author      chaban
-// @license     MIT
-// @homepageURL https://github.com/chaban-mb/userscripts
-// @supportURL  https://github.com/chaban-mb/userscripts/issues
-// @match       *://*.musicbrainz.org/*
-// @match       *://magicisrc.kepstin.ca/*
-// @match       *://magicisrc-beta.kepstin.ca/*
-// @match       *://isrchunt.com/*
-// @grant       GM.registerMenuCommand
-// @grant       GM.unregisterMenuCommand
-// @grant       GM.getValue
-// @grant       GM.setValue
-// @grant       window.close
-// @grant       unsafeWindow
-// @run-at      document-start
-// @noframes
-// @updateURL   https://github.com/chaban-mb/userscripts/raw/dist/src/Click%20buttons%20across%20tabs.user.js
-// @downloadURL https://github.com/chaban-mb/userscripts/raw/dist/src/Click%20buttons%20across%20tabs.user.js
+// @name         Click buttons across tabs
+// @namespace    https://musicbrainz.org/user/chaban
+// @version      4.10.0
+// @tag          ai-created
+// @description  Clicks specified buttons across tabs using the Broadcast Channel API and closes tabs after successful submission.
+// @author       chaban
+// @license      MIT
+// @match        *://*.musicbrainz.org/*
+// @match        *://magicisrc.kepstin.ca/*
+// @match        *://magicisrc-beta.kepstin.ca/*
+// @match        *://isrchunt.com/*
+// @run-at       document-start
+// @grant        GM_registerMenuCommand
+// @grant        GM_unregisterMenuCommand
+// @grant        GM.getValue
+// @grant        GM.setValue
+// @grant        window.close
+// @grant        unsafeWindow
+// @updateURL    https://github.com/chaban-mb/userscripts/raw/dist/src/Click%20buttons%20across%20tabs.user.js
+// @downloadURL  https://github.com/chaban-mb/userscripts/raw/dist/src/Click%20buttons%20across%20tabs.user.js
 // ==/UserScript==
 
 (async function () {
@@ -29,8 +26,7 @@
 
     const scriptName = GM.info.script.name;
     const tabId = `[${Math.random().toString(36).substring(2, 6)}]`;
-    const getTimestamp = () => new Date().toISOString();
-    console.debug(`[${scriptName}] [${getTimestamp()}] ${tabId} Script initialization started on ${location.href}`);
+    console.log(`%c[${scriptName}] ${tabId} Script initialization started on ${location.href}`, 'font-weight: bold;');
 
     const SUBMISSION_TRIGGERED_FLAG = 'broadcastChannelSubmissionState';
     const REFERRER_CLOSE_TRIGGERED_FLAG = 'referrerCloseTriggeredState';
@@ -54,283 +50,29 @@
     let debugLogChannel;
     let activeClosureObserver = null;
     let activeKeepAlives = [];
-    let throttlingBypassTimer = null;
-
-    const initialFormSnapshots = new Map();
-    let hydrationCaptured = false;
-    let hydrationListenerAdded = false;
-
-    const normalizeText = (str) => {
-        if (typeof str !== 'string') return str;
-        return str.replace(/\u00a0/g, ' ').trim();
-    };
 
     /**
-     * Finds all edit forms on the page (matching MusicBrainz edit, create, add, merge, reorder, cover art, and event art forms).
-     * @returns {HTMLFormElement[]} Array of edit form elements.
+     * @summary Initializes a WebRTC local loopback connection to force Chrome to classify the tab as "active"
+     * and bypass Intensive Throttling, ensuring microtasks for cross-tab locks execute smoothly.
      */
-    const getEditForms = () => {
-        return Array.from(document.forms).filter(form => {
-            const action = form.getAttribute('action') || '';
-            const className = form.className || '';
-            const id = form.id || '';
-            return className.includes('edit-') || className.includes('cover-art') || className.includes('event-art') ||
-                action.includes('/edit') || action.includes('/add') || action.includes('/reorder') || action.includes('/create') || action.includes('/merge') ||
-                id.includes('reorder') ||
-                form.closest('#release-editor, #relationship-editor, #external-links-editor, #reorder-cover-art, #reorder-event-art') !== null;
-        });
-    };
-
-    /**
-     * Checks if standard HTML form inputs are dirty via native DOM properties (defaultValue, defaultChecked, defaultSelected).
-     * @param {HTMLFormElement} form - Target form element.
-     * @returns {boolean} True if any form element differs from its native default value.
-     */
-    const isNativeFormDirty = (form) => {
-        if (!form || !form.elements) return false;
-
-        for (const el of form.elements) {
-            const name = el.name || '';
-            if (!name || name.includes('csrf') || name.includes('confirm') || name === 'tag' || name.includes('edit_note') || name.includes('edit-note')) {
-                continue;
-            }
-
-            if (el instanceof HTMLInputElement) {
-                if (el.type === 'checkbox' || el.type === 'radio') {
-                    if (el.defaultChecked !== el.checked) {
-                        debugLog(`isNativeFormDirty: field "${name}" (type: ${el.type}) dirty: defaultChecked=${el.defaultChecked}, checked=${el.checked}`, 'yellow');
-                        return true;
-                    }
-                } else if (el.type !== 'submit' && el.type !== 'button' && el.type !== 'hidden') {
-                    if (normalizeText(el.defaultValue) !== normalizeText(el.value)) {
-                        debugLog(`isNativeFormDirty: field "${name}" (type: ${el.type}) dirty: defaultValue="${el.defaultValue}", value="${el.value}"`, 'yellow');
-                        return true;
-                    }
-                }
-            } else if (el instanceof HTMLTextAreaElement) {
-                if (normalizeText(el.defaultValue) !== normalizeText(el.value)) {
-                    debugLog(`isNativeFormDirty: textarea "${name}" dirty: defaultValue="${el.defaultValue}", value="${el.value}"`, 'yellow');
-                    return true;
-                }
-            } else if (el instanceof HTMLSelectElement) {
-                const isSelectDirty = Array.from(el.options).some(opt => opt.defaultSelected !== opt.selected);
-                if (isSelectDirty) {
-                    debugLog(`isNativeFormDirty: select "${name}" dirty: selected options differ from defaultSelected`, 'yellow');
-                    return true;
-                }
-            }
-        }
-        return false;
-    };
-
-    /**
-     * Generates a key-value snapshot map of standard HTML form inputs via FormData.
-     * @param {HTMLFormElement} form - Target form element.
-     * @returns {Map<string, string[]>} Map of form input keys to sorted array values.
-     */
-    const getFormDataMap = (form) => {
-        const map = new Map();
-        try {
-            const formData = new FormData(form);
-            const removedKeys = new Set();
-
-            for (const [key, val] of formData.entries()) {
-                if (key.endsWith('.removed') && val === '1') {
-                    removedKeys.add(key.slice(0, -8));
-                }
-            }
-
-            for (const [key, val] of formData.entries()) {
-                if (!key || key.includes('csrf') || key.includes('confirm') || key === 'tag' || key.includes('edit_note') || key.includes('edit-note')) continue;
-                if (key.endsWith('.removed')) continue;
-                if (removedKeys.has(key)) continue;
-
-                const cleanVal = normalizeText(val);
-                if (!cleanVal) continue;
-
-                // Group indexed keys e.g. "edit-recording.isrcs.3" -> "edit-recording.isrcs"
-                const groupKey = key.replace(/\.\d+$/, '');
-
-                if (!map.has(groupKey)) map.set(groupKey, []);
-                map.get(groupKey).push(cleanVal);
-            }
-
-            for (const arr of map.values()) {
-                arr.sort();
-            }
-        } catch (e) { }
-        return map;
-    };
-
-    /**
-     * Initializes baseline snapshots of active edit forms on page load and hydration events.
-     */
-    function initFormSnapshots() {
-        const editForms = getEditForms();
-        if (!hydrationCaptured) {
-            editForms.forEach(form => {
-                if (!isNativeFormDirty(form)) {
-                    initialFormSnapshots.set(form, getFormDataMap(form));
-                }
-            });
-        }
-
-        if (!hydrationListenerAdded) {
-            hydrationListenerAdded = true;
-
-            const refreshBaseline = () => {
-                setTimeout(() => {
-                    const currentForms = getEditForms();
-                    currentForms.forEach(form => {
-                        if (!isNativeFormDirty(form)) {
-                            initialFormSnapshots.set(form, getFormDataMap(form));
-                            debugLog(`initFormSnapshots: baseline snapshot captured for form "${form.id || form.className || 'unnamed'}" (${initialFormSnapshots.get(form).size} field groups).`, 'teal');
-                        }
-                    });
-                    hydrationCaptured = true;
-                }, 100);
-            };
-
-            if (document.readyState === 'complete') {
-                refreshBaseline();
-            } else {
-                window.addEventListener('load', refreshBaseline, { once: true });
-            }
-
-            document.addEventListener('mb-hydration', refreshBaseline);
-        }
-    }
-
-    /**
-     * Programmatically checks standard HTML form inputs via native dirty state and FormData snapshots.
-     * @returns {boolean} True if any form data field differs from its baseline snapshot or native default.
-     */
-    const hasDirtyFormInputs = () => {
-        initFormSnapshots();
-        const editForms = getEditForms();
-        if (editForms.length === 0) {
-            debugLog('hasDirtyFormInputs: 0 edit forms found on page.', 'gray');
-            return false;
-        }
-
-        for (const form of editForms) {
-            if (isNativeFormDirty(form)) {
-                return true;
-            }
-
-            if (!initialFormSnapshots.has(form)) {
-                initialFormSnapshots.set(form, getFormDataMap(form));
-            }
-            const initialMap = initialFormSnapshots.get(form);
-            const currentMap = getFormDataMap(form);
-
-            const allKeys = new Set([...initialMap.keys(), ...currentMap.keys()]);
-            for (const key of allKeys) {
-                const origVals = initialMap.get(key) || [];
-                const currVals = currentMap.get(key) || [];
-
-                if (origVals.join(', ') !== currVals.join(', ')) {
-                    // Check if this field in the DOM is actually natively dirty (to handle late-hydrated inputs with default values)
-                    const elements = form.querySelectorAll(`[name="${key}"], [name^="${key}."]`);
-                    let isFieldNativelyDirty = false;
-                    for (const el of elements) {
-                        if (el instanceof HTMLInputElement) {
-                            if (el.type === 'checkbox' || el.type === 'radio') {
-                                if (el.defaultChecked !== el.checked) isFieldNativelyDirty = true;
-                            } else if (el.type !== 'submit' && el.type !== 'button' && el.type !== 'hidden') {
-                                if (normalizeText(el.defaultValue) !== normalizeText(el.value)) isFieldNativelyDirty = true;
-                            }
-                        } else if (el instanceof HTMLTextAreaElement) {
-                            if (normalizeText(el.defaultValue) !== normalizeText(el.value)) isFieldNativelyDirty = true;
-                        } else if (el instanceof HTMLSelectElement) {
-                            if (Array.from(el.options).some(opt => opt.defaultSelected !== opt.selected)) isFieldNativelyDirty = true;
-                        }
-                    }
-
-                    // If the field exists in the DOM with pristine default values, it was mounted by MusicBrainz React/templates post-baseline
-                    if (!isFieldNativelyDirty && origVals.length === 0) {
-                        debugLog(`hasDirtyFormInputs: newly mounted React field "${key}" has pristine default value — updating baseline.`, 'teal');
-                        initialMap.set(key, currVals);
-                        continue;
-                    }
-
-                    debugLog(`hasDirtyFormInputs: FormData diff on "${key}": baseline=[${origVals.join(', ')}], current=[${currVals.join(', ')}]`, 'yellow');
-                    return true;
-                }
-            }
-        }
-        debugLog(`hasDirtyFormInputs: audited ${editForms.length} form(s) — clean (0 dirty inputs).`, 'teal');
-        return false;
-    };
-
-    const isAutoReload = sessionStorage.getItem('magicisrc_auto_reloading') === 'true';
-    sessionStorage.removeItem('magicisrc_auto_reloading');
-
-    const navEntry = performance.getEntriesByType('navigation')[0];
-    if (navEntry && navEntry.type === 'reload' && !isAutoReload) {
-        sessionStorage.removeItem(SUBMISSION_TRIGGERED_FLAG);
-        console.debug(`[${scriptName}] [${getTimestamp()}] ${tabId} Manual reload detected — cleared ${SUBMISSION_TRIGGERED_FLAG}`);
-    } else {
-        console.debug(`[${scriptName}] [${getTimestamp()}] ${tabId} Navigation type "${navEntry?.type || 'navigate'}" or auto-reload — retaining session state`);
-    }
-
-    /**
-     * @summary Discharges and closes active WebRTC loopback peer connections, restoring normal OS standby state.
-     * @param {string} [reason='Manual discharge'] - Descriptive reason for discharging WebRTC peer connections.
-     */
-    function teardownThrottlingBypass(reason = 'Manual discharge') {
-        if (throttlingBypassTimer) {
-            clearTimeout(throttlingBypassTimer);
-            throttlingBypassTimer = null;
-        }
-        if (activeKeepAlives.length > 0) {
-            debugLog(`Discharging WebRTC throttling bypass [Reason: ${reason}].`, '#d97706');
-            activeKeepAlives.forEach(pc => {
-                try {
-                    pc.close();
-                } catch (e) {
-                    console.error(`[${scriptName}] [${getTimestamp()}] ${tabId} Failed closing RTCPeerConnection:`, e);
-                }
-            });
-            activeKeepAlives = [];
-        }
-    }
-
-    /**
-     * @summary Acquires or refreshes WebRTC local loopback connections on demand to bypass Chrome Intensive Throttling.
-     * Starts or resets a 30-second safety watchdog timer to automatically discharge connections if idle.
-     * @param {number} [timeoutMs=30000] - Duration in milliseconds before auto-discharging if not refreshed.
-     */
-    async function acquireThrottlingBypass(timeoutMs = 30000) {
-        if (throttlingBypassTimer) {
-            clearTimeout(throttlingBypassTimer);
-        }
-        throttlingBypassTimer = setTimeout(() => {
-            teardownThrottlingBypass('Safety watchdog timeout (30s inactivity)');
-        }, timeoutMs);
-
+    async function setupThrottlingBypass() {
         if (activeKeepAlives.length > 0) return;
         if (typeof RTCPeerConnection === 'undefined') {
             debugLog('WebRTC is undefined. Skipping throttling bypass.', 'orange');
             return;
         }
-        debugLog('Acquiring WebRTC loopback on demand to bypass Intensive Throttling.', 'green');
-        try {
-            const pc1 = new RTCPeerConnection(), pc2 = new RTCPeerConnection();
-            pc1.createDataChannel("keep-alive");
-            pc1.onicecandidate = e => e.candidate && pc2.addIceCandidate(e.candidate);
-            pc2.onicecandidate = e => e.candidate && pc1.addIceCandidate(e.candidate);
-            const offer = await pc1.createOffer();
-            await pc1.setLocalDescription(offer);
-            await pc2.setRemoteDescription(offer);
-            const answer = await pc2.createAnswer();
-            await pc2.setLocalDescription(answer);
-            await pc1.setRemoteDescription(answer);
-            activeKeepAlives = [pc1, pc2];
-        } catch (e) {
-            console.error(`[${scriptName}] [${getTimestamp()}] ${tabId} Failed to initialize WebRTC throttling bypass:`, { href: location.href, error: e });
-            teardownThrottlingBypass('Initialization failure');
-        }
+        debugLog('Initializing WebRTC loopback to bypass Intensive Throttling.', 'green');
+        const pc1 = new RTCPeerConnection(), pc2 = new RTCPeerConnection();
+        pc1.createDataChannel("keep-alive");
+        pc1.onicecandidate = e => e.candidate && pc2.addIceCandidate(e.candidate);
+        pc2.onicecandidate = e => e.candidate && pc1.addIceCandidate(e.candidate);
+        const offer = await pc1.createOffer();
+        await pc1.setLocalDescription(offer);
+        await pc2.setRemoteDescription(offer);
+        const answer = await pc2.createAnswer();
+        await pc2.setLocalDescription(answer);
+        await pc1.setRemoteDescription(answer);
+        activeKeepAlives = [pc1, pc2];
     }
 
     /**
@@ -342,12 +84,12 @@
      * @property {string} [messageTrigger] - The message that triggers the action on the channel.
      * @property {string} [menuCommandName] - The name for the userscript menu command.
      * @property {(RegExp|string)[]} [successUrlPatterns] - URL patterns that indicate a successful submission.
+     * @property {boolean} [shouldCloseAfterSuccess=false] - Whether to close the tab after a successful submission.
      * @property {boolean} [autoClick=false] - Whether to click the button automatically on page load.
      * @property {string} [requiredSetting] - A GM setting key that must be true for this rule to activate.
      * @property {() => boolean} [isNoOp] - A function that checks if the current page state represents a no-op submission.
      * @property {(config: SiteConfig, triggerAction: () => Promise<boolean>) => void} [submissionHandler] - Custom logic to execute when a submission is triggered.
      * @property {{hostnames: string[], paths: (string|RegExp)[]}} [referrerPatterns] - If present, this rule becomes a referrer-based closer.
-     * @property {string[]} [attributeFilter] - Optional array of attribute names to filter MutationObserver attribute changes.
      */
 
     /** @type {SiteConfig[]} */
@@ -355,44 +97,33 @@
         // Rule for closing tab after manual merge or edit submission.
         {
             hostnames: ['musicbrainz.org'],
-            paths: ['/merge', '/edit', '/add-cover-art', '/add-event-art'],
-            buttonSelector: 'button.submit.positive[type="submit"], button#enter-edit, button#add-cover-art-submit, button#add-event-art-submit',
+            paths: ['/merge', '/edit'],
+            buttonSelector: 'button.submit.positive[type="submit"]',
+            shouldCloseAfterSuccess: true,
             requiredSetting: MB_ENABLE_MANUAL_MERGE_AUTOCLOSE,
             referrerPatterns: {
                 hostnames: ['musicbrainz.org'],
-                paths: ['/merge', '/edit', '/add-cover-art', '/add-event-art'],
+                paths: ['/merge', '/edit'],
             },
         },
         // Rules for clicking buttons
-        {
-            hostnames: ['musicbrainz.org'],
-            paths: ['/edit'],
-            buttonSelector: '.canonicalizer-button',
-            autoClick: true,
-            successUrlPatterns: [],
-        },
-        {
-            hostnames: ['musicbrainz.org'],
-            paths: ['/edit'],
-            buttonSelector: '.wikidata-converter-all-button',
-            autoClick: true,
-            successUrlPatterns: [],
-        },
         {
             hostnames: ['musicbrainz.org'],
             paths: ['/edit-relationships'],
             buttonSelector: '.rel-editor > button',
             autoClick: true,
             successUrlPatterns: [],
+            shouldCloseAfterSuccess: false,
         },
         {
             hostnames: ['musicbrainz.org'],
-            paths: ['/edit', '/edit-relationships', '/add-cover-art', '/add-event-art'],
+            paths: ['/edit', '/edit-relationships', '/add-cover-art'],
             channelName: 'mb_edit_channel',
             messageTrigger: 'submit-edit',
-            buttonSelector: 'button.submit.positive[type="submit"], button#enter-edit',
+            buttonSelector: 'button.submit.positive[type="submit"]',
             menuCommandName: 'MusicBrainz: Submit Edit (All Tabs)',
-            successUrlPatterns: [/^https?:\/\/(?:beta\.)?musicbrainz\.org\/(?!collection\/)[^/]+\/[a-f0-9\-]{36}(?:\/(?:cover|event)-art)?\/?$/],
+            successUrlPatterns: [/^https?:\/\/(?:beta\.)?musicbrainz\.org\/(?!collection\/)[^/]+\/[a-f0-9\-]{36}(?:\/cover-art)?\/?$/],
+            shouldCloseAfterSuccess: true,
             isNoOp: () => {
                 const noChangesBanner = document.querySelector('.banner.warning-header');
                 return noChangesBanner?.textContent.includes(
@@ -400,44 +131,18 @@
                 );
             },
             submissionHandler: (config, _ignoredTrigger) => {
-                const isReleaseRelationshipEditor = location.pathname.endsWith('/edit-relationships');
-                const isCoverArtPage = location.pathname.endsWith('/add-cover-art') || location.pathname.endsWith('/add-event-art');
-                const hasSeedingHash = location.hash.includes('seed-urls-v1');
-                const REL_HIGHLIGHT_SELECTOR = '.rel-add, .rel-edit, .rel-remove';
+                const isRelationshipEditor = location.pathname.endsWith('/edit-relationships');
+                const isCoverArtPage = location.pathname.endsWith('/add-cover-art');
+                const hasSeedingHash = location.hash.includes('seed-urls-v1') || location.hash.includes('seed-');
 
                 /**
                  * Detects if the current page was opened with seeded or injected parameters.
-                 * Checks for hash seeding payloads (#seed-urls-v1=...) as well as GET query parameters
-                 * pre-filling any MusicBrainz entity form (e.g. edit-label.*, edit-artist.*, edit-release.*) or x_seed.
                  * @returns {boolean} True if page has URL parameters or hash indicating external seeding/injection.
                  */
                 const hasSeededOrInjectedParams = () => {
-                    if (hasSeedingHash) {
-                        debugLog('hasSeededOrInjectedParams: true (matched #seed-urls-v1 hash)', 'teal');
-                        return true;
-                    }
+                    if (hasSeedingHash) return true;
                     const search = location.search;
-                    if (!search) {
-                        debugLog('hasSeededOrInjectedParams: false (no URL query search params)', 'gray');
-                        return false;
-                    }
-
-                    try {
-                        const params = new URLSearchParams(search);
-                        for (const key of params.keys()) {
-                            if (/^(?:edit-[a-z-]+|x_seed)/i.test(key)) {
-                                debugLog(`hasSeededOrInjectedParams: true (matched seeded parameter "${key}")`, 'teal');
-                                return true;
-                            }
-                        }
-                    } catch (e) {
-                        if (/(?:edit-[a-z-]+\.|x_seed)/i.test(search)) {
-                            debugLog(`hasSeededOrInjectedParams: true (matched fallback search pattern)`, 'teal');
-                            return true;
-                        }
-                    }
-                    debugLog(`hasSeededOrInjectedParams: false (query params did not match seeded entity patterns: "${search.slice(0, 60)}...")`, 'gray');
-                    return false;
+                    return search.includes('x_seed') || search.includes('seed') || search.includes('add-link') || search.includes('edit-artist.url');
                 };
 
                 /**
@@ -449,7 +154,7 @@
                     try {
                         const hash = location.hash.startsWith('#') ? location.hash.slice(1) : location.hash;
                         const urlParams = new URLSearchParams(hash);
-                        const rawJson = urlParams.get('seed-urls-v1');
+                        const rawJson = urlParams.get('seed-urls-v1') || urlParams.get('seed');
                         if (rawJson) {
                             JSON.parse(rawJson);
                         }
@@ -462,7 +167,6 @@
 
                 /**
                  * Inspects Relationship Editor state for newly added/edited relationships (_status > 0).
-                 * Supports both release relationship editor and standalone entity relationship editors.
                  * @returns {number} Count of active pending relationship edits.
                  */
                 function getPendingRelationshipEditsCount() {
@@ -471,21 +175,7 @@
                     const tree = win.MB?.tree;
                     const state = editor?.state;
 
-                    const getDomFallbackCount = () => {
-                        const container = document.getElementById('relationship-editor') ||
-                            document.querySelector('.relationship-editor');
-                        if (!container) return 0;
-                        const relHighlights = container.querySelectorAll(REL_HIGHLIGHT_SELECTOR);
-                        if (relHighlights.length > 0) {
-                            debugLog(`getPendingRelationshipEditsCount (DOM fallback): found ${relHighlights.length} pending relationship edit highlight(s).`, 'yellow');
-                            return relHighlights.length;
-                        }
-                        return 0;
-                    };
-
-                    if (!state || !tree) {
-                        return getDomFallbackCount();
-                    }
+                    if (!state || !tree) return 0;
 
                     const uniqueEditIds = new Set();
                     const visited = new Set();
@@ -494,11 +184,14 @@
                         if (!node || typeof node !== 'object' || visited.has(node)) return;
                         visited.add(node);
 
-                        // Check if current node is a relationship object
-                        if ('linkTypeID' in node || '_status' in node || 'entity0' in node) {
-                            const status = node._status ?? node.status ?? 0;
-                            if (status > 0) {
-                                uniqueEditIds.add(node.id || node);
+                        // Check if current node is a relationship object (must have linkTypeID)
+                        if (node.linkTypeID) {
+                            const status = node._status ?? node.status;
+                            const lineage = Array.isArray(node._lineage) ? node._lineage : [];
+                            const isUnloaded = lineage.length > 0 && !lineage.includes('loaded from database');
+
+                            if (status > 0 || isUnloaded || (typeof node.id === 'number' && node.id < 0)) {
+                                uniqueEditIds.add(node.id);
                             }
                         }
 
@@ -509,9 +202,7 @@
                                     const val = Array.isArray(entry) ? entry[1] : entry;
                                     traverse(val);
                                 }
-                            } catch (e) {
-                                console.debug(`[${scriptName}] [${getTimestamp()}] ${tabId} WBT node traversal fallback:`, e);
-                            }
+                            } catch (e) {}
                             return;
                         }
 
@@ -531,107 +222,63 @@
                     }
 
                     if (state.relationshipsBySource) traverse(state.relationshipsBySource);
-                    if (state.mediums) traverse(state.mediums);
 
-                    if (uniqueEditIds.size === 0) {
-                        const domCount = getDomFallbackCount();
-                        if (domCount > 0) return domCount;
-                    }
-
-                    debugLog(`getPendingRelationshipEditsCount: found ${uniqueEditIds.size} pending relationship edit(s).`, uniqueEditIds.size > 0 ? 'yellow' : 'teal');
                     return uniqueEditIds.size;
                 }
 
                 /**
-                 * Programmatically checks if the External Links Editor has pending edits.
-                 * Hybrid approach: MB.releaseEditor.externalLinksData() programmatic state in Release Editor,
-                 * DOM highlight class inspection (.rel-add, .rel-edit, .rel-remove) for standalone editors.
-                 * @returns {boolean} True if any link or relationship is new, removed, or modified.
+                 * Inspects ExternalLinksEditor state and form inputs for pending edits (Artist, Event, Series edit forms).
+                 * @returns {boolean} True if there are pending external link or form edits.
                  */
-                const hasPendingExternalLinkEdits = () => {
-                    const win = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
+                const hasPendingExternalLinkOrFormEdits = () => {
+                    const editor = document.getElementById('external-links-editor');
 
-                    // 1. Release Editor State
-                    const relEdLinksData = win.MB?.releaseEditor?.externalLinksData;
-                    if (relEdLinksData) {
-                        try {
-                            const links = typeof relEdLinksData === 'function' ? relEdLinksData() : relEdLinksData;
-                            if (links && (links.size !== undefined || Array.isArray(links))) {
-                                const iterateLinks = (linksTree) => {
-                                    const result = [];
-                                    if (win.MB?.tree?.iterate) {
-                                        try {
-                                            for (const link of win.MB.tree.iterate(linksTree)) {
-                                                result.push(link);
-                                            }
-                                            return result;
-                                        } catch (e) {
-                                            console.debug(`[${scriptName}] [${getTimestamp()}] ${tabId} Tree iterate fallback for external links:`, e);
+                    // 1. Check visual DOM classes applied by ExternalLinksEditor
+                    if (editor) {
+                        if (editor.querySelectorAll('.relationship-edited, .relationship-added, .relationship-removed').length > 0) return true;
+
+                        // 2. Inspect React Fiber state on container
+                        const fiberKey = Object.keys(editor).find(k => k.startsWith('__reactFiber$') || k.startsWith('__reactContainer$'));
+                        if (fiberKey && window.MB?.tree) {
+                            let node = editor[fiberKey];
+                            while (node) {
+                                const state = node.memoizedState?.memoizedState || node.memoizedState;
+                                if (state?.links && state.links.size > 0) {
+                                    for (const link of window.MB.tree.iterate(state.links)) {
+                                        for (const rel of link.relationships || []) {
+                                            const orig = rel.originalState;
+                                            if (orig === null || rel.removed) return true;
+                                            if (orig && (
+                                                rel.url !== orig.url ||
+                                                rel.linkTypeID !== orig.linkTypeID ||
+                                                rel.ended !== orig.ended ||
+                                                rel.entityCredit !== orig.entityCredit
+                                            )) return true;
                                         }
                                     }
-                                    if (linksTree && typeof linksTree.values === 'function') {
-                                        return Array.from(linksTree.values());
-                                    }
-                                    if (Array.isArray(linksTree)) return linksTree;
-                                    return [];
-                                };
-
-                                const isRelationshipPending = (rel) => {
-                                    if (!rel) return false;
-                                    if (rel.originalState == null || rel.removed) return true;
-
-                                    const orig = rel.originalState;
-                                    return Object.keys(orig).some(key => {
-                                        if (key === 'originalState' || key === 'removed') return false;
-                                        return JSON.stringify(rel[key] ?? null) !== JSON.stringify(orig[key] ?? null);
-                                    });
-                                };
-
-                                const linkList = iterateLinks(links);
-                                for (const link of linkList) {
-                                    const rels = Array.isArray(link.relationships) ? link.relationships : [];
-                                    for (const rel of rels) {
-                                        if (isRelationshipPending(rel)) return true;
-                                    }
                                 }
-                                return false;
+                                node = node.return;
                             }
-                        } catch (e) {
-                            console.debug(`[${scriptName}] [${getTimestamp()}] ${tabId} External links viewmodel check fallback:`, e);
                         }
                     }
 
-                    // 2. DOM Highlight Fallback (Standalone Entity Editors)
-                    const editor = document.getElementById('external-links-editor') ||
-                        document.querySelector('.external-links-editor-container');
-                    if (!editor) {
-                        debugLog('hasPendingExternalLinkEdits: no external links editor found in DOM.', 'gray');
-                        return false;
-                    }
-
-                    const highlights = editor.querySelectorAll(REL_HIGHLIGHT_SELECTOR);
-                    const isPending = highlights.length > 0;
-                    debugLog(`hasPendingExternalLinkEdits (standalone): found ${highlights.length} highlight elements (${isPending ? 'DIRTY' : 'clean'}).`, isPending ? 'yellow' : 'teal');
-                    return isPending;
-                };
-
-                /**
-                 * Inspects Release Editor viewmodel for pending edits (MB.releaseEditor.allEdits()).
-                 * @returns {number} Count of active pending edits in Release Editor.
-                 */
-                const getPendingReleaseEditorEditsCount = () => {
-                    const win = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
-                    const editor = win.MB?.releaseEditor;
-                    if (editor?.allEdits) {
-                        try {
-                            const edits = editor.allEdits();
-                            if (Array.isArray(edits)) {
-                                debugLog(`getPendingReleaseEditorEditsCount: ${edits.length} edit(s) in MB.releaseEditor.allEdits()`, edits.length > 0 ? 'yellow' : 'teal');
-                                return edits.length;
+                    // 3. Audit modified form input fields against initial default values (excluding edit note)
+                    const formElements = document.querySelectorAll('#page form input:not([type="hidden"]), #page form select, #page form textarea:not([name*="edit_note"])');
+                    for (const el of formElements) {
+                        if (el.tagName === 'INPUT') {
+                            if (el.type === 'checkbox' || el.type === 'radio') {
+                                if (el.checked !== el.defaultChecked) return true;
+                            } else if (el.value !== el.defaultValue) {
+                                return true;
                             }
-                        } catch (e) { }
+                        } else if (el.tagName === 'TEXTAREA') {
+                            if (el.value !== el.defaultValue) return true;
+                        } else if (el.tagName === 'SELECT') {
+                            const defaultOpt = Array.from(el.options).find(opt => opt.defaultSelected);
+                            if (defaultOpt && el.value !== defaultOpt.value) return true;
+                        }
                     }
-                    return 0;
+                    return false;
                 };
 
                 /**
@@ -639,37 +286,14 @@
                  * @returns {number} Count of pending edits (or >0 if edits exist).
                  */
                 const getPendingEditsCount = () => {
-                    let totalCount = 0;
-
-                    const releaseEditorEdits = getPendingReleaseEditorEditsCount();
-                    if (releaseEditorEdits > 0) {
-                        totalCount += releaseEditorEdits;
+                    if (isRelationshipEditor) {
+                        return getPendingRelationshipEditsCount();
                     }
-
-                    const relEdits = getPendingRelationshipEditsCount();
-                    if (relEdits > 0) {
-                        totalCount += relEdits;
-                    }
-
-                    const hasExtLinkEdits = hasPendingExternalLinkEdits();
-                    if (hasExtLinkEdits) {
-                        totalCount += 1;
-                    }
-
-                    const hasFormEdits = hasDirtyFormInputs();
-                    if (hasFormEdits) {
-                        totalCount += 1;
-                    }
-
-                    debugLog(`getPendingEditsCount breakdown: releaseEditor=${releaseEditorEdits}, relationshipEditor=${relEdits}, externalLinks=${hasExtLinkEdits ? 1 : 0}, formInputs=${hasFormEdits ? 1 : 0} -> Total=${totalCount}`, totalCount > 0 ? 'yellow' : 'teal');
-
-                    if (totalCount > 0) return totalCount;
-
                     if (isCoverArtPage) {
-                        return document.querySelector(config.buttonSelector) ? 1 : 0;
+                        const submitBtn = document.querySelector('button#add-cover-art-submit, button.submit.positive[type="submit"]');
+                        return (submitBtn && !submitBtn.disabled) ? 1 : 0;
                     }
-
-                    return 0;
+                    return hasPendingExternalLinkOrFormEdits() ? 1 : 0;
                 };
 
                 /**
@@ -687,12 +311,10 @@
                 const waitForSeedingAndProceed = () => {
                     const validHash = isValidSeedingHash();
                     const isSeededOrInjected = hasSeededOrInjectedParams();
-                    debugLog(`waitForSeedingAndProceed: isReleaseRelationshipEditor=${isReleaseRelationshipEditor}, hasSeedingHash=${hasSeedingHash}, validHash=${validHash}, isSeededOrInjected=${isSeededOrInjected}`, 'teal');
 
                     // If NOT seeding (or hash is invalid), evaluate general page state
-                    if (!isReleaseRelationshipEditor || !hasSeedingHash || !validHash) {
+                    if (!isRelationshipEditor || !hasSeedingHash || !validHash) {
                         const pendingEdits = getPendingEditsCount();
-                        debugLog(`State evaluation: pendingEdits=${pendingEdits}, isSeededOrInjected=${isSeededOrInjected}`, pendingEdits === 0 ? 'teal' : 'yellow');
 
                         // Only auto-close as a pre-submission no-op if the tab has seeded/injected parameters!
                         if (pendingEdits === 0 && isSeededOrInjected) {
@@ -710,19 +332,12 @@
                         // If unseeded tab has 0 edits, do not submit or close; ignore trigger
                         if (pendingEdits === 0 && !isSeededOrInjected) {
                             debugLog('Unseeded tab has 0 edits. Skipping submit trigger to preserve tab for user...', 'orange');
-                            sessionStorage.removeItem(SUBMISSION_TRIGGERED_FLAG);
                             return;
                         }
 
-                        debugLog(`Proceeding with submission: pendingEdits=${pendingEdits} on ${isSeededOrInjected ? 'seeded' : 'unseeded'} tab.`, 'green');
                         waitForButtonAndClick(config, null, false).then(() => {
                             setTimeout(() => {
                                 rateLimitedMBSubmit(async () => {
-                                    const triggerState = JSON.stringify({
-                                        channel: config.channelName,
-                                        messageTrigger: config.messageTrigger
-                                    });
-                                    sessionStorage.setItem(SUBMISSION_TRIGGERED_FLAG, triggerState);
                                     await waitForButtonAndClick(config, null, true);
                                 });
                             }, 0);
@@ -779,12 +394,6 @@
                         waitForButtonAndClick(config, null, false).then(() => {
                             setTimeout(() => {
                                 rateLimitedMBSubmit(async () => {
-                                    const triggerState = JSON.stringify({
-                                        channel: config.channelName,
-                                        messageTrigger: config.messageTrigger
-                                    });
-                                    sessionStorage.setItem(SUBMISSION_TRIGGERED_FLAG, triggerState);
-
                                     await waitForButtonAndClick(config, null, true);
                                 });
                             }, 0);
@@ -812,12 +421,8 @@
             buttonSelector: '[onclick^="doSubmitISRCs"]',
             menuCommandName: 'MagicISRC: Submit ISRCs (All Tabs)',
             successUrlPatterns: [/\?.*submit=1/],
+            shouldCloseAfterSuccess: true,
             submissionHandler: (config, triggerAction) => {
-                const triggerState = JSON.stringify({
-                    channel: config.channelName,
-                    messageTrigger: config.messageTrigger
-                });
-                sessionStorage.setItem(SUBMISSION_TRIGGERED_FLAG, triggerState);
                 onDOMLoaded(() => {
                     const performCheck = (obs) => {
                         const cleanupAndExit = () => {
@@ -837,7 +442,6 @@
                         if (submitButton) {
                             debugLog('MagicISRC submit button found. Proceeding with submission.', 'green');
                             sessionStorage.removeItem(RELOAD_ATTEMPTS_KEY);
-
                             navigator.locks.request(MAGICISRC_SUBMIT_LOCK_KEY, async () => {
                                 debugLog(`Acquired MagicISRC submit lock. Waiting 1s before submission.`, 'green');
                                 await new Promise(resolve => setTimeout(resolve, 1000));
@@ -857,7 +461,6 @@
                         }
                         if (loginButton) {
                             debugLog('User is not logged into MagicISRC. Aborting submission on this tab.', 'orange');
-                            sessionStorage.removeItem(SUBMISSION_TRIGGERED_FLAG);
                             return cleanupAndExit();
                         }
                         return false;
@@ -876,13 +479,9 @@
             buttonSelector: 'form[action$="/importisrc"][method="post"] button[type="submit"]',
             menuCommandName: 'ISRC Hunt: Submit ISRCs (All Tabs)',
             successUrlPatterns: [/\?.*submitted=1/],
-            submissionHandler: (config, triggerAction) => {
+            shouldCloseAfterSuccess: true,
+            submissionHandler: (_config, triggerAction) => {
                 debugLog(`Requesting ISRC Hunt submit lock...`);
-                const triggerState = JSON.stringify({
-                    channel: config.channelName,
-                    messageTrigger: config.messageTrigger
-                });
-                sessionStorage.setItem(SUBMISSION_TRIGGERED_FLAG, triggerState);
                 navigator.locks.request(ISRC_HUNT_SUBMIT_LOCK_KEY, async () => {
                     debugLog(`Acquired ISRC Hunt submit lock. Waiting 1s before submission.`, 'green');
                     await new Promise(resolve => setTimeout(resolve, 1000));
@@ -893,24 +492,9 @@
     ];
 
     /**
-     * Accessible color palette ensuring high WCAG contrast in both Light and Dark devtools themes.
-     */
-    const LOG_COLOR_PALETTE = {
-        yellow: '#d97706',    // Dark amber (high contrast on white and dark backgrounds)
-        amber: '#d97706',
-        orange: '#ea580c',    // Deep burnt orange
-        green: '#16a34a',     // Medium emerald/forest green
-        teal: '#0891b2',      // Deep cyan/teal
-        blue: '#2563eb',      // Royal blue
-        gray: '#64748b',      // Slate gray
-        red: '#dc2626',       // Vivid crimson
-        olivedrab: '#65a30d', // Warm olive
-    };
-
-    /**
      * @summary Sends a log message to all tabs if debug logging is enabled.
      * @param {string} message The message to log.
-     * @param {string} [color] Optional CSS color or palette key for the message.
+     * @param {string} [color] Optional CSS color for the message.
      */
     async function debugLog(message, color = 'teal') {
         const debugEnabled = await GM.getValue(DEBUG_LOGGING_SETTING, false);
@@ -920,13 +504,11 @@
             debugLogChannel = new BroadcastChannel(DEBUG_LOG_CHANNEL_NAME);
         }
 
-        const resolvedColor = LOG_COLOR_PALETTE[color] || color;
-
         debugLogChannel.postMessage({
             tabId,
             message,
-            color: resolvedColor,
-            timestamp: getTimestamp(),
+            color,
+            timestamp: new Date().toISOString(),
         });
     }
 
@@ -990,25 +572,26 @@
             onDOMLoaded(() => {
                 if (checkAndAct(null)) return;
 
-                let isScheduled = false;
+                let rafId = null;
                 const observer = new MutationObserver((mutations, obs) => {
-                    if (!isScheduled) {
-                        isScheduled = true;
-                        queueMicrotask(() => {
-                            isScheduled = false;
+                    // Throttle the heavy DOM check to once per frame
+                    if (!rafId) {
+                        rafId = requestAnimationFrame(() => {
+                            rafId = null;
                             checkAndAct(obs);
                         });
                     }
                 });
 
-                const observerConfig = {
+                // Optimized config: only watch relevant attributes instead of every single one
+                const optimizedConfig = {
                     childList: true,
                     subtree: true,
                     attributes: true,
-                    ...(config.attributeFilter ? { attributeFilter: config.attributeFilter } : {}),
+                    attributeFilter: ['disabled', 'class', 'style', 'value']
                 };
 
-                observer.observe(document.body, observerConfig);
+                observer.observe(document.body, optimizedConfig);
             });
         });
     }
@@ -1036,7 +619,6 @@
      * @param {string} reason - The reason for closing, used in debug logs.
      */
     async function closeTab(reason) {
-        teardownThrottlingBypass(`Tab closing: ${reason}`);
         const disableAutoClose = await GM.getValue(DISABLE_AUTO_CLOSE_SETTING, false);
 
         if (disableAutoClose) {
@@ -1050,10 +632,11 @@
 
     /**
      * @summary Handles the reload logic for MagicISRC pages with exponential backoff and a Web Lock.
+     * @param {boolean} [manual=false] - If true, bypasses the 'enableReload' check and forces the reload logic.
      */
-    async function handleMagicISRCReload() {
+    async function handleMagicISRCReload(manual = false) {
         const enableReload = await GM.getValue(MAGICISRC_ENABLE_AUTO_RELOAD, true);
-        if (!enableReload) {
+        if (!enableReload && !manual) {
             debugLog(`MagicISRC automatic reload is DISABLED.`, 'orange');
             return;
         }
@@ -1068,7 +651,6 @@
             const delay = (backoffSeconds + jitter) * 1000;
             debugLog(`MagicISRC error detected. Reload attempt ${attempts}. Retrying in ${Math.round(delay / 1000)}s.`, 'red');
             sessionStorage.setItem(RELOAD_ATTEMPTS_KEY, attempts.toString());
-            sessionStorage.setItem('magicisrc_auto_reloading', 'true');
             await new Promise(resolve => setTimeout(resolve, delay));
             debugLog(`Performing full page reload to re-trigger logic.`, 'red');
             location.reload();
@@ -1105,13 +687,13 @@
     async function setupMenuCommands() {
         for (const commandId of registeredMenuCommandIDs) {
             try {
-                await GM.unregisterMenuCommand(commandId);
+                GM_unregisterMenuCommand(commandId);
             } catch (e) { /* ignore */ }
         }
         registeredMenuCommandIDs = [];
 
-        const registerCommand = async (name, func) => {
-            const id = await GM.registerMenuCommand(name, func);
+        const registerCommand = (name, func) => {
+            const id = GM_registerMenuCommand(name, func);
             registeredMenuCommandIDs.push(id);
         };
 
@@ -1164,7 +746,7 @@
 
         for (const setting of settings) {
             const value = await GM.getValue(setting.key, setting.defaultValue);
-            await registerCommand(await setting.getLabel(value), async () => {
+            registerCommand(await setting.getLabel(value), async () => {
                 await setting.onClick(value);
                 await setupMenuCommands();
             });
@@ -1174,8 +756,7 @@
         const configsForMenu = activeConfigs.filter(c => !c.autoClick && c.menuCommandName);
 
         for (const config of configsForMenu) {
-            await registerCommand(config.menuCommandName, async () => {
-                await acquireThrottlingBypass();
+            registerCommand(config.menuCommandName, () => {
                 const channel = new BroadcastChannel(config.channelName);
                 channel.postMessage(config.messageTrigger);
                 channel.close();
@@ -1194,24 +775,16 @@
         const submitsPerSecond = await GM.getValue(MUSICBRAINZ_SUBMITS_PER_SECOND_SETTING, DEFAULT_MB_SUBMITS_PER_SECOND);
         const requiredInterval = 1000 / submitsPerSecond;
 
-        await acquireThrottlingBypass();
         debugLog(`Requesting MB submission lock...`);
-        return new Promise(resolve => {
-            navigator.locks.request(MB_SUBMIT_COORDINATION_LOCK_KEY, async () => {
-                try {
-                    await acquireThrottlingBypass();
-                    debugLog(`Acquired MB submission lock.`, 'green');
-                    await callback();
-                    if (!limiterDisabled) {
-                        debugLog(`Holding lock for ${requiredInterval.toFixed(0)}ms to respect rate limit...`, 'orange');
-                        await new Promise(res => setTimeout(res, requiredInterval));
-                    } else {
-                        debugLog(`Rate limiter disabled. Releasing lock immediately.`, 'green');
-                    }
-                } finally {
-                    resolve();
-                }
-            });
+        navigator.locks.request(MB_SUBMIT_COORDINATION_LOCK_KEY, async () => {
+            debugLog(`Acquired MB submission lock.`, 'green');
+            await callback();
+            if (!limiterDisabled) {
+                debugLog(`Holding lock for ${requiredInterval.toFixed(0)}ms to respect rate limit...`, 'orange');
+                await new Promise(resolve => setTimeout(resolve, requiredInterval));
+            } else {
+                debugLog(`Rate limiter disabled. Releasing lock immediately.`, 'green');
+            }
         });
     }
 
@@ -1237,7 +810,7 @@
                     }
                 }
             } catch (e) {
-                console.error(`[${scriptName}] [${getTimestamp()}] ${tabId} Error parsing pending submission state:`, { key: SUBMISSION_TRIGGERED_FLAG, error: e });
+                console.error(`[${scriptName}] Error parsing pending submission state:`, e);
                 sessionStorage.removeItem(SUBMISSION_TRIGGERED_FLAG);
             }
         }
@@ -1264,8 +837,6 @@
                                 const state = JSON.stringify(config.referrerPatterns);
                                 sessionStorage.setItem(REFERRER_CLOSE_TRIGGERED_FLAG, state);
                             });
-                        } else {
-                            debugLog(`Failed to attach listener: button "${config.buttonSelector}" not found in DOM.`, 'red');
                         }
                     });
                 } else {
@@ -1287,16 +858,15 @@
                     if (event.data !== config.messageTrigger) return;
 
                     debugLog(`Received trigger "${event.data}".`);
+                    const triggerState = JSON.stringify({
+                        channel: config.channelName,
+                        messageTrigger: config.messageTrigger
+                    });
+                    sessionStorage.setItem(SUBMISSION_TRIGGERED_FLAG, triggerState);
 
                     if (config.submissionHandler) {
                         config.submissionHandler(config, triggerAction);
                     } else {
-                        const triggerState = JSON.stringify({
-                            channel: config.channelName,
-                            messageTrigger: config.messageTrigger
-                        });
-                        sessionStorage.setItem(SUBMISSION_TRIGGERED_FLAG, triggerState);
-                        await acquireThrottlingBypass();
                         triggerAction();
                     }
                 };
@@ -1322,14 +892,8 @@
      * Uses an active observer if a submission flag exists but conditions aren't met yet (hydration handling).
      */
     async function evaluatePageForClosure() {
-        const referrerFlag = sessionStorage.getItem(REFERRER_CLOSE_TRIGGERED_FLAG);
-        const submissionFlag = sessionStorage.getItem(SUBMISSION_TRIGGERED_FLAG);
-
-        if (referrerFlag || submissionFlag) {
-            debugLog(`Evaluating page closure [ReferrerFlag: ${Boolean(referrerFlag)}, SubFlag: ${Boolean(submissionFlag)}]`, 'purple');
-        }
-
         // --- 1. Check for Referrer-Based Close Condition ---
+        const referrerFlag = sessionStorage.getItem(REFERRER_CLOSE_TRIGGERED_FLAG);
         if (document.referrer && referrerFlag) {
             if (document.referrer === window.location.href) {
                 sessionStorage.removeItem(REFERRER_CLOSE_TRIGGERED_FLAG);
@@ -1347,11 +911,12 @@
                     return;
                 }
             } catch (e) {
-                console.error(`[${scriptName}] [${getTimestamp()}] ${tabId} Error during referrer-close check:`, { referrer: document.referrer, error: e });
+                console.error(`[${scriptName}] Error during referrer-close check:`, e);
             }
         }
 
         // --- 2. Check for Submission-Based Close Condition ---
+        const submissionFlag = sessionStorage.getItem(SUBMISSION_TRIGGERED_FLAG);
         if (!submissionFlag) return;
 
         let config = null;
@@ -1362,7 +927,7 @@
                 c.channelName === state.channel && c.messageTrigger === state.messageTrigger
             );
         } catch (e) {
-            console.error(`[${scriptName}] [${getTimestamp()}] ${tabId} Error parsing submission state:`, { flag: submissionFlag, error: e });
+            console.error(`[${scriptName}] Error parsing submission state:`, e);
             sessionStorage.removeItem(SUBMISSION_TRIGGERED_FLAG);
             return;
         }
@@ -1408,10 +973,11 @@
             const logReceiver = new BroadcastChannel(DEBUG_LOG_CHANNEL_NAME);
             logReceiver.onmessage = (event) => {
                 const { tabId: msgTabId, message, color, timestamp } = event.data;
-                const resolvedColor = LOG_COLOR_PALETTE[color] || color;
-                console.log(`%c[${scriptName}] [${timestamp}] ${msgTabId} ${message}`, `color: ${resolvedColor}; font-weight: 500;`);
+                console.log(`%c[${scriptName}] [${timestamp}] ${msgTabId} ${message}`, `color: ${color}`);
             };
         }
+
+        await setupThrottlingBypass();
 
         const activeConfigs = getActiveConfigs();
         if (activeConfigs.length > 0) {
@@ -1420,15 +986,12 @@
 
         setupMagicISRC();
 
-        onDOMLoaded(() => {
-            initFormSnapshots();
-            evaluatePageForClosure();
-        });
+        onDOMLoaded(evaluatePageForClosure);
         wrapHistoryMethod('pushState', evaluatePageForClosure);
         wrapHistoryMethod('replaceState', evaluatePageForClosure);
         window.addEventListener('popstate', evaluatePageForClosure);
 
-        console.debug(`[${scriptName}] [${getTimestamp()}] ${tabId} Initialization finished.`);
+        debugLog(`Initialization finished.`);
     }
 
     main();
