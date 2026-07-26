@@ -1,11 +1,11 @@
 // ==UserScript==
 // @name         MusicBrainz: Batch Remove Cover Art
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      0.6.3
+// @version      0.7.0
 // @description  Allows batch removing cover art from MusicBrainz releases.
 // @tag          ai-created
-// @author       chaban, jesus2099
-// @license      GPL-3.0-or-later; http://www.gnu.org/licenses/gpl-3.0.txt
+// @author       chaban
+// @license      MIT
 // @match        *://*.musicbrainz.org/release/*/cover-art
 // @connect      self
 // @grant        GM.xmlHttpRequest
@@ -23,223 +23,21 @@
         return !!(root && !root.classList.contains('as-orig'));
     }
 
-    // --- START OF INLINED LIBRARIES ---
-    // CONTROL-POMME.js
-    var CONTROL_POMME = {
-        is_macintosh: /\bMac(intosh| OS)\b/.test(navigator.userAgent)
-    };
-    CONTROL_POMME.ctrl = {
-        key: CONTROL_POMME.is_macintosh ? "metaKey" : "ctrlKey",
-        label: CONTROL_POMME.is_macintosh ? "\u2318" : "Ctrl+",
-        test: function (event) { return CONTROL_POMME.arePressed(event, ["ctrl"]); }
-    };
-    CONTROL_POMME.shift = {
-        key: "shiftKey",
-        label: CONTROL_POMME.is_macintosh ? "\u21E7" : "Shift+",
-        test: function (event) { return CONTROL_POMME.arePressed(event, ["shift"]); }
-    };
-    CONTROL_POMME.alt = {
-        key: "altKey",
-        label: CONTROL_POMME.is_macintosh ? "\u2325" : "Alt+",
-        test: function (event) { return CONTROL_POMME.arePressed(event, ["alt"]); }
-    };
-    CONTROL_POMME.ctrl_shift = {
-        label: CONTROL_POMME.is_macintosh ? CONTROL_POMME.shift.label + CONTROL_POMME.ctrl.label : CONTROL_POMME.ctrl.label + CONTROL_POMME.shift.label,
-        test: function (event) { return CONTROL_POMME.arePressed(event, ["ctrl", "shift"]); }
-    };
-    CONTROL_POMME.ctrl_alt = {
-        label: CONTROL_POMME.is_macintosh ? CONTROL_POMME.alt.label + CONTROL_POMME.ctrl.label : CONTROL_POMME.ctrl.label + CONTROL_POMME.alt.label,
-        test: function (event) { return CONTROL_POMME.arePressed(event, ["ctrl", "alt"]); }
-    };
-    CONTROL_POMME.alt_shift = {
-        label: CONTROL_POMME.alt.label + CONTROL_POMME.shift.label,
-        test: function (event) { return CONTROL_POMME.arePressed(event, ["alt", "shift"]); }
-    };
-    CONTROL_POMME.ctrl_alt_shift = {
-        label: CONTROL_POMME.is_macintosh ? CONTROL_POMME.alt.label + CONTROL_POMME.shift.label + CONTROL_POMME.ctrl.label : CONTROL_POMME.ctrl.label + CONTROL_POMME.alt.label + CONTROL_POMME.shift.label,
-        test: function (event) { return CONTROL_POMME.arePressed(event, ["ctrl", "alt", "shift"]); }
-    };
-    CONTROL_POMME.new_tab_mod_keys = function (event) {
-        return CONTROL_POMME.is_macintosh ? /* ⇧⌘click */ event.shiftKey && event.metaKey : /* Shift+click */ event.shiftKey;
-    };
-    CONTROL_POMME.new_bg_tab_mod_keys = function (event) {
-        return CONTROL_POMME.is_macintosh ? /* ⌘click */ event.metaKey : /* Ctrl+click */ event.ctrlKey;
-    };
-    CONTROL_POMME.arePressed = function (event, mod_keys) {
-        var wanted_mod_keys = !(CONTROL_POMME.is_macintosh ? event.ctrlKey : event.metaKey);
-        for (var k = 0, mk = ["ctrl", "shift", "alt"]; wanted_mod_keys !== false && k < mk.length; k++) {
-            wanted_mod_keys = wanted_mod_keys && mod_keys.indexOf(mk[k]) > -1 === event[CONTROL_POMME[mk[k]].key];
-        }
-        return wanted_mod_keys;
-    };
-
-    // SUPER.js
-    function addAfter(newNode, existingNode) {
-        if (newNode && existingNode && existingNode.parentNode) {
-            if (existingNode.nextSibling) {
-                return existingNode.parentNode.insertBefore(newNode, existingNode.nextSibling);
-            } else {
-                return existingNode.parentNode.appendChild(newNode);
-            }
-        } else {
-            return null;
-        }
-    }
-    function createTag(tag, gadgets, children) {
-        var t = (tag == "fragment" ? document.createDocumentFragment() : document.createElement(tag));
-        if (t.tagName) {
-            if (gadgets) {
-                for (var attri in gadgets.a) if (Object.prototype.hasOwnProperty.call(gadgets.a, attri)) { t.setAttribute(attri, gadgets.a[attri]); }
-                for (var style in gadgets.s) if (Object.prototype.hasOwnProperty.call(gadgets.s, style)) { t.style.setProperty(style.replace(/!/g, "").replace(/[A-Z]/g, "-$&").toLowerCase(), gadgets.s[style].replace(/!/g, ""), style.match(/!/) || gadgets.s[style].match(/!/) ? "important" : ""); }
-                for (var event in gadgets.e) if (Object.prototype.hasOwnProperty.call(gadgets.e, event)) {
-                    var listeners = Array.isArray(gadgets.e[event]) ? gadgets.e[event] : [gadgets.e[event]];
-                    for (var l = 0; l < listeners.length; l++) { t.addEventListener(event, listeners[l]); }
-                }
-            }
-            if (t.tagName == "A" && !t.getAttribute("href") && !t.style.getPropertyValue("cursor")) { t.style.setProperty("cursor", "pointer"); }
-        }
-        if (children) {
-            var _children = Array.isArray(children) ? children : [children];
-            for (var c = 0; c < _children.length; c++) { t.appendChild((typeof _children[c]).match(/number|string/) ? document.createTextNode(_children[c]) : _children[c]); }
-            t.normalize();
-        }
-        return t;
-    }
-    function disableInputs(inputs, setAsDisabled) {
-        if (Array.isArray(inputs) || inputs instanceof NodeList) {
-            for (var i = 0; i < inputs.length; i++) {
-                disableInputs(inputs[i], setAsDisabled);
-            }
-        } else if (typeof setAsDisabled == "undefined" || setAsDisabled == true) {
-            inputs.setAttribute("disabled", "disabled");
-        } else {
-            inputs.removeAttribute("disabled");
-        }
-    }
-    function enableInputs(inputs, setAsEnabled) {
-        disableInputs(inputs, !(typeof setAsEnabled == "undefined" || setAsEnabled));
-    }
-    function escapeRegExp(string) {
-        return string.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    }
-    function getParent(startingNode, searchedTag, searchedCssClass, searchedId) {
-        var currentNode = startingNode;
-        if (currentNode && (currentNode = currentNode.parentNode)) {
-            if (
-                currentNode.tagName &&
-                currentNode.tagName.toUpperCase() == searchedTag.toUpperCase() &&
-                (!searchedCssClass || searchedCssClass && currentNode.classList && currentNode.classList.contains(searchedCssClass)) &&
-                (!searchedId || currentNode.getAttribute && currentNode.getAttribute("id") == searchedId)
-            ) {
-                return currentNode;
-            } else {
-                return getParent(currentNode, searchedTag, searchedCssClass, searchedId);
-            }
-        }
-        return null;
-    }
-    function getSibling(startingNode, searchedTag, searchedCssClass, previous, maximumDistance) {
-        var currentNode = startingNode;
-        var max = typeof maximumDistance == "number" ? maximumDistance : 1;
-        if (currentNode && (currentNode = previous ? currentNode.previousSibling : currentNode.nextSibling)) {
-            if (
-                currentNode.tagName &&
-                currentNode.tagName.toUpperCase() == searchedTag.toUpperCase() &&
-                (!searchedCssClass || searchedCssClass && currentNode.classList && currentNode.classList.contains(searchedCssClass))
-            ) {
-                return currentNode;
-            } else if (max > 0) {
-                return getSibling(currentNode, searchedTag, searchedCssClass, previous, typeof maximumDistance == "number" ? max - 1 : null);
-            }
-        }
-        return null;
-    }
-    function removeChildren(parent) {
-        while (parent && parent.hasChildNodes()) {
-            parent.removeChild(parent.firstChild);
-        }
-    }
-    function removeNode(node) {
-        return node.parentNode.removeChild(node);
-    }
-    function replaceChildren(newContent, parent) {
-        removeChildren(parent);
-        return parent.appendChild(newContent);
-    }
-    function sendEvent(node, eventName) {
-        var _eventName = eventName.toLowerCase();
-        var event;
-        if (_eventName.match(/^mouse|click$/)) {
-            var parameters = { modifierKeys: [] };
-            if (_eventName.match(/\+/)) {
-                parameters.modifierKeys = _eventName.split("+");
-                _eventName = parameters.modifierKeys.pop();
-            }
-            event = document.createEvent("MouseEvents");
-            event.initMouseEvent(_eventName, true, true, null, 0, 0, 0, 0, 0, parameters.modifierKeys.indexOf("ctrl") > -1, parameters.modifierKeys.indexOf("alt") > -1, parameters.modifierKeys.indexOf("shift") > -1, parameters.modifierKeys.indexOf("meta") > -1, 0, null);
-        } else {
-            event = document.createEvent("HTMLEvents");
-            event.initEvent(_eventName, true, true);
-        }
-        node.dispatchEvent(event);
-    }
-    function stop(event) {
-        event.cancelBubble = true;
-        if (event.stopPropagation) event.stopPropagation();
-        event.preventDefault();
-        return false;
-    }
-    function waitForElement(selector, callback) {
-        var waitForElementIntervalID = setInterval(function () {
-            var element = document.querySelector(selector);
-            if (element) {
-                clearInterval(waitForElementIntervalID);
-                callback(element);
-            }
-        }, 123);
-    }
-    function setInputValue(element, value) {
-        if (!element || typeof value === 'undefined') return;
-        let ok = false;
-        try {
-            element.focus();
-            element.setSelectionRange(0, element.value.length);
-            ok = value ? document.execCommand('insertText', false, value)
-                       : document.execCommand('delete', false, null);
-            if (ok && element.value !== value) ok = false;
-        } catch (e) { ok = false; }
-        if (!ok) {
-            const descriptor = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value')
-                || Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value');
-            descriptor.set.call(element, value);
-            element.dispatchEvent(new Event('input', { bubbles: true }));
-        }
-        element.dispatchEvent(new Event('change', { bubbles: true }));
-    }
-    function decodeHTML(HTMLBlurb) {
-        var decoder = document.createElement("div");
-        decoder.innerHTML = HTMLBlurb;
-        return decoder.textContent;
-    }
-    // --- END OF INLINED LIBRARIES ---
-
     GM.addStyle(`
         .batch-remove-container {
-            margin-top: 1em;
-            padding: 1em;
-            border: 1px solid var(--border, #ccc);
-            background-color: var(--background-accent, #f9f9f9);
-            border-radius: 5px;
+            margin-top: 1.5em;
+            margin-bottom: 1.5em;
         }
-        .batch-remove-container h3 { margin-top: 0; }
-        .batch-remove-container textarea {
-            width: 100%;
-            min-height: 60px;
-            margin-bottom: 10px;
-            background-color: var(--background-dimmed, white);
-            color: var(--text, black);
-            border: 1px solid var(--border-accent, #aaa);
-            border-radius: 3px;
+        .batch-remove-container h3 {
+            margin-top: 0;
+            margin-bottom: 0.5em;
+        }
+        .batch-remove-container fieldset.editnote {
+            margin-top: 1em;
+            margin-bottom: 1em;
+        }
+        .batch-remove-container .select-all-wrapper {
+            margin-bottom: 1em;
         }
         .mb-batch-remove-artwork-wrapper {
             position: relative;
@@ -294,145 +92,6 @@
             transition: width 0.3s ease-in-out;
         }
     `);
-
-    // --- START OF ELEPHANT EDITOR LOGIC (adapted from original) ---
-    /**
-     * @summary Initializes the "Elephant Editor" logic for storing and recalling previous edit notes.
-     * @param {HTMLTextAreaElement} editNoteTextarea - The textarea element to bind memory functionality to.
-     * @returns {Object} An interface for saving notes and setting the submit button.
-     */
-    function initElephantEditor(editNoteTextarea) {
-        const userjs = "jesus2099userjs94629";
-        const memories = 10;
-        const colours = { ok: "greenyellow", warning: "gold" };
-        const notetextStorage = "jesus2099userjs::last_editnotetext";
-        let save = !localStorage.getItem(userjs + "forget");
-        const notetext = editNoteTextarea;
-        let submit_button;
-
-        function saveNote() {
-            if (notetext && save) {
-                const thisnotetext = notetext.value.trim();
-                const ls00 = localStorage.getItem(notetextStorage + "00");
-                if (thisnotetext && thisnotetext !== ls00) {
-                    if (ls00) {
-                        for (let idel = memories - 1; idel > 0; idel--) {
-                            if (thisnotetext === localStorage.getItem(notetextStorage + "0" + idel)) {
-                                forget(idel);
-                            }
-                        }
-                        for (let isav = memories - 1; isav > 0; isav--) {
-                            const prev = localStorage.getItem(notetextStorage + "0" + (isav - 1));
-                            if (prev) { localStorage.setItem(notetextStorage + "0" + isav, prev); }
-                        }
-                    }
-                    localStorage.setItem(notetextStorage + "00", thisnotetext);
-                }
-            }
-        }
-
-        function forget(memory_index) {
-            if (memory_index >= 0 && memory_index < memories) {
-                for (let mi = memory_index; mi < memories; mi++) {
-                    const memory_button = document.querySelector(`[id='${notetextStorage}0${mi}']`);
-                    const next_memory = localStorage.getItem(notetextStorage + "0" + (mi + 1));
-                    if (next_memory === null) {
-                        localStorage.removeItem(notetextStorage + "0" + mi);
-                        if (memory_button) {
-                            memory_button.removeAttribute("title");
-                            memory_button.setAttribute("disabled", "true");
-                            memory_button.style.setProperty("opacity", ".5");
-                            memory_button.setAttribute("value", `n-${mi + 1}`);
-                        }
-                    } else {
-                        localStorage.setItem(notetextStorage + "0" + mi, next_memory);
-                        if (memory_button) {
-                            memory_button.setAttribute("title", next_memory);
-                            memory_button.setAttribute("value", summarise(next_memory));
-                        }
-                    }
-                }
-            }
-        }
-
-        function createButton(label, width) {
-            let butt = createTag("input", { a: { type: "button", value: label, tabindex: "-1", class: "styled-button" }, s: { display: "inline", padding: "2px", float: "none" } });
-            if (width) { butt.style.setProperty("width", width); }
-            return butt;
-        }
-
-        function createClearButton() {
-            let butt = createButton("×", "25px");
-            butt.addEventListener("click", function (event) {
-                setInputValue(notetext, "");
-                if (event[CONTROL_POMME.shift.key] && submit_button) { sendEvent(submit_button, "click"); }
-                else { notetext.focus(); }
-            });
-            butt.style.setProperty("color", "red");
-            butt.style.setProperty("background-color", colours.warning);
-            butt.setAttribute("title", "clear edit note");
-            return butt;
-        }
-
-        function summarise(full_edit_note) {
-            return full_edit_note.replace(/(http:\/\/|https:\/\/|www\.|[\n\r])/gi, "").substr(0, 6);
-        }
-
-        if (notetext) {
-            const buttons = createTag("div", { a: { class: "buttons" } });
-            const save_label = buttons.appendChild(createTag("label", { a: { title: "save edit note" }, s: { backgroundColor: (save ? colours.ok : colours.warning), minWidth: "0", margin: "0" } }));
-            const save_checkbox = save_label.appendChild(createTag("input", {
-                a: { type: "checkbox", tabindex: "-1" },
-                s: { display: "inline" },
-                e: {
-                    change: function () {
-                        save = this.checked;
-                        this.parentNode.style.backgroundColor = save ? colours.ok : colours.warning;
-                        localStorage.setItem(userjs + "forget", save ? "" : "1");
-                    }
-                }
-            }));
-            save_checkbox.checked = save;
-            save_label.appendChild(document.createTextNode(" remember "));
-            buttons.appendChild(createClearButton());
-
-            for (let m = 0; m < memories; m++) {
-                buttons.appendChild(document.createTextNode(" "));
-                let butt = createButton(`n-${m + 1}`, "50px");
-                let buttid = notetextStorage + "0" + m;
-                butt.id = buttid;
-                let lastnotetext = localStorage.getItem(buttid);
-                if (!lastnotetext) {
-                    butt.setAttribute("disabled", "true");
-                    butt.style.setProperty("opacity", ".5");
-                } else {
-                    butt.setAttribute("title", lastnotetext);
-                    butt.setAttribute("value", summarise(lastnotetext));
-                    butt.addEventListener("click", function (event) {
-                        if (CONTROL_POMME.ctrl.test(event)) {
-                            forget(this.id.match(/(\d)$/)[1]);
-                        } else {
-                            setInputValue(notetext, this.getAttribute("title"));
-                            if (event[CONTROL_POMME.shift.key] && submit_button) { sendEvent(submit_button, "click"); }
-                        }
-                        notetext.focus();
-                    });
-                }
-                buttons.appendChild(butt);
-            }
-            buttons.appendChild(document.createTextNode(" ← " + CONTROL_POMME.shift.label + "click: submit / " + CONTROL_POMME.ctrl.label + "click: remove"));
-            notetext.parentNode.insertBefore(buttons, notetext);
-            let lastnotetext = localStorage.getItem(notetextStorage + "00");
-            if (save && lastnotetext && notetext.value === "") {
-                setInputValue(notetext, lastnotetext);
-            }
-        }
-        return {
-            saveNote,
-            setSubmitButton: (button) => { submit_button = button; }
-        };
-    }
-    // --- END OF ELEPHANT EDITOR LOGIC ---
 
     // --- START OF BATCH REMOVE SCRIPT ---
     const getReleaseId = () => {
@@ -523,15 +182,30 @@
             return;
         }
 
-        const batchControlsContainer = document.createElement('div');
-        batchControlsContainer.className = 'batch-remove-container';
+        const batchControlsContainer = document.createElement('form');
+        batchControlsContainer.className = 'batch-remove-container cover-art';
+        batchControlsContainer.setAttribute('onsubmit', 'return false;');
         batchControlsContainer.innerHTML = `
-            <h3>Batch Remove Cover Art</h3>
-            <div><label><input type="checkbox" id="selectAllCovers"> Select All</label></div>
-            <p>Edit Note (required):</p>
-            <textarea id="editNote" placeholder="Reason for removal (e.g., 'Low quality', 'Duplicate', 'Not applicable')." required></textarea>
-            <div class="buttons">
-                <button type="button" id="removeSelectedBtn" class="submit positive">🐘 Remove Selected Cover Art</button>
+            <div class="buttons ui-helper-clearfix" style="margin-top: 1em; margin-bottom: 1em;">
+                <label style="display: inline-flex; align-items: center; gap: 6px; cursor: pointer; font-weight: bold; user-select: none;">
+                    <input type="checkbox" id="selectAllCovers" style="margin: 0;"> Select all cover art
+                </label>
+            </div>
+
+            <fieldset class="editnote">
+                <legend>Edit note</legend>
+                <p>
+                    Entering an <a href="https://musicbrainz.org/doc/Edit_Note" target="_blank">edit note</a> that describes where you got your information is highly recommended. Not only does it make it clear where you got your information, but it can also encourage other users to vote on your edit — thus making your edit get applied faster.
+                </p>
+                <p>Even just providing a URL or two is helpful! For more suggestions, see <a href="https://musicbrainz.org/doc/How_to_Write_Edit_Notes" target="_blank">our guide for writing good edit notes</a>.</p>
+                <div class="row">
+                    <label for="editNote">Edit note:</label>
+                    <textarea id="editNote" class="edit-note" name="edit-cover-art.edit_note" cols="80" rows="5" required></textarea>
+                </div>
+            </fieldset>
+
+            <div class="row no-label buttons">
+                <button type="submit" id="removeSelectedBtn" class="submit positive">Remove selected cover art</button>
                 <button type="button" id="abortBtn" class="submit negative" disabled>Abort</button>
             </div>
             <div class="progress-bar-container" style="display: none;"><div class="progress-bar" id="progressBar">0%</div></div>
@@ -552,9 +226,6 @@
         const progressBarContainer = document.querySelector('.progress-bar-container');
         const progressBar = document.getElementById('progressBar');
         const statusMessages = document.getElementById('statusMessages');
-
-        const editNoteMemory = initElephantEditor(editNoteTextarea);
-        editNoteMemory.setSubmitButton(removeSelectedBtn);
 
         let totalRemovals = 0;
         let completedRemovals = 0;
@@ -609,7 +280,6 @@
 
         removeSelectedBtn.addEventListener('click', async () => {
             if (isArtStationActive()) return;
-            editNoteMemory.saveNote();
             const selectedCheckboxes = Array.from(document.querySelectorAll('input.cover-art-checkbox:checked'));
             if (selectedCheckboxes.length === 0) {
                 alert('Please select at least one cover art to remove.');
