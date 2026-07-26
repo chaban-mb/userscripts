@@ -1227,5 +1227,197 @@ runTestCase('34. Multi-title split release title with slash separator (Mirror Mi
 
 console.log('\n--- Scenario B: Knockout Observable is Unavailable (DOM Fallback) ---');
 
+// ====================================================================================
+// --- Bug Fix Regression Tests (cases 35-42) ---
+// ====================================================================================
+console.log('\n--- Bug Fix Regressions ---');
+
+// Case 35 — Bug 1: [feat. Artist] leaves orphaned [ in title
+runTestCase('35. Bug 1: [feat. The Wine Bags] does not leave trailing [ in parseTitleStructure core', () => {
+    this.structure = lib.parseTitleStructure(
+        'A Fire in Your Blood (An Ode to Daenerys Targaryen) [feat. The Wine Bags]'
+    );
+}, () => {
+    assert.strictEqual(
+        this.structure.core,
+        'A Fire in Your Blood (An Ode to Daenerys Targaryen)',
+        'core must not end with orphaned ['
+    );
+    assert.strictEqual(this.structure.featured.length, 1);
+    assert.strictEqual(this.structure.featured[0].name, 'The Wine Bags');
+});
+
+// Case 36 — Bug 2: ft. join keyword normalized to feat. in parseTitleStructure
+runTestCase('36. Bug 2: ft. join phrase preserved (not normalized to feat.) in parseTitleStructure', () => {
+    this.structure = lib.parseTitleStructure('In the Zone (ft. Example)');
+}, () => {
+    assert.strictEqual(
+        this.structure.joinPhrase,
+        ' ft. ',
+        'join phrase should preserve original ft. spelling, not be hardcoded to feat.'
+    );
+    assert.strictEqual(this.structure.featured[0]?.name, 'Example');
+});
+
+// Case 37 — Bug 3: release title cleared to "" when feat. is nested inside title segment
+runTestCase('37. Bug 3: release title "Encore (Feat. Baxter) [Remixes] (feat. Baxter)" not cleared to ""', () => {
+    this.release = {
+        name: makeObservable('Encore (Feat. Baxter) [Remixes] (feat. Baxter)'),
+        artistCredit: makeObservable({
+            names: [
+                { name: 'Purple Disco Machine', joinPhrase: '', artist: { gid: 'dc71939a-416f-4804-b031-5749287943f9' } },
+                { name: 'Baxter', joinPhrase: ' feat. ', artist: { gid: '7ca890ad-a4f7-4a19-b580-81c98445e51a' } }
+            ]
+        })
+    };
+    lib.cleanEntityModel({
+        model: this.release,
+        originalTitle: 'Encore (Feat. Baxter) [Remixes] (feat. Baxter)',
+        originalArtists: ['Purple Disco Machine'],
+        input: { value: 'Encore (Feat. Baxter) [Remixes] (feat. Baxter)', dispatchEvent: () => {} }
+    });
+}, () => {
+    // artistPartIndex must be -1 after fix → model.name() not updated → stays original
+    assert.notStrictEqual(this.release.name(), '', 'release title must NOT be cleared to empty string');
+    assert.ok(
+        this.release.name().includes('Encore'),
+        `release title should still contain "Encore", got: "${this.release.name()}"`
+    );
+});
+
+// Case 38 — Bug 4: diacritics block artist GID propagation
+runTestCase('38. Bug 4: "Thành Draw" matches "THANHDRAW" via diacritic normalization in GID propagation', () => {
+    this.release = {
+        artistCredit: makeObservable({
+            names: [
+                { name: 'Thành Draw', joinPhrase: '', artist: null }
+            ]
+        }),
+        mediums: makeObservable([{
+            tracks: makeObservable([{
+                artistCredit: makeObservable({
+                    names: [
+                        { name: 'THANHDRAW', joinPhrase: '', artist: { name: 'THANHDRAW', gid: 'thanh-draw-gid-1234' } }
+                    ]
+                })
+            }])
+        }])
+    };
+    lib.propagateGidsFromTracksToRelease(this.release);
+}, () => {
+    const ac = this.release.artistCredit();
+    assert.strictEqual(
+        ac.names[0].artist?.gid,
+        'thanh-draw-gid-1234',
+        'GID should be propagated from track despite diacritic difference'
+    );
+});
+
+// Case 39 — Bug 5: Unicode hyphen variants block GID propagation
+runTestCase('39. Bug 5: "Tour\u2013Maubourg" (en-dash) matches "Tour-Maubourg" (ASCII hyphen) in GID propagation', () => {
+    this.release = {
+        artistCredit: makeObservable({
+            names: [
+                { name: 'Tour-Maubourg', joinPhrase: '', artist: null }
+            ]
+        }),
+        mediums: makeObservable([{
+            tracks: makeObservable([{
+                artistCredit: makeObservable({
+                    names: [
+                        { name: 'Tour\u2013Maubourg', joinPhrase: '', artist: { name: 'Tour-Maubourg', gid: 'tour-maubourg-gid-5678' } }
+                    ]
+                })
+            }])
+        }])
+    };
+    lib.propagateGidsFromTracksToRelease(this.release);
+}, () => {
+    const ac = this.release.artistCredit();
+    assert.strictEqual(
+        ac.names[0].artist?.gid,
+        'tour-maubourg-gid-5678',
+        'GID should be propagated from track despite Unicode vs ASCII hyphen difference'
+    );
+});
+
+// Case 40 — Bug 6: feat artist duplicated when native already added it from release title
+runTestCase('40. Bug 6: feat artist not duplicated after cleanTrackModelAfterGuessFeat + dedup', () => {
+    // Simulates: native guessFeat already added James Artissen to track AC,
+    // then cleanTrackModelAfterGuessFeat is called with the pre-native originalTitle (still has feat.)
+    this.track = {
+        name: makeObservable('So High'),
+        artistCredit: makeObservable({
+            names: [
+                { name: 'Khujo Goodie', joinPhrase: ' feat. ', artist: { gid: 'khujo-gid-81eb1203' } },
+                { name: 'James Artissen', joinPhrase: '', artist: { gid: 'james-gid-5678abcd' } }
+            ]
+        })
+    };
+    lib.cleanTrackModelAfterGuessFeat(
+        this.track,
+        'So High (feat. James Artissen)',
+        ['Khujo Goodie']
+    );
+    lib.deduplicateACFromObservable(this.track.artistCredit);
+}, () => {
+    const ac = this.track.artistCredit();
+    const jamesCount = ac.names.filter(n => n.name === 'James Artissen').length;
+    assert.strictEqual(jamesCount, 1, 'James Artissen should appear exactly once after dedup');
+    assert.strictEqual(ac.names.length, 2, 'AC should have exactly 2 entries total');
+});
+
+// Case 41 — Bug 7: GID not propagated when track credit-as name differs from artist.name
+runTestCase('41. Bug 7: GID propagated via artist.name when credit name differs from canonical name', () => {
+    this.release = {
+        artistCredit: makeObservable({
+            names: [
+                { name: 'MCK', joinPhrase: '', artist: null }
+            ]
+        }),
+        mediums: makeObservable([{
+            tracks: makeObservable([{
+                artistCredit: makeObservable({
+                    names: [
+                        // Credited as "RPT MCK" but canonical artist.name is "MCK"
+                        { name: 'RPT MCK', joinPhrase: '', artist: { name: 'MCK', gid: 'mck-gid-abcd1234' } }
+                    ]
+                })
+            }])
+        }])
+    };
+    lib.propagateGidsFromTracksToRelease(this.release);
+}, () => {
+    const ac = this.release.artistCredit();
+    assert.strictEqual(
+        ac.names[0].artist?.gid,
+        'mck-gid-abcd1234',
+        'GID should be propagated by matching artist.name even when credit-as name differs'
+    );
+});
+
+// Case 42 — Bug 8: hyphen-delimited subtitle wrongly treated as artist part
+runTestCase('42. Bug 8: "BUNKA\u958b\u653e\u533a - Culture open area" — subtitle not treated as artist part', () => {
+    const parts = ['BUNKA\u958b\u653e\u533a', 'Culture open area'];
+    const pristineLower = ['wonderful\u2605opportunity!'];
+    const editorLower = ['wonderful\u2605opportunity!'];
+    const structure = {
+        core: 'BUNKA\u958b\u653e\u533a - Culture open area',
+        featured: [{ name: 'Kagamine Rin', joinPhrase: ' & ' }, { name: 'Kagamine Len', joinPhrase: '' }],
+        joinPhrase: ' feat. ',
+        etis: []
+    };
+    this.result = lib.resolveArtistPartIndex(
+        parts, pristineLower, editorLower, structure,
+        'BUNKA\u958b\u653e\u533a - Culture open area (feat. Kagamine Rin & Kagamine Len)'
+    );
+}, () => {
+    assert.strictEqual(
+        this.result,
+        -1,
+        'Neither "BUNKA開放区" nor "Culture open area" is a known artist; index should be -1'
+    );
+});
+
 console.log(`\nTest Suite Complete: ${green(passedTestsCount)} passed, ${red(failedTestsCount)} failed.`);
-process.exit(failedTestsCount > 0 ? 1 : 0);
+process.exit(failedTestsCount > 0 ? 1 : 0);
