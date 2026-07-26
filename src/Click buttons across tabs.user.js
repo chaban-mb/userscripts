@@ -16,6 +16,7 @@
 // @grant        GM.getValue
 // @grant        GM.setValue
 // @grant        window.close
+// @grant        unsafeWindow
 // @updateURL    https://github.com/chaban-mb/userscripts/raw/main/src/Click%20buttons%20across%20tabs.user.js
 // @downloadURL  https://github.com/chaban-mb/userscripts/raw/main/src/Click%20buttons%20across%20tabs.user.js
 // ==/UserScript==
@@ -168,30 +169,62 @@
                  * Inspects Relationship Editor state for newly added/edited relationships (_status > 0).
                  * @returns {number} Count of active pending relationship edits.
                  */
-                const getPendingRelationshipEditsCount = () => {
-                    const editor = window.MB?.relationshipEditor;
-                    const tree = window.MB?.tree;
-                    if (!editor?.state || !tree) return 0;
+                function getPendingRelationshipEditsCount() {
+                    const win = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
+                    const editor = win.MB?.relationshipEditor;
+                    const tree = win.MB?.tree;
+                    const state = editor?.state;
 
-                    let count = 0;
-                    const stateTree = editor.state.relationshipStateTree || editor.state.relationships;
-                    if (stateTree) {
-                        for (const relState of tree.iterate(stateTree)) {
-                            const rel = relState[1] || relState;
-                            if (rel._status > 0 || rel.status > 0) count++;
+                    if (!state || !tree) return 0;
+
+                    const uniqueEditIds = new Set();
+                    const visited = new Set();
+
+                    function traverse(node) {
+                        if (!node || typeof node !== 'object' || visited.has(node)) return;
+                        visited.add(node);
+
+                        // Check if current node is a relationship object (must have linkTypeID)
+                        if (node.linkTypeID) {
+                            const status = node._status ?? node.status;
+                            const lineage = Array.isArray(node._lineage) ? node._lineage : [];
+                            const isUnloaded = lineage.length > 0 && !lineage.includes('loaded from database');
+
+                            if (status > 0 || isUnloaded || (typeof node.id === 'number' && node.id < 0)) {
+                                uniqueEditIds.add(node.id);
+                            }
                         }
-                    }
-                    if (count === 0 && editor.state.mediums) {
-                        for (const [_, trackList] of tree.iterate(editor.state.mediums)) {
-                            for (const track of tree.iterate(trackList)) {
-                                if (track.recording?.relationships) {
-                                    count += track.recording.relationships.filter(r => r._status > 0).length;
+
+                        // Iterate WBT tree nodes
+                        if ('weight' in node || 'left' in node || 'right' in node) {
+                            try {
+                                for (const entry of tree.iterate(node)) {
+                                    const val = Array.isArray(entry) ? entry[1] : entry;
+                                    traverse(val);
                                 }
+                            } catch (e) {}
+                            return;
+                        }
+
+                        // Iterate Arrays
+                        if (Array.isArray(node)) {
+                            for (const item of node) traverse(item);
+                            return;
+                        }
+
+                        // Recursively walk properties (skip circular _original references)
+                        for (const key of Object.keys(node)) {
+                            if (key === '_original') continue;
+                            if (node[key] && typeof node[key] === 'object') {
+                                traverse(node[key]);
                             }
                         }
                     }
-                    return count;
-                };
+
+                    if (state.relationshipsBySource) traverse(state.relationshipsBySource);
+
+                    return uniqueEditIds.size;
+                }
 
                 /**
                  * Inspects ExternalLinksEditor state and form inputs for pending edits (Artist, Event, Series edit forms).
