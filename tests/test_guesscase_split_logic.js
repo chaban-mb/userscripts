@@ -1229,7 +1229,193 @@ runTestCase('34. Multi-title split release title with slash separator (Mirror Mi
     assert.strictEqual(ac.names[1].name, 'Hatsune Miku');
 });
 
+console.log('\n--- Bug Fix Regressions (Cases 40-47) ---');
+
+// Case 40 — Bug 1: [feat. Artist] leaves orphaned [ in title
+runTestCase('40. Bug 1: [feat. The Wine Bags] does not leave trailing [ in parseTitleStructure core', () => {
+    this.structure = lib.parseTitleStructure(
+        'A Fire in Your Blood (An Ode to Daenerys Targaryen) [feat. The Wine Bags]'
+    );
+}, () => {
+    assert.strictEqual(
+        this.structure.core,
+        'A Fire in Your Blood (An Ode to Daenerys Targaryen)',
+        'core must not end with orphaned ['
+    );
+    assert.strictEqual(this.structure.featured.length, 1);
+    assert.strictEqual(this.structure.featured[0].name, 'The Wine Bags');
+});
+
+// Case 41 — Bug 2: ft. join keyword normalized to feat. in parseTitleStructure
+runTestCase('41. Bug 2: ft. join phrase preserved (not normalized to feat.) in parseTitleStructure', () => {
+    this.structure = lib.parseTitleStructure('In the Zone (ft. Example)');
+}, () => {
+    assert.strictEqual(
+        this.structure.joinPhrase,
+        ' ft. ',
+        'join phrase should preserve original ft. spelling, not be hardcoded to feat.'
+    );
+    assert.strictEqual(this.structure.featured[0]?.name, 'Example');
+});
+
+// Case 42 — Bug 3: release title cleared to "" when feat. is nested inside title segment
+runTestCase('42. Bug 3: release title "Encore (Feat. Baxter) [Remixes] (feat. Baxter)" not cleared to ""', () => {
+    this.release = {
+        name: makeObservable('Encore (Feat. Baxter) [Remixes] (feat. Baxter)'),
+        artistCredit: makeObservable({
+            names: [
+                { name: 'Purple Disco Machine', joinPhrase: '', artist: { gid: 'dc71939a-416f-4804-b031-5749287943f9' } },
+                { name: 'Baxter', joinPhrase: ' feat. ', artist: { gid: '7ca890ad-a4f7-4a19-b580-81c98445e51a' } }
+            ]
+        })
+    };
+    lib.cleanEntityModel({
+        model: this.release,
+        originalTitle: 'Encore (Feat. Baxter) [Remixes] (feat. Baxter)',
+        originalArtists: ['Purple Disco Machine'],
+        input: { value: 'Encore (Feat. Baxter) [Remixes] (feat. Baxter)', dispatchEvent: () => {} }
+    });
+}, () => {
+    assert.notStrictEqual(this.release.name(), '', 'release title must NOT be cleared to empty string');
+    assert.ok(
+        this.release.name().includes('Encore'),
+        `release title should still contain "Encore", got: "${this.release.name()}"`
+    );
+});
+
+// Case 43 — Bug 4: diacritics block artist GID propagation
+runTestCase('43. Bug 4: "Thành Draw" matches "THANHDRAW" via diacritic normalization in GID propagation', () => {
+    this.release = {
+        artistCredit: makeObservable({
+            names: [
+                { name: 'Thành Draw', joinPhrase: '', artist: null }
+            ]
+        }),
+        mediums: makeObservable([{
+            tracks: makeObservable([{
+                artistCredit: makeObservable({
+                    names: [
+                        { name: 'THANHDRAW', joinPhrase: '', artist: { name: 'THANHDRAW', gid: 'thanh-draw-gid-1234' } }
+                    ]
+                })
+            }])
+        }])
+    };
+    lib.propagateGidsFromTracksToRelease(this.release);
+}, () => {
+    const ac = this.release.artistCredit();
+    assert.strictEqual(
+        ac.names[0].artist?.gid,
+        'thanh-draw-gid-1234',
+        'GID should be propagated from track despite diacritic difference'
+    );
+});
+
+// Case 44 — Bug 5: Unicode hyphen variants block GID propagation
+runTestCase('44. Bug 5: "Tour\u2013Maubourg" (en-dash) matches "Tour-Maubourg" (ASCII hyphen) in GID propagation', () => {
+    this.release = {
+        artistCredit: makeObservable({
+            names: [
+                { name: 'Tour-Maubourg', joinPhrase: '', artist: null }
+            ]
+        }),
+        mediums: makeObservable([{
+            tracks: makeObservable([{
+                artistCredit: makeObservable({
+                    names: [
+                        { name: 'Tour\u2013Maubourg', joinPhrase: '', artist: { name: 'Tour-Maubourg', gid: 'tour-maubourg-gid-5678' } }
+                    ]
+                })
+            }])
+        }])
+    };
+    lib.propagateGidsFromTracksToRelease(this.release);
+}, () => {
+    const ac = this.release.artistCredit();
+    assert.strictEqual(
+        ac.names[0].artist?.gid,
+        'tour-maubourg-gid-5678',
+        'GID should be propagated from track despite Unicode vs ASCII hyphen difference'
+    );
+});
+
+// Case 45 — Bug 6: feat artist duplicated when native already added it from release title
+runTestCase('45. Bug 6: feat artist not duplicated after cleanTrackModelAfterGuessFeat + dedup', () => {
+    this.track = {
+        name: makeObservable('So High'),
+        artistCredit: makeObservable({
+            names: [
+                { name: 'Khujo Goodie', joinPhrase: ' feat. ', artist: { gid: 'khujo-gid-81eb1203' } },
+                { name: 'James Artissen', joinPhrase: '', artist: { gid: 'james-gid-5678abcd' } }
+            ]
+        })
+    };
+    lib.cleanTrackModelAfterGuessFeat(
+        this.track,
+        'So High (feat. James Artissen)',
+        ['Khujo Goodie']
+    );
+    lib.deduplicateACFromObservable(this.track.artistCredit);
+}, () => {
+    const ac = this.track.artistCredit();
+    const jamesCount = ac.names.filter(n => n.name === 'James Artissen').length;
+    assert.strictEqual(jamesCount, 1, 'James Artissen should appear exactly once after dedup');
+    assert.strictEqual(ac.names.length, 2, 'AC should have exactly 2 entries total');
+});
+
+// Case 46 — Bug 7: GID not propagated when track credit-as name differs from artist.name
+runTestCase('46. Bug 7: GID propagated via artist.name when credit name differs from canonical name', () => {
+    this.release = {
+        artistCredit: makeObservable({
+            names: [
+                { name: 'MCK', joinPhrase: '', artist: null }
+            ]
+        }),
+        mediums: makeObservable([{
+            tracks: makeObservable([{
+                artistCredit: makeObservable({
+                    names: [
+                        { name: 'RPT MCK', joinPhrase: '', artist: { name: 'MCK', gid: 'mck-gid-abcd1234' } }
+                    ]
+                })
+            }])
+        }])
+    };
+    lib.propagateGidsFromTracksToRelease(this.release);
+}, () => {
+    const ac = this.release.artistCredit();
+    assert.strictEqual(
+        ac.names[0].artist?.gid,
+        'mck-gid-abcd1234',
+        'GID should be propagated by matching artist.name even when credit-as name differs'
+    );
+});
+
+// Case 47 — Bug 8: hyphen-delimited subtitle wrongly treated as artist part
+runTestCase('47. Bug 8: "BUNKA\u958b\u653e\u533a - Culture open area" \u2014 subtitle not treated as artist part', () => {
+    const parts = ['BUNKA\u958b\u653e\u533a', 'Culture open area'];
+    const pristineLower = ['wonderful\u2605opportunity!'];
+    const editorLower = ['wonderful\u2605opportunity!'];
+    const structure = {
+        core: 'BUNKA\u958b\u653e\u533a - Culture open area',
+        featured: [{ name: 'Kagamine Rin', joinPhrase: ' & ' }, { name: 'Kagamine Len', joinPhrase: '' }],
+        joinPhrase: ' feat. ',
+        etis: []
+    };
+    this.result = lib.resolveArtistPartIndex(
+        parts, pristineLower, editorLower, structure,
+        'BUNKA\u958b\u653e\u533a - Culture open area (feat. Kagamine Rin & Kagamine Len)'
+    );
+}, () => {
+    assert.strictEqual(
+        this.result,
+        -1,
+        'Neither "BUNKA開放区" nor "Culture open area" is a known artist; index should be -1'
+    );
+});
+
 console.log('\n--- Scenario B: Knockout Observable is Unavailable (DOM Fallback) ---');
+
 
 runTestCase('35. DOM fallback title cleaning without Knockout observable (featured artist)', () => {
     this.input = { value: 'Substitution (feat. Julian Perretta)', dispatchEvent: () => {} };
