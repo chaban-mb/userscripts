@@ -1,19 +1,15 @@
 // ==UserScript==
-// @name        SoundCloud Metadata Inspector
-// @namespace   https://github.com/chaban-mb/userscripts
-// @version     1.1.3
-// @description Metadata inspector for viewing hidden data like ISRC, UPCs, timestamps, etc.
-// @tag         ai-created
-// @author      chaban
-// @license     MIT
-// @homepageURL https://github.com/chaban-mb/userscripts
-// @supportURL  https://github.com/chaban-mb/userscripts/issues
-// @match       https://soundcloud.com/*
-// @icon        https://a-v2.sndcdn.com/assets/images/sc-icons/favicon-48x48-8466dd3758.png
-// @grant       none
-// @run-at      document-start
-// @updateURL   https://github.com/chaban-mb/userscripts/raw/dist/src/SoundCloud%20Metadata%20Inspector.user.js
-// @downloadURL https://github.com/chaban-mb/userscripts/raw/dist/src/SoundCloud%20Metadata%20Inspector.user.js
+// @name         SoundCloud Metadata Inspector
+// @namespace    https://github.com/chaban-mb/userscripts
+// @version      1.1.0
+// @description  Metadata inspector for viewing hidden data like ISRC, UPCs, timestamps, etc.
+// @tag          ai-created
+// @author       chaban
+// @license      MIT
+// @match        https://soundcloud.com/*
+// @icon         https://a-v2.sndcdn.com/assets/images/sc-icons/favicon-48x48-8466dd3758.png
+// @grant        none
+// @run-at       document-start
 // ==/UserScript==
 
 (function () {
@@ -1051,10 +1047,9 @@
         spec.sections.forEach((sec) => {
             if (sec.title) lines.push(`## ${sec.title}`);
             if (sec.items && sec.items.length > 0) {
-                sec.items.forEach(([label, textVal, opts]) => {
+                sec.items.forEach(([label, textVal]) => {
                     if (label && !isEmptyVal(textVal)) {
-                        const badgeSuffix = opts?.sourceBadge ? ` (${opts.sourceBadge})` : "";
-                        lines.push(`- **${label}:** ${textVal}${badgeSuffix}`);
+                        lines.push(`- **${label}:** ${textVal}`);
                     }
                 });
             }
@@ -1326,12 +1321,8 @@
      * @returns {Array<[string, string, Element|null, Element|null, boolean]>} Array of timeline row specifications.
      */
     function parseReleaseTimeline(meta) {
-        const trackBadgeText = meta.isPlaylist ? "TRACKS" : "TRACK";
-        const releaseBadgeText = "RELEASE";
-        const combinedBadgeText = `RELEASE, ${trackBadgeText}`;
-
-        const makeReleaseBadge = () => badge("orange", releaseBadgeText);
-        const makeTrackBadge = () => meta.isPlaylist ? badge("blue", trackBadgeText) : badge("gray", trackBadgeText);
+        const makeReleaseBadge = () => badge("orange", "RELEASE");
+        const makeTrackBadge = () => meta.isPlaylist ? badge("blue", "TRACKS") : badge("gray", "TRACK");
         const makeCombinedBadges = () => el("div", { className: "sc-badge-group" }, [makeReleaseBadge(), makeTrackBadge()]);
 
         const relDates = {
@@ -1370,19 +1361,19 @@
             const rVal = relDates[key];
             const tVal = trkDates[key];
             const fieldKey = dateKeyMap[key];
-            const baseOpts = fieldKey ? getFieldSpecOptions(fieldKey, meta) : {};
+            const opts = fieldKey ? getFieldSpecOptions(fieldKey, meta) : null;
 
             if (rVal && tVal) {
                 if (rVal === tVal) {
-                    timelineItems.push([key, rVal, { ...baseOpts, sourceBadge: combinedBadgeText }, makeCombinedBadges()]);
+                    timelineItems.push([key, rVal, opts, makeCombinedBadges()]);
                 } else {
-                    timelineItems.push([key, rVal, { ...baseOpts, sourceBadge: releaseBadgeText }, makeReleaseBadge()]);
-                    timelineItems.push([key, tVal, { sourceBadge: trackBadgeText }, makeTrackBadge()]);
+                    timelineItems.push([key, rVal, opts, makeReleaseBadge()]);
+                    timelineItems.push([key, tVal, null, makeTrackBadge()]);
                 }
             } else if (rVal) {
-                timelineItems.push([key, rVal, { ...baseOpts, sourceBadge: releaseBadgeText }, makeReleaseBadge()]);
+                timelineItems.push([key, rVal, opts, makeReleaseBadge()]);
             } else if (tVal) {
-                timelineItems.push([key, tVal, { sourceBadge: trackBadgeText }, makeTrackBadge()]);
+                timelineItems.push([key, tVal, null, makeTrackBadge()]);
             }
         });
 
@@ -2035,9 +2026,7 @@
                     el("div", { className: "sc-entity-details" }, [
                         el("span", { className: "sc-entity-title-truncate", textContent: spec.title }),
                         el("span", { className: "sc-entity-subtitle" }, [
-                            spec.profileUrl
-                                ? el("a", { href: spec.profileUrl, target: "_blank", className: "sc-entity-subtitle-link", textContent: spec.user })
-                                : document.createTextNode(spec.user)
+                            el("a", { href: spec.profileUrl, target: "_blank", className: "sc-entity-subtitle-link", textContent: `by ${spec.user}` })
                         ])
                     ])
                 ]));
