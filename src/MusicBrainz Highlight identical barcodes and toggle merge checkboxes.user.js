@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        MusicBrainz: Highlight identical barcodes and toggle merge checkboxes
 // @namespace   https://musicbrainz.org/user/chaban
-// @version     1.4.0
+// @version     1.4.1
 // @tag         ai-created
 // @description Highlights sets of identical barcodes and toggles checkboxes for merging on click
 // @author      chaban
@@ -135,7 +135,8 @@
 
                 if (barcode !== '[none]' && barcode !== '') {
                     const normalizedBarcode = removeLeadingZeros(barcode);
-                    const identifier = `${normalizedBarcode}-${format}`;
+                    const normalizedFormat = format.replace(/^\d+[\text\u00D7\u00D7xX]\s*/i, '');
+                    const identifier = `${normalizedBarcode}-${normalizedFormat}`;
 
                     barcodeCell.dataset.barcodeIdentifier = identifier;
 
