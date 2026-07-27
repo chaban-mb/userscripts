@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MusicBrainz: Guess Case Improver
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      0.10.5
+// @version      0.11.0
 // @tag          ai-created
 // @description  Improves the native "Guess Case" for release, recording and track titles with advanced artist and ETI parsing. Also removes artist from title and duplicate artists after using "Guess feat. artists" on tracklists.
 // @author       chaban
@@ -75,13 +75,21 @@
 
 
     /**
-     * @summary Cleans a string for comparison by lowercasing and stripping all whitespace.
+     * @summary Cleans a string for comparison by normalizing Unicode, removing diacritics,
+     * normalizing punctuation variants, lowercasing, and stripping all whitespace.
+     * Used only for matching purposes — never mutates editor data.
      * @param {string} str - The string to clean.
      * @returns {string} The cleaned string.
      */
     function cleanStringForComparison(str) {
         if (!str) return '';
-        return str.toLowerCase().replace(/\s+/g, '');
+        return str
+            .normalize('NFD')
+            .replace(/[\u0300-\u036f]/g, '')        // strip combining diacritics (e.g. à → a)
+            .replace(/[\u2010-\u2015\u2212]/g, '-') // normalize Unicode hyphens/dashes to ASCII -
+            .replace(/[\u2018\u2019\u201a\u201b\u02bc]/g, "'") // normalize Unicode apostrophes to '
+            .toLowerCase()
+            .replace(/\s+/g, '');
     }
 
     /**
@@ -149,6 +157,8 @@
             featured = parseArtistsAndJoins(guestStr, knownArtists);
 
             current = current.replace(fullFeatClause, '').replace(/\s+/g, ' ').trim();
+            // Bug 1 fix: strip any trailing orphaned opening bracket left when feat. was inside [...]
+            current = current.replace(/\s*[(\[【]\s*$/, '').trim();
         }
 
         return {
@@ -174,7 +184,7 @@
             const artistPartLower = parts[idx].toLowerCase();
             if (hasRemixKeyword(artistPartLower)) {
                 const isExactArtistMatch = pristineLower.some(a => cleanStringForComparison(artistPartLower) === cleanStringForComparison(a)) ||
-                                            editorLower.some(a => cleanStringForComparison(artistPartLower) === cleanStringForComparison(a));
+                    editorLower.some(a => cleanStringForComparison(artistPartLower) === cleanStringForComparison(a));
                 if (!isExactArtistMatch) {
                     idx = -1;
                 }
@@ -186,17 +196,32 @@
             const joinPhraseStr = structure.joinPhrase.trim();
             const lowerRaw = rawText.toLowerCase();
 
+            // Bug 8 fix: only use feat-position inference when at least one part is a known artist,
+            // OR at least one of the parsed featured artists is already in the editor's AC context.
+            // If neither holds, the inference is unreliable (could promote a subtitle to artist role).
+            const anyPartIsKnown = parts.some(part => {
+                const cleanPart = cleanStringForComparison(part);
+                return pristineLower.some(a => cleanStringForComparison(a) === cleanPart) ||
+                    editorLower.some(a => cleanStringForComparison(a) === cleanPart);
+            });
+            const anyFeaturedArtistIsKnown = structure.featured.some(f => {
+                const cleanFeat = cleanStringForComparison(f.name);
+                return pristineLower.some(a => cleanStringForComparison(a) === cleanFeat) ||
+                    editorLower.some(a => cleanStringForComparison(a) === cleanFeat);
+            });
+            if (!anyPartIsKnown && !anyFeaturedArtistIsKnown) return -1;
+
             const escapedPart0 = parts[0].replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
             const escapedPart1 = parts[1].replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-            const sepMatch = rawText.match(new RegExp(`${escapedPart0}\\s*([\\/\\-–—])\\s*${escapedPart1}`, 'i'));
+            const sepMatch = rawText.match(new RegExp(`${escapedPart0}\\s*([\\\/\\-–—])\\s*${escapedPart1}`, 'i'));
             const isSlashSeparator = sepMatch && sepMatch[1] === '/';
 
             if (!isSlashSeparator) {
                 const part0HasFeat = lowerRaw.includes(parts[0].toLowerCase() + ' (' + joinPhraseStr) ||
-                                     lowerRaw.includes(parts[0].toLowerCase() + structure.joinPhrase.toLowerCase());
+                    lowerRaw.includes(parts[0].toLowerCase() + structure.joinPhrase.toLowerCase());
 
                 const part1HasFeat = lowerRaw.includes(parts[1].toLowerCase() + ' (' + joinPhraseStr) ||
-                                     lowerRaw.includes(parts[1].toLowerCase() + structure.joinPhrase.toLowerCase());
+                    lowerRaw.includes(parts[1].toLowerCase() + structure.joinPhrase.toLowerCase());
 
                 if (part1HasFeat && !part0HasFeat) {
                     return 1;
@@ -1037,7 +1062,7 @@
             for (let i = firstFeatJoinIdx + 1; i < filteredNames.length - 1; i++) {
                 const join = (filteredNames[i].joinPhrase ?? '').trim().toLowerCase();
                 const isDefault = join === ',' || join === '&' ||
-                                  join === 'feat' || join === 'feat.' || join === 'ft' || join === 'ft.';
+                    join === 'feat' || join === 'feat.' || join === 'ft' || join === 'ft.';
                 if (!isDefault) {
                     allFeaturedJoinsAreDefault = false;
                     break;
@@ -1116,6 +1141,13 @@
         const artistMap = new Map(
             trackNodesWithGids.map(node => [cleanStringForComparison(node.name), node.artist])
         );
+        // Bug 7 fix: also index by canonical artist.name for cases where credit name differs
+        // (e.g. credit "RPT MCK" but artist.name is "MCK")
+        const artistMapByCanonicalName = new Map(
+            trackNodesWithGids
+                .filter(node => node.artist?.name && cleanStringForComparison(node.artist.name) !== cleanStringForComparison(node.name))
+                .map(node => [cleanStringForComparison(node.artist.name), node.artist])
+        );
 
         if (artistMap.size === 0) return;
 
@@ -1123,7 +1155,7 @@
         const updatedNames = releaseAC.names.map(nameNode => {
             if (!nameNode.artist && nameNode.name) {
                 const key = cleanStringForComparison(nameNode.name);
-                const matchedArtist = artistMap.get(key);
+                const matchedArtist = artistMap.get(key) ?? artistMapByCanonicalName.get(key);
                 if (matchedArtist) {
                     log(`Propagating GID for artist "${nameNode.name}" from tracks to release:`, matchedArtist.gid);
                     modified = true;
@@ -1377,7 +1409,9 @@
             const pristineLower = pristineArtists.map(a => a.toLowerCase());
             const editorLower = editorArtists.map(a => a.toLowerCase());
 
-            let artistPartIndex = resolveArtistPartIndex(parts, pristineLower, editorLower, structure, title);
+            let artistPartIndex = parts.length > 1
+                ? resolveArtistPartIndex(parts, pristineLower, editorLower, structure, title)
+                : -1;
 
             if (artistPartIndex !== -1) {
                 const artistPart = parts[artistPartIndex];
@@ -1498,7 +1532,7 @@
             });
         }
         const uniqueKnownArtists = [...new Set(knownArtists)];
-        
+
         deduplicateACFromObservable(model.artistCredit);
 
         if (getBooleanCookie('guesscase_remove_remixers')) {
