@@ -1,12 +1,13 @@
 // ==UserScript==
 // @name         MusicBrainz: Auto login MusicBrainz ISRC importers
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      2.1.3
+// @version      2.2.0
 // @description  Attempts to login on MusicBrainz ISRC submission sites like ISRC Hunt or MagicISRC and automatically handle OAuth authorization
 // @tag          ai-created
 // @author       chaban
 // @license      MIT
 // @match        https://*.musicbrainz.org/oauth2/authorize*
+// @match        https://metabrainz.org/oauth2/authorize*
 // @match        https://magicisrc.kepstin.ca/*
 // @match        https://magicisrc-beta.kepstin.ca/
 // @match        https://isrchunt.com/*
@@ -82,12 +83,20 @@
         return allMatch;
     }
 
-    /**
-     * @summary Automatically confirms the MusicBrainz OAuth authorization page for trusted clients.
-     * Validates the client ID, redirect URI, and scopes before clicking the allow button.
-     */
+    function isMetaBrainzSSORedirect(redirectUri) {
+        if (!redirectUri) return false;
+        try {
+            const url = new URL(redirectUri);
+            const isMusicBrainzHost = url.hostname === 'musicbrainz.org' || url.hostname.endsWith('.musicbrainz.org');
+            const isCallbackPath = url.pathname === '/metabrainz/oauth2/callback';
+            return isMusicBrainzHost && isCallbackPath;
+        } catch {
+            return false;
+        }
+    }
+
     function handleOAuthAuthorizationPage() {
-        log('Detected MusicBrainz OAuth authorization page.');
+        log('Detected OAuth authorization page.');
 
         const urlParams = new URLSearchParams(window.location.search);
         const redirectUri = urlParams.get('redirect_uri');
@@ -101,23 +110,31 @@
         try {
             redirectUriOrigin = redirectUri ? new URL(redirectUri).origin : null;
 
-            for (const id in trustedClients) {
-                const clientInfo = trustedClients[id];
-                const trustedOrigin = new URL(clientInfo.redirectUriBase).origin;
+            if (window.location.hostname === 'metabrainz.org' && isMetaBrainzSSORedirect(redirectUri)) {
+                if (isValidScope(requestedScopeString, ['profile'])) {
+                    isTrustedClient = true;
+                    clientName = 'MetaBrainz SSO (MusicBrainz)';
+                    log('MetaBrainz SSO redirect matched for MusicBrainz.');
+                } else {
+                    log('MetaBrainz SSO validation FAILED: Scope mismatch.');
+                }
+            } else {
+                for (const id in trustedClients) {
+                    const clientInfo = trustedClients[id];
+                    const trustedOrigin = new URL(clientInfo.redirectUriBase).origin;
 
-                // Step 1: Validate Client ID and Redirect URI Origin
-                if (clientId === id && redirectUriOrigin && redirectUriOrigin === trustedOrigin) {
-                    clientName = clientInfo.name;
-                    log(`Client ID and Redirect URI Origin matched for: ${clientName}`);
+                    if (clientId === id && redirectUriOrigin && redirectUriOrigin === trustedOrigin) {
+                        clientName = clientInfo.name;
+                        log(`Client ID and Redirect URI Origin matched for: ${clientName}`);
 
-                    // Step 2: Validate Scopes
-                    if (isValidScope(requestedScopeString, clientInfo.expectedScopes)) {
-                        isTrustedClient = true;
-                        log(`Scope validation passed for ${clientName}.`);
-                    } else {
-                        log(`Final validation FAILED: Scopes did not match for ${clientName}.`);
+                        if (isValidScope(requestedScopeString, clientInfo.expectedScopes)) {
+                            isTrustedClient = true;
+                            log(`Scope validation passed for ${clientName}.`);
+                        } else {
+                            log(`Final validation FAILED: Scopes did not match for ${clientName}.`);
+                        }
+                        break;
                     }
-                    break;
                 }
             }
         } catch (e) {
@@ -127,14 +144,23 @@
 
         if (isTrustedClient) {
             log(`OAuth request is fully validated for trusted client: ${clientName}
-                 (Redirect URI Origin: ${redirectUriOrigin}, Client ID: ${clientId || 'N/A'})`);
+                 (Redirect URI: ${redirectUri}, Client ID: ${clientId || 'N/A'})`);
 
-            const confirmButton = document.querySelector('button[name="confirm.submit"]');
+            let confirmButton = null;
+
+            // Target the exact submit button depending on domain
+            if (window.location.hostname.endsWith('musicbrainz.org')) {
+                confirmButton = document.querySelector('button[name="confirm.submit"]');
+            } else if (window.location.hostname === 'metabrainz.org') {
+                confirmButton = document.querySelector('form[action*="/oauth2/authorize"] button[type="submit"]')
+                    || document.querySelector('button[name="confirm"]');
+            }
+
             if (confirmButton) {
-                  log(`OAuth confirmation button. Clicking it...`);
-                  confirmButton.click();
-              } else {
-                  log('OAuth confirmation button not found.');
+                log('OAuth confirmation button found. Clicking it...');
+                confirmButton.click();
+            } else {
+                log('OAuth confirmation button not found.');
             }
         } else {
             log(`OAuth request is NOT fully validated for auto-confirmation.
@@ -161,18 +187,16 @@
         // Attempt to click the login link specific to ISRC Hunt.
         const isrchuntLoginLink = document.querySelector('a[href^="https://musicbrainz.org/oauth2/authorize"]');
         if (isrchuntLoginLink) {
-            log(`Found ISRC Hunt login link. Clicking it...`);
+            log('Found ISRC Hunt login link. Clicking it...');
             isrchuntLoginLink.click();
         } else {
-              log('ISRC Hunt login link not found.');
+            log('ISRC Hunt login link not found.');
         }
     }
 
-    // --- Main Execution Flow ---
-    // Determines which handler function to call based on the current URL.
     const currentUrl = window.location.href;
 
-    if (currentUrl.includes('musicbrainz.org/oauth2/authorize')) {
+    if (currentUrl.includes('/oauth2/authorize')) {
         handleOAuthAuthorizationPage();
     } else if (trustedImporterOrigins.some(origin => currentUrl.startsWith(origin))) {
         handleISRCImporterLoginPage();
