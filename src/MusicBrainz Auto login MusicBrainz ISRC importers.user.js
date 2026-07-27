@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MusicBrainz: Auto login MusicBrainz ISRC importers
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      2.2.0
+// @version      2.3.0
 // @description  Attempts to login on MusicBrainz ISRC submission sites like ISRC Hunt or MagicISRC and automatically handle OAuth authorization
 // @tag          ai-created
 // @author       chaban
@@ -22,16 +22,62 @@
 // @downloadURL  https://github.com/chaban-mb/userscripts/raw/main/src/MusicBrainz%20Auto%20login%20MusicBrainz%20ISRC%20importers.user.js
 // ==/UserScript==
 
-(function() {
+(() => {
     'use strict';
 
-    // Helper function for logging messages to the console, useful for debugging.
-    function log(message) {
-        console.log(`[MusicBrainz Auto Login] ${message}`);
-    }
+    /**
+     * Enum for supported logging severity levels.
+     * @readonly
+     * @enum {number}
+     */
+    const LOG_LEVELS = {
+        DEBUG: 0,
+        INFO: 1,
+        WARN: 2,
+        ERROR: 3,
+        NONE: 4
+    };
 
-    // --- Configuration for Trusted Clients ---
-    // Defines trusted client IDs, their associated redirect URI base URLs, and expected OAuth scopes for validation.
+    /**
+     * Adjust active log level here (e.g., LOG_LEVELS.DEBUG for full verbose logs).
+     * @type {number}
+     */
+    const CURRENT_LOG_LEVEL = LOG_LEVELS.INFO;
+
+    /** @type {string} */
+    const scriptName = GM.info.script.name;
+
+    /**
+     * Logs a message to the browser console if the level meets or exceeds CURRENT_LOG_LEVEL.
+     *
+     * @param {number} level - Log level from LOG_LEVELS enum.
+     * @param {string} msg - The log message text.
+     * @returns {void}
+     */
+    const log = (level, msg) => {
+        if (level < CURRENT_LOG_LEVEL) return;
+        const prefix = `[${scriptName}]`;
+
+        switch (level) {
+            case LOG_LEVELS.DEBUG:
+                console.debug(`${prefix} ${msg}`);
+                break;
+            case LOG_LEVELS.INFO:
+                console.info(`${prefix} ${msg}`);
+                break;
+            case LOG_LEVELS.WARN:
+                console.warn(`${prefix} ${msg}`);
+                break;
+            case LOG_LEVELS.ERROR:
+                console.error(`${prefix} ${msg}`);
+                break;
+        }
+    };
+
+    /**
+     * Configuration map of trusted OAuth client IDs and their authorization expectations.
+     * @type {Object.<string, {redirectUriBase: string, expectedScopes: string[], name: string}>}
+     */
     const trustedClients = {
         'oxqZoCJWy9BQXgS7UTikeA': { // MagicISRC main site
             redirectUriBase: 'https://magicisrc.kepstin.ca',
@@ -50,53 +96,60 @@
         }
     };
 
-    // --- Derived Configuration for Importer Pages ---
-    // Extract the unique origins of the trusted ISRC importer sites.
-    const trustedImporterOrigins = Object.values(trustedClients)
-        .map(client => new URL(client.redirectUriBase).origin + '/')
-        .filter((value, index, self) => self.indexOf(value) === index)
+    /**
+     * Set of unique origins corresponding to trusted importer sites.
+     * @type {string[]}
+     */
+    const trustedImporterOrigins = [
+        ...new Set(Object.values(trustedClients).map(c => `${new URL(c.redirectUriBase).origin}/`))
+    ];
 
     /**
-     * @summary Checks if the requested scopes exactly match the expected scopes, ignoring order.
-     * @param {string} requestedScopeString - The space-separated string of requested scopes.
-     * @param {string[]} expectedScopes - An array of expected scope strings.
-     * @returns {boolean} True if the scopes match exactly, false otherwise.
+     * Validates whether requested OAuth scopes match expected scopes exactly (order-insensitive).
+     *
+     * @param {?string} requestedScopeString - Raw space/plus-separated scope string from URL query params.
+     * @param {string[]} expectedScopes - Array of required scope strings.
+     * @returns {boolean} True if the requested scopes match the expected set.
      */
-    function isValidScope(requestedScopeString, expectedScopes) {
+    const isValidScope = (requestedScopeString, expectedScopes) => {
         if (!requestedScopeString) {
-            log("Scope validation FAILED: No 'scope' parameter found in URL.");
+            log(LOG_LEVELS.WARN, "Scope validation FAILED: No 'scope' parameter found in URL.");
             return false;
         }
 
-        const requestedScopes = requestedScopeString.split(/[\s+]/).filter(s => s).sort();
-        const sortedExpectedScopes = [...expectedScopes].sort(); // Create a copy to avoid modifying original
+        const requestedScopes = requestedScopeString.split(/[\s+]/).filter(Boolean).sort();
+        const sortedExpectedScopes = [...expectedScopes].sort();
 
         if (requestedScopes.length !== sortedExpectedScopes.length) {
-            log(`Scope validation FAILED: Length mismatch. Requested: ${requestedScopes.length}, Expected: ${sortedExpectedScopes.length}`);
+            log(LOG_LEVELS.WARN, `Scope validation FAILED: Length mismatch. Requested: ${requestedScopes.length}, Expected: ${sortedExpectedScopes.length}`);
             return false;
         }
 
-        const allMatch = requestedScopes.every((scope, index) => scope === sortedExpectedScopes[index]);
+        const allMatch = requestedScopes.every((scope, i) => scope === sortedExpectedScopes[i]);
         if (!allMatch) {
-            log(`Scope validation FAILED: Content mismatch. Requested: [${requestedScopes.join(', ')}], Expected: [${sortedExpectedScopes.join(', ')}]`);
+            log(LOG_LEVELS.WARN, `Scope validation FAILED: Content mismatch. Requested: [${requestedScopes.join(', ')}], Expected: [${sortedExpectedScopes.join(', ')}]`);
         }
         return allMatch;
-    }
+    };
 
-    function isMetaBrainzSSORedirect(redirectUri) {
-        if (!redirectUri) return false;
-        try {
-            const url = new URL(redirectUri);
-            const isMusicBrainzHost = url.hostname === 'musicbrainz.org' || url.hostname.endsWith('.musicbrainz.org');
-            const isCallbackPath = url.pathname === '/metabrainz/oauth2/callback';
-            return isMusicBrainzHost && isCallbackPath;
-        } catch {
-            return false;
-        }
-    }
+    /**
+     * Checks if a target URL represents a valid MetaBrainz SSO callback to MusicBrainz.
+     *
+     * @param {?URL} parsedUrl - Parsed URL instance of the redirect_uri parameter.
+     * @returns {boolean} True if the target URL is a valid MusicBrainz SSO callback.
+     */
+    const isMetaBrainzSSORedirect = (parsedUrl) => {
+        if (!parsedUrl) return false;
+        const isMusicBrainzHost = parsedUrl.hostname === 'musicbrainz.org' || parsedUrl.hostname.endsWith('.musicbrainz.org');
+        return isMusicBrainzHost && parsedUrl.pathname === '/metabrainz/oauth2/callback';
+    };
 
-    function handleOAuthAuthorizationPage() {
-        log('Detected OAuth authorization page.');
+    /**
+     * Evaluates OAuth authorization requests on MusicBrainz or MetaBrainz and clicks submit if trusted.
+     * @returns {void}
+     */
+    const handleOAuthAuthorizationPage = () => {
+        log(LOG_LEVELS.DEBUG, 'Detected OAuth authorization page.');
 
         const urlParams = new URLSearchParams(window.location.search);
         const redirectUri = urlParams.get('redirect_uri');
@@ -105,94 +158,88 @@
 
         let isTrustedClient = false;
         let clientName = 'Unknown';
-        let redirectUriOrigin = null;
 
         try {
-            redirectUriOrigin = redirectUri ? new URL(redirectUri).origin : null;
+            const redirectUrl = redirectUri ? new URL(redirectUri) : null;
+            const currentHost = window.location.hostname;
 
-            if (window.location.hostname === 'metabrainz.org' && isMetaBrainzSSORedirect(redirectUri)) {
+            if (currentHost === 'metabrainz.org' && isMetaBrainzSSORedirect(redirectUrl)) {
                 if (isValidScope(requestedScopeString, ['profile'])) {
                     isTrustedClient = true;
                     clientName = 'MetaBrainz SSO (MusicBrainz)';
-                    log('MetaBrainz SSO redirect matched for MusicBrainz.');
+                    log(LOG_LEVELS.DEBUG, 'MetaBrainz SSO redirect matched for MusicBrainz.');
                 } else {
-                    log('MetaBrainz SSO validation FAILED: Scope mismatch.');
+                    log(LOG_LEVELS.WARN, 'MetaBrainz SSO validation FAILED: Scope mismatch.');
                 }
-            } else {
-                for (const id in trustedClients) {
-                    const clientInfo = trustedClients[id];
-                    const trustedOrigin = new URL(clientInfo.redirectUriBase).origin;
+            } else if (redirectUrl) {
+                const matchedClient = Object.entries(trustedClients).find(
+                    ([id, info]) => clientId === id && redirectUrl.origin === new URL(info.redirectUriBase).origin
+                );
 
-                    if (clientId === id && redirectUriOrigin && redirectUriOrigin === trustedOrigin) {
-                        clientName = clientInfo.name;
-                        log(`Client ID and Redirect URI Origin matched for: ${clientName}`);
+                if (matchedClient) {
+                    const [, clientInfo] = matchedClient;
+                    clientName = clientInfo.name;
+                    log(LOG_LEVELS.DEBUG, `Client ID and Redirect URI Origin matched for: ${clientName}`);
 
-                        if (isValidScope(requestedScopeString, clientInfo.expectedScopes)) {
-                            isTrustedClient = true;
-                            log(`Scope validation passed for ${clientName}.`);
-                        } else {
-                            log(`Final validation FAILED: Scopes did not match for ${clientName}.`);
-                        }
-                        break;
+                    if (isValidScope(requestedScopeString, clientInfo.expectedScopes)) {
+                        isTrustedClient = true;
+                        log(LOG_LEVELS.DEBUG, `Scope validation passed for ${clientName}.`);
+                    } else {
+                        log(LOG_LEVELS.WARN, `Final validation FAILED: Scopes did not match for ${clientName}.`);
                     }
                 }
             }
         } catch (e) {
-            log(`Error during OAuth validation: ${e.message}. Script will not auto-confirm.`);
+            log(LOG_LEVELS.ERROR, `Error during OAuth validation: ${e.message}. Script will not auto-confirm.`);
             return;
         }
 
         if (isTrustedClient) {
-            log(`OAuth request is fully validated for trusted client: ${clientName}
-                 (Redirect URI: ${redirectUri}, Client ID: ${clientId || 'N/A'})`);
+            log(LOG_LEVELS.INFO, `OAuth request validated for: ${clientName}. Attempting auto-confirmation...`);
 
-            let confirmButton = null;
-
-            // Target the exact submit button depending on domain
-            if (window.location.hostname.endsWith('musicbrainz.org')) {
-                confirmButton = document.querySelector('button[name="confirm.submit"]');
-            } else if (window.location.hostname === 'metabrainz.org') {
-                confirmButton = document.querySelector('form[action*="/oauth2/authorize"] button[type="submit"]')
-                    || document.querySelector('button[name="confirm"]');
-            }
+            const isMB = window.location.hostname.endsWith('musicbrainz.org');
+            const confirmButton = isMB
+                ? document.querySelector('button[name="confirm.submit"]')
+                : document.querySelector('form[action*="/oauth2/authorize"] button[type="submit"]')
+                  ?? document.querySelector('button[name="confirm"]');
 
             if (confirmButton) {
-                log('OAuth confirmation button found. Clicking it...');
+                log(LOG_LEVELS.INFO, 'OAuth confirmation button found. Clicking...');
                 confirmButton.click();
             } else {
-                log('OAuth confirmation button not found.');
+                log(LOG_LEVELS.WARN, 'OAuth confirmation button not found on page.');
             }
         } else {
-            log(`OAuth request is NOT fully validated for auto-confirmation.
-                 Detected Redirect URI: ${redirectUri}, Detected Client ID: ${clientId}, Detected Scopes: ${requestedScopeString || 'N/A'}`);
+            log(LOG_LEVELS.WARN, `OAuth request NOT validated for auto-confirmation. Redirect URI: ${redirectUri}, Client ID: ${clientId}`);
         }
-    }
+    };
 
     /**
-     * @summary Automatically initiates the login process on supported ISRC importer sites.
-     * Looks for specific login buttons or links and simulates a click.
+     * Evaluates login controls on target ISRC importer sites and clicks login actions.
+     * @returns {void}
      */
-    function handleISRCImporterLoginPage() {
-        log('Detected ISRC importer page.');
+    const handleISRCImporterLoginPage = () => {
+        log(LOG_LEVELS.DEBUG, 'Detected ISRC importer page.');
+        const host = window.location.hostname;
 
-        // Attempt to click the login button specific to MagicISRC.
-        const magicisrcLoginButton = document.querySelector('button[onclick^="doLogin();"]');
-        if (magicisrcLoginButton) {
-            log('Found MagicISRC login button with doLogin(). Clicking it...');
-            magicisrcLoginButton.click();
-        } else {
-            log('MagicISRC login button not found.');
+        if (host.includes('magicisrc')) {
+            const btn = document.querySelector('button[onclick^="doLogin();"]');
+            if (btn) {
+                log(LOG_LEVELS.INFO, 'MagicISRC login button found. Clicking...');
+                btn.click();
+            } else {
+                log(LOG_LEVELS.WARN, 'MagicISRC login button not found.');
+            }
+        } else if (host.includes('isrchunt')) {
+            const link = document.querySelector('a[href^="https://musicbrainz.org/oauth2/authorize"]');
+            if (link) {
+                log(LOG_LEVELS.INFO, 'ISRC Hunt login link found. Clicking...');
+                link.click();
+            } else {
+                log(LOG_LEVELS.WARN, 'ISRC Hunt login link not found.');
+            }
         }
-
-        // Attempt to click the login link specific to ISRC Hunt.
-        const isrchuntLoginLink = document.querySelector('a[href^="https://musicbrainz.org/oauth2/authorize"]');
-        if (isrchuntLoginLink) {
-            log('Found ISRC Hunt login link. Clicking it...');
-            isrchuntLoginLink.click();
-        } else {
-            log('ISRC Hunt login link not found.');
-        }
-    }
+    };
 
     const currentUrl = window.location.href;
 
@@ -201,7 +248,7 @@
     } else if (trustedImporterOrigins.some(origin => currentUrl.startsWith(origin))) {
         handleISRCImporterLoginPage();
     } else {
-        log('Current URL does not match any known handler.');
+        log(LOG_LEVELS.DEBUG, 'Current URL does not match any known handler.');
     }
 
 })();
