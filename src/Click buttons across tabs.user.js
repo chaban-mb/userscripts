@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Click buttons across tabs
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      4.10.2
+// @version      4.10.3
 // @tag          ai-created
 // @description  Clicks specified buttons across tabs using the Broadcast Channel API and closes tabs after successful submission.
 // @author       chaban
@@ -17,6 +17,7 @@
 // @grant        GM.setValue
 // @grant        window.close
 // @grant        unsafeWindow
+// @noframes
 // @updateURL    https://github.com/chaban-mb/userscripts/raw/main/src/Click%20buttons%20across%20tabs.user.js
 // @downloadURL  https://github.com/chaban-mb/userscripts/raw/main/src/Click%20buttons%20across%20tabs.user.js
 // ==/UserScript==
