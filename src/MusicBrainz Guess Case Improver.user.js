@@ -76,7 +76,7 @@
 
     /**
      * @summary Cleans a string for comparison by normalizing Unicode, removing diacritics,
-     * normalizing punctuation variants, lowercasing, and stripping all whitespace.
+     * normalizing punctuation variants, lowercasing, and stripping all whitespace & hyphens.
      * Used only for matching purposes — never mutates editor data.
      * @param {string} str - The string to clean.
      * @returns {string} The cleaned string.
@@ -86,8 +86,8 @@
         return str
             .normalize('NFD')
             .replace(/[\u0300-\u036f]/g, '')        // strip combining diacritics (e.g. à → a)
-            .replace(/[\u2010-\u2015\u2212]/g, '-') // normalize Unicode hyphens/dashes to ASCII -
-            .replace(/[\u2018\u2019\u201a\u201b\u02bc]/g, "'") // normalize Unicode apostrophes to '
+            .replace(/[\u2010-\u2015\u2212\-]/g, '') // normalize and strip hyphens/dashes
+            .replace(/[\u2018\u2019\u201a\u201b\u02bc']/g, '') // strip apostrophes
             .toLowerCase()
             .replace(/\s+/g, '');
     }
@@ -145,16 +145,18 @@
         }
 
         // 2. Isolate embedded feature patterns completely out of the core literal string
-        const featMatch = current.match(STANDARD_FEAT_PATTERN) || current.match(BRACKETED_WITH_PATTERN);
-        if (featMatch) {
+        let featMatch;
+        while ((featMatch = current.match(STANDARD_FEAT_PATTERN) || current.match(BRACKETED_WITH_PATTERN))) {
             const fullFeatClause = featMatch[0];
-            const joinWord = featMatch[1].toLowerCase();
-
             const rawWord = (featMatch[1] || featMatch[2] || '').trim().toLowerCase();
-            joinPhrase = rawWord ? ` ${rawWord} ` : ' feat. ';
+
+            if (!joinPhrase) {
+                joinPhrase = rawWord ? ` ${rawWord} ` : ' feat. ';
+            }
 
             const guestStr = featMatch[2] ? featMatch[2].trim() : '';
-            featured = parseArtistsAndJoins(guestStr, knownArtists);
+            const parsedGuests = parseArtistsAndJoins(guestStr, knownArtists);
+            featured.push(...parsedGuests);
 
             current = current.replace(fullFeatClause, '').replace(/\s+/g, ' ').trim();
             // Bug 1 fix: strip any trailing orphaned opening bracket left when feat. was inside [...]
@@ -175,7 +177,7 @@
      * @param {string[]} pristineLower - Pristine artist names in lowercase.
      * @param {string[]} editorLower - Active editor artist names in lowercase.
      * @param {object} structure - The parsed title structure map from parseTitleStructure.
-     * @param {string} rawText - The raw original string being evaluated (initialText or textToProcess).
+     * @param {string} rawText - The raw original string being evaluated.
      * @returns {number} The resolved index of the artist part, or -1 if unresolvable.
      */
     function resolveArtistPartIndex(parts, pristineLower, editorLower, structure, rawText) {
@@ -194,11 +196,7 @@
 
         if (parts.length === 2 && structure.joinPhrase) {
             const joinPhraseStr = structure.joinPhrase.trim();
-            const lowerRaw = rawText.toLowerCase();
 
-            // Bug 8 fix: only use feat-position inference when at least one part is a known artist,
-            // OR at least one of the parsed featured artists is already in the editor's AC context.
-            // If neither holds, the inference is unreliable (could promote a subtitle to artist role).
             const anyPartIsKnown = parts.some(part => {
                 const cleanPart = cleanStringForComparison(part);
                 return pristineLower.some(a => cleanStringForComparison(a) === cleanPart) ||
@@ -206,8 +204,7 @@
             });
             const anyFeaturedArtistIsKnown = structure.featured.some(f => {
                 const cleanFeat = cleanStringForComparison(f.name);
-                return pristineLower.some(a => cleanStringForComparison(a) === cleanFeat) ||
-                    editorLower.some(a => cleanStringForComparison(a) === cleanFeat);
+                return pristineLower.some(a => cleanStringForComparison(a) === cleanFeat);
             });
             if (!anyPartIsKnown && !anyFeaturedArtistIsKnown) return -1;
 
@@ -217,6 +214,7 @@
             const isSlashSeparator = sepMatch && sepMatch[1] === '/';
 
             if (!isSlashSeparator) {
+                const lowerRaw = rawText.toLowerCase();
                 const part0HasFeat = lowerRaw.includes(parts[0].toLowerCase() + ' (' + joinPhraseStr) ||
                     lowerRaw.includes(parts[0].toLowerCase() + structure.joinPhrase.toLowerCase());
 
@@ -302,7 +300,8 @@
             if (namesData?.length > 0) {
                 const names = namesData.flatMap(part => [
                     ...(parseArtistNamesFromString(part.name)),
-                    ...(parseArtistNamesFromString(part.artist?.name))
+                    ...(parseArtistNamesFromString(part.artist?.name)),
+                    ...(parseArtistNamesFromString(part.artist?.sort_name))
                 ]).filter(Boolean);
 
                 const uniqueNames = [...new Set(names)];
@@ -1176,23 +1175,6 @@
         }
     }
 
-    /**
-     * Returns the Knockout track model for a given tr.track DOM element.
-     * Uses the element's id ("track-row-{uniqueID}") to match against
-     * the MB._releaseEditor model tree.
-     */
-    function getTrackModel(trackRow) {
-        const id = trackRow?.id;
-        if (!id) return null;
-        const release = window.MB?.releaseEditor?.rootField?.release?.();
-        if (!release) return null;
-
-        return (release.mediums?.() ?? [])
-            .flatMap(medium => medium.tracks?.() ?? [])
-            .find(track => track.elementID === id) ?? null;
-    }
-
-
     function enhanceReleaseGuessFeat(button) {
         if (button.dataset.enhanced) return;
         info('Enhancing Release/Recording "Guess Feat." button.');
@@ -1539,7 +1521,12 @@
             removeRemixersFromAC(model.artistCredit, textToProcess);
         }
 
-        const editorArtists = (model.artistCredit()?.names ?? []).map(n => n.name);
+        const editorArtists = [];
+        (model.artistCredit()?.names ?? []).forEach(n => {
+            if (n.name) editorArtists.push(n.name);
+            if (n.artist?.name) editorArtists.push(n.artist.name);
+            if (n.artist?.sort_name) editorArtists.push(n.artist.sort_name);
+        });
 
         const { finalTitle, updatedACNames, modified } = transformEntityTitleAndCredits({
             title: textToProcess,
@@ -1562,14 +1549,6 @@
             }
             if (input) {
                 setInputValue(input, finalTitle);
-            }
-        } else if (originalTitle) {
-            log('cleanEntityModel: Restoring original title.');
-            if (typeof model.name === 'function') {
-                model.name(originalTitle);
-            }
-            if (input) {
-                setInputValue(input, originalTitle);
             }
         }
     }
