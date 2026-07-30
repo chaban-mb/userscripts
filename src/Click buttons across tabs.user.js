@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Click buttons across tabs
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      4.10.3
+// @version      4.10.4
 // @tag          ai-created
 // @description  Clicks specified buttons across tabs using the Broadcast Channel API and closes tabs after successful submission.
 // @author       chaban
@@ -832,6 +832,8 @@
                                 const state = JSON.stringify(config.referrerPatterns);
                                 sessionStorage.setItem(REFERRER_CLOSE_TRIGGERED_FLAG, state);
                             });
+                        } else {
+                            debugLog(`Failed to attach listener: button "${config.buttonSelector}" not found in DOM.`, 'red');
                         }
                     });
                 } else {
