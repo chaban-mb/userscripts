@@ -1414,7 +1414,44 @@ runTestCase('47. Bug 8: "BUNKA\u958b\u653e\u533a - Culture open area" \u2014 sub
     );
 });
 
+// Case 48 — Track 13 featured artist deduplication with dots in name (Somebody Lied (feat. H.U.R.T.))
+runTestCase('48. Bug 9: "Somebody Lied (feat. H.U.R.T.)" with initial AC "Sevin & H.U.R.T." does not produce duplicate feat.', () => {
+    this.track = {
+        name: makeObservable('Somebody Lied (feat. H.U.R.T.)'),
+        artistCredit: makeObservable({
+            names: [
+                { name: 'Sevin', joinPhrase: ' & ', artist: { name: 'Sevin', gid: 'c97f0ff8-74b9-41b2-be2e-2b5a334587df' } },
+                { name: 'H.U.R.T.', joinPhrase: '', artist: { name: 'H.U.R.T.', gid: 'a89423da-b428-49d6-baaa-99db85a7948e' } }
+            ]
+        })
+    };
+    lib.cleanTrackModelAfterGuessFeat(
+        this.track,
+        'Somebody Lied (feat. H.U.R.T.)',
+        ['Sevin', 'H.U.R.T.']
+    );
+}, () => {
+    const ac = this.track.artistCredit();
+    const formatted = ac.names.map(n => n.name + (n.joinPhrase ? ` ${n.joinPhrase.trim()} ` : '')).join('');
+    assert.strictEqual(
+        ac.names.length,
+        2,
+        `Expected 2 AC nodes, got ${ac.names.length}: ${JSON.stringify(ac.names)}`
+    );
+    assert.strictEqual(
+        ac.names.filter(n => n.joinPhrase.includes('feat')).length,
+        1,
+        `Expected at most 1 feat joinPhrase, got formatted credit: "${formatted}"`
+    );
+    assert.notStrictEqual(
+        formatted,
+        'Sevin feat. H.U.R.T. feat. H.U.R.T.',
+        'Artist credit should NOT be "Sevin feat. H.U.R.T. feat. H.U.R.T."'
+    );
+});
+
 console.log('\n--- Scenario B: Knockout Observable is Unavailable (DOM Fallback) ---');
+
 
 
 runTestCase('35. DOM fallback title cleaning without Knockout observable (featured artist)', () => {

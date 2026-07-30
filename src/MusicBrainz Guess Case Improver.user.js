@@ -88,6 +88,7 @@
             .replace(/[\u0300-\u036f]/g, '')        // strip combining diacritics (e.g. à → a)
             .replace(/[\u2010-\u2015\u2212\-]/g, '') // normalize and strip hyphens/dashes
             .replace(/[\u2018\u2019\u201a\u201b\u02bc']/g, '') // strip apostrophes
+            .replace(/\./g, '')                     // strip dots for comparison robustness
             .toLowerCase()
             .replace(/\s+/g, '');
     }
@@ -114,8 +115,8 @@
      */
     function cleanTokenBoundaries(str) {
         if (!str) return '';
-        // Fix: Trim at the very end to guarantee no trailing spaces remain after bracket replacement
-        return str.trim().replace(/^[\.+(\[【]+|[\.+\)\]】]+$/g, '').trim();
+        // Trim at the very end to guarantee no trailing spaces remain after bracket replacement
+        return str.trim().replace(/^[+(\[【]+|[+\)\]】]+$/g, '').trim();
     }
 
     /**
