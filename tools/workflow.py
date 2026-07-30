@@ -192,7 +192,7 @@ def prompt_user(prompt_msg, default='', non_interactive=False, auto_choice=None)
     res = input(prompt_msg).strip()
     return res if res else str(default)
 
-def do_release(non_interactive=False, json_output=False, bump_strategy="auto", scripts_filter="all"):
+def do_release(non_interactive=False, json_output=False, bump_strategy="auto", scripts_filter="all", custom_commit_type=None, custom_commit_msg=None):
     remote = get_git_remote()
     main_branch = get_main_branch_name(remote)
     commits_created = 0
@@ -493,11 +493,11 @@ def do_release(non_interactive=False, json_output=False, bump_strategy="auto", s
                 print(f"\nEnter commit message details for {script['name']}.")
                 print(f"Format: <type>({slug}): <description>")
                 if non_interactive:
-                    commit_type = default_type
-                    commit_desc = default_desc
+                    commit_type = custom_commit_type or default_type
+                    commit_desc = custom_commit_msg or default_desc
                 else:
-                    commit_type = input(f"Commit type (fix/feat/chore/refactor/style, default: {default_type}): ").strip().lower() or default_type
-                    commit_desc = input(f"Description (default: {default_desc}): ").strip() or default_desc
+                    commit_type = custom_commit_type or (input(f"Commit type (fix/feat/chore/refactor/style, default: {default_type}): ").strip().lower() or default_type)
+                    commit_desc = custom_commit_msg or (input(f"Description (default: {default_desc}): ").strip() or default_desc)
                 commit_msg = f"{commit_type}({slug}): {commit_desc}"
                 print(f"Committing changes: '{commit_msg}'")
                 subprocess.run(['git', 'commit', '-m', commit_msg], check=True)
@@ -708,6 +708,8 @@ def main():
     release_parser.add_argument("--json", action="store_true", help="Output JSON results")
     release_parser.add_argument("--bump-type", choices=["patch", "minor", "major", "none", "auto"], default="auto", help="Bump strategy in automated mode (default: auto)")
     release_parser.add_argument("--scripts", default="all", help="Comma-separated script numbers/paths or 'all' (default: all)")
+    release_parser.add_argument("--commit-type", "-t", default=None, help="Custom commit type override for new commits (e.g. fix, feat, refactor)")
+    release_parser.add_argument("--commit-msg", "-m", default=None, help="Custom commit description override for new commits")
 
     # Subcommand: build
     subparsers.add_parser("build", help="Rebuild docs/USERSCRIPTS.md markdown listing")
@@ -722,7 +724,14 @@ def main():
         elif args.command == "cleanup":
             do_cleanup(args.branch, args.main_branch)
         elif args.command == "release":
-            do_release(non_interactive=args.non_interactive, json_output=args.json, bump_strategy=args.bump_type, scripts_filter=args.scripts)
+            do_release(
+                non_interactive=args.non_interactive,
+                json_output=args.json,
+                bump_strategy=args.bump_type,
+                scripts_filter=args.scripts,
+                custom_commit_type=args.commit_type,
+                custom_commit_msg=args.commit_msg
+            )
         elif args.command == "build":
             do_build()
     except KeyboardInterrupt:
