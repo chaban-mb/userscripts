@@ -1544,11 +1544,11 @@
                     syncAutocompleteInputs(model.artistCredit().names);
                 }
             }
-            info(`Removed artist part from title (model): "${titleVal}" -> "${finalTitle}"`);
-            if (typeof model.name === 'function') {
+            info(`Removed artist part from title (model): "${textToProcess}" -> "${finalTitle}"`);
+            if (typeof model.name === 'function' && model.name() !== finalTitle) {
                 model.name(finalTitle);
             }
-            if (input) {
+            if (input && input.value !== finalTitle) {
                 setInputValue(input, finalTitle);
             }
         }
