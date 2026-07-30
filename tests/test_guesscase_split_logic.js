@@ -65,6 +65,31 @@ const EventMock = class {
     }
 };
 
+const isVerbose = process.argv.includes('--verbose') || process.env.VERBOSE === '1';
+
+let currentTestLogs = [];
+
+const testConsole = {
+    log: (...args) => {
+        if (isVerbose) console.log(...args);
+        else currentTestLogs.push(['log', args]);
+    },
+    info: (...args) => {
+        if (isVerbose) console.info(...args);
+        else currentTestLogs.push(['info', args]);
+    },
+    debug: (...args) => {
+        if (isVerbose) console.debug(...args);
+        else currentTestLogs.push(['debug', args]);
+    },
+    warn: (...args) => {
+        console.warn(...args);
+    },
+    error: (...args) => {
+        console.error(...args);
+    }
+};
+
 const context = {
     window: windowMock,
     document: {
@@ -81,7 +106,7 @@ const context = {
             }
         }
     },
-    console: console,
+    console: testConsole,
     setTimeout: setTimeout,      // Fixed: Provide setTimeout context hooks
     clearTimeout: clearTimeout,  // Fixed: Provide clearTimeout context hooks
     globalThis: {}
@@ -112,24 +137,39 @@ let failedTestsCount = 0;
 let passedTestsCount = 0;
 
 function runTestCase(name, setup, assertFn) {
+    currentTestLogs = [];
     try {
         setup();
         assertFn();
-        console.log(`${green('PASS')} - ${name}`);
         passedTestsCount++;
+        if (isVerbose) {
+            console.log(`${green('PASS')} - ${name}`);
+        } else {
+            process.stdout.write(green('.'));
+        }
     } catch (e) {
-        console.log(`${red('FAIL')} - ${name}`);
-        console.error(e);
         failedTestsCount++;
+        if (!isVerbose) process.stdout.write('\n');
+        console.log(`${red('FAIL')} - ${name}`);
+        if (currentTestLogs.length > 0) {
+            console.log('--- Captured Debug Logs for Failing Test ---');
+            currentTestLogs.forEach(([type, args]) => {
+                const formattedArgs = args.map(a => (typeof a === 'object' && a !== null) ? JSON.stringify(a) : a);
+                console.error(`  [${type}]`, ...formattedArgs);
+            });
+        }
+        console.error(e);
     }
 }
 
-console.log('Running Guess Case / Guess Feat Improver regression tests...\n');
+function logSection(title) {
+    if (isVerbose) {
+        console.log(`\n${title}`);
+    }
+}
 
-// ====================================================================================
-// --- Scenario A Tests ---
-// ====================================================================================
-console.log('--- Scenario A: Knockout Observable is Available ---');
+console.log('Running Guess Case / Guess Feat Improver regression tests...');
+logSection('--- Scenario A: Knockout Observable is Available ---');
 
 // Case 1
 runTestCase('1. Title - Artist (Seeded match)', () => {
@@ -624,6 +664,7 @@ runTestCase('17. Processing an entire multi-track remix release tracklist and as
             `Track ${tNum}: Title should preserve the remix suffix context unchanged during the artist text separation loop.`
         );
     });
+    context.document.cookie = originalCookie;
 });
 
 // Case 18
@@ -1664,8 +1705,13 @@ if (mbServerAvailable) {
     });
 
 } else {
-    console.log('\n--- Scenario C: Skipped (musicbrainz-server not available at expected path) ---');
+    logSection('--- Scenario C: Skipped (musicbrainz-server not available at expected path) ---');
 }
 
-console.log(`\nTest Suite Complete: ${passedTestsCount} passed, ${failedTestsCount} failed.\n`);
-if (failedTestsCount > 0) process.exit(1);
+if (!isVerbose) process.stdout.write('\n\n');
+if (failedTestsCount === 0) {
+    console.log(`${green('✓')} Test Suite Complete: ${passedTestsCount} passed, 0 failed.`);
+} else {
+    console.log(`${red('❌')} Test Suite Complete: ${passedTestsCount} passed, ${failedTestsCount} failed.`);
+    process.exit(1);
+}
