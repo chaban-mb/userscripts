@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MusicBrainz: Ajax Collection Links
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      1.1.1
+// @version      1.2.0
 // @tag          ai-created
 // @description  Enhances entity sidebar collection links (Add/Remove from Collection) to use AJAX, preventing page reloads and toggling the link text on success.
 // @author       chaban
@@ -73,7 +73,10 @@
      */
     async function sendCollectionRequest(apiUrl) {
         try {
-            const response = await fetch(apiUrl, { method: 'GET' });
+            const response = await fetch(apiUrl, {
+                method: 'GET',
+                keepalive: true
+            });
             if (response.ok) {
                 return true;
             } else {
@@ -195,18 +198,6 @@
         if (sidebar) {
             sidebar.addEventListener('click', handleSidebarClick);
         }
-
-        window.addEventListener('beforeunload', (event) => {
-            if (activeRequests > 0) {
-                event.preventDefault();
-            }
-        });
-
-        window.addEventListener('unload', () => {
-            if (activeRequests > 0) {
-                isUnloading = true;
-            }
-        });
     }
 
     initialize();
