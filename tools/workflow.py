@@ -569,21 +569,12 @@ def do_release(non_interactive=False, json_output=False, bump_strategy="auto", s
         print(f"      {COLOR_CYAN}git rebase {main_branch}{COLOR_RESET}")
         print(f"      {COLOR_CYAN}git push {remote} {release_branch} --force-with-lease{COLOR_RESET}\n")
 
-    confirm = prompt_user(f"{COLOR_BOLD}Do you want to apply these operations and push changes? (y/N):{COLOR_RESET} ", default='y', non_interactive=non_interactive, auto_choice='y').lower()
+    auto_apply = 'n' if non_interactive else 'y'
+    confirm = prompt_user(f"{COLOR_BOLD}Do you want to apply these operations and push changes? (y/N):{COLOR_RESET} ", default='y', non_interactive=non_interactive, auto_choice=auto_apply).lower()
     if confirm != 'y':
-        print(f"\n{COLOR_YELLOW}Release finalized locally on current branch. Merging and pushing skipped.{COLOR_RESET}")
-        if commits_created > 0:
+        print(f"\n{COLOR_YELLOW}Release finalized locally on current branch ('{release_branch}'). Merging and pushing to '{main_branch}' skipped (releasing to main requires human execution).{COLOR_RESET}")
+        if commits_created > 0 and not non_interactive:
             undo_confirm = prompt_user(f"\n{COLOR_YELLOW}{COLOR_BOLD}Do you want to undo/revert the {commits_created} local commits created during this session? (y/N):{COLOR_RESET} ", default='n', non_interactive=non_interactive, auto_choice='n').lower()
-            if undo_confirm == 'y':
-                print(f"\n{COLOR_RED}Undoing last {commits_created} commits (git reset --soft)...{COLOR_RESET}")
-                subprocess.run(['git', 'reset', '--soft', f'HEAD~{commits_created}'], check=True)
-
-                # Revert auto-generated docs/USERSCRIPTS.md changes
-                print(f"{COLOR_YELLOW}Reverting auto-generated changes to docs/USERSCRIPTS.md...{COLOR_RESET}")
-    if confirm != 'y':
-        print(f"\n{COLOR_YELLOW}Release finalized locally on current branch. Merging and pushing skipped.{COLOR_RESET}")
-        if commits_created > 0:
-            undo_confirm = input(f"\n{COLOR_YELLOW}{COLOR_BOLD}Do you want to undo/revert the {commits_created} local commits created during this session? (y/N):{COLOR_RESET} ").strip().lower()
             if undo_confirm == 'y':
                 print(f"\n{COLOR_RED}Undoing last {commits_created} commits (git reset --soft)...{COLOR_RESET}")
                 subprocess.run(['git', 'reset', '--soft', f'HEAD~{commits_created}'], check=True)
