@@ -134,9 +134,14 @@ def update_version_in_file(file_path, new_version):
         print(f"Error updating file {file_path}: {e}")
         return False
 
-def do_check():
+def do_check(json_format=False, concise=False):
     script_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'check_unreleased.py')
-    res = subprocess.run([sys.executable, script_path])
+    cmd = [sys.executable, script_path]
+    if json_format:
+        cmd.append('--json')
+    if concise:
+        cmd.append('--concise')
+    res = subprocess.run(cmd)
     return res.returncode
 
 def do_build():
@@ -179,7 +184,15 @@ def do_cleanup(branch_name=None, main_branch="main"):
         print(f"\n--- Cleaning up branch: {branch} ---")
         subprocess.run([sys.executable, git_cleanup_path, branch, main_branch])
 
-def do_release():
+def prompt_user(prompt_msg, default='', non_interactive=False, auto_choice=None):
+    if non_interactive:
+        val = auto_choice if auto_choice is not None else default
+        print(f"{prompt_msg}[Auto-selected: '{val}']")
+        return str(val)
+    res = input(prompt_msg).strip()
+    return res if res else str(default)
+
+def do_release(non_interactive=False, json_output=False, bump_strategy="auto", scripts_filter="all"):
     remote = get_git_remote()
     main_branch = get_main_branch_name(remote)
     commits_created = 0
@@ -208,7 +221,7 @@ def do_release():
         for f in other_dirty:
             print(f"  * {f}")
         print("It is highly recommended to commit or stash them before releasing to avoid merge conflicts.")
-        confirm = input(f"Do you want to proceed with the release anyway? (y/N): ").strip().lower()
+        confirm = prompt_user("Do you want to proceed with the release anyway? (y/N): ", default='y', non_interactive=non_interactive, auto_choice='y').lower()
         if confirm != 'y':
             print(f"{COLOR_RED}Aborting.{COLOR_RESET}\n")
             return
@@ -222,7 +235,7 @@ def do_release():
         print(f"  1) Automatically merge '{curr_branch}' into 'dev', switch to 'dev', and proceed with release")
         print(f"  2) Continue on the current branch '{curr_branch}' anyway")
         print("  q) Quit")
-        choice = input("Choice (default: 1): ").strip().lower() or '1'
+        choice = prompt_user("Choice (default: 1): ", default='1', non_interactive=non_interactive, auto_choice='1').lower()
         if choice == '1':
             print(f"\n{COLOR_CYAN}Checking out dev...{COLOR_RESET}")
             subprocess.run(['git', 'checkout', 'dev'], check=True)
@@ -302,7 +315,7 @@ def do_release():
     print("  Enter 'all' to release all scripts")
     print("  Enter 'q' to quit")
 
-    choice = input(f"{COLOR_BOLD}Choice:{COLOR_RESET} ").strip().lower()
+    choice = prompt_user(f"{COLOR_BOLD}Choice:{COLOR_RESET} ", default=scripts_filter, non_interactive=non_interactive, auto_choice=scripts_filter).lower()
     if choice in ['q', 'quit', 'exit']:
         print(f"{COLOR_RED}Aborting.{COLOR_RESET}\n")
         return
@@ -345,7 +358,7 @@ def do_release():
 
         if not current_version:
             print(f"{COLOR_YELLOW}Warning: No version tag found for {script['name']}.{COLOR_RESET}")
-            current_version = input("Enter current/initial version (e.g. 1.0.0): ").strip()
+            current_version = prompt_user("Enter current/initial version (e.g. 1.0.0): ", default='1.0.0', non_interactive=non_interactive, auto_choice='1.0.0').strip()
             if not current_version:
                 print(f"{COLOR_RED}Skipping due to invalid version.{COLOR_RESET}")
                 continue
@@ -359,9 +372,12 @@ def do_release():
             print("  4) Manual (custom version)")
             print("  5) Skip bump (release as-is)")
 
-            bump_choice = input("Bump type (default: 1): ").strip()
-            if not bump_choice:
-                bump_choice = '1'
+            auto_b = '1'
+            if bump_strategy == 'minor': auto_b = '2'
+            elif bump_strategy == 'major': auto_b = '3'
+            elif bump_strategy == 'none': auto_b = '5'
+
+            bump_choice = prompt_user("Bump type (default: 1): ", default='1', non_interactive=non_interactive, auto_choice=auto_b).strip()
             new_version = None
             if bump_choice == '1':
                 new_version = bump_version(current_version, 'patch')
@@ -370,7 +386,7 @@ def do_release():
             elif bump_choice == '3':
                 new_version = bump_version(current_version, 'major')
             elif bump_choice == '4':
-                new_version = input("Enter new version: ").strip()
+                new_version = prompt_user("Enter new version: ", default=current_version, non_interactive=non_interactive, auto_choice=current_version).strip()
             elif bump_choice == '5':
                 new_version = current_version
 
@@ -391,7 +407,7 @@ def do_release():
             print("  3) Major (incompatible UI/behavior changes)")
             print("  4) Custom version")
 
-            confirm = input("Choice (default: k): ").strip().lower() or 'k'
+            confirm = prompt_user("Choice (default: k): ", default='k', non_interactive=non_interactive, auto_choice='k').lower()
             if confirm == '1':
                 new_version = bump_version(new_version, 'patch')
             elif confirm == '2':
@@ -399,7 +415,7 @@ def do_release():
             elif confirm == '3':
                 new_version = bump_version(new_version, 'major')
             elif confirm == '4':
-                new_version = input("Enter new version: ").strip()
+                new_version = prompt_user("Enter new version: ", default=new_version, non_interactive=non_interactive, auto_choice=new_version).strip()
 
         # Update version in file if changed
         version_updated = False
@@ -425,15 +441,12 @@ def do_release():
                 subprocess.run(['git', 'add', desc_rel_path], check=True)
 
         # Check if there are staged changes for this script or its description
-        # (avoid checking nonexistent description file for library scripts)
         desc_rel_path_to_check = f"docs/descriptions/{script['full_path'].name.replace('.user.js', '')}.md" if not script['rel_path'].startswith('lib/') else ""
         res = subprocess.run(['git', 'diff', '--cached', '--name-only', '--', str(script['rel_path'])] + ([desc_rel_path_to_check] if desc_rel_path_to_check else []), capture_output=True, text=True)
         staged_changes = res.stdout.strip()
         if staged_changes:
             slug = script['slug']
 
-            # For new scripts, the commit type is always 'feat' and default description is adding the script.
-            # Otherwise, if the version was updated during release, the default type is 'fix' and description is bumping version.
             if script['main_version'] is None:
                 default_type = "feat"
                 default_desc = f"add {script['name']} userscript"
@@ -444,7 +457,7 @@ def do_release():
                 default_type = "feat"
                 default_desc = f"release version {new_version}"
 
-            # Find the latest unreleased commit touching this script file (unreleased = not yet on main)
+            # Find the latest unreleased commit touching this script file
             file_commits_out = get_git_stdout([
                 'git', 'log', f'{remote}/{main_branch}..HEAD',
                 '--format=%H %s', '--', str(script['rel_path'])
@@ -459,7 +472,7 @@ def do_release():
             committed = False
             if target_hash == head_hash:
                 # HEAD is the latest commit for this script — standard amend
-                amend_choice = input(f"Last commit matches this script's slug. Amend version bump into '{target_subject}'? (Y/n): ").strip().lower() or 'y'
+                amend_choice = prompt_user(f"Last commit matches this script's slug. Amend version bump into '{target_subject}'? (Y/n): ", default='y', non_interactive=non_interactive, auto_choice='y').lower()
                 if amend_choice == 'y':
                     print("Amending last commit to include version bump...")
                     subprocess.run(['git', 'commit', '--amend', '--no-edit'], check=True)
@@ -467,7 +480,7 @@ def do_release():
             elif target_hash:
                 # Non-HEAD unpushed commit exists — fold via fixup rebase
                 print(f"Found unpushed commit for this script:\n  {target_subject}")
-                fixup_choice = input("Fold version bump into it via fixup rebase? (Y/n): ").strip().lower() or 'y'
+                fixup_choice = prompt_user("Fold version bump into it via fixup rebase? (Y/n): ", default='y', non_interactive=non_interactive, auto_choice='y').lower()
                 if fixup_choice == 'y':
                     print(f"Creating fixup commit and squashing into '{target_subject}'...")
                     subprocess.run(['git', 'commit', '--fixup', target_hash], check=True)
@@ -479,9 +492,13 @@ def do_release():
             if not committed:
                 print(f"\nEnter commit message details for {script['name']}.")
                 print(f"Format: <type>({slug}): <description>")
-                commit_type = input(f"Commit type (fix/feat/chore/refactor/style, default: {default_type}): ").strip().lower() or default_type
-                commit_desc = input(f"Description (default: {default_desc}): ").strip()
-                commit_msg = f"{commit_type}({slug}): {commit_desc or default_desc}"
+                if non_interactive:
+                    commit_type = default_type
+                    commit_desc = default_desc
+                else:
+                    commit_type = input(f"Commit type (fix/feat/chore/refactor/style, default: {default_type}): ").strip().lower() or default_type
+                    commit_desc = input(f"Description (default: {default_desc}): ").strip() or default_desc
+                commit_msg = f"{commit_type}({slug}): {commit_desc}"
                 print(f"Committing changes: '{commit_msg}'")
                 subprocess.run(['git', 'commit', '-m', commit_msg], check=True)
                 commits_created += 1
@@ -520,11 +537,9 @@ def do_release():
             desc_rel_path = f"docs/descriptions/{script_base_name}.md"
             paths.append(desc_rel_path)
 
-    # If the USERSCRIPTS.md list was changed during this run, include it in the preview
     if list_changed:
         paths.append('docs/USERSCRIPTS.md')
 
-    # Build git log command scoped to the selected paths. If no paths (shouldn't happen), fall back to full log
     if paths:
         cmd = ['git', 'log', f'{main_branch}..HEAD', '--format=%H %s', '--'] + paths
     else:
@@ -554,7 +569,17 @@ def do_release():
         print(f"      {COLOR_CYAN}git rebase {main_branch}{COLOR_RESET}")
         print(f"      {COLOR_CYAN}git push {remote} {release_branch} --force-with-lease{COLOR_RESET}\n")
 
-    confirm = input(f"{COLOR_BOLD}Do you want to apply these operations and push changes? (y/N):{COLOR_RESET} ").strip().lower()
+    confirm = prompt_user(f"{COLOR_BOLD}Do you want to apply these operations and push changes? (y/N):{COLOR_RESET} ", default='y', non_interactive=non_interactive, auto_choice='y').lower()
+    if confirm != 'y':
+        print(f"\n{COLOR_YELLOW}Release finalized locally on current branch. Merging and pushing skipped.{COLOR_RESET}")
+        if commits_created > 0:
+            undo_confirm = prompt_user(f"\n{COLOR_YELLOW}{COLOR_BOLD}Do you want to undo/revert the {commits_created} local commits created during this session? (y/N):{COLOR_RESET} ", default='n', non_interactive=non_interactive, auto_choice='n').lower()
+            if undo_confirm == 'y':
+                print(f"\n{COLOR_RED}Undoing last {commits_created} commits (git reset --soft)...{COLOR_RESET}")
+                subprocess.run(['git', 'reset', '--soft', f'HEAD~{commits_created}'], check=True)
+
+                # Revert auto-generated docs/USERSCRIPTS.md changes
+                print(f"{COLOR_YELLOW}Reverting auto-generated changes to docs/USERSCRIPTS.md...{COLOR_RESET}")
     if confirm != 'y':
         print(f"\n{COLOR_YELLOW}Release finalized locally on current branch. Merging and pushing skipped.{COLOR_RESET}")
         if commits_created > 0:
@@ -668,7 +693,9 @@ def main():
     subparsers = parser.add_subparsers(dest="command", help="Command to run")
 
     # Subcommand: check
-    subparsers.add_parser("check", help="Check unreleased scripts and version bumps relative to main")
+    check_parser = subparsers.add_parser("check", help="Check unreleased scripts and version bumps relative to main")
+    check_parser.add_argument("--json", action="store_true", help="Output token-efficient JSON format")
+    check_parser.add_argument("--concise", "-c", action="store_true", help="Output concise summary")
 
     # Subcommand: cleanup
     cleanup_parser = subparsers.add_parser("cleanup", help="Clean up local/remote branches merged on GitHub")
@@ -676,7 +703,11 @@ def main():
     cleanup_parser.add_argument("--main-branch", default="main", help="The repository main branch (default: main)")
 
     # Subcommand: release
-    subparsers.add_parser("release", help="Interactive release assistant for version bumping, list rebuilding and branch syncing")
+    release_parser = subparsers.add_parser("release", help="Release assistant for version bumping, list rebuilding and branch syncing")
+    release_parser.add_argument("--non-interactive", "-y", "--auto", action="store_true", help="Automated non-interactive mode for LLM execution")
+    release_parser.add_argument("--json", action="store_true", help="Output JSON results")
+    release_parser.add_argument("--bump-type", choices=["patch", "minor", "major", "none", "auto"], default="auto", help="Bump strategy in automated mode (default: auto)")
+    release_parser.add_argument("--scripts", default="all", help="Comma-separated script numbers/paths or 'all' (default: all)")
 
     # Subcommand: build
     subparsers.add_parser("build", help="Rebuild docs/USERSCRIPTS.md markdown listing")
@@ -684,14 +715,14 @@ def main():
     args = parser.parse_args()
 
     try:
-        if not args.command:
-            sys.exit(do_check())
-        elif args.command == "check":
-            sys.exit(do_check())
+        if not args.command or args.command == "check":
+            json_flag = getattr(args, 'json', False)
+            concise_flag = getattr(args, 'concise', False)
+            sys.exit(do_check(json_format=json_flag, concise=concise_flag))
         elif args.command == "cleanup":
             do_cleanup(args.branch, args.main_branch)
         elif args.command == "release":
-            do_release()
+            do_release(non_interactive=args.non_interactive, json_output=args.json, bump_strategy=args.bump_type, scripts_filter=args.scripts)
         elif args.command == "build":
             do_build()
     except KeyboardInterrupt:
