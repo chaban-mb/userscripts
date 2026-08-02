@@ -192,7 +192,7 @@ def prompt_user(prompt_msg, default='', non_interactive=False, auto_choice=None)
     res = input(prompt_msg).strip()
     return res if res else str(default)
 
-def do_release(non_interactive=False, json_output=False, bump_strategy="auto", scripts_filter="all", custom_commit_type=None, custom_commit_msg=None):
+def do_release(non_interactive=False, json_output=False, bump_strategy="auto", scripts_filter="all", custom_commit_type=None, custom_commit_msg=None, dry_run=False):
     remote = get_git_remote()
     main_branch = get_main_branch_name(remote)
     commits_created = 0
@@ -420,15 +420,23 @@ def do_release(non_interactive=False, json_output=False, bump_strategy="auto", s
         # Update version in file if changed
         version_updated = False
         if new_version != current_version:
-            print(f"Updating version in file to {new_version}...")
-            if update_version_in_file(script['full_path'], new_version):
-                print("File updated.")
+            if dry_run:
+                print(f"[DRY-RUN] Would update version in file {script['rel_path']} to {new_version}")
                 version_updated = True
             else:
-                print("Failed to update version in file.")
-                continue
+                print(f"Updating version in file to {new_version}...")
+                if update_version_in_file(script['full_path'], new_version):
+                    print("File updated.")
+                    version_updated = True
+                else:
+                    print("Failed to update version in file.")
+                    continue
 
         script['version_updated'] = version_updated
+
+        if dry_run:
+            print(f"[DRY-RUN] Skipping git add and git commit for {script['name']}.")
+            continue
 
         # Automatically stage the script file and its description
         subprocess.run(['git', 'add', str(script['rel_path'])], check=True)
@@ -716,6 +724,7 @@ def main():
     # Subcommand: release
     release_parser = subparsers.add_parser("release", help="Release assistant for version bumping, list rebuilding and branch syncing")
     release_parser.add_argument("--non-interactive", "-y", "--auto", action="store_true", help="Automated non-interactive mode for LLM execution")
+    release_parser.add_argument("--dry-run", "-n", action="store_true", help="Simulate release workflow without creating commits or modifying files")
     release_parser.add_argument("--json", action="store_true", help="Output JSON results")
     release_parser.add_argument("--bump-type", choices=["patch", "minor", "major", "none", "auto"], default="auto", help="Bump strategy in automated mode (default: auto)")
     release_parser.add_argument("--scripts", default="all", help="Comma-separated script numbers/paths or 'all' (default: all)")
@@ -741,7 +750,8 @@ def main():
                 bump_strategy=args.bump_type,
                 scripts_filter=args.scripts,
                 custom_commit_type=args.commit_type,
-                custom_commit_msg=args.commit_msg
+                custom_commit_msg=args.commit_msg,
+                dry_run=args.dry_run
             )
         elif args.command == "build":
             do_build()
