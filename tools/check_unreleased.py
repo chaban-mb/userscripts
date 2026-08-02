@@ -43,22 +43,38 @@ def main():
     repo_root = Path(__file__).resolve().parent.parent
     
     # 1. Get tracked changes relative to main
-    diff_files = get_git_stdout(['git', 'diff', '--name-only', 'main', '--', 'src/', 'lib/']).splitlines()
+    diff_files = get_git_stdout(['git', 'diff', '--name-only', 'main']).splitlines()
     # 2. Get untracked files
-    untracked_files = get_git_stdout(['git', 'ls-files', '--others', '--exclude-standard', '--', 'src/', 'lib/']).splitlines()
+    untracked_files = get_git_stdout(['git', 'ls-files', '--others', '--exclude-standard']).splitlines()
     
     all_files = sorted(list(set(diff_files + untracked_files)))
     userscripts = [f for f in all_files if f.endswith('.user.js') or (f.startswith('lib/') and f.endswith('.js'))]
+    script_basenames = {Path(u).name.replace('.user.js', '') for u in userscripts}
+
+    non_userscript_files = []
+    for f in all_files:
+        if f in userscripts:
+            continue
+        if f == 'docs/USERSCRIPTS.md':
+            continue
+        if f.startswith('docs/descriptions/') and f.endswith('.md'):
+            base = Path(f).name.replace('.md', '')
+            if base in script_basenames:
+                continue
+        non_userscript_files.append(f)
     
-    if not userscripts:
+    if not userscripts and not non_userscript_files:
         if args.json:
-            print(json.dumps({"unreleased_count": 0, "bump_needed_count": 0, "scripts": []}))
+            print(json.dumps({"unreleased_count": 0, "bump_needed_count": 0, "scripts": [], "infrastructure_files": []}))
         else:
-            print("No unreleased changes found in src/ or lib/ compared to main.")
+            print("No unreleased changes found compared to main.")
         return 0
- 
+
     if not args.json and not args.concise:
-        print(f"Found {len(userscripts)} modified/new userscript(s) or library file(s) relative to main:\n")
+        if userscripts:
+            print(f"Found {len(userscripts)} modified/new userscript(s) or library file(s) relative to main:\n")
+        else:
+            print("No unreleased userscripts found relative to main.\n")
     
     bump_needed_count = 0
     script_data = []
@@ -69,7 +85,7 @@ def main():
         if not full_path.exists():
             if not args.json:
                 print(f"[-] [DELETED] {rel_path_str}")
-            script_data.append({"rel_path": rel_path_str, "status": "DELETED", "needs_bump": false})
+            script_data.append({"rel_path": rel_path_str, "status": "DELETED", "needs_bump": False})
             continue
             
         try:
@@ -163,12 +179,23 @@ def main():
                 if has_uncommitted:
                     print("     * [Uncommitted changes in workspace]")
             print()
-        
+    
+    if non_userscript_files:
+        if not args.json:
+            if args.concise:
+                print(f"[#] [INFRASTRUCTURE] {len(non_userscript_files)} non-userscript file(s) modified: {', '.join(non_userscript_files)}")
+            else:
+                print(f"[#] Infrastructure / Non-Userscript Changes ({len(non_userscript_files)} file(s)):")
+                for f in non_userscript_files:
+                    print(f"     * {f}")
+                print()
+
     if args.json:
         print(json.dumps({
             "unreleased_count": len(script_data),
             "bump_needed_count": bump_needed_count,
-            "scripts": script_data
+            "scripts": script_data,
+            "infrastructure_files": non_userscript_files
         }, indent=2))
     elif not args.concise:
         if bump_needed_count > 0:

@@ -517,6 +517,17 @@ def do_release(non_interactive=False, json_output=False, bump_strategy="auto", s
         subprocess.run(['git', 'commit', '-m', "chore(docs): update userscripts list"], check=True)
         commits_created += 1
 
+    # Detect all changed files between main and HEAD
+    all_changed_files = [f.strip() for f in get_git_stdout(['git', 'diff', '--name-only', f'{main_branch}..HEAD']).splitlines() if f.strip()]
+    selected_rel_paths = {s['rel_path'] for s in selected_scripts}
+    selected_desc_paths = {f"docs/descriptions/{s['full_path'].name.replace('.user.js', '')}.md" for s in selected_scripts if not s['rel_path'].startswith('lib/')}
+    
+    infra_changed_files = []
+    for f in all_changed_files:
+        if f in selected_rel_paths or f in selected_desc_paths or f == 'docs/USERSCRIPTS.md':
+            continue
+        infra_changed_files.append(f)
+
     is_full_release = (len(selected_scripts) == len(unreleased_info))
 
     mode_label = f"{COLOR_GREEN}[Fast-Forward Release]{COLOR_RESET}" if is_full_release else f"{COLOR_YELLOW}[Selective Rebase Release]{COLOR_RESET}"
@@ -524,26 +535,25 @@ def do_release(non_interactive=False, json_output=False, bump_strategy="auto", s
     print(f"{COLOR_BOLD}Preview of actions to perform:{COLOR_RESET}")
 
     if is_full_release:
-        print(f"\n  * Releasing all unreleased scripts from '{release_branch}' into '{main_branch}'.")
+        print(f"\n  * Releasing all unreleased scripts and commits from '{release_branch}' into '{main_branch}'.")
+        cmd = ['git', 'log', f'{main_branch}..HEAD', '--format=%H %s']
     else:
         print(f"\n  * Commits to cherry-pick into '{main_branch}':")
+        paths = []
+        for script in selected_scripts:
+            paths.append(script['rel_path'])
+            if not script['rel_path'].startswith('lib/'):
+                script_base_name = script['full_path'].name.replace('.user.js', '')
+                desc_rel_path = f"docs/descriptions/{script_base_name}.md"
+                paths.append(desc_rel_path)
 
-    # Limit the preview to commits that touch the selected scripts (and description/docs if applicable)
-    paths = []
-    for script in selected_scripts:
-        paths.append(script['rel_path'])
-        if not script['rel_path'].startswith('lib/'):
-            script_base_name = script['full_path'].name.replace('.user.js', '')
-            desc_rel_path = f"docs/descriptions/{script_base_name}.md"
-            paths.append(desc_rel_path)
+        if list_changed:
+            paths.append('docs/USERSCRIPTS.md')
 
-    if list_changed:
-        paths.append('docs/USERSCRIPTS.md')
-
-    if paths:
-        cmd = ['git', 'log', f'{main_branch}..HEAD', '--format=%H %s', '--'] + paths
-    else:
-        cmd = ['git', 'log', f'{main_branch}..HEAD', '--format=%H %s']
+        if paths:
+            cmd = ['git', 'log', f'{main_branch}..HEAD', '--format=%H %s', '--'] + paths
+        else:
+            cmd = ['git', 'log', f'{main_branch}..HEAD', '--format=%H %s']
 
     commit_lines = [line.strip() for line in get_git_stdout(cmd).splitlines() if line.strip()]
     commit_ids = [line.split(' ', 1)[0] for line in commit_lines]
@@ -552,6 +562,16 @@ def do_release(non_interactive=False, json_output=False, bump_strategy="auto", s
             print(f"      {COLOR_GREEN}{commit}{COLOR_RESET}")
     else:
         print(f"      {COLOR_YELLOW}No new commits ({release_branch} and {main_branch} are already in sync).{COLOR_RESET}")
+
+    if infra_changed_files:
+        if is_full_release:
+            print(f"\n  * {COLOR_YELLOW}{COLOR_BOLD}Non-userscript / Infrastructure files included in this release ({len(infra_changed_files)} file(s)):{COLOR_RESET}")
+            for f in infra_changed_files:
+                print(f"      {COLOR_YELLOW}* {f}{COLOR_RESET}")
+        else:
+            print(f"\n  * {COLOR_YELLOW}{COLOR_BOLD}Non-userscript / Infrastructure files remaining on '{release_branch}' ({len(infra_changed_files)} file(s)):{COLOR_RESET}")
+            for f in infra_changed_files:
+                print(f"      {COLOR_YELLOW}* {f}{COLOR_RESET}")
 
     # Show branch updates
     print(f"\n  * Git operations to run:")
