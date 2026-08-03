@@ -1648,12 +1648,14 @@
                 const results = await AppState.lang.detector(textToAnalyze);
                 if (results.length === 0) return;
                 const final = results[0];
-                const [langCode, scriptCode] = final.detectedLanguage.split('-');
+                const locale = new Intl.Locale(final.detectedLanguage);
+                const langCode = locale.language;
+                const scriptCode = locale.script ?? null;
                 AppState.lang.result = {
                     languageName: new Intl.DisplayNames(['en'], { type: 'language' }).of(langCode),
                     confidence: Math.round(final.confidence * 100),
                     languageCode3: getISO639_3_Code(langCode),
-                    scriptCode: scriptCode || null,
+                    scriptCode,
                     isZxx: false,
                     skipped: false,
                     debugInfo: { allResults: results, analyzedText: textToAnalyze }
