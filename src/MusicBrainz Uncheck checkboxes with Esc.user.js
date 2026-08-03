@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MusicBrainz: Uncheck checkboxes with Esc
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      1.4.1
+// @version      1.4.2
 // @description  Unchecks all checked checkboxes for specified selectors when pressing Escape key
 // @tag          ai-created
 // @author       chaban
@@ -13,7 +13,7 @@
 // @downloadURL  https://github.com/chaban-mb/userscripts/raw/main/src/MusicBrainz%20Uncheck%20checkboxes%20with%20Esc.user.js
 // ==/UserScript==
 
-(function() {
+(function () {
     'use strict';
 
     /**
@@ -27,6 +27,7 @@
      */
     const TARGET_CHECKBOX_SELECTORS = [
         'input[type="checkbox"][name="add-to-merge"]',
+        'input[type="checkbox"][name="remove"]',
         '.release-relationship-editor #tracklist [type="checkbox"]',
         '.cover-art-checkbox',
         '#selectAllCovers',
