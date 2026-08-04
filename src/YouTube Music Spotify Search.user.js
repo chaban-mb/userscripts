@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YouTube Music: Spotify Search
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      1.0.1
+// @version      1.1.0
 // @description  Adds a context-aware "Search on Spotify" item to the menu for songs and albums.
 // @author       chaban
 // @license      MIT
@@ -18,7 +18,7 @@
     const SCRIPT_NAME = GM.info.script.name;
     const CUSTOM_ITEM_ID = 'spotify-search';
 
-    console.log(`%c[${SCRIPT_NAME}] Script Loaded. Version ${GM.info.script.version}.`, 'font-weight: bold;');
+    console.debug(`[${SCRIPT_NAME}] Script initialized (v${GM.info.script.version})`);
 
     let lastActionContext = null;
 
@@ -28,105 +28,158 @@
      * @returns { {query: string, type: string} | null }
      */
     const getContextFromTrigger = (triggerElement) => {
-        console.log(`%c[${SCRIPT_NAME}] getContextFromTrigger: Received trigger...`, 'color: royalblue;', triggerElement);
         if (!triggerElement) {
-            console.warn(`[${SCRIPT_NAME}] Trigger element is null.`);
+            console.debug(`[${SCRIPT_NAME}] Context extraction skipped: Trigger element is null.`);
             return null;
         }
 
+        const attempts = [];
+
         try {
-            // Strategy 1: Song in a list (most common)
-            const listItem = triggerElement.closest('ytmusic-responsive-list-item-renderer');
+            // Strategy 1: Song / Podcast Episode in a list
+            const listItem = triggerElement.closest('ytmusic-responsive-list-item-renderer, ytmusic-multi-row-list-item-renderer');
             if (listItem) {
-                console.log(`[${SCRIPT_NAME}] Found list item parent. Attempting Strategy 1 (Song)...`, listItem);
                 const title = listItem.querySelector('.title a, .title')?.textContent?.trim();
-                let artist = Array.from(listItem.querySelectorAll('.secondary-flex-columns a'))
+                let artist = Array.from(listItem.querySelectorAll('.secondary-flex-columns a, .subtitle a'))
                                 .map(node => node.textContent.trim())
+                                .filter(Boolean)
                                 .join(' ');
 
-                // If artist is not found in the row, we are likely on an album page.
-                // Look for the artist in the main page header instead.
+                // If artist is not found in the row, check page header
                 if (!artist && title) {
-                    console.log(`[${SCRIPT_NAME}] -> No artist in song row, looking for page header artist...`);
-                    artist = document.querySelector('ytmusic-responsive-header-renderer .strapline-text a, ytmusic-detail-header-renderer .subtitle a')?.textContent?.trim();
+                    artist = document.querySelector('ytmusic-immersive-header-renderer .title, ytmusic-responsive-header-renderer .title, ytmusic-responsive-header-renderer .strapline-text a, ytmusic-detail-header-renderer .subtitle a')?.textContent?.trim();
                 }
 
-                if (title && artist) {
-                    const result = { query: `${artist} ${title}`, type: 'Song' };
-                    console.log(`%c[${SCRIPT_NAME}] -> SUCCESS (Song). Context:`, 'color: lightgreen;', result);
+                const isMultiRow = listItem.tagName.toLowerCase() === 'ytmusic-multi-row-list-item-renderer';
+                const subtitleText = listItem.querySelector('.subtitle')?.textContent?.toLowerCase() || '';
+                const isPodcast = isMultiRow || subtitleText.includes('episode') || subtitleText.includes('podcast');
+                const type = isPodcast ? 'Podcast' : 'Song';
+
+                if (title) {
+                    const query = artist ? `${artist} ${title}` : title;
+                    const result = { query, type, strategy: 'ListItem' };
+                    console.debug(`[${SCRIPT_NAME}] Context extracted`, result);
                     return result;
                 }
+                attempts.push({ strategy: 'ListItem', matched: true, titleFound: Boolean(title), artistFound: Boolean(artist), listItem });
+            } else {
+                attempts.push({ strategy: 'ListItem', matched: false });
             }
 
-            // Strategy 2: Album/Artist header
-            const header = triggerElement.closest('ytmusic-responsive-header-renderer');
+            // Strategy 2: Album/Artist/Immersive header
+            const header = triggerElement.closest('ytmusic-responsive-header-renderer, ytmusic-immersive-header-renderer, ytmusic-detail-header-renderer');
             if (header) {
-                console.log(`[${SCRIPT_NAME}] Found header parent. Attempting Strategy 2 (Header)...`, header);
                 const title = header.querySelector('.title')?.textContent?.trim();
                 const artist = header.querySelector('.strapline-text a')?.textContent?.trim();
                 const subtitleText = header.querySelector('.subtitle')?.textContent?.toLowerCase() || 'album';
-                let type = 'Album'; // Default to Album
-                if (subtitleText.includes('artist')) type = 'Artist';
-                else if (subtitleText.includes('single')) type = 'Single';
-                else if (subtitleText.includes('ep')) type = 'EP';
+                
+                const isImmersiveArtistHeader = header.tagName.toLowerCase() === 'ytmusic-immersive-header-renderer';
+                
+                let type = 'Album';
+                if (isImmersiveArtistHeader || subtitleText.includes('artist')) {
+                    type = 'Artist';
+                } else if (subtitleText.includes('single')) {
+                    type = 'Single';
+                } else if (subtitleText.includes('ep')) {
+                    type = 'EP';
+                }
 
-                if (title && artist) {
-                    const result = { query: `${artist} ${title}`, type: type };
-                    console.log(`%c[${SCRIPT_NAME}] -> SUCCESS (Header). Context:`, 'color: lightgreen;', result);
+                if (title) {
+                    const query = isImmersiveArtistHeader || !artist ? title : `${artist} ${title}`;
+                    const result = { query, type, strategy: 'Header' };
+                    console.debug(`[${SCRIPT_NAME}] Context extracted`, result);
                     return result;
                 }
+                attempts.push({ strategy: 'Header', matched: true, titleFound: Boolean(title), artistFound: Boolean(artist), header });
+            } else {
+                attempts.push({ strategy: 'Header', matched: false });
             }
 
             // Strategy 3: Album/Playlist/Song/Channel Card (e.g., in carousels)
             const cardItem = triggerElement.closest('ytmusic-two-row-item-renderer');
             if (cardItem) {
-                console.log(`[${SCRIPT_NAME}] Found card parent. Attempting Strategy 3 (Card)...`, cardItem);
                 const title = cardItem.querySelector('.title a, .title')?.textContent?.trim();
                 const subtitleText = cardItem.querySelector('.subtitle')?.textContent?.trim() || '';
-                const parts = subtitleText.split('•').map(s => s.trim());
-                const type = parts[0] || 'Unknown';
 
-                // Handle Channels by checking for circular thumbnail, a structural hint.
                 if (cardItem.hasAttribute('has-circle-cropped-thumbnail')) {
-                    const result = { query: title, type: 'Channel' };
-                    console.log(`%c[${SCRIPT_NAME}] -> SUCCESS (Channel Card). Context:`, 'color: lightgreen;', result);
+                    const result = { query: title, type: 'Channel', strategy: 'Card' };
+                    console.debug(`[${SCRIPT_NAME}] Context extracted`, result);
                     return result;
                 }
 
-                // Handle User Playlists by checking if the type is "Playlist".
-                if (type.toLowerCase() === 'playlist') {
-                     const result = { query: title, type: 'Playlist' };
-                     console.log(`%c[${SCRIPT_NAME}] -> SUCCESS (Playlist Card). Context:`, 'color: lightgreen;', result);
-                     return result;
+                // Subtitle analysis
+                const parts = subtitleText.split('•').map(s => s.trim()).filter(Boolean);
+                
+                let type = 'Album';
+                let artist = '';
+                let year = '';
+
+                for (const part of parts) {
+                    const lower = part.toLowerCase();
+                    if (/^\d{4}$/.test(part)) {
+                        year = part;
+                    } else if (['album', 'single', 'ep', 'playlist', 'podcast'].includes(lower)) {
+                        if (lower === 'album') type = 'Album';
+                        else if (lower === 'single') type = 'Single';
+                        else if (lower === 'ep') type = 'EP';
+                        else if (lower === 'playlist') type = 'Playlist';
+                    } else {
+                        if (!artist) artist = part;
+                    }
                 }
 
-                // Handle Album/Song/EP/Single cards
-                const artist = parts[1] || '';
+                if (type === 'Playlist') {
+                    const result = { query: title, type: 'Playlist', strategy: 'Card' };
+                    console.debug(`[${SCRIPT_NAME}] Context extracted`, result);
+                    return result;
+                }
+
+                // If artist is missing in card subtitle (common on artist discography carousels),
+                // fall back to page header artist
+                if (!artist) {
+                    artist = document.querySelector('ytmusic-immersive-header-renderer .title, ytmusic-responsive-header-renderer .title, ytmusic-detail-header-renderer .title')?.textContent?.trim() || '';
+                }
+
                 if (title) {
-                    const result = { query: `${artist} ${title}`, type: type };
-                    console.log(`%c[${SCRIPT_NAME}] -> SUCCESS (Media Card). Context:`, 'color: lightgreen;', result);
+                    const query = artist ? `${artist} ${title}` : title;
+                    const result = { query, type, strategy: 'Card' };
+                    console.debug(`[${SCRIPT_NAME}] Context extracted`, result);
                     return result;
                 }
+                attempts.push({ strategy: 'Card', matched: true, titleFound: Boolean(title), artistFound: Boolean(artist), type, cardItem });
+            } else {
+                attempts.push({ strategy: 'Card', matched: false });
             }
 
             // Strategy 4: Main player bar
             const playerBar = triggerElement.closest('ytmusic-player-bar');
             if (playerBar) {
-                console.log(`[${SCRIPT_NAME}] Found player bar parent. Attempting Strategy 4 (Player Bar)...`, playerBar);
                 const title = playerBar.querySelector('.title')?.textContent?.trim();
                 const artist = playerBar.querySelector('.byline-wrapper .subtitle a')?.textContent?.trim();
                 if (title && artist) {
-                    const result = { query: `${artist} ${title}`, type: 'Song' };
-                    console.log(`%c[${SCRIPT_NAME}] -> SUCCESS (Player Bar). Context:`, 'color: lightgreen;', result);
+                    const result = { query: `${artist} ${title}`, type: 'Song', strategy: 'PlayerBar' };
+                    console.debug(`[${SCRIPT_NAME}] Context extracted`, result);
                     return result;
                 }
+                attempts.push({ strategy: 'PlayerBar', matched: true, titleFound: Boolean(title), artistFound: Boolean(artist), playerBar });
+            } else {
+                attempts.push({ strategy: 'PlayerBar', matched: false });
             }
 
         } catch (e) {
-            console.error(`[${SCRIPT_NAME}] An error occurred in getContextFromTrigger:`, e);
+            console.error(`[${SCRIPT_NAME}] Context extraction crashed:`, { triggerElement, attempts, error: e });
+            return null;
         }
 
-        console.warn(`[${SCRIPT_NAME}] getContextFromTrigger: No valid context found for this trigger.`);
+        // All strategies failed -> Emit rich diagnostic payload!
+        console.warn(`[${SCRIPT_NAME}] Failed to resolve context for menu trigger:`, {
+            triggerElement,
+            triggerTag: triggerElement.tagName,
+            triggerHTML: triggerElement.outerHTML?.slice(0, 200),
+            pageUrl: location.href,
+            attempts
+        });
+
         return null;
     };
 
@@ -137,7 +190,6 @@
         if (!lastActionContext || !menu || menu.querySelector(`#${CUSTOM_ITEM_ID}`)) {
             return;
         }
-        console.log(`%c[${SCRIPT_NAME}] addCustomMenuItem: Called for menu. Context:`, 'color: orange;', lastActionContext);
 
         const listbox = menu.querySelector('tp-yt-paper-listbox');
         if (!listbox) return;
@@ -163,7 +215,7 @@
         }, true);
 
         listbox.prepend(customItem);
-        console.log(`%c[${SCRIPT_NAME}] SUCCESS! Item added to menu.`, 'color: lightgreen; font-weight: bold;');
+        console.debug(`[${SCRIPT_NAME}] Prepend custom Spotify menu item:`, context);
         lastActionContext = null;
     };
 
@@ -174,7 +226,6 @@
                 const menu = mutation.target;
                 // Add item if the menu is now visible and doesn't already have our item
                 if (menu.style.display !== 'none' && !menu.querySelector(`#${CUSTOM_ITEM_ID}`)) {
-                     console.log(`%c[${SCRIPT_NAME}] AttributeObserver: Menu became visible. Adding item.`, 'color: purple;');
                     addCustomMenuItem(menu);
                 }
             }
@@ -184,7 +235,7 @@
     // STAGE 1: Listens for the 'yt-action' event to capture context.
     document.addEventListener('yt-action', (event) => {
         if (event?.detail?.actionName === 'yt-open-popup-action') {
-            console.log(`%c[${SCRIPT_NAME}] 'yt-open-popup-action' captured.`, event.detail);
+            console.debug(`[${SCRIPT_NAME}] yt-open-popup-action captured`, event.detail);
             const triggerElement = event?.detail?.args?.[1];
             lastActionContext = getContextFromTrigger(triggerElement);
         }
@@ -196,7 +247,6 @@
             for (const node of mutation.addedNodes) {
                 if (node.nodeType === Node.ELEMENT_NODE && node.tagName === 'YTMUSIC-MENU-POPUP-RENDERER') {
                     if (!node.dataset.customMenuObserved) {
-                        console.log(`%c[${SCRIPT_NAME}] MenuObserver: New menu detected. Attaching attribute observer.`, 'color: blue;');
                         node.dataset.customMenuObserved = 'true';
                         // The attribute observer will handle the initial injection, preventing race conditions.
                         attributeObserver.observe(node, { attributes: true, attributeFilter: ['style'] });
