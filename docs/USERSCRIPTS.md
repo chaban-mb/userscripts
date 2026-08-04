@@ -470,6 +470,21 @@ Based on the original [Mass Merge Recordings](https://github.com/jesus2099/konam
 - **Batch Processing:** Merge recording pairs sequentially with a single click.
 - **Progress Tracking:** Shows a status bar with real-time feedback and retry logic for failed operations.
 
+## MusicBrainz: Pending Edits Logger
+
+[![Install](https://img.shields.io/badge/Install-success.svg?style=for-the-badge&logo=tampermonkey)](https://github.com/chaban-mb/userscripts/raw/main/src/MusicBrainz%20Pending%20Edits%20Logger.user.js)
+[![Source](https://img.shields.io/badge/Source-grey.svg?style=for-the-badge&logo=github)](https://github.com/chaban-mb/userscripts/blob/main/src/MusicBrainz%20Pending%20Edits%20Logger.user.js)
+
+# MusicBrainz: Pending Edits Logger
+
+Real-time diagnostic and debug auditor that monitors pending changes across MusicBrainz entity editors.
+
+## Features
+
+- **Multi-Editor Auditing**: Inspects active pending changes across Release Editor (`MB.releaseEditor.allEdits()`), Relationship Editors (`MB.relationshipEditor`), External Links Editors, and raw HTML form inputs.
+- **Manual & Automated Audits**: Exposes `window.auditPageForPendingEdits()` for manual diagnostic console auditing alongside real-time live change logging.
+- **Form Baseline Snapshotting**: Tracks form state hydration (`mb-hydration`) to accurately detect dirty form inputs.
+
 ## MusicBrainz: Relationship Editor Batch Remove
 
 [![Install](https://img.shields.io/badge/Install-success.svg?style=for-the-badge&logo=tampermonkey)](https://github.com/chaban-mb/userscripts/raw/main/src/MusicBrainz%20Relationship%20Editor%20Batch%20Remove.user.js)
