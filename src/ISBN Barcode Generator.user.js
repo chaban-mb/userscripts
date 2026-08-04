@@ -1,13 +1,11 @@
 // ==UserScript==
 // @name        ISBN Barcode Generator
 // @namespace   https://musicbrainz.org/user/chaban
-// @version     0.1.7
+// @version     0.1.5
 // @description Erkennt ISBNs und bettet einen scanbaren Barcode direkt ein. Mit An/Aus-Schalter im Menü.
 // @tag         ai-created
 // @author      chaban
 // @license     MIT
-// @homepageURL https://github.com/chaban-mb/userscripts
-// @supportURL  https://github.com/chaban-mb/userscripts/issues
 // @match       https://www.thalia.de/*
 // @match       https://www.yomeru.de/*
 // @match       https://tokyopop.de/*
@@ -19,12 +17,12 @@
 // @match       https://www.danibooks.de/*
 // @match       https://dokico.de/*
 // @connect     barcode.tec-it.com
-// @grant       GM.addStyle
-// @grant       GM.getValue
-// @grant       GM.setValue
-// @grant       GM.registerMenuCommand
-// @grant       GM.unregisterMenuCommand
-// @grant       GM.addElement
+// @grant       GM_addStyle
+// @grant       GM_getValue
+// @grant       GM_setValue
+// @grant       GM_registerMenuCommand
+// @grant       GM_unregisterMenuCommand
+// @grant       GM_addElement
 // @updateURL   https://github.com/chaban-mb/userscripts/raw/dist/src/ISBN%20Barcode%20Generator.user.js
 // @downloadURL https://github.com/chaban-mb/userscripts/raw/dist/src/ISBN%20Barcode%20Generator.user.js
 // ==/UserScript==
@@ -121,7 +119,7 @@
         const imageWrapper = document.createElement('div');
         imageWrapper.className = IMAGE_WRAPPER_CLASS;
 
-        GM.addElement(imageWrapper, 'img', {
+        GM_addElement(imageWrapper, 'img', {
             src: imageUrl,
             alt: altText
         });
@@ -135,7 +133,7 @@
      * Injiziert das CSS für die eingebetteten Barcodes.
      */
     function addGlobalStyle() {
-        GM.addStyle(`
+        GM_addStyle(`
             .${WRAPPER_CLASS} {
                 display: inline-block;
                 vertical-align: bottom;
@@ -241,28 +239,28 @@
         });
     }
 
-    async function enableBarcodeEmbedding() {
-        await GM.setValue(SETTING_KEY, true);
+    function enableBarcodeEmbedding() {
+        GM_setValue(SETTING_KEY, true);
         scanAndWrapISBNs();
-        await updateMenuCommand();
+        updateMenuCommand();
     }
 
-    async function disableBarcodeEmbedding() {
-        await GM.setValue(SETTING_KEY, false);
+    function disableBarcodeEmbedding() {
+        GM_setValue(SETTING_KEY, false);
         removeEmbeddedBarcodes();
-        await updateMenuCommand();
+        updateMenuCommand();
     }
 
-    async function updateMenuCommand() {
+    function updateMenuCommand() {
         if (menuCommandId) {
-            await GM.unregisterMenuCommand(menuCommandId);
+            GM_unregisterMenuCommand(menuCommandId);
         }
 
-        const isEnabled = await GM.getValue(SETTING_KEY, true);
+        const isEnabled = GM_getValue(SETTING_KEY, true);
         const label = isEnabled ? "✅ ISBN-Barcodes ausblenden" : "❌ ISBN-Barcodes einbetten";
         const commandFunc = isEnabled ? disableBarcodeEmbedding : enableBarcodeEmbedding;
 
-        menuCommandId = await GM.registerMenuCommand(label, commandFunc);
+        menuCommandId = GM_registerMenuCommand(label, commandFunc);
     }
 
     // --- Skriptstart ---
@@ -270,8 +268,8 @@
     addGlobalStyle();
     updateMenuCommand();
 
-    const debouncedScan = debounce(async () => {
-        if (await GM.getValue(SETTING_KEY, true)) {
+    const debouncedScan = debounce(() => {
+        if (GM_getValue(SETTING_KEY, true)) {
             scanAndWrapISBNs();
         }
     }, 500);
@@ -297,14 +295,12 @@
 
     observer.observe(document.body, { childList: true, subtree: true });
 
-    (async () => {
-        if (await GM.getValue(SETTING_KEY, true)) {
-            if (document.readyState === 'loading') {
-                document.addEventListener('DOMContentLoaded', scanAndWrapISBNs);
-            } else {
-                setTimeout(scanAndWrapISBNs, 500);
-            }
+    if (GM_getValue(SETTING_KEY, true)) {
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', scanAndWrapISBNs);
+        } else {
+            setTimeout(scanAndWrapISBNs, 500);
         }
-    })();
+    }
 
 })();

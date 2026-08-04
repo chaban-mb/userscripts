@@ -1,13 +1,11 @@
 // ==UserScript==
 // @name        Volumo: MusicBrainz Importer
 // @namespace   https://musicbrainz.org/user/chaban
-// @version     1.4.6
+// @version     1.4.4
 // @description Allows importing releases from Volumo into MusicBrainz.
 // @tag         ai-created
 // @author      chaban
 // @license     MIT
-// @homepageURL https://github.com/chaban-mb/userscripts
-// @supportURL  https://github.com/chaban-mb/userscripts/issues
 // @match       *://*.volumo.com/*
 // @connect     musicbrainz.org
 
@@ -58,7 +56,6 @@ class MusicBrainzAPI {
      * @param {string} [options.user_agent] - User Agent header identification string.
      * @param {number} [options.max_retries=5] - Maximum retry attempts for failed requests.
      * @param {number} [options.batch_size=100] - URL batch chunk size.
-     * @param {number} [options.timeout=15000] - Timeout per network request in milliseconds.
      */
     constructor(options = {}) {
         let defaultOrigin = 'https://musicbrainz.org';
@@ -72,7 +69,6 @@ class MusicBrainzAPI {
         this.rate_limit_delay = 1000;
         this.max_retries = options.max_retries || 5;
         this.batch_size = options.batch_size || 100;
-        this.timeout = options.timeout || 15000;
         this.cache = new Map();
         this.next_available_request_time = 0;
     }
@@ -98,14 +94,10 @@ class MusicBrainzAPI {
      * @summary Internal low-level fetch request runner with retry handling.
      * @param {string} endpoint - API resource endpoint.
      * @param {Object} [params={}] - Search parameters.
-     * @param {Object|null} [tracker=null] - Optional diagnostic statistics tracker.
      * @returns {Promise<Object>} The JSON parsed response body.
      * @private
      */
-    async _request(endpoint, params = {}, tracker = null) {
-        if (tracker) {
-            tracker.requests++;
-        }
+    async _request(endpoint, params = {}) {
         const url = new URL(`${this.base_url}/${endpoint}`);
         params.fmt = 'json';
         for (const [key, value] of Object.entries(params)) {
@@ -124,17 +116,14 @@ class MusicBrainzAPI {
             const now = Date.now();
             const waitTime = this.next_available_request_time - now;
             if (waitTime > 0) {
-                if (tracker) tracker.rateLimitWaitMs += waitTime;
                 await new Promise(resolve => setTimeout(resolve, waitTime));
             }
 
-            const reqStartTime = Date.now();
             try {
                 const response = await new Promise((resolve, reject) => {
                     GM.xmlHttpRequest({
                         method: 'GET',
                         url: url.toString(),
-                        timeout: this.timeout,
                         headers: {
                             'User-Agent': this.user_agent,
                             'Accept': 'application/json',
@@ -142,9 +131,6 @@ class MusicBrainzAPI {
                         },
                         anonymous: true,
                         onload: (res) => {
-                            if (tracker) {
-                                tracker.networkDurationMs += (Date.now() - reqStartTime);
-                            }
                             const responseTime = Date.now();
                             const headers = this._parseHeaders(res.responseHeaders);
                             const rateLimitReset = parseInt(headers['x-ratelimit-reset'], 10) * 1000;
@@ -162,7 +148,7 @@ class MusicBrainzAPI {
                             if (res.status >= 200 && res.status < 300) {
                                 resolve(JSON.parse(res.responseText));
                             } else if (res.status === 503) {
-                                reject(new Error('503 Service Unavailable (rate limit or server overloaded)'));
+                                reject(new Error('Rate limit hit or server overloaded'));
                             } else {
                                 const isPermanent = res.status >= 400 && res.status < 500;
                                 const error = isPermanent
@@ -173,16 +159,10 @@ class MusicBrainzAPI {
                             }
                         },
                         onerror: (err) => {
-                            if (tracker) {
-                                tracker.networkDurationMs += (Date.now() - reqStartTime);
-                            }
                             this.next_available_request_time = Date.now() + 5000;
                             reject(new Error('Network error'));
                         },
                         ontimeout: () => {
-                            if (tracker) {
-                                tracker.networkDurationMs += (Date.now() - reqStartTime);
-                            }
                             this.next_available_request_time = Date.now() + 5000;
                             reject(new Error('Request timed out'));
                         },
@@ -193,11 +173,6 @@ class MusicBrainzAPI {
             } catch (error) {
                 if (error instanceof PermanentError) {
                     throw error; // Stop retrying and propagate the error.
-                }
-
-                if (tracker) {
-                    tracker.retries++;
-                    tracker.errors.push(`Attempt ${i + 1}/${this.max_retries} failed: ${error.message}`);
                 }
 
                 if (!navigator.onLine) {
@@ -215,25 +190,8 @@ class MusicBrainzAPI {
 
                 if (i === this.max_retries - 1) throw error;
                 const delay = this.rate_limit_delay * Math.pow(2, i);
-                if (tracker) {
-                    tracker.retryBackoffWaitMs += delay;
-                }
                 await new Promise(resolve => setTimeout(resolve, delay));
             }
-        }
-    }
-
-    /**
-     * @summary Normalizes a URL string to its canonical WHATWG/RFC 3986 format.
-     * @param {string} url - The URL string to normalize.
-     * @returns {string} The normalized URL string.
-     */
-    static normalizeUrl(url) {
-        if (!url) return url;
-        try {
-            return new URL(url).href;
-        } catch {
-            return url;
         }
     }
 
@@ -245,9 +203,7 @@ class MusicBrainzAPI {
      */
     async lookupUrl(urls, inc = []) {
         const isInputArray = Array.isArray(urls);
-        const rawUrls = isInputArray ? urls : [urls];
-        const normalizedUrls = rawUrls.map(u => MusicBrainzAPI.normalizeUrl(u));
-        const urlArray = isInputArray ? [...new Set(normalizedUrls)] : normalizedUrls;
+        const urlArray = isInputArray ? [...new Set(urls)] : [urls];
 
         if (urlArray.length === 0) {
             return isInputArray ? {} : null;
@@ -264,15 +220,6 @@ class MusicBrainzAPI {
             }
         }
 
-        const diagnostics = {
-            requests: 0,
-            retries: 0,
-            rateLimitWaitMs: 0,
-            retryBackoffWaitMs: 0,
-            networkDurationMs: 0,
-            errors: []
-        };
-
         if (uncachedUrls.length > 0) {
             const urlChunks = [];
             for (let i = 0; i < uncachedUrls.length; i += this.batch_size) {
@@ -283,7 +230,7 @@ class MusicBrainzAPI {
                 this._request('url', {
                     resource: chunk,
                     inc: inc.join('+')
-                }, diagnostics)
+                })
             );
 
             // Use Promise.allSettled to ensure all batches are processed, even if some fail.
@@ -298,11 +245,11 @@ class MusicBrainzAPI {
                     // The API returns a single object for a 1-item request, and an object with a `urls` array for multi-item requests.
                     if (chunk.length === 1) {
                         const url = chunk[0];
-                        const mbData = response && MusicBrainzAPI.normalizeUrl(response.resource) === url ? response : null;
+                        const mbData = response && response.resource === url ? response : null;
                         this.cache.set(url, mbData);
                         results.set(url, mbData);
                     } else {
-                        const responseMap = new Map(response.urls?.map(u => [MusicBrainzAPI.normalizeUrl(u.resource), u]) || []);
+                        const responseMap = new Map(response.urls?.map(u => [u.resource, u]) || []);
                         for (const url of chunk) {
                             const mbData = responseMap.get(url) || null;
                             this.cache.set(url, mbData);
@@ -311,7 +258,9 @@ class MusicBrainzAPI {
                     }
                 } else { // status === 'rejected'
                     const is404 = result.reason && result.reason.status === 404;
-                    if (!is404) {
+                    if (is404) {
+                        console.info(`MusicBrainz API URL lookup: URL not found in MusicBrainz database for chunk starting with ${chunk[0]}`);
+                    } else {
                         console.error(`MusicBrainz API batch lookup failed for chunk starting with ${chunk[0]}`, result.reason);
                     }
 
@@ -327,11 +276,6 @@ class MusicBrainzAPI {
                 }
             });
         }
-
-        results.diagnostics = diagnostics;
-        results.sources = new Map(
-            urlArray.map(url => [url, uncachedUrls.includes(url) ? 'network' : 'cache'])
-        );
 
         return isInputArray ? results : results.get(urlArray[0]);
     }
@@ -366,13 +310,6 @@ class MusicBrainzAPI {
         return results;
     }
 
-    /**
-     * Fetches details for a specific MusicBrainz entity by its MBID.
-     * @param {string} entity - The entity type (e.g., 'release', 'artist', 'recording').
-     * @param {string} mbid - The MusicBrainz Identifier (MBID) of the entity.
-     * @param {string[]} [inc=[]] - Array of sub-queries/relationships to include (e.g., ['recordings', 'artists', 'url-rels']).
-     * @returns {Promise<object>} A promise that resolves to the entity details object.
-     */
     get(entity, mbid, inc = []) {
         return this._request(`${entity}/${mbid}`, { inc: inc.join('+') });
     }
@@ -381,9 +318,10 @@ class MusicBrainzAPI {
         this.cache.clear();
     }
 
+
     invalidateCacheForUrl(url) {
         const urls = Array.isArray(url) ? url : [url];
-        urls.forEach(u => this.cache.delete(MusicBrainzAPI.normalizeUrl(u)));
+        urls.forEach(u => this.cache.delete(u));
     }
 
     /**
@@ -392,7 +330,7 @@ class MusicBrainzAPI {
      * @returns {object|undefined} The cached response or undefined if not cached.
      */
     getFromCache(url) {
-        return this.cache.get(MusicBrainzAPI.normalizeUrl(url));
+        return this.cache.get(url);
     }
 }
 
@@ -492,7 +430,7 @@ class PermanentError extends Error {
 
         constructor() {
             this.#mbApi = new MusicBrainzAPI({
-                user_agent: `${VolumoMusicBrainzImporter.SCRIPT_NAME}/${GM.info.script.version} ( ${GM.info.script.namespace} )`
+                user_agent: `${VolumoMusicBrainzImporter.SCRIPT_NAME}/${GM.info.script.version} ( ${GM_info.script.namespace} )`
             });
             this.#addStyles();
 

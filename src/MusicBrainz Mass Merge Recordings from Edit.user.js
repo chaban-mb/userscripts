@@ -1,18 +1,16 @@
 // ==UserScript==
 // @name        MusicBrainz: Mass Merge Recordings from Edit
 // @namespace   https://musicbrainz.org/user/chaban
-// @version     1.0.5
+// @version     1.0.3
 // @description Batch merge recordings from an "Edit medium" page.
 // @tag         ai-created
 // @author      chaban, jesus2099
 // @license     GPL-3.0-or-later; http://www.gnu.org/licenses/gpl-3.0.txt
-// @homepageURL https://github.com/chaban-mb/userscripts
-// @supportURL  https://github.com/chaban-mb/userscripts/issues
 // @match       *://*.musicbrainz.org/edit/*
 // @match       *://*.musicbrainz.eu/edit/*
 // @connect     self
 // @icon        https://musicbrainz.org/static/images/favicons/android-chrome-512x512.png
-// @grant       GM.xmlHttpRequest
+// @grant       GM_xmlhttpRequest
 // @updateURL   https://github.com/chaban-mb/userscripts/raw/dist/src/MusicBrainz%20Mass%20Merge%20Recordings%20from%20Edit.user.js
 // @downloadURL https://github.com/chaban-mb/userscripts/raw/dist/src/MusicBrainz%20Mass%20Merge%20Recordings%20from%20Edit.user.js
 // ==/UserScript==
@@ -176,7 +174,7 @@
         }
 
         mmfe_infoMerge('Fetching edit data...', null, false);
-        GM.xmlHttpRequest({
+        GM_xmlhttpRequest({
             method: "GET",
             url: location.pathname + "/data",
             timeout: 30000,
@@ -355,7 +353,7 @@
              return;
         }
 
-        GM.xmlHttpRequest({
+        GM_xmlhttpRequest({
             method: 'POST',
             url: MBS + urls[step],
             headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -414,7 +412,7 @@
         ].join('&');
 
         setTimeout(() => {
-            GM.xmlHttpRequest({
+            GM_xmlhttpRequest({
                 method: 'GET',
                 url: `${MBS}/search/edits?negation=0&combinator=and&${queryParams}`,
                 timeout: 30000,

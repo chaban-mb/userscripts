@@ -1,13 +1,11 @@
 // ==UserScript==
 // @name        MusicBrainz: Compare AcoustIDs easier!
 // @namespace   https://musicbrainz.org/user/chaban
-// @version     1.1.6
+// @version     1.1.4
 // @description Displays AcoustID fingerprints in more places at MusicBrainz.
 // @tag         ai-created
 // @author      otringal, chaban
 // @license     MIT
-// @homepageURL https://github.com/chaban-mb/userscripts
-// @supportURL  https://github.com/chaban-mb/userscripts/issues
 // @match       *://*.musicbrainz.org/artist/*/recordings*
 // @match       *://*.musicbrainz.org/artist/*/*edits*
 // @match       *://*.musicbrainz.org/collection/*/*
@@ -363,7 +361,7 @@
       (path.includes('/recordings') || path.includes('/release/'))
     ) {
       updateArtistRecordingsPage();
-    } else if (enableAcoustList && (path.includes('/edit') || path.includes('/open_edits') || path.includes('/votes'))) {
+    } else if (enableAcoustList && (path.includes('/edit') || path.includes('/votes'))) {
       updateMergeOrEdits();
       setupShowHideListener();
     }

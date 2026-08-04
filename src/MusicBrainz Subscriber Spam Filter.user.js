@@ -1,20 +1,18 @@
 // ==UserScript==
 // @name        MusicBrainz: Subscriber Spam Filter
 // @namespace   https://musicbrainz.org/user/chaban
-// @version     1.0.4
+// @version     1.0.2
 // @description Filters spammers on your MusicBrainz subscriber list by detecting blocked profiles, stats, and name similarities.
 // @tag         ai-created
 // @author      chaban
 // @license     MIT
-// @homepageURL https://github.com/chaban-mb/userscripts
-// @supportURL  https://github.com/chaban-mb/userscripts/issues
 // @match       *://*.musicbrainz.org/user/*/subscribers
 // @match       *://*.musicbrainz.eu/user/*/subscribers
 // @connect     self
-// @grant       GM.xmlHttpRequest
-// @grant       GM.addStyle
-// @grant       GM.getValue
-// @grant       GM.setValue
+// @grant       GM_xmlhttpRequest
+// @grant       GM_addStyle
+// @grant       GM_getValue
+// @grant       GM_setValue
 // @updateURL   https://github.com/chaban-mb/userscripts/raw/dist/src/MusicBrainz%20Subscriber%20Spam%20Filter.user.js
 // @downloadURL https://github.com/chaban-mb/userscripts/raw/dist/src/MusicBrainz%20Subscriber%20Spam%20Filter.user.js
 // ==/UserScript==
@@ -91,7 +89,7 @@
     async function fetchProfile(username) {
         const url = `/user/${encodeURIComponent(username)}`;
         return new Promise((resolve, reject) => {
-            GM.xmlHttpRequest({
+            GM_xmlhttpRequest({
                 method: 'GET',
                 url,
                 onload: (res) => {
@@ -117,20 +115,13 @@
     }
 
     // Cache management
-    let _cache = null;
     const storage = {
-        init: async () => {
-            _cache = (await GM.getValue(CACHE_KEY, {})) || {};
-        },
-        getCache: () => _cache || {},
-        setCache: async (cache) => {
-            _cache = cache;
-            await GM.setValue(CACHE_KEY, cache);
-        },
-        saveUser: async (username, data) => {
-            if (!_cache) _cache = {};
-            _cache[username] = { ...data, lastChecked: Date.now() };
-            await GM.setValue(CACHE_KEY, _cache);
+        getCache: () => GM_getValue(CACHE_KEY) || {},
+        setCache: (cache) => GM_setValue(CACHE_KEY, cache),
+        saveUser: (username, data) => {
+            const cache = storage.getCache();
+            cache[username] = { ...data, lastChecked: Date.now() };
+            storage.setCache(cache);
         }
     };
 
@@ -279,7 +270,7 @@
      * @summary Injects the required CSS styles for the subscriber spam filter UI.
      */
     function addStyles() {
-        GM.addStyle(`
+        GM_addStyle(`
             #mbsf-control-panel {
                 background: #fcfcfc;
                 border: 1px solid #ccc;
@@ -409,7 +400,7 @@
 
                 try {
                     const result = await fetchProfile(sub.username);
-                    await storage.saveUser(sub.username, result);
+                    storage.saveUser(sub.username, result);
                 } catch (err) {
                     error(`Failed to scan ${sub.username}`, err);
                 }
@@ -431,7 +422,6 @@
             return;
         }
 
-        await storage.init();
         addStyles();
 
         // Control Panel

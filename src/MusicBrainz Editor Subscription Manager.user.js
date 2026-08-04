@@ -1,21 +1,19 @@
 // ==UserScript==
 // @name        MusicBrainz: Editor Subscription Manager
 // @namespace   https://musicbrainz.org/user/chaban
-// @version     0.3.5
+// @version     0.3.3
 // @description Manages subscriptions, tracks name changes and detects deleted users.
 // @tag         ai-created
 // @author      chaban
 // @license     MIT
-// @homepageURL https://github.com/chaban-mb/userscripts
-// @supportURL  https://github.com/chaban-mb/userscripts/issues
 // @match       *://*.musicbrainz.org/user/*
 // @match       *://*.musicbrainz.eu/user/*
 // @connect     self
-// @grant       GM.xmlHttpRequest
-// @grant       GM.addStyle
-// @grant       GM.getValue
-// @grant       GM.setValue
-// @grant       GM.deleteValue
+// @grant       GM_xmlhttpRequest
+// @grant       GM_addStyle
+// @grant       GM_getValue
+// @grant       GM_setValue
+// @grant       GM_deleteValue
 // @updateURL   https://github.com/chaban-mb/userscripts/raw/dist/src/MusicBrainz%20Editor%20Subscription%20Manager.user.js
 // @downloadURL https://github.com/chaban-mb/userscripts/raw/dist/src/MusicBrainz%20Editor%20Subscription%20Manager.user.js
 // ==/UserScript==
@@ -149,14 +147,14 @@
 
     // #region Network & Parsing Utilities
     /**
-     * @summary Promisified wrapper for GM.xmlHttpRequest.
+     * @summary Promisified wrapper for GM_xmlhttpRequest.
      * @param {string} method - HTTP method (GET, POST).
      * @param {string} url - Target URL.
      * @returns {Promise<{status: number, doc: Document|null, finalUrl: string}>} Response details including parsed DOM if applicable.
      */
     async function request(method, url) {
         return new Promise((resolve, reject) => {
-            GM.xmlHttpRequest({
+            GM_xmlhttpRequest({
                 method, url,
                 onload: (res) => {
                     if (res.status === 404) resolve({ status: 404, doc: null, finalUrl: res.finalUrl });
@@ -172,7 +170,7 @@
 
     function requestGet(url) {
         return new Promise((resolve, reject) => {
-            GM.xmlHttpRequest({
+            GM_xmlhttpRequest({
                 method: 'GET', url,
                 onload: (res) => (res.status >= 200 && res.status < 400) ? resolve() : reject(new Error(`HTTP ${res.status}`)),
                 onerror: () => reject(new Error('Network error'))
@@ -345,23 +343,13 @@
     // #endregion
 
     // #region Cache & Storage
-    let _settings = null;
-    let _cache = null;
-
     const storage = {
-        init: async () => {
-            _settings = { showVisited: false, ...(await GM.getValue(SETTINGS_KEY, {})) };
-            _cache = (await GM.getValue(CACHE_KEY, {})) || {};
-        },
-        getSettings: () => _settings || { showVisited: false },
-        saveSettings: (s) => {
-            _settings = s;
-            GM.setValue(SETTINGS_KEY, s);
-        },
-        getCache: () => _cache || {},
+        getSettings: () => ({ showVisited: false, ...GM_getValue(SETTINGS_KEY) }),
+        saveSettings: (s) => GM_setValue(SETTINGS_KEY, s),
+        getCache: () => GM_getValue(CACHE_KEY) || {},
         saveEditor: (e) => {
-            if (!_cache) _cache = {};
-            const prev = _cache[e.id];
+            const cache = storage.getCache();
+            const prev = cache[e.id];
 
             // Normalize: don't store profileUrl
             const { profileUrl, ...editorData } = e;
@@ -374,13 +362,13 @@
             // Preserve subscribed status if not explicitly set in the new object
             if (editorData.isSubscribed === undefined && prev) editorData.isSubscribed = prev.isSubscribed;
 
-            _cache[e.id] = { ...prev, ...editorData, lastUpdated: Date.now() };
-            GM.setValue(CACHE_KEY, _cache);
+            cache[e.id] = { ...prev, ...editorData, lastUpdated: Date.now() };
+            GM_setValue(CACHE_KEY, cache);
         },
         remove: (ids) => {
-            if (!_cache) _cache = {};
-            ids.forEach(id => delete _cache[id]);
-            GM.setValue(CACHE_KEY, _cache);
+            const cache = storage.getCache();
+            ids.forEach(id => delete cache[id]);
+            GM_setValue(CACHE_KEY, cache);
         }
     };
 
@@ -418,7 +406,7 @@
 
             try {
                 const localParsed = JSON.parse(localData);
-                const gmData = await GM.getValue(key);
+                const gmData = GM_getValue(key);
 
                 if (key === CACHE_KEY) {
                     // Merge caches: combine objects, keep latest lastUpdated per ID
@@ -458,14 +446,10 @@
                             if (!merged[id].previousNames?.length) delete merged[id].previousNames;
                         }
                     }
-                    await GM.setValue(key, merged);
-                    _cache = merged;
+                    GM_setValue(key, merged);
                 } else if (key === SETTINGS_KEY) {
                     // For settings, only migrate if not already set in GM to avoid overwriting newer user preferences
-                    if (!gmData) {
-                        await GM.setValue(key, localParsed);
-                        _settings = { showVisited: false, ...localParsed };
-                    }
+                    if (!gmData) GM_setValue(key, localParsed);
                 }
 
                 localStorage.removeItem(key);
@@ -942,7 +926,7 @@
     function updateProgress(txt) { showProgress(true, txt); }
 
     function addStyles() {
-        GM.addStyle(`
+        GM_addStyle(`
             #esm-report-ui { background:#fff; padding:20px; border:1px solid #ccc; margin-top:20px; }
             .esm-controls { display:flex; gap:20px; margin-bottom:20px; flex-wrap:wrap; border-bottom:1px solid #eee; padding-bottom:20px; }
             .esm-stats ul { list-style:none; padding:0; margin:0; }
@@ -972,7 +956,6 @@
     // #endregion
 
     async function init() {
-        await storage.init();
         await migrateStorage();
         const path = location.pathname;
 

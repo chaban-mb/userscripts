@@ -1,13 +1,11 @@
 // ==UserScript==
 // @name        [DEPRECATED] MusicBrainz: Artwork Uploader Thumbnails Accelerator
 // @namespace   https://musicbrainz.org/user/chaban
-// @version     1.0.8
+// @version     1.0.7
 // @description Replaces data URI thumbnails on the artwork uploader with object URLs for better performance.
 // @tag         ai-created
 // @author      chaban
 // @license     MIT
-// @homepageURL https://github.com/chaban-mb/userscripts
-// @supportURL  https://github.com/chaban-mb/userscripts/issues
 // @match       *://*.musicbrainz.org/release/*/add-cover-art*
 // @match       *://*.musicbrainz.org/event/*/add-event-art*
 // @icon        https://musicbrainz.org/static/images/favicons/android-chrome-512x512.png

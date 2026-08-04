@@ -1,19 +1,17 @@
 // ==UserScript==
 // @name        MusicBrainz: Reports Statistics
 // @namespace   https://musicbrainz.org/user/chaban
-// @version     2.1.4
+// @version     2.1.2
 // @description Indicates report changes since the last visit and hides reports without items.
 // @tag         ai-created
 // @author      chaban
 // @license     MIT
-// @homepageURL https://github.com/chaban-mb/userscripts
-// @supportURL  https://github.com/chaban-mb/userscripts/issues
 // @match       *://*.musicbrainz.org/reports*
 // @connect     self
 // @icon        https://musicbrainz.org/static/images/favicons/android-chrome-512x512.png
-// @grant       GM.xmlHttpRequest
-// @grant       GM.getValue
-// @grant       GM.setValue
+// @grant       GM_xmlhttpRequest
+// @grant       GM_getValue
+// @grant       GM_setValue
 // @updateURL   https://github.com/chaban-mb/userscripts/raw/dist/src/MusicBrainz%20Reports%20Statistics.user.js
 // @downloadURL https://github.com/chaban-mb/userscripts/raw/dist/src/MusicBrainz%20Reports%20Statistics.user.js
 // ==/UserScript==
@@ -21,9 +19,9 @@
 (function() {
     'use strict';
 
-    const currentScriptVersion = GM.info.script.version;
+    const currentScriptVersion = GM_info.script.version;
     const CURRENT_CACHE_VERSION = '2.0';
-    const SCRIPT_NAME = GM.info.script.name;
+    const SCRIPT_NAME = GM_info.script.name;
     const INTERNAL_CACHE_DURATION = 1 * 60 * 60 * 1000;
     const REQUEST_DELAY = 1000;
     const HISTORY_MAX_DAYS = 30;
@@ -196,13 +194,13 @@
     }
 
     /**
-     * Fetches the content of a given URL using GM.xmlHttpRequest.
+     * Fetches the content of a given URL using GM_xmlhttpRequest.
      * @param {string} url The URL to fetch.
      * @returns {Promise<string>} A promise that resolves with the response text or rejects with an error object including status and responseText.
      */
     function fetchUrlContent(url) {
         return new Promise((resolve, reject) => {
-            GM.xmlHttpRequest({
+            GM_xmlhttpRequest({
                 method: "GET",
                 url: url,
                 onload: function(response) {
@@ -391,7 +389,7 @@
             if (!localData) return;
 
             let localParsed = JSON.parse(localData);
-            let gmData = await GM.getValue(CENTRAL_CACHE_KEY);
+            let gmData = GM_getValue(CENTRAL_CACHE_KEY);
 
             /**
              * Normalizes cache data from version 1.5 (flat) to version 2.0 (nested).
@@ -416,7 +414,7 @@
             if (gmData) normalizeCache(gmData);
 
             if (!gmData) {
-                await GM.setValue(CENTRAL_CACHE_KEY, localParsed);
+                GM_setValue(CENTRAL_CACHE_KEY, localParsed);
                 log("Initial migration from localStorage to script storage completed.");
             } else {
                 // Merge logic
@@ -454,7 +452,7 @@
                     }
                 }
 
-                await GM.setValue(CENTRAL_CACHE_KEY, {
+                GM_setValue(CENTRAL_CACHE_KEY, {
                     ...gmData,
                     reports: mergedReports,
                     script_version: currentScriptVersion,
@@ -494,7 +492,7 @@
         let forceAllFetchesDueToStructureChange = false;
 
         try {
-            const cachedData = await GM.getValue(CENTRAL_CACHE_KEY);
+            const cachedData = GM_getValue(CENTRAL_CACHE_KEY);
             if (cachedData) {
                 parsedCache = cachedData;
                 currentCacheVersion = parsedCache.cache_version;
@@ -626,7 +624,7 @@
         if (totalLinksToFetch === 0) {
             log('All reports for current mode cached. No fetches needed.');
             hideProgressBar();
-            await GM.setValue(CENTRAL_CACHE_KEY, {
+            GM_setValue(CENTRAL_CACHE_KEY, {
                 script_version: currentScriptVersion,
                 cache_version: CURRENT_CACHE_VERSION,
                 reports: newReportCache
@@ -726,7 +724,7 @@
         }
 
         try {
-            await GM.setValue(CENTRAL_CACHE_KEY, {
+            GM_setValue(CENTRAL_CACHE_KEY, {
                 script_version: currentScriptVersion,
                 cache_version: CURRENT_CACHE_VERSION,
                 reports: newReportCache

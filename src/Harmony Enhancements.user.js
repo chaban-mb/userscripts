@@ -1,20 +1,18 @@
 // ==UserScript==
 // @name        Harmony: Enhancements
 // @namespace   https://musicbrainz.org/user/chaban
-// @version     1.29.4
+// @version     1.27.10
 // @description Adds some convenience features, various UI and behavior settings, as well as an improved language detection to Harmony.
 // @tag         ai-created
 // @author      chaban
 // @license     MIT
-// @homepageURL https://github.com/chaban-mb/userscripts
-// @supportURL  https://github.com/chaban-mb/userscripts/issues
 // @match       https://harmony.pulsewidth.org.uk/*
 // @match       https://harmony.mybrainz.dev/*
 // @icon        https://harmony.pulsewidth.org.uk/harmony-logo.svg
-// @grant       GM.getValue
-// @grant       GM.setValue
-// @grant       GM.deleteValue
-// @grant       GM.addStyle
+// @grant       GM_getValue
+// @grant       GM_setValue
+// @grant       GM_deleteValue
+// @grant       GM_addStyle
 // @updateURL   https://github.com/chaban-mb/userscripts/raw/dist/src/Harmony%20Enhancements.user.js
 // @downloadURL https://github.com/chaban-mb/userscripts/raw/dist/src/Harmony%20Enhancements.user.js
 // ==/UserScript==
@@ -22,7 +20,7 @@
 (function () {
     'use strict';
 
-    const SCRIPT_NAME = GM.info.script.name;
+    const SCRIPT_NAME = GM_info.script.name;
     const TOOLTIP_DISPLAY_DURATION = 2000;
     const DATA_ATTRIBUTE_APPLIED = 'data-he-applied';
     const NO_LABEL = {
@@ -83,16 +81,6 @@
             key: 'enhancements.ui.hideReleaseInfo',
             label: 'Hide Availability, Sources, and External Links sections',
             description: 'Hides the verbose and redundant release info sections.',
-            defaultValue: false,
-            section: 'UI Settings',
-            type: 'checkbox',
-            runAt: 'load',
-            paths: [/^\/release(?!\/actions)/],
-        },
-        compactNotFoundMessages: {
-            key: 'enhancements.ui.compactNotFoundMessages',
-            label: 'Compact "Not Found" provider messages',
-            description: 'Replaces verbose red error banners for providers that do not have the release with compact tags directly under provider checkboxes.',
             defaultValue: false,
             section: 'UI Settings',
             type: 'checkbox',
@@ -341,151 +329,6 @@
     };
 
     /**
-     * Centralized utilities for artist credit parsing, formatting, normalization, and form seeding.
-     */
-    const ARTIST_CREDIT_UTILS = {
-        /**
-         * Returns the default join phrase based on position (' & ' for penultimate, ', ' for earlier, '' for last).
-         * @param {number} index - Index of the artist in the array.
-         * @param {number} total - Total number of artists in the array.
-         * @returns {string} The default join phrase.
-         */
-        getDefaultJoinPhrase(index, total) {
-            if (index >= total - 1) return '';
-            return (index === total - 2) ? ' & ' : ', ';
-        },
-
-        /**
-         * Returns the effective join phrase for an artist, respecting custom join phrases on non-final artists.
-         * @param {object} artist - Artist object { name, creditedName?, joinPhrase? }.
-         * @param {number} index - Index of the artist.
-         * @param {number} total - Total number of artists.
-         * @returns {string} The join phrase string.
-         */
-        getEffectiveJoinPhrase(artist, index, total) {
-            if (index >= total - 1) return '';
-            return artist.joinPhrase ?? this.getDefaultJoinPhrase(index, total);
-        },
-
-        /**
-         * Formats an array of artist objects into a credit string, respecting custom join phrases where present.
-         * @param {Array<object>} artists - Array of artist objects.
-         * @returns {string} Formatted artist credit string.
-         */
-        formatString(artists) {
-            if (!Array.isArray(artists) || artists.length === 0) return '';
-            return artists.reduce((str, artist, index) => {
-                const name = artist.name || artist.creditedName || '';
-                return str + name + this.getEffectiveJoinPhrase(artist, index, artists.length);
-            }, '');
-        },
-
-        /**
-         * Normalizes an artist array in-place after insertions or deletions.
-         * Enforces that the final artist never has a trailing join phrase, and aligns standard join phrases.
-         * @param {Array<object>} artists - Array of artist objects.
-         * @returns {Array<object>} The normalized array.
-         */
-        normalize(artists) {
-            if (!Array.isArray(artists) || artists.length === 0) return artists;
-            delete artists[artists.length - 1].joinPhrase;
-            if (artists.length > 1) {
-                const penultimate = artists[artists.length - 2];
-                if (!penultimate.joinPhrase || penultimate.joinPhrase === ', ') {
-                    penultimate.joinPhrase = ' & ';
-                }
-            }
-            return artists;
-        },
-
-        /**
-         * Transforms an artist array into normalized MusicBrainz artist credit schema entries.
-         * Pure function with zero DOM or form side-effects.
-         * @param {Array<object>} artists - Array of artist objects.
-         * @returns {Array<{ name: string, mbid?: string, artistName?: string, joinPhrase?: string }>}
-         */
-        toSeederCredits(artists) {
-            if (!Array.isArray(artists)) return [];
-            return artists.map((artist, index) => {
-                const name = artist.creditedName || artist.name;
-                const joinPhrase = this.getEffectiveJoinPhrase(artist, index, artists.length);
-                return {
-                    name,
-                    mbid: artist.mbid || undefined,
-                    artistName: artist.mbid ? undefined : name,
-                    joinPhrase: joinPhrase || undefined,
-                };
-            });
-        },
-
-        /**
-         * Ingests a single artist credit field into an artist object.
-         * Returns true if a value was modified.
-         * @param {object} artist - Target artist object.
-         * @param {string} field - Field name ('name', 'mbid', 'artist.name', 'join_phrase').
-         * @param {string} value - Value from external form input.
-         * @returns {boolean} True if a change occurred.
-         */
-        ingestField(artist, field, value) {
-            if (!artist || !field) return false;
-            if (field === 'name') {
-                const current = artist.creditedName ?? artist.name;
-                artist.name ??= value;
-                if (current !== value) {
-                    artist.creditedName = value;
-                    return true;
-                }
-            } else if (field === 'mbid') {
-                if (artist.mbid !== value) {
-                    artist.mbid = value;
-                    return true;
-                }
-            } else if (field === 'artist.name') {
-                if (artist.name !== value) {
-                    artist.name = value;
-                    return true;
-                }
-            } else if (field === 'join_phrase') {
-                if (artist.joinPhrase !== value) {
-                    artist.joinPhrase = value;
-                    return true;
-                }
-            }
-            return false;
-        },
-
-        /**
-         * Returns a flat array of all artist objects across release and tracks.
-         * @param {object} release - Release data object.
-         * @returns {Array<object>} Flat array of artist objects.
-         */
-        getAllArtists(release) {
-            if (!release) return [];
-            return [
-                ...(release.artists || []),
-                ...((release.media || []).flatMap(m =>
-                    (m.tracklist || []).flatMap(t => t.artists || [])
-                )),
-            ];
-        },
-
-        /**
-         * Executes a callback for every artist object across release and tracks.
-         * @param {object} release - Release data object.
-         * @param {Function} callback - Callback receiving (artist, location: 'release' | 'track').
-         */
-        forEachArtist(release, callback) {
-            if (!release) return;
-            release.artists?.forEach(a => callback(a, 'release'));
-            release.media?.forEach(m => {
-                m.tracklist?.forEach(t => {
-                    t.artists?.forEach(a => callback(a, 'track'));
-                });
-            });
-        }
-    };
-
-    /**
     * A map of functions that generate the required form parameters from the release data object.
     * Each function takes the corresponding value from the release data and a setter function
     * to add key-value pairs to our desired state map.
@@ -550,17 +393,17 @@
         'artists': {
             cleanupPrefix: 'artist_credit.names.',
             generator: (value, set) => {
-                const credits = ARTIST_CREDIT_UTILS.toSeederCredits(value);
-                credits.forEach((credit, index) => {
+                value?.forEach((artist, index) => {
                     const prefix = `artist_credit.names.${index}`;
-                    if (credit.name) set(`${prefix}.name`, credit.name);
-                    if (credit.mbid) {
-                        set(`${prefix}.mbid`, credit.mbid);
-                    } else if (credit.artistName) {
-                        set(`${prefix}.artist.name`, credit.artistName);
+                    set(`${prefix}.name`, artist.name);
+                    if (artist.mbid) {
+                        set(`${prefix}.mbid`, artist.mbid);
+                    } else {
+                        set(`${prefix}.artist.name`, artist.name);
                     }
-                    if (credit.joinPhrase) {
-                        set(`${prefix}.join_phrase`, credit.joinPhrase);
+                    if (index < value.length - 1) {
+                        const joinPhrase = (index === value.length - 2) ? ' & ' : ', ';
+                        set(`${prefix}.join_phrase`, joinPhrase);
                     }
                 });
             },
@@ -581,8 +424,8 @@
                     if (medium.format) {
                         set(`${prefix}.format`, medium.format);
                     }
-                    if (medium.title) {
-                        set(`${prefix}.name`, medium.title);
+                    if (medium.name) {
+                        set(`${prefix}.name`, medium.name);
                     }
                     medium.tracklist?.forEach((track, trackIndex) => {
                         const trackPrefix = `${prefix}.track.${trackIndex}`;
@@ -593,17 +436,17 @@
                             set(`${trackPrefix}.recording`, track.recording.mbid);
                         }
 
-                        const credits = ARTIST_CREDIT_UTILS.toSeederCredits(track.artists);
-                        credits.forEach((credit, artistIndex) => {
+                        track.artists?.forEach((artist, artistIndex) => {
                             const artistPrefix = `${trackPrefix}.artist_credit.names.${artistIndex}`;
-                            if (credit.name) set(`${artistPrefix}.name`, credit.name);
-                            if (credit.mbid) {
-                                set(`${artistPrefix}.mbid`, credit.mbid);
-                            } else if (credit.artistName) {
-                                set(`${artistPrefix}.artist.name`, credit.artistName);
+                            set(`${artistPrefix}.name`, artist.name);
+                            if (artist.mbid) {
+                                set(`${artistPrefix}.mbid`, artist.mbid);
+                            } else {
+                                set(`${artistPrefix}.artist.name`, artist.name);
                             }
-                            if (credit.joinPhrase) {
-                                set(`${artistPrefix}.join_phrase`, credit.joinPhrase);
+                            if (artistIndex < track.artists.length - 1) {
+                                const joinPhrase = (artistIndex === track.artists.length - 2) ? ' & ' : ', ';
+                                set(`${artistPrefix}.join_phrase`, joinPhrase);
                             }
                         });
                     });
@@ -621,7 +464,6 @@
         data: {
             release: undefined,
             originalRelease: null,
-            injected: { raw: [] },
         },
         lang: {
             code: null,
@@ -653,6 +495,23 @@
 
     function error(message, ...args) {
         console.error(`%c[${SCRIPT_NAME}] %c${message}`, 'color: #d9534f; font-weight: bold;', 'color: unset;', ...args);
+    }
+
+    /**
+    * Formats an array of artist objects into a single credit string with proper join phrases.
+    * @param {Array<object>} artists - The array of artist objects, each with a `name` property.
+    * @returns {string} The formatted artist credit string.
+    */
+    function formatArtistString(artists) {
+        if (!Array.isArray(artists) || artists.length === 0) return '';
+        return artists.reduce((str, artist, index) => {
+            str += artist.name;
+            if (index < artists.length - 1) {
+                const joinPhrase = (index === artists.length - 2) ? ' & ' : ', ';
+                str += joinPhrase;
+            }
+            return str;
+        }, '');
     }
 
     /**
@@ -696,7 +555,7 @@
             // Only populate setting if it's not already set, or if this config entry provides a default value.
             // This prevents "headless" configs (routing/submit modules) from overwriting actual settings with undefined.
             if (settings[config.key] === undefined || config.defaultValue !== undefined) {
-                settings[config.key] = await GM.getValue(config.key, config.defaultValue);
+                settings[config.key] = await GM_getValue(config.key, config.defaultValue);
             }
         }
         return settings;
@@ -799,7 +658,7 @@
         _defaultValue: SETTINGS_CONFIG.debugMode.defaultValue,
 
         async init() {
-            AppState.debug = await GM.getValue(this._key, this._defaultValue);
+            AppState.debug = await GM_getValue(this._key, this._defaultValue);
             if (AppState.debug) {
                 this._setupFeatures();
                 log('Debug mode is ON. Per-module logs and timers will appear on page load.');
@@ -830,7 +689,7 @@
         async toggle() {
             const newState = !AppState.debug;
 
-            await GM.setValue(this._key, newState);
+            await GM_setValue(this._key, newState);
             AppState.debug = newState;
 
             if (newState) {
@@ -847,89 +706,26 @@
 
     const UI_UTILS = {
         /**
-         * Consolidated badge manager for an anchor element (e.g. span.entity-links).
-         * Ensures a single, idempotent .he-badge per anchor, aggregating tooltips and types.
-         * @param {HTMLElement} anchor - The anchor element after which the badge is rendered.
-         * @returns {{ set: (key: string, entry: { type: string, tooltip: string }) => void, remove: (key: string) => void, clear: () => void }}
-         */
-        badgeHost: (anchor) => {
-            if (!anchor || !anchor.parentNode) {
-                return { set: () => {}, remove: () => {}, clear: () => {} };
+        * Creates an indicator span (e.g., '(overwritten)', '(removed)') with a tooltip.
+        * @param {string} indicatorText - The text to display inside the parentheses (e.g., 'added').
+        * @param {string} originalValue - The original value to show in the tooltip.
+        * @param {object} [options] - Optional parameters.
+        * @param {string} [options.type='overwritten'] - The type of indicator ('overwritten', 'removed', 'added').
+        * @param {string} [options.tooltip] - A full override for the tooltip text.
+        * @param {string} [options.tooltipPrefix='Original:'] - The text to prepend to the original value.
+        * @param {boolean} [options.standalone=false] - If true, the span will not have a left margin.
+        * @returns {HTMLSpanElement}
+        */
+        createIndicatorSpan: (indicatorText, originalValue, { type = 'overwritten', tooltip = '', tooltipPrefix = 'Original value:', standalone = false } = {}) => {
+            const span = document.createElement('span');
+            span.className = type === 'added' ? 'he-added-label' : 'he-overwritten-label';
+            span.title = tooltip || `${tooltipPrefix} ${originalValue}`;
+            span.textContent = `(${indicatorText})`;
+
+            if (!standalone) {
+                span.style.marginLeft = '0.5em';
             }
-
-            if (!anchor._heBadgeEntries) {
-                anchor._heBadgeEntries = new Map();
-            }
-
-            const TYPE_PRIORITY = {
-                overwritten: 3,
-                removed: 2,
-                added: 1,
-            };
-
-            const render = () => {
-                const entries = Array.from(anchor._heBadgeEntries.values());
-                const parent = anchor.parentNode;
-
-                if (entries.length === 0) {
-                    const existingBadges = parent.querySelectorAll(':scope > .he-badge');
-                    existingBadges.forEach(b => b.remove());
-                    return;
-                }
-
-                // Determine highest priority type
-                let topType = 'overwritten';
-                let maxPriority = -1;
-                for (const entry of entries) {
-                    const prio = TYPE_PRIORITY[entry.type] || 0;
-                    if (prio > maxPriority) {
-                        maxPriority = prio;
-                        topType = entry.type;
-                    }
-                }
-
-                // Deduplicate and combine tooltip lines
-                const combinedTooltip = Array.from(
-                    new Set(entries.map(e => e.tooltip).filter(Boolean))
-                ).join('\n');
-
-                const indicatorText = topType;
-
-                let badge = anchor.nextElementSibling;
-                if (!badge || !badge.classList.contains('he-badge')) {
-                    const existingBadges = parent.querySelectorAll(':scope > .he-badge');
-                    existingBadges.forEach(b => b.remove());
-
-                    badge = document.createElement('span');
-                    anchor.after(badge);
-                } else {
-                    let next = badge.nextElementSibling;
-                    while (next && next.classList.contains('he-badge')) {
-                        const toRemove = next;
-                        next = next.nextElementSibling;
-                        toRemove.remove();
-                    }
-                }
-
-                badge.className = `he-badge he-badge--${topType}`;
-                badge.title = combinedTooltip;
-                badge.textContent = `(${indicatorText})`;
-            };
-
-            return {
-                set: (key, entry) => {
-                    anchor._heBadgeEntries.set(key, entry);
-                    render();
-                },
-                remove: (key) => {
-                    anchor._heBadgeEntries.delete(key);
-                    render();
-                },
-                clear: () => {
-                    anchor._heBadgeEntries.clear();
-                    render();
-                }
-            };
+            return span;
         },
 
         /**
@@ -955,19 +751,17 @@
         },
 
         /**
-         * Updates the text content of an element and attaches an overwritten indicator badge.
-         * @param {HTMLElement|Node} element - The DOM element or text node to update.
-         * @param {string} newText - The new text content.
-         * @param {string} originalText - The original text for the tooltip.
-         * @param {string} [tooltipPrefix='Original title:'] - The prefix for the tooltip title.
-         */
-        updateElementText: (element, newText, originalText, tooltipPrefix = 'Original title:') => {
+        * Updates the text content of an element and appends an indicator span.
+        * @param {HTMLElement} element - The DOM element to update.
+        * @param {string} newText - The new text content.
+        * @param {string} originalText - The original text for the tooltip.
+        * @param {string} tooltipPrefix - The prefix for the tooltip title.
+        */
+        updateElementText: (element, newText, originalText, tooltipPrefix) => {
             if (!element) return;
+            const overwrittenSpan = UI_UTILS.createIndicatorSpan('overwritten', originalText, { tooltipPrefix });
             element.textContent = newText;
-            UI_UTILS.badgeHost(element).set('titleNormalization', {
-                type: 'overwritten',
-                tooltip: `${tooltipPrefix ? `${tooltipPrefix.trim()} ` : ''}${originalText}`,
-            });
+            element.parentNode.insertBefore(overwrittenSpan, element.nextSibling);
         },
 
         /**
@@ -1019,7 +813,10 @@
                 }
 
                 html += artistLinkHTML;
-                html += ARTIST_CREDIT_UTILS.getEffectiveJoinPhrase(artist, index, artists.length);
+                if (index < artists.length - 1) {
+                    const joinPhrase = (index === artists.length - 2) ? ' & ' : ', ';
+                    html += joinPhrase;
+                }
                 return html;
             }, '');
         },
@@ -1037,14 +834,11 @@
             const existingAltValues = cell.querySelector('ul.alt-values');
             const newHTML = UI_UTILS.buildArtistCreditsHTML(newArtists);
 
-            cell.innerHTML = `<span class="artist-credit">${newHTML}</span>`;
-            const anchor = cell.querySelector('.artist-credit');
+            cell.innerHTML = newHTML;
 
             const tooltipPrefix = options.tooltipPrefix || 'Original track artists:';
-            UI_UTILS.badgeHost(anchor).set('trackArtist', {
-                type: 'overwritten',
-                tooltip: `${tooltipPrefix} ${oldArtistsString}`,
-            });
+            const overwrittenSpan = UI_UTILS.createIndicatorSpan('overwritten', oldArtistsString, { ...options, tooltipPrefix });
+            cell.appendChild(overwrittenSpan);
 
             if (existingAltValues) {
                 cell.appendChild(document.createTextNode(' '));
@@ -1061,7 +855,7 @@
          * @param {string} originalNames - The original label names to display in the tooltip.
          */
         replaceReleaseLabels: (newLabelName, newMbid, originalNames) => {
-            const labelsUl = AppState.dom.labelsUl;
+            const labelsUl = document.querySelector('ul.release-labels');
             if (!labelsUl) return;
 
             labelsUl.innerHTML = '';
@@ -1072,12 +866,10 @@
             labelsUl.appendChild(li);
 
             UI_UTILS.updateLabelLink(span, newLabelName, newMbid);
-            UI_UTILS.badgeHost(span).set('setNoLabel', {
-                type: 'overwritten',
-                tooltip: `Original labels: ${originalNames}`,
+            const indicator = UI_UTILS.createIndicatorSpan('overwritten', originalNames, {
+                tooltipPrefix: 'Original labels:',
             });
-
-            AppState.dom.labelListElements = [span];
+            li.appendChild(indicator);
         },
     };
 
@@ -1441,7 +1233,7 @@
                     if (descriptionEl) {
                         input.setAttribute('aria-describedby', descriptionEl.id);
                     }
-                    const save = async () => {
+                    const save = () => {
                         let value;
                         if (config.type === 'checkbox') {
                             value = input.checked;
@@ -1455,7 +1247,7 @@
                         } else if (config.type === 'textarea') {
                             value = input.value.split('\n').map(s => s.trim()).filter(Boolean);
                         }
-                        await GM.setValue(config.key, value);
+                        GM_setValue(config.key, value);
                     };
                     input.addEventListener('change', save);
                     if (config.type === 'range' || config.type === 'textarea') {
@@ -1496,7 +1288,7 @@
     async function resetLanguageSettings() {
         const langConfigs = Object.values(SETTINGS_CONFIG).filter(c => c.section === 'Language Detection');
         for (const config of langConfigs) {
-            await GM.deleteValue(config.key);
+            await GM_deleteValue(config.key);
             const input = document.getElementById(config.key);
             if (!input) continue;
 
@@ -1585,35 +1377,6 @@
         return config;
     });
 
-    const NOT_FOUND_SIGNATURES = [
-        { regex: /^no data\s*\(code\s*800\)/i, label: 'no data' },
-        { regex: /^API returned no (?:matching )?results/i, label: 'no results' },
-        { regex: /^Search returned no matching results for/i, label: 'no results' },
-        { regex: /^Album (?:song list )?not found/i, label: 'not found' },
-        { regex: /^Release not found/i, label: 'not found' },
-    ];
-
-    /**
-     * Resolves a provider checkbox label element by provider name or class.
-     * @param {string} providerName - Display name of the provider.
-     * @param {string} [providerClass] - CSS class from the error icon element.
-     * @returns {HTMLLabelElement | null}
-     */
-    function findProviderLabel(providerName, providerClass) {
-        if (providerClass) {
-            const byClass = document.querySelector(`form.center label.provider-input.${CSS.escape(providerClass)}`);
-            if (byClass) return byClass;
-        }
-        const cleanName = (providerName || '').trim().toLowerCase();
-        if (!cleanName) return null;
-
-        const labels = AppState.dom.providerInputs?.length
-            ? AppState.dom.providerInputs
-            : Array.from(document.querySelectorAll('form.center label.provider-input'));
-
-        return labels.find(l => l.textContent.trim().toLowerCase() === cleanName) || null;
-    }
-
     const enhancements = {
         _copyHandler: async (event, text, name) => {
             try {
@@ -1640,88 +1403,6 @@
                     row.style.display = 'none';
                 }
             });
-        },
-
-        compactNotFoundMessages: () => {
-            const errorMessages = AppState.dom.errorMessages?.length
-                ? AppState.dom.errorMessages
-                : Array.from(document.querySelectorAll('.message.error'));
-
-            if (!errorMessages.length) return;
-
-            let badgesCreated = 0;
-
-            errorMessages.forEach(msg => {
-                if (msg.style.display === 'none' || msg.dataset.heCompacted) return;
-
-                const providerSpan = msg.querySelector('.provider');
-                if (!providerSpan) return;
-
-                const providerName = providerSpan.textContent.replace(/:\s*$/, '').trim();
-
-                // Detect provider class from icon span (e.g. <span class="deezer" title="Deezer"> or <span class="itunes">)
-                const iconSpan = msg.querySelector('span:not(.provider)');
-                const providerClass = iconSpan ? Array.from(iconSpan.classList).find(c => !c.startsWith('brand-') && c !== 'icon') : '';
-
-                const p = msg.querySelector('p');
-                const rawText = p ? p.textContent.trim() : '';
-
-                // Match against release-level not-found signatures
-                const matchedSignature = NOT_FOUND_SIGNATURES.find(sig => sig.regex.test(rawText));
-                if (!matchedSignature) return;
-
-                const targetLabel = findProviderLabel(providerName, providerClass);
-                if (!targetLabel) return;
-
-                // Extract URL if present
-                const link = p?.querySelector('a[href]');
-                const url = link?.href || '';
-
-                const messageDetail = link
-                    ? rawText.replace(link.textContent, '').trim().replace(/:\s*$/, '')
-                    : rawText;
-
-                // Format native tooltip
-                const tooltip = url
-                    ? `${providerName}: ${messageDetail}\n${url}`
-                    : `${providerName}: ${messageDetail}`;
-
-                // Wrap label in .he-provider-chip-slot if not already wrapped
-                let slot = targetLabel.parentElement;
-                if (!slot || !slot.classList.contains('he-provider-chip-slot')) {
-                    slot = document.createElement('div');
-                    slot.className = 'he-provider-chip-slot';
-                    targetLabel.parentNode.insertBefore(slot, targetLabel);
-                    slot.appendChild(targetLabel);
-                }
-
-                // Create or update the badge as a sibling to targetLabel inside slot
-                let badge = slot.querySelector('.he-not-found-badge');
-                if (!badge) {
-                    badge = document.createElement('span');
-                    badge.className = 'he-not-found-badge';
-                    slot.appendChild(badge);
-                }
-
-                badge.textContent = matchedSignature.label;
-                badge.title = tooltip;
-
-                // Hide original message banner and mark as compacted
-                msg.dataset.heCompacted = 'true';
-                msg.style.display = 'none';
-
-                badgesCreated++;
-
-                // Ensure parent row has bottom spacing
-                const row = slot.closest('.row');
-                if (row) {
-                    row.classList.add('has-he-badges');
-                }
-            });
-
-            if (badgesCreated > 0 && AppState.debug) {
-                log(`Compacted ${badgesCreated} not-found message(s) into provider badges.`);
-            }
         },
 
         addClipboardButton: () => {
@@ -1963,14 +1644,12 @@
                 const results = await AppState.lang.detector(textToAnalyze);
                 if (results.length === 0) return;
                 const final = results[0];
-                const locale = new Intl.Locale(final.detectedLanguage);
-                const langCode = locale.language;
-                const scriptCode = locale.script ?? null;
+                const [langCode, scriptCode] = final.detectedLanguage.split('-');
                 AppState.lang.result = {
                     languageName: new Intl.DisplayNames(['en'], { type: 'language' }).of(langCode),
                     confidence: Math.round(final.confidence * 100),
                     languageCode3: getISO639_3_Code(langCode),
-                    scriptCode,
+                    scriptCode: scriptCode || null,
                     isZxx: false,
                     skipped: false,
                     debugInfo: { allResults: results, analyzedText: textToAnalyze }
@@ -1995,9 +1674,8 @@
             let originalText = '';
             if (langRow) {
                 originalText = langRow.querySelector('td').textContent.trim();
-                originalLang = originalText.replace(/\s*\(.*?\)/g, '').trim();
-                const match = originalText.match(/\((\d+)%\s*confidence\)/i);
-                harmonyConfidence = match ? parseInt(match[1], 10) : (originalText ? 100 : 0);
+                originalLang = originalText.replace(/\s*\(.*\)/, '').trim();
+                harmonyConfidence = parseInt((originalText.match(/\((\d+)%\sconfidence\)/) || [])[1] || '0', 10);
             }
 
             const shouldOverwrite = AppState.settings[SETTINGS_CONFIG.ignoreHarmony.key] || harmonyConfidence < conflictThreshold;
@@ -2025,9 +1703,20 @@
             }
             createAndInsertMessage('he-language-analysis', messageContent);
 
+            // --- Update the UI and Seeder ---
+            const updateSeeder = (lang, script) => {
+                if (lang) {
+                    AppState.data.release.language = { code: lang };
+                }
+
+                if (script) {
+                    AppState.data.release.script = { code: script };
+                } else if (lang === 'zxx') {
+                    AppState.data.release.script = null;
+                }
+            };
+
             if (isZxx) {
-                AppState.data.release.language = { code: 'zxx' };
-                AppState.data.release.script = null;
                 if (langRow) {
                     langRow.querySelector('td').textContent = '[No linguistic content]';
                 } else {
@@ -2035,6 +1724,7 @@
                     newRow.id = 'he-language-row';
                     newRow.innerHTML = `<th>Language</th><td>[No linguistic content]</td>`;
                 }
+                updateSeeder('zxx', null);
                 return;
             }
 
@@ -2043,34 +1733,29 @@
             // Update Language
             const newLangContent = `${languageName} (${confidence}% confidence)`;
             if (langRow) {
-                if (shouldOverwrite && originalLang.toLowerCase() !== languageName.toLowerCase()) {
-                    AppState.data.release.language = { code: languageCode3 };
-                    const cell = langRow.querySelector('td');
-                    cell.textContent = '';
-                    const textSpan = document.createElement('span');
-                    textSpan.textContent = newLangContent;
-                    cell.append(textSpan);
-                    UI_UTILS.badgeHost(textSpan).set('language', {
-                        type: 'overwritten',
-                        tooltip: `Harmony's original guess: ${originalText}`,
-                    });
-                    cell.setAttribute(DATA_ATTRIBUTE_APPLIED, 'true');
+                if (shouldOverwrite) {
+                    if (originalLang.toLowerCase() !== languageName.toLowerCase()) {
+                        const cell = langRow.querySelector('td');
+                        cell.textContent = '';
+                        cell.append(newLangContent, ' ');
+                        const overwrittenSpan = UI_UTILS.createIndicatorSpan('overwritten', originalText, { tooltipPrefix: "Harmony's original guess:" });
+                        cell.append(overwrittenSpan);
+                        cell.setAttribute(DATA_ATTRIBUTE_APPLIED, 'true');
+                    }
                 }
             } else {
-                AppState.data.release.language = { code: languageCode3 };
                 const newRow = releaseInfoTable.insertRow(scriptRow ? scriptRow.rowIndex : -1);
                 newRow.id = 'he-language-row';
                 const th = document.createElement('th');
                 th.textContent = 'Language';
                 const td = document.createElement('td');
-                const textSpan = document.createElement('span');
-                textSpan.textContent = newLangContent;
-                td.append(textSpan);
+                td.textContent = newLangContent;
 
-                UI_UTILS.badgeHost(textSpan).set('language', {
+                const addedSpan = UI_UTILS.createIndicatorSpan('added', null, {
                     type: 'added',
                     tooltip: `Added by ${SCRIPT_NAME}; value was not present.`,
                 });
+                td.append(' ', addedSpan);
                 newRow.append(th, td);
                 langRow = newRow;
             }
@@ -2082,36 +1767,31 @@
                     const originalScriptText = scriptRow.querySelector('td').textContent.trim();
                     const originalScript = originalScriptText.replace(/\s*\(.*\)/, '').trim();
 
-                    if (shouldOverwrite && originalScript.toLowerCase() !== newScript.toLowerCase()) {
-                        AppState.data.release.script = { code: scriptCode };
+                    if (originalScript.toLowerCase() !== newScript.toLowerCase()) {
                         const cell = scriptRow.querySelector('td');
                         cell.textContent = '';
-                        const textSpan = document.createElement('span');
-                        textSpan.textContent = newScript;
-                        cell.append(textSpan);
-                        UI_UTILS.badgeHost(textSpan).set('script', {
-                            type: 'overwritten',
-                            tooltip: `Harmony's original guess: ${originalScriptText}`,
-                        });
+                        cell.append(newScript, ' ');
+                        const overwrittenSpan = UI_UTILS.createIndicatorSpan('overwritten', originalScriptText, { tooltipPrefix: "Harmony's original guess:" });
+                        cell.append(overwrittenSpan);
                         cell.setAttribute(DATA_ATTRIBUTE_APPLIED, 'true');
                     }
                 } else {
-                    AppState.data.release.script = { code: scriptCode };
                     const newRow = releaseInfoTable.insertRow(langRow ? langRow.rowIndex + 1 : -1);
                     const th = document.createElement('th');
                     th.textContent = 'Script';
                     const td = document.createElement('td');
-                    const textSpan = document.createElement('span');
-                    textSpan.textContent = newScript;
-                    td.append(textSpan);
+                    td.textContent = newScript;
 
-                    UI_UTILS.badgeHost(textSpan).set('script', {
+                    const addedSpan = UI_UTILS.createIndicatorSpan('added', null, {
                         type: 'added',
                         tooltip: `Added by ${SCRIPT_NAME}; value was not present.`,
                     });
+                    td.append(' ', addedSpan);
                     newRow.append(th, td);
                 }
             }
+
+            updateSeeder(languageCode3, scriptCode);
         },
 
         improveReleaseTypeDetection: () => {
@@ -2152,22 +1832,13 @@
                     const cell = releaseTypeRow.querySelector('td');
                     if (!cell) return;
 
-                    let typeSpan = cell.querySelector('.he-release-type');
-                    if (!typeSpan) {
-                        const textNode = Array.from(cell.childNodes).find(node => node.nodeType === Node.TEXT_NODE && node.textContent.trim());
-                        if (textNode) {
-                            typeSpan = document.createElement('span');
-                            typeSpan.className = 'he-release-type';
-                            textNode.replaceWith(typeSpan);
-                        }
-                    }
+                    const altValuesList = cell.querySelector('ul.alt-values');
+                    const textNode = Array.from(cell.childNodes).find(node => node.nodeType === Node.TEXT_NODE && node.textContent.trim());
 
-                    if (typeSpan) {
-                        typeSpan.textContent = detectedType;
-                        UI_UTILS.badgeHost(typeSpan).set('releaseType', {
-                            type: 'overwritten',
-                            tooltip: `Harmony's original guess: ${originalType}`,
-                        });
+                    if (textNode) {
+                        textNode.textContent = detectedType;
+                        cell.insertBefore(document.createTextNode(' '), altValuesList);
+                        cell.insertBefore(UI_UTILS.createIndicatorSpan('overwritten', originalType, { tooltipPrefix: "Harmony's original guess:" }), altValuesList);
                     }
                 }
 
@@ -2185,123 +1856,24 @@
 
             const providers = releaseData.info?.providers || [];
             const providerCount = providers.length;
-            const techTerms = AppState.settings[SETTINGS_CONFIG.techTerms.key];
-            const techTermsRegex = new RegExp(`\\b(${techTerms.join('|')})\\b`, 'i');
+            const regexp = /(?<title>.+?)(?:\s+?[~/-])(?![^(]*\)) (?<eti>.*)/;
             let modifications = [];
 
-            const extractTrailingParentheses = (title) => {
-                let current = title.trim();
-                const trailing = [];
+            const getCorrectedTitle = (originalTitle) => {
+                if (!originalTitle) return null;
+                const match = originalTitle.match(regexp);
+                if (!match) return null;
 
-                while (current.endsWith(')')) {
-                    let depth = 0;
-                    let openParenIndex = -1;
-                    for (let i = current.length - 1; i >= 0; i--) {
-                        if (current[i] === ')') {
-                            depth++;
-                        } else if (current[i] === '(') {
-                            depth--;
-                            if (depth === 0) {
-                                openParenIndex = i;
-                                break;
-                            }
-                        }
-                    }
+                const { title, eti } = match.groups;
+                const etiTrimmed = eti.trim();
+                if (!etiTrimmed) return null;
 
-                    if (openParenIndex > 0) {
-                        const block = current.slice(openParenIndex);
-                        trailing.unshift(block);
-                        current = current.slice(0, openParenIndex).trim();
-                    } else {
-                        break;
-                    }
-                }
+                // Split any further ETI sections separated by ' - ', ' ~ ', or ' / '
+                // The negative lookahead (?![^(]*\)) ensures we don't split on hyphens inside existing parentheses
+                const etiParts = etiTrimmed.split(/\s+[~/-]\s+(?![^(]*\))/).filter(part => part.trim() !== '');
+                const etiFormatted = etiParts.map(part => `(${part.trim()})`).join(' ');
 
-                return { baseTitle: current, trailingParentheses: trailing };
-            };
-
-            const splitOutsideParentheses = (str) => {
-                const parts = [];
-                const delimiters = [];
-                let depth = 0;
-                let currentPart = '';
-                let i = 0;
-
-                while (i < str.length) {
-                    const char = str[i];
-                    if (char === '(') {
-                        depth++;
-                        currentPart += char;
-                        i++;
-                    } else if (char === ')') {
-                        if (depth > 0) depth--;
-                        currentPart += char;
-                        i++;
-                    } else if (depth === 0) {
-                        const sub = str.slice(i);
-                        const delimMatch = sub.match(/^(\s+[~/-]\s+)/);
-                        if (delimMatch) {
-                            parts.push(currentPart.trim());
-                            delimiters.push(delimMatch[1]);
-                            currentPart = '';
-                            i += delimMatch[1].length;
-                        } else {
-                            currentPart += char;
-                            i++;
-                        }
-                    } else {
-                        currentPart += char;
-                        i++;
-                    }
-                }
-                parts.push(currentPart.trim());
-                return { parts, delimiters };
-            };
-
-            const getCorrectedTitle = (originalTitle, isDiscrepancy = false) => {
-                if (!originalTitle || typeof originalTitle !== 'string') return null;
-
-                const { baseTitle, trailingParentheses } = extractTrailingParentheses(originalTitle);
-                if (!baseTitle) return null;
-
-                const { parts, delimiters } = splitOutsideParentheses(baseTitle);
-                if (parts.length < 2) return null;
-
-                // Determine which trailing parts are ETIs
-                const etiIndices = [];
-                for (let i = parts.length - 1; i >= 1; i--) {
-                    const part = parts[i];
-                    if (!part) break;
-
-                    const isTechTerm = techTermsRegex.test(part);
-                    // Condition B: only if there are no existing trailing parentheses,
-                    // it's the last part, and a multi-provider discrepancy is present.
-                    const isDiscrepancyETI = isDiscrepancy && trailingParentheses.length === 0 && i === parts.length - 1;
-
-                    if (isTechTerm || isDiscrepancyETI) {
-                        etiIndices.unshift(i);
-                    } else {
-                        // Once a part is not an ETI, stop - all preceding parts belong to the title
-                        break;
-                    }
-                }
-
-                if (etiIndices.length === 0) return null;
-
-                const firstEtiIndex = etiIndices[0];
-                let newTitle = parts[0];
-                for (let i = 1; i < firstEtiIndex; i++) {
-                    newTitle += delimiters[i - 1] + parts[i];
-                }
-
-                const etiFormatted = etiIndices.map(idx => `(${parts[idx]})`).join(' ');
-                newTitle = `${newTitle.trim()} ${etiFormatted}`;
-
-                if (trailingParentheses.length > 0) {
-                    newTitle = `${newTitle.trim()} ${trailingParentheses.join(' ')}`;
-                }
-
-                if (newTitle === originalTitle) return null;
+                const newTitle = `${title.trim()} ${etiFormatted}`;
                 return { original: originalTitle, new: newTitle };
             };
 
@@ -2311,7 +1883,6 @@
                         return node;
                     }
                     if (node.nodeType === Node.ELEMENT_NODE) {
-                        if (node.matches('.alt-values')) continue;
                         const found = findTextNode(node, text);
                         if (found) return found;
                     }
@@ -2324,15 +1895,17 @@
                 UI_UTILS.updateElementText(element, newTitle, originalTitle, 'Original title:');
             };
 
-            // --- First Pass: Determine corrections for normalizable titles ---
-            const titleCorrections = new Map();
+            // --- First Pass: Determine which titles are normalizable ---
+            const normalizableTitles = new Set();
+            const techTerms = AppState.settings[SETTINGS_CONFIG.techTerms.key];
+            const techTermsRegex = new RegExp(`\\b(${techTerms.join('|')})\\b`, 'i');
 
             // Consolidate all titles and their potential UI nodes
             const titlesToScan = [
                 { title: releaseData.title, node: releaseTitleNode },
                 ...releaseData.media.flatMap(m => m.tracklist?.map(t => ({
                     title: t.title,
-                    node: Array.from(tracklistTitleCells || []).find(cell => cell.textContent.includes(t.title)),
+                    node: Array.from(tracklistTitleCells).find(cell => cell.textContent.includes(t.title)),
                 })) || [])
             ].filter(item => item.title); // Ensure title exists
 
@@ -2341,35 +1914,45 @@
 
             uniqueTitlesToScan.forEach(item => {
                 const { title, node } = item;
-                const isDiscrepancy = providerCount > 1 && Boolean(node?.querySelector('ul.alt-values'));
-                const correction = getCorrectedTitle(title, isDiscrepancy);
-                if (correction) {
-                    titleCorrections.set(title, correction);
+                const match = title.match(regexp);
+                if (!match) return; // Doesn't have hyphenated ETI
+
+                // Condition A: ETI contains a known "tech term" (always safe)
+                const { eti } = match.groups;
+                const etiTrimmed = eti.trim();
+                if (etiTrimmed && techTermsRegex.test(etiTrimmed)) {
+                    normalizableTitles.add(title);
+                    return; // Added, no need to check condition B
+                }
+
+                // Condition B: Multi-provider release AND a UI discrepancy is shown
+                // (This is the original safeguard against false positives)
+                if (providerCount > 1) {
+                    if (node && node.querySelector('ul.alt-values')) {
+                        normalizableTitles.add(title);
+                    }
                 }
             });
 
             // --- Second Pass: Apply corrections to normalizable titles ---
             // Correct the release title
-            const releaseTitleCorrection = titleCorrections.get(releaseData.title);
-            if (releaseTitleCorrection) {
+            const releaseTitleCorrection = getCorrectedTitle(releaseData.title);
+            if (releaseTitleCorrection && normalizableTitles.has(releaseTitleCorrection.original)) {
                 AppState.data.release.title = releaseTitleCorrection.new;
                 modifications.push(`Release title: "${releaseTitleCorrection.original}" -> "${releaseTitleCorrection.new}"`);
                 updateTitleUI(releaseTitleNode, releaseTitleCorrection.original, releaseTitleCorrection.new);
             }
 
             // Correct each track title
-            let trackIndex = 0;
             releaseData.media.forEach(medium => {
                 medium.tracklist?.forEach(track => {
-                    const currentTrackIndex = trackIndex++;
-                    const trackTitleCorrection = titleCorrections.get(track.title);
-                    if (trackTitleCorrection) {
+                    const trackTitleCorrection = getCorrectedTitle(track.title);
+                    if (trackTitleCorrection && normalizableTitles.has(trackTitleCorrection.original)) {
                         track.title = trackTitleCorrection.new;
                         modifications.push(`Track ${track.number}: "${trackTitleCorrection.original}" -> "${trackTitleCorrection.new}"`);
 
-                        const trackCell = tracklistTitleCells?.[currentTrackIndex]?.textContent.includes(trackTitleCorrection.original)
-                            ? tracklistTitleCells[currentTrackIndex]
-                            : Array.from(tracklistTitleCells || []).find(cell => cell.textContent.includes(trackTitleCorrection.original));
+                        const trackCell = Array.from(tracklistTitleCells)
+                            .find(cell => cell.textContent.includes(trackTitleCorrection.original));
                         if (trackCell) {
                             const titleTextNode = findTextNode(trackCell, trackTitleCorrection.original);
                             if (titleTextNode) {
@@ -2394,7 +1977,12 @@
             }
 
             // 1. Gather all artist names (Release Artists + Track Artists)
-            const allArtists = ARTIST_CREDIT_UTILS.getAllArtists(releaseData);
+            const allArtists = [
+                ...releaseData.artists,
+                ...(releaseData.media || []).flatMap(m =>
+                    (m.tracklist || []).flatMap(t => t.artists || [])
+                )
+            ];
 
             // 2. Extract unique names and sort by length (descending)
             const uniqueArtistNames = new Set();
@@ -2413,12 +2001,6 @@
             const labelStatuses = releaseData.labels.map((originalLabel, index) => {
                 const labelName = originalLabel.name.trim();
                 if (!labelName || originalLabel.mbid) return { isSelf: false, originalLabel, index };
-
-                // Catalog Number Guard: Assume releases with catalog numbers are imprints/formal releases, not self-releases
-                const catNum = String(originalLabel.catalogNumber || releaseData.catalogNumber || '').trim();
-                if (catNum) {
-                    return { isSelf: false, originalLabel, index };
-                }
 
                 let remainingLabel = labelName;
                 for (const artistName of sortedArtists) {
@@ -2456,10 +2038,12 @@
                     if (labelListElement) {
                         UI_UTILS.updateLabelLink(labelListElement, NO_LABEL.name, NO_LABEL.mbid);
 
-                        UI_UTILS.badgeHost(labelListElement).set('setNoLabel', {
-                            type: 'overwritten',
-                            tooltip: `Original label: ${originalLabel.name}`,
+                        const overwrittenSpan = UI_UTILS.createIndicatorSpan('overwritten', originalLabel.name, {
+                            tooltipPrefix: 'Original label:',
                         });
+                        if (!labelListElement.nextElementSibling || !labelListElement.nextElementSibling.classList.contains('he-overwritten-label')) {
+                            labelListElement.parentNode.insertBefore(overwrittenSpan, labelListElement.nextSibling);
+                        }
                     }
                 });
             }
@@ -2470,7 +2054,7 @@
             if (!releaseData?.media) return;
 
             // Keywords that indicate a remix/version string
-            const REMIX_KEYWORDS = ['Remix', 'Rework', 'Edit', 'Mix', 'Flip', 'Bootleg', 'Mashup', 'VIP', 'Dub', 'Version', 'Redub', 'RMX'];
+            const REMIX_KEYWORDS = ['Remix', 'Rework', 'Edit', 'Mix', 'Flip', 'Bootleg', 'Mashup', 'VIP', 'Dub', 'Version', 'Redub'];
             const KEYWORDS_REGEX = new RegExp(`\\b(${REMIX_KEYWORDS.join('|')})\\b`, 'i');
 
             // Regex to find content in parentheses or brackets at the end of the title
@@ -2518,8 +2102,8 @@
 
                 if (removedFromThisTrack.length > 0) {
                     if (keptArtists.length > 0) {
-                        const oldArtistsString = ARTIST_CREDIT_UTILS.formatString(track.artists);
-                        track.artists = ARTIST_CREDIT_UTILS.normalize(keptArtists);
+                        const oldArtistsString = formatArtistString(track.artists);
+                        track.artists = keptArtists;
                         removedArtistsLog.push({
                             track: track.number,
                             title: title,
@@ -2550,81 +2134,65 @@
 
         removeBarcodeCatalogNumbers: () => {
             const releaseData = getReleaseDataFromJSON();
-            const { labelListElements, releaseSeederForm } = AppState.dom;
+            if (!releaseData) return;
 
-            const gtin = releaseData?.gtin
-                || new URLSearchParams(window.location.search).get('gtin')
-                || releaseSeederForm?.querySelector('input[name="barcode"]')?.value;
+            const { gtin, labels } = releaseData;
 
-            if (!gtin) return;
-            const cleanGtin = String(gtin).trim();
-            if (!cleanGtin) return;
+            if (!gtin || !labels || labels.length === 0) return;
 
-            const labels = releaseData?.labels || [];
-            const labelElements = Array.from(labelListElements || []);
+            const firstLabelSpan = AppState.dom.labelListElements?.[0];
+            if (!firstLabelSpan) return;
+
+            const labelListItems = firstLabelSpan.closest('ul')?.querySelectorAll('li');
+            if (!labelListItems) return;
 
             let changesMade = false;
             const removedLogs = [];
 
-            labelElements.forEach((labelLinkSpan, index) => {
-                const li = labelLinkSpan.closest('li');
-                if (!li) return;
+            labels.forEach((label, index) => {
+                const catNum = label.catalogNumber ? String(label.catalogNumber).trim() : '';
+                const cleanGtin = String(gtin).trim();
 
-                const label = labels[index];
-                const catNum = label?.catalogNumber ? String(label.catalogNumber).trim() : '';
-
-                let foundInTextNode = false;
-                for (const node of Array.from(li.childNodes)) {
-                    if (node.nodeType === Node.TEXT_NODE && node.textContent.includes(cleanGtin)) {
-                        foundInTextNode = true;
-                        node.textContent = node.textContent.replaceAll(cleanGtin, '');
-                        if (!node.textContent.trim()) {
-                            node.remove();
-                        }
-                    }
-                }
-
-                while (li.lastChild && li.lastChild.nodeType === Node.TEXT_NODE && !li.lastChild.textContent.trim()) {
-                    li.lastChild.remove();
-                }
-
-                if (catNum === cleanGtin || foundInTextNode) {
-                    changesMade = true;
-                    if (label) {
-                        label.catalogNumber = null;
-                    }
-                    const labelName = label?.name || labelLinkSpan.textContent.trim() || `Label ${index + 1}`;
-                    removedLogs.push(labelName);
-
-                    UI_UTILS.badgeHost(labelLinkSpan).set('barcodeCatalog', {
-                        type: 'removed',
-                        tooltip: `Removed catalog number (matches barcode): ${cleanGtin}`,
-                    });
-
-                    const catInput = releaseSeederForm?.querySelector(`input[name="labels.${index}.catalog_number"]`);
-                    if (catInput) {
-                        catInput.remove();
-                    }
-                }
-            });
-
-            labels.slice(labelElements.length).forEach((label, offset) => {
-                const index = labelElements.length + offset;
-                const catNum = label?.catalogNumber ? String(label.catalogNumber).trim() : '';
                 if (catNum === cleanGtin) {
                     label.catalogNumber = null;
                     changesMade = true;
-                    removedLogs.push(label.name || `Label ${index + 1}`);
+                    removedLogs.push(label.name);
 
-                    const catInput = releaseSeederForm?.querySelector(`input[name="labels.${index}.catalog_number"]`);
-                    if (catInput) {
-                        catInput.remove();
+                    if (labelListItems[index]) {
+                        const li = labelListItems[index];
+
+                        let textNodeToReplace = null;
+
+                        for (const node of li.childNodes) {
+                            if (node.nodeType === Node.TEXT_NODE && node.textContent.includes(cleanGtin)) {
+                                textNodeToReplace = node;
+                                break;
+                            }
+                        }
+
+                        if (textNodeToReplace) {
+                            textNodeToReplace.textContent = textNodeToReplace.textContent.replace(cleanGtin, '');
+
+                            const removedSpan = UI_UTILS.createIndicatorSpan('removed', cleanGtin, {
+                                type: 'removed',
+                                tooltipPrefix: 'Removed catalog number (matches barcode):',
+                                standalone: true
+                            });
+
+                            const labelLinkSpan = li.querySelector('.entity-links');
+                            if (labelLinkSpan) {
+                                labelLinkSpan.after(removedSpan);
+                                labelLinkSpan.after(' ');
+                            } else {
+                                li.append(removedSpan);
+                            }
+                        }
                     }
                 }
             });
 
-            if (changesMade && removedLogs.length > 0) {
-                const messageContent = `Removed catalog numbers that matched the barcode (${cleanGtin}) for labels: <b>${Array.from(new Set(removedLogs)).join(', ')}</b>`;
+            if (changesMade) {
+                const messageContent = `Removed catalog numbers that matched the barcode (${gtin}) for labels: <b>${removedLogs.join(', ')}</b>`;
                 createAndInsertMessage('he-cat-barcode-match', messageContent, 'debug');
             }
         },
@@ -2641,24 +2209,15 @@
             if (labelMap.size === 0) return;
 
             const { labelListElements } = AppState.dom;
+            if (!labelListElements) return;
 
-            releaseData.labels.forEach((originalLabel, index) => {
-                if (!originalLabel?.name) return;
-
-                const labelListElement = labelListElements[index];
+            labelListElements.forEach((labelListElement, index) => {
+                const originalLabel = releaseData.labels[index];
+                if (!originalLabel) return;
 
                 const currentLabelName = originalLabel.name.trim();
-                const isPrimaryLabel = index === 0;
 
-                // For primary label, we can check alt names if no direct mapping
-                // NOTE: When multiple alternative labels have user mappings, the first in DOM order
-                // currently takes precedence. Future consideration: multi-label seeding vs [no label] resolution.
-                const altLabelNames = (AppState.dom.labelAltElements || [])
-                    .map(span => span.textContent.trim())
-                    .filter(Boolean);
-                const namesToTry = isPrimaryLabel
-                    ? [currentLabelName, ...altLabelNames]
-                    : [currentLabelName];
+                const namesToTry = [currentLabelName, ...(AppState.dom.labelAltNames || [])];
 
                 let matchedName = null;
                 let matchedUrl = null;
@@ -2685,44 +2244,50 @@
                     const oldMbid = originalLabel.mbid;
                     const oldName = originalLabel.name;
 
+                    if (oldMbid === mbid && oldName === matchedName) return;
+
                     // Special handling for mapping to [no label]
                     const isNoLabel = mbid === NO_LABEL.mbid;
                     if (isNoLabel) {
                         matchedName = NO_LABEL.name;
                     }
 
-                    if (oldMbid === mbid && oldName === matchedName) return;
-
                     // Update State
                     AppState.data.release.labels[index].name = matchedName;
                     AppState.data.release.labels[index].mbid = mbid;
 
-                    // Update UI (if a corresponding DOM element exists)
-                    if (labelListElement) {
-                        UI_UTILS.updateLabelLink(labelListElement, matchedName, mbid);
+                    // Update UI
+                    UI_UTILS.updateLabelLink(labelListElement, matchedName, mbid);
 
-                        const isOverwriting = !!oldMbid || oldName !== matchedName;
-                        let indicatorText = isOverwriting ? 'overwritten' : 'added';
-                        let type = isOverwriting ? 'overwritten' : 'added';
-                        let tooltip;
+                    const isOverwriting = !!oldMbid || oldName !== matchedName;
+                    let indicatorText = isOverwriting ? 'overwritten' : 'added';
+                    let type = isOverwriting ? 'overwritten' : 'added';
+                    let tooltip;
 
-                        if (isNoLabel) {
-                            indicatorText = 'overwritten';
-                            type = 'overwritten';
-                            tooltip = `Original label: ${oldName}`;
-                        } else if (oldName !== matchedName) {
-                            tooltip = `Original label "${oldName}" replaced by user mapping for "${matchedName}".`;
-                        } else if (oldMbid) {
-                            tooltip = `Original MBID (${oldMbid}) overwritten via user mapping.`;
-                        } else {
-                            tooltip = `MBID ${mbid} added via user mapping.`;
-                        }
-
-                        UI_UTILS.badgeHost(labelListElement).set('mapLabelMbids', {
-                            type,
-                            tooltip,
-                        });
+                    if (isNoLabel) {
+                        indicatorText = 'overwritten';
+                        type = 'overwritten';
+                        tooltip = `Original label: ${oldName}`;
+                    } else if (oldName !== matchedName) {
+                        tooltip = `Original label "${oldName}" replaced by user mapping for "${matchedName}".`;
+                    } else if (oldMbid) {
+                        tooltip = `Original MBID (${oldMbid}) overwritten via user mapping.`;
+                    } else {
+                        tooltip = `MBID ${mbid} added via user mapping.`;
                     }
+
+                    const indicatorSpan = UI_UTILS.createIndicatorSpan(indicatorText, null, {
+                        type,
+                        tooltip,
+                    });
+
+                    // Remove existing HE indicators if present (to avoid stacking)
+                    const existingIndicator = labelListElement.nextElementSibling;
+                    if (existingIndicator?.classList.contains('he-added-label') || existingIndicator?.classList.contains('he-overwritten-label')) {
+                        existingIndicator.remove();
+                    }
+
+                    labelListElement.parentNode.insertBefore(indicatorSpan, labelListElement.nextSibling);
 
                     const messageContent = (oldName !== matchedName)
                         ? `Promoted label "${matchedName}" (MBID: ${mbid}) over original "${oldName}" via user mapping.`
@@ -2766,28 +2331,34 @@
                 return;
             }
 
-            const oldArtists = ARTIST_CREDIT_UTILS.formatString(releaseArtists);
-            const newArtists = ARTIST_CREDIT_UTILS.formatString(commonTrackArtists);
+            const oldArtists = formatArtistString(releaseArtists);
+            const newArtists = formatArtistString(commonTrackArtists);
             AppState.data.release.artists = commonTrackArtists;
 
             const { artistCreditSpan } = AppState.dom;
             if (artistCreditSpan) {
                 const newCreditHTML = UI_UTILS.buildArtistCreditsHTML(commonTrackArtists);
                 artistCreditSpan.innerHTML = newCreditHTML;
-                UI_UTILS.badgeHost(artistCreditSpan).set('syncTrackArtist', {
-                    type: 'overwritten',
-                    tooltip: `Original release artists: ${oldArtists}`,
-                });
+                const overwrittenSpan = UI_UTILS.createIndicatorSpan('overwritten', oldArtists, { tooltipPrefix: 'Original release artists:' });
+                artistCreditSpan.append(overwrittenSpan);
             }
             const messageContent = `Synced more detailed track artist credit to release artist.<br><b>Before:</b> ${oldArtists}<br><b>After:</b> ${newArtists}`;
             createAndInsertMessage('he-artist-sync', messageContent, 'debug', ['he-release-type-override', 'he-language-analysis']);
         },
 
         cleanArtistNames: () => {
-            ARTIST_CREDIT_UTILS.forEachArtist(AppState.data.release, (artist) => {
-                if (artist.mbid) {
-                    artist.name = null;
-                    artist.creditedName = null;
+            const clean = (artists) => {
+                if (!Array.isArray(artists)) return;
+                artists.forEach(artist => {
+                    if (artist.mbid) {
+                        artist.name = null;
+                    }
+                });
+            };
+            clean(AppState.data.release.artists);
+            AppState.data.release.media?.forEach(medium => {
+                if (medium.tracklist) {
+                    clean(medium.tracklist.flatMap(t => t.artists || []));
                 }
             });
         },
@@ -2814,12 +2385,14 @@
                     if (!cell) return;
 
                     const originalText = cell.textContent.trim();
-                    const placeholder = document.createElement('span');
-                    cell.replaceChildren(placeholder);
-                    UI_UTILS.badgeHost(placeholder).set('languageDisabled', {
+                    const removedSpan = UI_UTILS.createIndicatorSpan('removed', originalText, {
                         type: 'removed',
-                        tooltip: `Original value: ${originalText}`,
+                        tooltipPrefix: 'Original value:',
+                        standalone: true,
                     });
+
+                    cell.textContent = '';
+                    cell.appendChild(removedSpan);
                 }
             });
         },
@@ -2967,7 +2540,6 @@
                 input.value = value;
                 form.appendChild(input);
             }
-            input.setAttribute('data-he-managed', 'true');
         }
     }
 
@@ -2980,9 +2552,6 @@
     function handleSeederFormSubmit(event) {
         const form = event.target.closest('form');
         if (!form) return;
-
-        clearTimeout(formObserverDebounceTimer);
-        ingestAndReprocessExternalData();
 
         const formName = form.getAttribute('name');
 
@@ -3005,408 +2574,6 @@
         }
 
         form.target = getSeederTarget();
-    }
-
-    /**
-     * @summary Ingests unmanaged external form inputs (from companion scripts like HBR or other extensions)
-     * and synchronizes them into AppState.data.release.
-     * @param {HTMLFormElement} [targetForm] - Optional form to inspect.
-     * @returns {boolean} True if new or modified data was detected and merged.
-     */
-    function ingestExternalFormData(targetForm = null) {
-        const forms = targetForm
-            ? [targetForm]
-            : (AppState.dom.seederForms || []);
-        if (forms.length === 0 || !AppState.data.release) return false;
-
-        const release = AppState.data.release;
-        let changesDetected = false;
-        const raw = [];
-        const getOrCreateMedium = (mIdx) => ((release.media ??= [])[mIdx] ??= {});
-        const getOrCreateTrack = (mIdx, tIdx) => ((getOrCreateMedium(mIdx).tracklist ??= [])[tIdx] ??= {});
-
-        for (const form of forms) {
-            const formElements = form.querySelectorAll('input, textarea, select');
-            for (const el of formElements) {
-                if (el.hasAttribute('data-he-managed')) continue;
-
-                const name = el.name;
-                const value = el.value;
-                if (!name) continue;
-
-                raw.push({
-                    form: form.getAttribute('name'),
-                    name,
-                    value,
-                    type: el.type || el.tagName.toLowerCase(),
-                });
-
-                // 1. Labels: labels.N.name, labels.N.catalog_number, labels.N.mbid
-                const labelMatch = name.match(/^labels\.(\d+)\.(name|catalog_number|mbid)$/);
-                if (labelMatch) {
-                    const index = parseInt(labelMatch[1], 10);
-                    const field = labelMatch[2];
-                    release.labels ??= [];
-                    release.labels[index] ??= {};
-                    const prop = field === 'catalog_number' ? 'catalogNumber' : field;
-                    if (release.labels[index][prop] !== value) {
-                        release.labels[index][prop] = value;
-                        changesDetected = true;
-                    }
-                    continue;
-                }
-
-                // 2. Barcode: barcode -> gtin
-                if (name === 'barcode') {
-                    if (release.gtin !== value) {
-                        release.gtin = value;
-                        changesDetected = true;
-                    }
-                    continue;
-                }
-
-                // 3. Release Title: name -> title
-                if (name === 'name') {
-                    if (release.title !== value) {
-                        release.title = value;
-                        changesDetected = true;
-                    }
-                    continue;
-                }
-
-                // 4. Comment: comment -> comment
-                if (name === 'comment') {
-                    if (release.comment !== value) {
-                        release.comment = value;
-                        changesDetected = true;
-                    }
-                    continue;
-                }
-
-                // 5. Annotation: annotation -> annotation
-                if (name === 'annotation') {
-                    if (release.annotation !== value) {
-                        release.annotation = value;
-                        changesDetected = true;
-                    }
-                    continue;
-                }
-
-                // 6. Release status / packaging
-                if (name === 'status') {
-                    if (release.status !== value) {
-                        release.status = value;
-                        changesDetected = true;
-                    }
-                    continue;
-                }
-                if (name === 'packaging') {
-                    if (release.packaging !== value) {
-                        release.packaging = value;
-                        changesDetected = true;
-                    }
-                    continue;
-                }
-
-                // 7. Release Artists: artist_credit.names.N.(name|mbid|artist.name|join_phrase)
-                const artistMatch = name.match(/^artist_credit\.names\.(\d+)\.(name|mbid|artist\.name|join_phrase)$/);
-                if (artistMatch) {
-                    const [, index, field] = artistMatch;
-                    const artist = ((release.artists ??= [])[index] ??= {});
-                    if (ARTIST_CREDIT_UTILS.ingestField(artist, field, value)) {
-                        changesDetected = true;
-                    }
-                    continue;
-                }
-
-                // 8. Tracklist: mediums.M.track.T.(name|number|length|recording)
-                const trackMatch = name.match(/^mediums\.(\d+)\.track\.(\d+)\.(name|number|length|recording)$/);
-                if (trackMatch) {
-                    const [, mIdx, tIdx, field] = trackMatch;
-                    const track = getOrCreateTrack(mIdx, tIdx);
-                    if (field === 'name' && track.title !== value) {
-                        track.title = value;
-                        changesDetected = true;
-                    } else if (field === 'number' && String(track.number) !== value) {
-                        track.number = value;
-                        changesDetected = true;
-                    } else if (field === 'length' && String(track.length) !== value) {
-                        track.length = value;
-                        changesDetected = true;
-                    } else if (field === 'recording') {
-                        track.recording ??= {};
-                        if (track.recording.mbid !== value) {
-                            track.recording.mbid = value;
-                            changesDetected = true;
-                        }
-                    }
-                    continue;
-                }
-
-                // 9. Track Artists: mediums.M.track.T.artist_credit.names.A.(name|mbid|artist.name|join_phrase)
-                const trackArtistMatch = name.match(/^mediums\.(\d+)\.track\.(\d+)\.artist_credit\.names\.(\d+)\.(name|mbid|artist\.name|join_phrase)$/);
-                if (trackArtistMatch) {
-                    const [, mIdx, tIdx, aIdx, field] = trackArtistMatch;
-                    const artist = ((getOrCreateTrack(mIdx, tIdx).artists ??= [])[aIdx] ??= {});
-                    if (ARTIST_CREDIT_UTILS.ingestField(artist, field, value)) {
-                        changesDetected = true;
-                    }
-                    continue;
-                }
-
-                // 10. Mediums: mediums.M.(format|name)
-                const mediumMatch = name.match(/^mediums\.(\d+)\.(format|name)$/);
-                if (mediumMatch) {
-                    const [, mIdx, field] = mediumMatch;
-                    const medium = getOrCreateMedium(mIdx);
-                    const prop = field === 'name' ? 'title' : field;
-                    if (medium[prop] !== value) {
-                        medium[prop] = value;
-                        changesDetected = true;
-                    }
-                    continue;
-                }
-
-                // NOTE: Passthrough parameters (type.N, events.*, urls.*, edit_note, redirect_uri) are preserved
-                // untouched in the DOM form. If any future enhancement module modifies release.types or other
-                // fields, add corresponding ingestion mapping here.
-            }
-        }
-
-        AppState.data.injected = { raw };
-
-        if (changesDetected && AppState.debug) {
-            log('Ingested external form data:', structuredClone(AppState.data.injected));
-            log('Updated release object after external form merge:', structuredClone(AppState.data.release));
-        }
-
-        return changesDetected;
-    }
-
-    /**
-     * @summary Runs all active enhancement modules matching the current page and user settings.
-     * Can be executed both on initial page load and on-demand (e.g. after third-party form data ingestion).
-     * @param {object} [options]
-     * @param {'load'|'mutation'} [options.trigger='load'] - The trigger source.
-     */
-    function runActiveEnhancements({ trigger = 'load' } = {}) {
-        const { path } = AppState;
-
-        // 1. Language detection mode actions (only on initial load)
-        if (trigger === 'load') {
-            const loadTimeActionMap = {
-                browser: 'runLanguageDetection',
-                none: 'updateUIAfterLanguageDisable',
-            };
-            const mode = AppState.settings[SETTINGS_CONFIG.languageDetectionMode.key];
-            const langModuleName = loadTimeActionMap[mode];
-
-            if (langModuleName) {
-                const config = SETTINGS_CONFIG[langModuleName];
-                const moduleFunc = enhancements[langModuleName];
-                if (config?.paths?.some(p => p.test(path)) && moduleFunc) {
-                    if (AppState.debug) {
-                        log(`Running mode-dependent module (${trigger}): ${langModuleName}...`);
-                        console.time(`[${SCRIPT_NAME}] ${langModuleName} execution time`);
-                    }
-                    moduleFunc();
-                    if (AppState.debug) {
-                        console.timeEnd(`[${SCRIPT_NAME}] ${langModuleName} execution time`);
-                    }
-                }
-            }
-        }
-
-        // 2. Standard enhancement modules
-        const modeDependentModules = ['runLanguageDetection', 'updateUIAfterLanguageDisable', 'unsetLanguageData'];
-        for (const [funcName, config] of Object.entries(SETTINGS_CONFIG)) {
-            if (modeDependentModules.includes(funcName) || !config.runAt) continue;
-
-            const isEnabled = (config.runAt ?? 'load') === 'load' && AppState.settings[config.key];
-            const matchesPath = config.paths?.some(p => p.test(path));
-            const moduleFunc = enhancements[funcName];
-
-            if (isEnabled && matchesPath && typeof moduleFunc === 'function') {
-                if (AppState.debug) {
-                    log(`Running enhancement module (${trigger}): ${funcName}...`);
-                    console.time(`[${SCRIPT_NAME}] ${funcName} execution time`);
-                }
-                moduleFunc();
-                if (AppState.debug) {
-                    console.timeEnd(`[${SCRIPT_NAME}] ${funcName} execution time`);
-                }
-            }
-        }
-    }
-
-    /**
-     * @summary Reconciles the release labels DOM with unique release labels, demoting companion-injected extra labels to alternative values.
-     */
-    function reconcileReleaseLabelsDOM() {
-        const release = AppState.data.release;
-        if (!release || !Array.isArray(release.labels)) return;
-
-        const { labelsUl, releaseInfoTable } = AppState.dom;
-        if (!labelsUl) return;
-
-        const listItems = Array.from(labelsUl.querySelectorAll(':scope > li'));
-
-        listItems.forEach(li => {
-            const isHbr = li.querySelector('[data-hbr-label-provider], a[href*="beatport.com"]');
-            if (!isHbr) return;
-
-            const labelText = li.querySelector('.entity-links')?.textContent.trim().toLowerCase();
-            const isPrimarySelected = release.labels.some(l =>
-                l.name && l.name !== NO_LABEL.name && l.name.trim().toLowerCase() === labelText
-            );
-
-            if (!isPrimarySelected) {
-                let altUl = releaseInfoTable?.querySelector('ul.release-labels ~ ul.alt-values')
-                    || labelsUl.parentElement?.querySelector('ul.alt-values')
-                    || document.querySelector('ul.alt-values');
-
-                if (!altUl) {
-                    altUl = document.createElement('ul');
-                    altUl.className = 'alt-values';
-                    labelsUl.after(altUl);
-                }
-
-                let hbrAlt = altUl.querySelector('#hbr-beatport-label-alt');
-                if (!hbrAlt) {
-                    hbrAlt = document.createElement('li');
-                    hbrAlt.id = 'hbr-beatport-label-alt';
-
-                    const entityLinks = li.querySelector('.entity-links');
-                    const providerIcon = entityLinks?.querySelector('[data-hbr-label-provider]');
-                    if (providerIcon) providerIcon.remove();
-
-                    li.querySelectorAll('.he-badge').forEach(b => b.remove());
-
-                    const altSpan = document.createElement('span');
-                    altSpan.className = 'alt-value';
-
-                    const inlineUl = document.createElement('ul');
-                    inlineUl.className = 'release-labels inline';
-                    const innerLi = document.createElement('li');
-                    if (entityLinks) innerLi.appendChild(entityLinks);
-
-                    const catTextNodes = Array.from(li.childNodes).filter(node =>
-                        node.nodeType === Node.TEXT_NODE && node.textContent.trim().length > 0
-                    );
-                    catTextNodes.forEach(node => innerLi.appendChild(node.cloneNode(true)));
-
-                    inlineUl.appendChild(innerLi);
-                    altSpan.appendChild(inlineUl);
-
-                    const bpIcon = document.createElement('span');
-                    bpIcon.className = 'beatport';
-                    bpIcon.title = 'Beatport';
-                    bpIcon.innerHTML = '<svg class="icon" width="24" height="24" stroke-width="1.25"><use xlink:href="/icon-sprite.svg#brand-beatport"></use></svg>';
-                    altSpan.appendChild(bpIcon);
-
-                    hbrAlt.appendChild(altSpan);
-                    altUl.appendChild(hbrAlt);
-                }
-                li.remove();
-
-                release.labels = release.labels.filter(l =>
-                    l.name === NO_LABEL.name || l.name.trim().toLowerCase() !== labelText
-                );
-            }
-        });
-
-        const remainingListItems = Array.from(labelsUl.querySelectorAll(':scope > li'));
-        if (remainingListItems.length > release.labels.length) {
-            for (let i = release.labels.length; i < remainingListItems.length; i++) {
-                remainingListItems[i].remove();
-            }
-        }
-
-        AppState.dom.labelListElements = Array.from(labelsUl.querySelectorAll(':scope > li span.entity-links'));
-        AppState.dom.labelAltElements = Array.from(releaseInfoTable?.querySelectorAll('ul.release-labels ~ ul.alt-values .entity-links')
-            || document.querySelectorAll('ul.release-labels ~ ul.alt-values .entity-links'));
-
-        if (AppState.settings[SETTINGS_CONFIG.removeBarcodeCatalogNumbers.key]) {
-            enhancements.removeBarcodeCatalogNumbers();
-        }
-    }
-
-    let formObserverDebounceTimer = null;
-
-    /**
-     * @summary Ingests any external data from the form and re-runs active enhancements on the merged data.
-     */
-    function ingestAndReprocessExternalData() {
-        const changes = ingestExternalFormData();
-        if (changes) {
-            runActiveEnhancements({ trigger: 'mutation' });
-            if (Array.isArray(AppState.data.release?.labels)) {
-                AppState.data.release.labels = getUniqueLabels(AppState.data.release.labels);
-            }
-            reconcileReleaseLabelsDOM();
-            const { releaseSeederForm } = AppState.dom;
-            if (releaseSeederForm) {
-                buildSeederParameters(releaseSeederForm, AppState.data.release, AppState.data.originalRelease, null);
-            }
-        }
-    }
-
-    /**
-     * @summary Sets up a MutationObserver on the release seeder forms to detect third-party injections.
-     */
-    function setupFormMutationObserver() {
-        const { seederForms, labelsUl } = AppState.dom;
-        if (!seederForms || seederForms.length === 0) return;
-
-        const observer = new MutationObserver((mutations) => {
-            let hasExternalAddition = false;
-
-            for (const m of mutations) {
-                for (const node of m.addedNodes) {
-                    if (node.nodeType !== Node.ELEMENT_NODE) continue;
-
-                    const isInput = node.tagName === 'INPUT' || node.tagName === 'TEXTAREA' || node.tagName === 'SELECT';
-                    if (isInput && !node.hasAttribute('data-he-managed')) {
-                        hasExternalAddition = true;
-                        break;
-                    }
-                    if (node.querySelector?.('input:not([data-he-managed]), textarea:not([data-he-managed]), select:not([data-he-managed])')) {
-                        hasExternalAddition = true;
-                        break;
-                    }
-                }
-                if (hasExternalAddition) break;
-            }
-
-            if (!hasExternalAddition) return;
-
-            clearTimeout(formObserverDebounceTimer);
-            formObserverDebounceTimer = setTimeout(() => {
-                ingestAndReprocessExternalData();
-            }, 50);
-        });
-
-        seederForms.forEach(form => observer.observe(form, { childList: true, subtree: true }));
-
-        if (labelsUl) {
-            let labelsObserverDebounceTimer = null;
-            const labelsObserver = new MutationObserver((mutations) => {
-                const hasExternalAddition = mutations.some(m =>
-                    Array.from(m.addedNodes).some(n =>
-                        n.nodeType === Node.TEXT_NODE
-                            ? n.textContent.trim().length > 0
-                            : (n.nodeType === Node.ELEMENT_NODE && !n.classList?.contains('he-badge') && !n.querySelector?.('.he-badge'))
-                    )
-                );
-                if (hasExternalAddition) {
-                    clearTimeout(labelsObserverDebounceTimer);
-                    labelsObserverDebounceTimer = setTimeout(() => {
-                        reconcileReleaseLabelsDOM();
-                    }, 50);
-                }
-            });
-            labelsObserver.observe(labelsUl, { childList: true, subtree: true });
-        }
     }
 
     // --- INITIALIZATION AND ROUTING ---
@@ -3437,20 +2604,13 @@
                     AppState.dom.releaseInfoRowsByHeader.set(headerText, th.parentElement);
                 }
             });
+
+            // Cache alt label names
+            AppState.dom.labelAltNames = Array.from(document.querySelectorAll('ul.release-labels ~ ul.alt-values .entity-links'))
+                .map(span => span.textContent.trim());
         }
 
-        AppState.dom.labelsUl = AppState.dom.releaseInfoTable?.querySelector('ul.release-labels:not(.inline)')
-            || document.querySelector('ul.release-labels:not(.inline)');
-        AppState.dom.labelListElements = AppState.dom.labelsUl
-            ? Array.from(AppState.dom.labelsUl.querySelectorAll(':scope > li span.entity-links'))
-            : [];
-        AppState.dom.labelAltElements = Array.from(AppState.dom.releaseInfoTable?.querySelectorAll('ul.release-labels ~ ul.alt-values .entity-links')
-            || document.querySelectorAll('ul.release-labels ~ ul.alt-values .entity-links'));
-
-        AppState.dom.releaseSeederForm = document.querySelector('form[name="release-seeder"]');
-        AppState.dom.releaseUpdateSeederForm = document.querySelector('form[name="release-update-seeder"]');
-        AppState.dom.seederForms = [AppState.dom.releaseSeederForm, AppState.dom.releaseUpdateSeederForm].filter(Boolean);
-
+        AppState.dom.labelListElements = document.querySelectorAll('ul.release-labels:not(.inline) li span.entity-links');
         AppState.dom.scrapedArtistLinks = Array.from(document.querySelectorAll('.entity-links')).map(span => ({
             name: span.textContent.trim(),
             count: span.querySelectorAll('a').length,
@@ -3462,9 +2622,6 @@
         AppState.dom.providerLinks = providersRow
             ? Array.from(providersRow.querySelectorAll('a[href]'))
             : [];
-
-        AppState.dom.providerInputs = Array.from(document.querySelectorAll('form.center label.provider-input'));
-        AppState.dom.errorMessages = Array.from(document.querySelectorAll('.message.error'));
     }
 
     /** Caches DOM elements for the release actions page. */
@@ -3482,26 +2639,18 @@
             .release-artist::before { content: "by "; }
             .release-artist > :first-child { margin-left: 0.25em; }
             ${AppState.settings[SETTINGS_CONFIG.hideDebugMessages.key] ? '.message.debug { display: none !important; }' : ''}
-            .he-badge {
+            .he-overwritten-label,.he-added-label {
                 font-size: 0.8em;
                 font-weight: bold;
                 cursor: help;
-                margin-left: 0.5em;
-                white-space: nowrap;
             }
-            .he-badge--overwritten,
-            .he-badge--removed {
+            .he-overwritten-label {
                 color: #d9534f;
                 border-bottom: 1px dotted #d9534f;
             }
-            .he-badge--added {
+            .he-added-label {
                 color: #4CAF50;
                 border-bottom: 1px dotted #4CAF50;
-            }
-            .he-badge:first-child,
-            span:empty + .he-badge,
-            .he-badge--standalone {
-                margin-left: 0;
             }
             .he-reset-button, .he-tidy-button {
                 padding: 4px 8px;
@@ -3625,47 +2774,8 @@
                 border-color: #aaa;
                 color: var(--text);
             }
-            .he-provider-chip-slot {
-                position: relative;
-                display: inline-flex;
-                vertical-align: top;
-                margin-bottom: 1.4em;
-            }
-            .he-not-found-badge {
-                position: absolute;
-                top: calc(100% + 4px);
-                left: 50%;
-                transform: translateX(-50%);
-                font-size: 10px;
-                font-weight: 600;
-                line-height: 1;
-                padding: 2px 6px;
-                border-radius: 3px;
-                background-color: #ffe7e7;
-                color: #de0604;
-                border: 1px solid rgba(222, 6, 4, 0.35);
-                cursor: help;
-                white-space: nowrap;
-                pointer-events: auto;
-                letter-spacing: 0.02em;
-                z-index: 1;
-            }
-            .he-not-found-badge:hover {
-                border-color: #de0604;
-                filter: brightness(0.96);
-            }
-            @media (prefers-color-scheme: dark) {
-                .he-not-found-badge {
-                    background-color: #3b1818;
-                    color: #ff9b9b;
-                    border-color: rgba(255, 155, 155, 0.4);
-                }
-            }
-            .row.has-he-badges {
-                align-items: flex-start;
-            }
         `;
-        GM.addStyle(css);
+        GM_addStyle(css);
     }
 
     /**
@@ -3693,11 +2803,11 @@
             }
 
             log(`Migrated to new mode: '${newMode}'`);
-            await GM.setValue(modeKey, newMode);
+            await GM_setValue(modeKey, newMode);
             AppState.settings[modeKey] = newMode;
-            await GM.deleteValue(oldEnabledKey);
-            await GM.deleteValue(oldDisableKey);
-            await GM.deleteValue(`${oldEnabledKey}.backup`);
+            await GM_deleteValue(oldEnabledKey);
+            await GM_deleteValue(oldDisableKey);
+            await GM_deleteValue(`${oldEnabledKey}.backup`);
         }
 
         // 2. Cleanup List Defaults
@@ -3708,7 +2818,7 @@
         for (const config of cleanupLists) {
             // Use a unique symbol to detect if the key is missing/unset
             const UNSET = 'HE_UNSET_' + Math.random();
-            const storedValue = await GM.getValue(config.key, UNSET);
+            const storedValue = await GM_getValue(config.key, UNSET);
 
             if (storedValue !== UNSET && Array.isArray(storedValue)) {
                 const storedSet = new Set(storedValue);
@@ -3732,7 +2842,7 @@
                 }
 
                 if (shouldDelete) {
-                    await GM.deleteValue(config.key);
+                    await GM_deleteValue(config.key);
                     log(`Cleanup: Reset ${config.key} to default (stored value matched default).`);
                 }
             }
@@ -3756,9 +2866,6 @@
         } else if (path.startsWith('/release') && !path.startsWith('/release/actions')) {
             cacheReleaseLookupPageDOM();
             getReleaseDataFromJSON();
-            if (ingestExternalFormData()) {
-                AppState.data.originalRelease = structuredClone(AppState.data.release);
-            }
         } else if (path.startsWith('/release/actions')) {
             cacheReleaseActionsPageDOM();
         } else if (path.startsWith('/settings')) {
@@ -3767,15 +2874,44 @@
             return;
         }
 
-        runActiveEnhancements({ trigger: 'load' });
-        if (Array.isArray(AppState.data.release?.labels)) {
-            AppState.data.release.labels = getUniqueLabels(AppState.data.release.labels);
+        const loadTimeActionMap = {
+            browser: 'runLanguageDetection',
+            none: 'updateUIAfterLanguageDisable',
+        };
+        const mode = AppState.settings[SETTINGS_CONFIG.languageDetectionMode.key];
+        const moduleName = loadTimeActionMap[mode];
+
+        if (moduleName) {
+            const config = SETTINGS_CONFIG[moduleName];
+            const moduleFunc = enhancements[moduleName];
+            if (config?.paths.some(p => p.test(AppState.path))) {
+                if (AppState.debug) {
+                    log(`Running mode-dependent module: ${moduleName}...`);
+                    console.time(`[${SCRIPT_NAME}] ${moduleName} execution time`);
+                }
+                moduleFunc();
+                if (AppState.debug) {
+                    console.timeEnd(`[${SCRIPT_NAME}] ${moduleName} execution time`);
+                }
+            }
         }
-        reconcileReleaseLabelsDOM();
-        const { releaseSeederForm } = AppState.dom;
-        if (releaseSeederForm) {
-            buildSeederParameters(releaseSeederForm, AppState.data.release, AppState.data.originalRelease, null);
-            setupFormMutationObserver();
+
+        const modeDependentModules = ['runLanguageDetection', 'updateUIAfterLanguageDisable', 'unsetLanguageData'];
+        for (const [funcName, config] of Object.entries(SETTINGS_CONFIG)) {
+            if (modeDependentModules.includes(funcName) || !config.runAt) continue;
+
+            if ((config.runAt ?? 'load') === 'load' && AppState.settings[config.key] && config.paths && enhancements[funcName]) {
+                if (config.paths.some(p => p.test(AppState.path))) {
+                    if (AppState.debug) {
+                        log(`Running standard module: ${funcName}...`);
+                        console.time(`[${SCRIPT_NAME}] ${funcName} execution time`);
+                    }
+                    enhancements[funcName]();
+                    if (AppState.debug) {
+                        console.timeEnd(`[${SCRIPT_NAME}] ${funcName} execution time`);
+                    }
+                }
+            }
         }
     }
 

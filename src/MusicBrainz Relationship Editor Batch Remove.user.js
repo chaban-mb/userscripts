@@ -1,13 +1,11 @@
 // ==UserScript==
 // @name        MusicBrainz: Relationship Editor Batch Remove
 // @namespace   https://musicbrainz.org/user/chaban
-// @version     1.1.4
+// @version     1.1.2
 // @description Adds a toggle to batch remove/restore relationships. Shift+Click: Same Type. Ctrl+Click: Same Target. Ctrl+Shift+Click: Same Type & Target.
 // @tag         ai-created
 // @author      chaban
 // @license     MIT
-// @homepageURL https://github.com/chaban-mb/userscripts
-// @supportURL  https://github.com/chaban-mb/userscripts/issues
 // @match       *://*.musicbrainz.org/release/*/edit-relationships
 // @match       *://*.musicbrainz.org/area/*/edit
 // @match       *://*.musicbrainz.org/artist/*/edit
@@ -132,14 +130,16 @@ function resolveTarget(rel, source) {
  * * @param {MouseEvent} event - The click event triggered on the content area.
  */
 function handleBatchToggle(event) {
+    const target = event.target;
+
+    // 1. Basic Validation
+    if (!target.matches('.icon.remove-item')) return;
+
     const matchType = event.shiftKey;
     const matchTarget = event.ctrlKey;
 
     // Only proceed if a modifier key is held
     if (!matchType && !matchTarget) return;
-
-    const target = event.target.closest('.icon.remove-item, .remove-item');
-    if (!target) return;
 
     event.preventDefault();
     event.stopPropagation();
@@ -152,7 +152,7 @@ function handleBatchToggle(event) {
 
     const masterRel = props.relationship;
     const masterSource = props.source;
-    const dispatch = props.dispatch || MB?.relationshipEditor?.dispatch;
+    const dispatch = props.dispatch;
 
     if (!dispatch) return;
 
@@ -257,66 +257,31 @@ function setup() {
     // Clear modifiers on blur to prevent "stuck" keys when Alt-Tabbing
     window.addEventListener('blur', () => document.body.classList.remove('ctrl-is-down', 'shift-is-down'));
 
-    const content = document.getElementById('content') || document.body;
+    const content = document.getElementById('content');
     if (content) {
         content.addEventListener('click', handleBatchToggle, true);
     }
 }
 
-/**
- * Checks whether the relationship editor is ready to accept commands.
- * Supports both standalone release relationship editor and inline entity editors.
- *
- * @param {HTMLElement} root - The relationship editor DOM container.
- * @returns {boolean} True if the editor is hydrated and operational.
- */
-function isEditorReady(root) {
-    if (!root) return false;
-    if (typeof MB?.relationshipEditor?.dispatch === 'function') {
-        return true;
-    }
-    return Object.keys(root).some((key) =>
-        (key.startsWith('_reactListening') || key.startsWith('__reactFiber')) && root[key]
-    );
-}
-
 function onReactHydrated(element, callback) {
     if (!element) return;
+    const alreadyHydrated = Object.keys(element)
+        .some((propertyName) => propertyName.startsWith('_reactListening') && element[propertyName]);
 
-    if (isEditorReady(element)) {
+    if (alreadyHydrated) {
         callback();
-        return;
+    } else {
+        element.addEventListener('mb-hydration', callback, { once: true });
     }
-
-    element.addEventListener('mb-hydration', callback, { once: true });
 }
 
 function init() {
-    let initialized = false;
-    const runSetup = () => {
-        if (initialized) return;
-        initialized = true;
-        clearInterval(interval);
-        setup();
-    };
-
-    let attempts = 0;
-    // Poll for the relationship editor container across release and entity edit pages
+    // Poll for the relationship editor container exactly as kellnerd's readyRelationshipEditor does
     const interval = setInterval(() => {
-        if (++attempts > 300) {
-            clearInterval(interval);
-            return;
-        }
-
-        const root = document.querySelector(
-            '#relationship-editor, .relationship-editor, #release-relationship-editor, .release-relationship-editor, .relationship-editor-fieldset-content'
-        );
+        const root = document.querySelector('.release-relationship-editor, .relationship-editor');
         if (root) {
-            if (isEditorReady(root)) {
-                runSetup();
-            } else {
-                onReactHydrated(root, runSetup);
-            }
+            clearInterval(interval);
+            onReactHydrated(root, setup);
         }
     }, 100);
 }

@@ -1,18 +1,16 @@
 // ==UserScript==
 // @name        ListenBrainz: Extended Controls
 // @namespace   https://musicbrainz.org/user/chaban
-// @version     1.2.13
+// @version     1.2.10
 // @description Allows customizing which actions are shown in listen controls cards, moving "Open in Music Service" links to the main controls area, displaying source info, and auto-copying text in the "Link Listen" modal.
 // @tag         ai-created
 // @author      chaban
 // @license     MIT
-// @homepageURL https://github.com/chaban-mb/userscripts
-// @supportURL  https://github.com/chaban-mb/userscripts/issues
 // @match       https://*.listenbrainz.org/*
 // @icon        https://listenbrainz.org/static/img/favicon-256.png
-// @grant       GM.setValue
-// @grant       GM.getValue
-// @grant       GM.addStyle
+// @grant       GM_setValue
+// @grant       GM_getValue
+// @grant       GM_addStyle
 // @run-at      document-end
 // @updateURL   https://github.com/chaban-mb/userscripts/raw/dist/src/ListenBrainz%20Extended%20Controls.user.js
 // @downloadURL https://github.com/chaban-mb/userscripts/raw/dist/src/ListenBrainz%20Extended%20Controls.user.js
@@ -60,7 +58,6 @@
             lms: 'https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/lyrion-dark.svg',
             lollypop: 'https://gitlab.gnome.org/World/lollypop/raw/master/data/icons/hicolor/256x256/apps/org.gnome.Lollypop.png',
             mopidy: 'https://raw.githubusercontent.com/home-assistant/brands/master/custom_integrations/mopidy/icon.png',
-            Morphe: 'https://avatars.githubusercontent.com/u/246280111',
             mpv: 'https://raw.githubusercontent.com/mpv-player/mpv/refs/heads/master/etc/mpv.svg',
             'music-assistant': 'https://avatars.githubusercontent.com/u/71128003',
             musicbee: 'https://getmusicbee.com/img/musicbee.png',
@@ -91,7 +88,7 @@
         showHarmonyButton: true
     };
 
-    let settings = { ...DEFAULT_SETTINGS };
+    let settings = GM_getValue('UserJS.ListenBrainz.ExtendedListenControls', DEFAULT_SETTINGS);
     const processedCards = new WeakSet();
     const processedCopyButtons = new WeakSet();
     let discoveredActions = new Set();
@@ -100,7 +97,7 @@
     const notify = () => window.dispatchEvent(new CustomEvent('UserJS.ListenBrainz.ExtendedListenControls.settings_changed'));
 
     // --- Native UI Styles ---
-    GM.addStyle(`
+    GM_addStyle(`
         #lb-ext-settings-menu {
             position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
             z-index: 10000; width: 340px; max-height: 85vh; overflow-y: auto;
@@ -174,13 +171,13 @@
                 type: 'checkbox',
                 checked: isKey ? settings[target] : settings.enabledActions.includes(target),
                 on: {
-                    change: async (e) => {
+                    change: (e) => {
                         if (isKey) settings[target] = e.target.checked;
                         else {
                             if (e.target.checked) !settings.enabledActions.includes(target) && settings.enabledActions.push(target);
                             else settings.enabledActions = settings.enabledActions.filter(a => a !== target);
                         }
-                        await GM.setValue('UserJS.ListenBrainz.ExtendedListenControls', settings);
+                        GM_setValue('UserJS.ListenBrainz.ExtendedListenControls', settings);
                         notify();
                     }
                 }
@@ -498,12 +495,6 @@
         }
     }
 
-    async function init() {
-        const stored = await GM.getValue('UserJS.ListenBrainz.ExtendedListenControls', DEFAULT_SETTINGS);
-        settings = { ...DEFAULT_SETTINGS, ...stored };
-        scanPage();
-        new MutationObserver(scanPage).observe(document.body, { childList: true, subtree: true });
-    }
-
-    init().catch(console.error);
+    scanPage();
+    new MutationObserver(scanPage).observe(document.body, { childList: true, subtree: true });
 })();
