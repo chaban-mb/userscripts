@@ -1,30 +1,30 @@
 // ==UserScript==
-// @name         ISBN Barcode Generator
-// @namespace    https://musicbrainz.org/user/chaban
-// @version      0.1.4
-// @tag          ai-created
-// @description  Erkennt ISBNs und bettet einen scanbaren Barcode direkt ein. Mit An/Aus-Schalter im Menü.
-// @author       chaban
-// @license      MIT
-// @match        https://www.thalia.de/*
-// @match        https://www.yomeru.de/*
-// @match        https://tokyopop.de/*
-// @match        https://www.manga-passion.de/*
-// @match        https://www.carlsen.de/*
-// @match        https://altraverse.de/*
-// @match        https://www.animachon.shop/*
-// @match        https://www.cross-cult.de/*
-// @match        https://www.danibooks.de/*
-// @match        https://dokico.de/*
-// @connect      barcode.tec-it.com
-// @grant        GM_addStyle
-// @grant        GM_getValue
-// @grant        GM_setValue
-// @grant        GM_registerMenuCommand
-// @grant        GM_unregisterMenuCommand
-// @grant        GM_addElement
-// @updateURL    https://github.com/chaban-mb/userscripts/raw/main/src/ISBN%20Barcode%20Generator.user.js
-// @downloadURL  https://github.com/chaban-mb/userscripts/raw/main/src/ISBN%20Barcode%20Generator.user.js
+// @name        ISBN Barcode Generator
+// @namespace   https://musicbrainz.org/user/chaban
+// @version     0.1.5
+// @description Erkennt ISBNs und bettet einen scanbaren Barcode direkt ein. Mit An/Aus-Schalter im Menü.
+// @tag         ai-created
+// @author      chaban
+// @license     MIT
+// @match       https://www.thalia.de/*
+// @match       https://www.yomeru.de/*
+// @match       https://tokyopop.de/*
+// @match       https://www.manga-passion.de/*
+// @match       https://www.carlsen.de/*
+// @match       https://altraverse.de/*
+// @match       https://www.animachon.shop/*
+// @match       https://www.cross-cult.de/*
+// @match       https://www.danibooks.de/*
+// @match       https://dokico.de/*
+// @connect     barcode.tec-it.com
+// @grant       GM_addStyle
+// @grant       GM_getValue
+// @grant       GM_setValue
+// @grant       GM_registerMenuCommand
+// @grant       GM_unregisterMenuCommand
+// @grant       GM_addElement
+// @updateURL   https://github.com/chaban-mb/userscripts/raw/main/src/ISBN%20Barcode%20Generator.user.js
+// @downloadURL https://github.com/chaban-mb/userscripts/raw/main/src/ISBN%20Barcode%20Generator.user.js
 // ==/UserScript==
 
 (function () {

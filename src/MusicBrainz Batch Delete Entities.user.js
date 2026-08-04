@@ -1,41 +1,42 @@
 // ==UserScript==
-// @name         MusicBrainz: Batch Delete Entities
-// @namespace    https://musicbrainz.org/user/chaban
-// @version      1.0.0
-// @description  Batch deletes entities like releases or recordings.
-// @tag          ai-created
-// @author       chaban
-// @license      MIT
-// @match        *://*.musicbrainz.org/artist*
-// @match        *://*.musicbrainz.org/release-group*
-// @match        *://*.musicbrainz.org/release*
-// @match        *://*.musicbrainz.org/recording*
-// @match        *://*.musicbrainz.org/work*
-// @match        *://*.musicbrainz.org/label*
-// @match        *://*.musicbrainz.org/series*
-// @match        *://*.musicbrainz.org/event*
-// @match        *://*.musicbrainz.org/place*
-// @match        *://*.musicbrainz.org/area*
-// @match        *://*.musicbrainz.org/instrument*
-// @match        *://*.musicbrainz.org/genre*
-// @match        *://*.musicbrainz.org/collection*
-// @match        *://*.musicbrainz.org/*/*/artists*
-// @match        *://*.musicbrainz.org/*/*/releases*
-// @match        *://*.musicbrainz.org/*/*/recordings*
-// @match        *://*.musicbrainz.org/*/*/release-groups*
-// @match        *://*.musicbrainz.org/*/*/events*
-// @match        *://*.musicbrainz.org/*/*/labels*
-// @match        *://*.musicbrainz.org/*/*/places*
-// @exclude      *://*.musicbrainz.org/*/create*
-// @exclude      *://*.musicbrainz.org/*/*/edit*
-// @exclude      *://*.musicbrainz.org/*/*/edits*
-// @exclude      *://*.musicbrainz.org/*/*/open_edits*
-// @exclude      *://*.musicbrainz.org/release/add*
-// @exclude      *://*.musicbrainz.org/release/*/edit-relationships*
-// @exclude      *://*.musicbrainz.org/release/*/add-cover-art*
-// @grant        none
-// @updateURL    https://github.com/chaban-mb/userscripts/raw/main/src/MusicBrainz%20Batch%20Delete%20Entities.user.js
-// @downloadURL  https://github.com/chaban-mb/userscripts/raw/main/src/MusicBrainz%20Batch%20Delete%20Entities.user.js
+// @name        MusicBrainz: Batch Delete Entities
+// @namespace   https://musicbrainz.org/user/chaban
+// @version     1.0.1
+// @description Batch deletes entities like releases or recordings.
+// @tag         ai-created
+// @author      chaban
+// @license     MIT
+// @match       *://*.musicbrainz.org/artist*
+// @match       *://*.musicbrainz.org/release-group*
+// @match       *://*.musicbrainz.org/release*
+// @match       *://*.musicbrainz.org/recording*
+// @match       *://*.musicbrainz.org/work*
+// @match       *://*.musicbrainz.org/label*
+// @match       *://*.musicbrainz.org/series*
+// @match       *://*.musicbrainz.org/event*
+// @match       *://*.musicbrainz.org/place*
+// @match       *://*.musicbrainz.org/area*
+// @match       *://*.musicbrainz.org/instrument*
+// @match       *://*.musicbrainz.org/genre*
+// @match       *://*.musicbrainz.org/collection*
+// @match       *://*.musicbrainz.org/*/*/artists*
+// @match       *://*.musicbrainz.org/*/*/releases*
+// @match       *://*.musicbrainz.org/*/*/recordings*
+// @match       *://*.musicbrainz.org/*/*/release-groups*
+// @match       *://*.musicbrainz.org/*/*/events*
+// @match       *://*.musicbrainz.org/*/*/labels*
+// @match       *://*.musicbrainz.org/*/*/places*
+// @exclude     *://*.musicbrainz.org/*/create*
+// @exclude     *://*.musicbrainz.org/*/*/edit*
+// @exclude     *://*.musicbrainz.org/*/*/edits*
+// @exclude     *://*.musicbrainz.org/*/*/open_edits*
+// @exclude     *://*.musicbrainz.org/release/add*
+// @exclude     *://*.musicbrainz.org/release/*/edit-relationships*
+// @exclude     *://*.musicbrainz.org/release/*/add-cover-art*
+// @icon        https://musicbrainz.org/static/images/favicons/android-chrome-512x512.png
+// @grant       none
+// @updateURL   https://github.com/chaban-mb/userscripts/raw/main/src/MusicBrainz%20Batch%20Delete%20Entities.user.js
+// @downloadURL https://github.com/chaban-mb/userscripts/raw/main/src/MusicBrainz%20Batch%20Delete%20Entities.user.js
 // ==/UserScript==
 
 (function () {

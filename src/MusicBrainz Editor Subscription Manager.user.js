@@ -1,21 +1,21 @@
 // ==UserScript==
-// @name         MusicBrainz: Editor Subscription Manager
-// @namespace    https://musicbrainz.org/user/chaban
-// @version      0.3.2
-// @tag          ai-created
-// @description  Manages subscriptions, tracks name changes and detects deleted users.
-// @author       chaban
-// @license      MIT
-// @match        *://*.musicbrainz.org/user/*
-// @match        *://*.musicbrainz.eu/user/*
-// @connect      self
-// @grant        GM_xmlhttpRequest
-// @grant        GM_addStyle
-// @grant        GM_getValue
-// @grant        GM_setValue
-// @grant        GM_deleteValue
-// @updateURL    https://github.com/chaban-mb/userscripts/raw/main/src/MusicBrainz%20Editor%20Subscription%20Manager.user.js
-// @downloadURL  https://github.com/chaban-mb/userscripts/raw/main/src/MusicBrainz%20Editor%20Subscription%20Manager.user.js
+// @name        MusicBrainz: Editor Subscription Manager
+// @namespace   https://musicbrainz.org/user/chaban
+// @version     0.3.3
+// @description Manages subscriptions, tracks name changes and detects deleted users.
+// @tag         ai-created
+// @author      chaban
+// @license     MIT
+// @match       *://*.musicbrainz.org/user/*
+// @match       *://*.musicbrainz.eu/user/*
+// @connect     self
+// @grant       GM_xmlhttpRequest
+// @grant       GM_addStyle
+// @grant       GM_getValue
+// @grant       GM_setValue
+// @grant       GM_deleteValue
+// @updateURL   https://github.com/chaban-mb/userscripts/raw/main/src/MusicBrainz%20Editor%20Subscription%20Manager.user.js
+// @downloadURL https://github.com/chaban-mb/userscripts/raw/main/src/MusicBrainz%20Editor%20Subscription%20Manager.user.js
 // ==/UserScript==
 
 (function () {

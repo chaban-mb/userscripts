@@ -1,25 +1,25 @@
 // ==UserScript==
-// @name         MusicBrainz: Auto login MusicBrainz ISRC importers
-// @namespace    https://musicbrainz.org/user/chaban
-// @version      2.3.0
-// @description  Attempts to login on MusicBrainz ISRC submission sites like ISRC Hunt or MagicISRC and automatically handle OAuth authorization
-// @tag          ai-created
-// @author       chaban
-// @license      MIT
-// @match        https://*.musicbrainz.org/oauth2/authorize*
-// @match        https://metabrainz.org/oauth2/authorize*
-// @match        https://magicisrc.kepstin.ca/*
-// @match        https://magicisrc-beta.kepstin.ca/
-// @match        https://isrchunt.com/*
-// @exclude      https://magicisrc.kepstin.ca/?code=*
-// @exclude      https://magicisrc.kepstin.ca/?state=*
-// @exclude      https://magicisrc-beta.kepstin.ca/?code=*
-// @exclude      https://magicisrc-beta.kepstin.ca/?state=*
-// @icon         https://musicbrainz.org/static/images/favicons/android-chrome-512x512.png
-// @grant        none
-// @run-at       document-idle
-// @updateURL    https://github.com/chaban-mb/userscripts/raw/main/src/MusicBrainz%20Auto%20login%20MusicBrainz%20ISRC%20importers.user.js
-// @downloadURL  https://github.com/chaban-mb/userscripts/raw/main/src/MusicBrainz%20Auto%20login%20MusicBrainz%20ISRC%20importers.user.js
+// @name        MusicBrainz: Auto login MusicBrainz ISRC importers
+// @namespace   https://musicbrainz.org/user/chaban
+// @version     2.3.1
+// @description Attempts to login on MusicBrainz ISRC submission sites like ISRC Hunt or MagicISRC and automatically handle OAuth authorization
+// @tag         ai-created
+// @author      chaban
+// @license     MIT
+// @match       https://*.musicbrainz.org/oauth2/authorize*
+// @match       https://metabrainz.org/oauth2/authorize*
+// @match       https://magicisrc.kepstin.ca/*
+// @match       https://magicisrc-beta.kepstin.ca/
+// @match       https://isrchunt.com/*
+// @exclude     https://magicisrc.kepstin.ca/?code=*
+// @exclude     https://magicisrc.kepstin.ca/?state=*
+// @exclude     https://magicisrc-beta.kepstin.ca/?code=*
+// @exclude     https://magicisrc-beta.kepstin.ca/?state=*
+// @icon        https://musicbrainz.org/static/images/favicons/android-chrome-512x512.png
+// @grant       none
+// @run-at      document-idle
+// @updateURL   https://github.com/chaban-mb/userscripts/raw/main/src/MusicBrainz%20Auto%20login%20MusicBrainz%20ISRC%20importers.user.js
+// @downloadURL https://github.com/chaban-mb/userscripts/raw/main/src/MusicBrainz%20Auto%20login%20MusicBrainz%20ISRC%20importers.user.js
 // ==/UserScript==
 
 (() => {

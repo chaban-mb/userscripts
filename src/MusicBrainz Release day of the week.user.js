@@ -1,25 +1,25 @@
 // ==UserScript==
-// @name           MusicBrainz: Release day of the week
-// @namespace      https://musicbrainz.org/user/chaban
-// @version        1.2.1
-// @description    Display the day of the week for release events.
-// @tag            ai-created
-// @author         Jugdish, SultS, chaban
-// @license        MIT
-// @match          https://*.musicbrainz.org/release*
-// @match          https://*.musicbrainz.org/recording/*
-// @match          https://*.musicbrainz.org/edit/*
-// @match          https://*.musicbrainz.org/*/edits
-// @match          https://*.musicbrainz.org/label/*
-// @match          https://*.musicbrainz.org/area/*
-// @match          https://*.musicbrainz.org/search*
-// @match          https://*.musicbrainz.org/artist/*/releases*
-// @match          https://*.musicbrainz.org/area/*/releases*
-// @icon           https://musicbrainz.org/static/images/favicons/android-chrome-512x512.png
-// @grant          none
-// @run-at         document-idle
-// @updateURL    https://github.com/chaban-mb/userscripts/raw/main/src/MusicBrainz%20Release%20day%20of%20the%20week.user.js
-// @downloadURL  https://github.com/chaban-mb/userscripts/raw/main/src/MusicBrainz%20Release%20day%20of%20the%20week.user.js
+// @name        MusicBrainz: Release day of the week
+// @namespace   https://musicbrainz.org/user/chaban
+// @version     1.2.2
+// @description Display the day of the week for release events.
+// @tag         ai-created
+// @author      Jugdish, SultS, chaban
+// @license     MIT
+// @match       https://*.musicbrainz.org/release*
+// @match       https://*.musicbrainz.org/recording/*
+// @match       https://*.musicbrainz.org/edit/*
+// @match       https://*.musicbrainz.org/*/edits
+// @match       https://*.musicbrainz.org/label/*
+// @match       https://*.musicbrainz.org/area/*
+// @match       https://*.musicbrainz.org/search*
+// @match       https://*.musicbrainz.org/artist/*/releases*
+// @match       https://*.musicbrainz.org/area/*/releases*
+// @icon        https://musicbrainz.org/static/images/favicons/android-chrome-512x512.png
+// @grant       none
+// @run-at      document-idle
+// @updateURL   https://github.com/chaban-mb/userscripts/raw/main/src/MusicBrainz%20Release%20day%20of%20the%20week.user.js
+// @downloadURL https://github.com/chaban-mb/userscripts/raw/main/src/MusicBrainz%20Release%20day%20of%20the%20week.user.js
 // ==/UserScript==
 
 (function () {

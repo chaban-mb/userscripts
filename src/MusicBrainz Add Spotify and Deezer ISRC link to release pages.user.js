@@ -1,17 +1,17 @@
 // ==UserScript==
 // @name        MusicBrainz: Add Spotify and Deezer ISRC link to release pages
 // @namespace   https://musicbrainz.org/user/chaban
-// @version     1.3.1
-// @tag         ai-created
+// @version     1.3.2
 // @description Adds an "import ISRCs" link to MusicBrainz release pages with a Spotify or Deezer URL
+// @tag         ai-created
 // @author      atj, chaban
 // @license     MIT
 // @match       *://*.musicbrainz.org/release/*
 // @icon        https://musicbrainz.org/static/images/favicons/android-chrome-512x512.png
 // @grant       none
 // @run-at      document-idle
-// @updateURL    https://github.com/chaban-mb/userscripts/raw/main/src/MusicBrainz%20Add%20Spotify%20and%20Deezer%20ISRC%20link%20to%20release%20pages.user.js
-// @downloadURL  https://github.com/chaban-mb/userscripts/raw/main/src/MusicBrainz%20Add%20Spotify%20and%20Deezer%20ISRC%20link%20to%20release%20pages.user.js
+// @updateURL   https://github.com/chaban-mb/userscripts/raw/main/src/MusicBrainz%20Add%20Spotify%20and%20Deezer%20ISRC%20link%20to%20release%20pages.user.js
+// @downloadURL https://github.com/chaban-mb/userscripts/raw/main/src/MusicBrainz%20Add%20Spotify%20and%20Deezer%20ISRC%20link%20to%20release%20pages.user.js
 // ==/UserScript==
 
 const SpotifyLinkRegexp = /^https?:\/\/open\.spotify\.com\/album\//i;

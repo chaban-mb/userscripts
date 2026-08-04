@@ -1,20 +1,20 @@
 // ==UserScript==
-// @name         Volumo: MusicBrainz Importer
-// @namespace    https://musicbrainz.org/user/chaban
-// @version      1.4.3
-// @description  Allows importing releases from Volumo into MusicBrainz.
-// @tag          ai-created
-// @author       chaban
-// @license      MIT
-// @icon         https://volumo.com/favicon.ico
-// @match        *://*.volumo.com/*
-// @connect      musicbrainz.org
-// @grant        GM.xmlHttpRequest
-// @grant        GM.addStyle
-// @require      ../lib/MusicBrainzAPI.js
-// @require      https://raw.githubusercontent.com/murdos/musicbrainz-userscripts/master/lib/mbimport.js
-// @updateURL    https://github.com/chaban-mb/userscripts/raw/main/src/Volumo%20MusicBrainz%20Importer.user.js
-// @downloadURL  https://github.com/chaban-mb/userscripts/raw/main/src/Volumo%20MusicBrainz%20Importer.user.js
+// @name        Volumo: MusicBrainz Importer
+// @namespace   https://musicbrainz.org/user/chaban
+// @version     1.4.4
+// @description Allows importing releases from Volumo into MusicBrainz.
+// @tag         ai-created
+// @author      chaban
+// @license     MIT
+// @match       *://*.volumo.com/*
+// @connect     musicbrainz.org
+// @require     ../lib/MusicBrainzAPI.js
+// @require     https://raw.githubusercontent.com/murdos/musicbrainz-userscripts/master/lib/mbimport.js
+// @icon        https://volumo.com/favicon.ico
+// @grant       GM.xmlHttpRequest
+// @grant       GM.addStyle
+// @updateURL   https://github.com/chaban-mb/userscripts/raw/main/src/Volumo%20MusicBrainz%20Importer.user.js
+// @downloadURL https://github.com/chaban-mb/userscripts/raw/main/src/Volumo%20MusicBrainz%20Importer.user.js
 // ==/UserScript==
 
 

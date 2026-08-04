@@ -1,20 +1,20 @@
 // ==UserScript==
-// @name         MusicBrainz: Subscriber Spam Filter
-// @namespace    https://musicbrainz.org/user/chaban
-// @version      1.0.1
-// @tag          ai-created
-// @description  Filters spammers on your MusicBrainz subscriber list by detecting blocked profiles, stats, and name similarities.
-// @author       chaban
-// @license      MIT
-// @match        *://*.musicbrainz.org/user/*/subscribers
-// @match        *://*.musicbrainz.eu/user/*/subscribers
-// @connect      self
-// @grant        GM_xmlhttpRequest
-// @grant        GM_addStyle
-// @grant        GM_getValue
-// @grant        GM_setValue
-// @updateURL    https://github.com/chaban-mb/userscripts/raw/main/src/MusicBrainz%20Subscriber%20Spam%20Filter.user.js
-// @downloadURL  https://github.com/chaban-mb/userscripts/raw/main/src/MusicBrainz%20Subscriber%20Spam%20Filter.user.js
+// @name        MusicBrainz: Subscriber Spam Filter
+// @namespace   https://musicbrainz.org/user/chaban
+// @version     1.0.2
+// @description Filters spammers on your MusicBrainz subscriber list by detecting blocked profiles, stats, and name similarities.
+// @tag         ai-created
+// @author      chaban
+// @license     MIT
+// @match       *://*.musicbrainz.org/user/*/subscribers
+// @match       *://*.musicbrainz.eu/user/*/subscribers
+// @connect     self
+// @grant       GM_xmlhttpRequest
+// @grant       GM_addStyle
+// @grant       GM_getValue
+// @grant       GM_setValue
+// @updateURL   https://github.com/chaban-mb/userscripts/raw/main/src/MusicBrainz%20Subscriber%20Spam%20Filter.user.js
+// @downloadURL https://github.com/chaban-mb/userscripts/raw/main/src/MusicBrainz%20Subscriber%20Spam%20Filter.user.js
 // ==/UserScript==
 
 (function () {

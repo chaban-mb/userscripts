@@ -1,40 +1,40 @@
 // ==UserScript==
-// @name         MusicBrainz: Relationship Editor Batch Remove
-// @namespace    https://musicbrainz.org/user/chaban
-// @version      1.1.1
-// @description  Adds a toggle to batch remove/restore relationships. Shift+Click: Same Type. Ctrl+Click: Same Target. Ctrl+Shift+Click: Same Type & Target.
-// @tag          ai-created
-// @author       chaban
-// @license      MIT
-// @match        *://*.musicbrainz.org/release/*/edit-relationships
-// @match        *://*.musicbrainz.org/area/*/edit
-// @match        *://*.musicbrainz.org/artist/*/edit
-// @match        *://*.musicbrainz.org/event/*/edit
-// @match        *://*.musicbrainz.org/instrument/*/edit
-// @match        *://*.musicbrainz.org/label/*/edit
-// @match        *://*.musicbrainz.org/place/*/edit
-// @match        *://*.musicbrainz.org/recording/*/edit
-// @match        *://*.musicbrainz.org/release-group/*/edit
-// @match        *://*.musicbrainz.org/series/*/edit
-// @match        *://*.musicbrainz.org/work/*/edit
-// @match        *://*.musicbrainz.org/url/*/edit
-// @match        *://*.musicbrainz.eu/release/*/edit-relationships
-// @match        *://*.musicbrainz.eu/area/*/edit
-// @match        *://*.musicbrainz.eu/artist/*/edit
-// @match        *://*.musicbrainz.eu/event/*/edit
-// @match        *://*.musicbrainz.eu/instrument/*/edit
-// @match        *://*.musicbrainz.eu/label/*/edit
-// @match        *://*.musicbrainz.eu/place/*/edit
-// @match        *://*.musicbrainz.eu/recording/*/edit
-// @match        *://*.musicbrainz.eu/release-group/*/edit
-// @match        *://*.musicbrainz.eu/series/*/edit
-// @match        *://*.musicbrainz.eu/work/*/edit
-// @match        *://*.musicbrainz.eu/url/*/edit
-// @icon         https://musicbrainz.org/static/images/favicons/android-chrome-512x512.png
-// @grant        none
-// @run-at       document-idle
-// @updateURL    https://github.com/chaban-mb/userscripts/raw/main/src/MusicBrainz%20Relationship%20Editor%20Batch%20Remove.user.js
-// @downloadURL  https://github.com/chaban-mb/userscripts/raw/main/src/MusicBrainz%20Relationship%20Editor%20Batch%20Remove.user.js
+// @name        MusicBrainz: Relationship Editor Batch Remove
+// @namespace   https://musicbrainz.org/user/chaban
+// @version     1.1.2
+// @description Adds a toggle to batch remove/restore relationships. Shift+Click: Same Type. Ctrl+Click: Same Target. Ctrl+Shift+Click: Same Type & Target.
+// @tag         ai-created
+// @author      chaban
+// @license     MIT
+// @match       *://*.musicbrainz.org/release/*/edit-relationships
+// @match       *://*.musicbrainz.org/area/*/edit
+// @match       *://*.musicbrainz.org/artist/*/edit
+// @match       *://*.musicbrainz.org/event/*/edit
+// @match       *://*.musicbrainz.org/instrument/*/edit
+// @match       *://*.musicbrainz.org/label/*/edit
+// @match       *://*.musicbrainz.org/place/*/edit
+// @match       *://*.musicbrainz.org/recording/*/edit
+// @match       *://*.musicbrainz.org/release-group/*/edit
+// @match       *://*.musicbrainz.org/series/*/edit
+// @match       *://*.musicbrainz.org/work/*/edit
+// @match       *://*.musicbrainz.org/url/*/edit
+// @match       *://*.musicbrainz.eu/release/*/edit-relationships
+// @match       *://*.musicbrainz.eu/area/*/edit
+// @match       *://*.musicbrainz.eu/artist/*/edit
+// @match       *://*.musicbrainz.eu/event/*/edit
+// @match       *://*.musicbrainz.eu/instrument/*/edit
+// @match       *://*.musicbrainz.eu/label/*/edit
+// @match       *://*.musicbrainz.eu/place/*/edit
+// @match       *://*.musicbrainz.eu/recording/*/edit
+// @match       *://*.musicbrainz.eu/release-group/*/edit
+// @match       *://*.musicbrainz.eu/series/*/edit
+// @match       *://*.musicbrainz.eu/work/*/edit
+// @match       *://*.musicbrainz.eu/url/*/edit
+// @icon        https://musicbrainz.org/static/images/favicons/android-chrome-512x512.png
+// @grant       none
+// @run-at      document-idle
+// @updateURL   https://github.com/chaban-mb/userscripts/raw/main/src/MusicBrainz%20Relationship%20Editor%20Batch%20Remove.user.js
+// @downloadURL https://github.com/chaban-mb/userscripts/raw/main/src/MusicBrainz%20Relationship%20Editor%20Batch%20Remove.user.js
 // ==/UserScript==
 
 'use strict';

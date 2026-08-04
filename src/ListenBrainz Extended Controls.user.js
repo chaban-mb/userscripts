@@ -1,19 +1,19 @@
 // ==UserScript==
-// @name         ListenBrainz: Extended Controls
-// @namespace    https://musicbrainz.org/user/chaban
-// @version      1.2.9
-// @tag          ai-created
-// @description  Allows customizing which actions are shown in listen controls cards, moving "Open in Music Service" links to the main controls area, displaying source info, and auto-copying text in the "Link Listen" modal.
-// @author       chaban
-// @license      MIT
-// @icon         https://listenbrainz.org/static/img/favicon-256.png
-// @match        https://*.listenbrainz.org/*
-// @grant        GM_setValue
-// @grant        GM_getValue
-// @grant        GM_addStyle
-// @run-at       document-end
-// @updateURL    https://github.com/chaban-mb/userscripts/raw/main/src/ListenBrainz%20Extended%20Controls.user.js
-// @downloadURL  https://github.com/chaban-mb/userscripts/raw/main/src/ListenBrainz%20Extended%20Controls.user.js
+// @name        ListenBrainz: Extended Controls
+// @namespace   https://musicbrainz.org/user/chaban
+// @version     1.2.10
+// @description Allows customizing which actions are shown in listen controls cards, moving "Open in Music Service" links to the main controls area, displaying source info, and auto-copying text in the "Link Listen" modal.
+// @tag         ai-created
+// @author      chaban
+// @license     MIT
+// @match       https://*.listenbrainz.org/*
+// @icon        https://listenbrainz.org/static/img/favicon-256.png
+// @grant       GM_setValue
+// @grant       GM_getValue
+// @grant       GM_addStyle
+// @run-at      document-end
+// @updateURL   https://github.com/chaban-mb/userscripts/raw/main/src/ListenBrainz%20Extended%20Controls.user.js
+// @downloadURL https://github.com/chaban-mb/userscripts/raw/main/src/ListenBrainz%20Extended%20Controls.user.js
 // ==/UserScript==
 
 (function () {

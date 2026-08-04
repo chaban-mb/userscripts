@@ -1,23 +1,23 @@
 // ==UserScript==
-// @name         Spotify: MusicBrainz importer
-// @namespace    https://musicbrainz.org/user/chaban
-// @version      1.4.4
-// @tag          ai-created
-// @description  Adds buttons for MusicBrainz, ListenBrainz, Harmony, ISRC Hunt and SAMBL to Spotify.
-// @author       chaban, garylaski, RustyNova
-// @license      MIT
-// @icon         https://open.spotify.com/favicon.ico
-// @match        *://*.spotify.com/*
-// @connect      musicbrainz.org
-// @connect      listenbrainz.org
-// @grant        GM.xmlHttpRequest
-// @grant        GM.addStyle
-// @grant        GM.getValue
-// @grant        GM.setValue
-// @grant        GM.registerMenuCommand
-// @require      ../lib/MusicBrainzAPI.js
-// @updateURL    https://github.com/chaban-mb/userscripts/raw/main/src/Spotify%20MusicBrainz%20importer.user.js
-// @downloadURL  https://github.com/chaban-mb/userscripts/raw/main/src/Spotify%20MusicBrainz%20importer.user.js
+// @name        Spotify: MusicBrainz importer
+// @namespace   https://musicbrainz.org/user/chaban
+// @version     1.4.5
+// @description Adds buttons for MusicBrainz, ListenBrainz, Harmony, ISRC Hunt and SAMBL to Spotify.
+// @tag         ai-created
+// @author      chaban, garylaski, RustyNova
+// @license     MIT
+// @match       *://*.spotify.com/*
+// @connect     musicbrainz.org
+// @connect     listenbrainz.org
+// @require     ../lib/MusicBrainzAPI.js
+// @icon        https://open.spotify.com/favicon.ico
+// @grant       GM.xmlHttpRequest
+// @grant       GM.addStyle
+// @grant       GM.getValue
+// @grant       GM.setValue
+// @grant       GM.registerMenuCommand
+// @updateURL   https://github.com/chaban-mb/userscripts/raw/main/src/Spotify%20MusicBrainz%20importer.user.js
+// @downloadURL https://github.com/chaban-mb/userscripts/raw/main/src/Spotify%20MusicBrainz%20importer.user.js
 // ==/UserScript==
 
 (function () {

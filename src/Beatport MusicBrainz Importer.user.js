@@ -1,19 +1,19 @@
 // ==UserScript==
 // @name        Beatport: MusicBrainz Importer
 // @namespace   https://musicbrainz.org/user/chaban
-// @version     2.6.2
+// @version     2.6.3
 // @description Adds MusicBrainz status icons to Beatport releases and allows importing them with Harmony
 // @tag         ai-created
 // @author      RustyNova, chaban
 // @license     MIT
 // @match       https://www.beatport.com/*
 // @connect     musicbrainz.org
+// @require     ../lib/MusicBrainzAPI.js
 // @icon        https://www.google.com/s2/favicons?sz=64&domain=beatport.com
 // @grant       GM.xmlHttpRequest
 // @run-at      document-idle
-// @require     ../lib/MusicBrainzAPI.js
-// @updateURL    https://github.com/chaban-mb/userscripts/raw/main/src/Beatport%20MusicBrainz%20Importer.user.js
-// @downloadURL  https://github.com/chaban-mb/userscripts/raw/main/src/Beatport%20MusicBrainz%20Importer.user.js
+// @updateURL   https://github.com/chaban-mb/userscripts/raw/main/src/Beatport%20MusicBrainz%20Importer.user.js
+// @downloadURL https://github.com/chaban-mb/userscripts/raw/main/src/Beatport%20MusicBrainz%20Importer.user.js
 // ==/UserScript==
 
 (function () {

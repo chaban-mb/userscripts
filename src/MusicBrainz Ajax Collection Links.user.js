@@ -1,29 +1,29 @@
 // ==UserScript==
-// @name         MusicBrainz: Ajax Collection Links
-// @namespace    https://musicbrainz.org/user/chaban
-// @version      1.2.1
-// @tag          ai-created
-// @description  Enhances entity sidebar collection links (Add/Remove from Collection) to use AJAX, preventing page reloads and toggling the link text on success.
-// @author       chaban
-// @license      MIT
-// @match        *://*.musicbrainz.org/area/*
-// @match        *://*.musicbrainz.org/artist/*
-// @match        *://*.musicbrainz.org/event/*
-// @match        *://*.musicbrainz.org/genre/*
-// @match        *://*.musicbrainz.org/instrument/*
-// @match        *://*.musicbrainz.org/label/*
-// @match        *://*.musicbrainz.org/place/*
-// @match        *://*.musicbrainz.org/recording/*
-// @match        *://*.musicbrainz.org/release-group/*
-// @match        *://*.musicbrainz.org/release/*
-// @match        *://*.musicbrainz.org/series/*
-// @match        *://*.musicbrainz.org/work/*
-// @connect      self
-// @icon         https://musicbrainz.org/static/images/favicons/android-chrome-512x512.png
-// @grant        none
-// @run-at       document-end
-// @updateURL    https://github.com/chaban-mb/userscripts/raw/main/src/MusicBrainz%20Ajax%20Collection%20Links.user.js
-// @downloadURL  https://github.com/chaban-mb/userscripts/raw/main/src/MusicBrainz%20Ajax%20Collection%20Links.user.js
+// @name        MusicBrainz: Ajax Collection Links
+// @namespace   https://musicbrainz.org/user/chaban
+// @version     1.2.2
+// @description Enhances entity sidebar collection links (Add/Remove from Collection) to use AJAX, preventing page reloads and toggling the link text on success.
+// @tag         ai-created
+// @author      chaban
+// @license     MIT
+// @match       *://*.musicbrainz.org/area/*
+// @match       *://*.musicbrainz.org/artist/*
+// @match       *://*.musicbrainz.org/event/*
+// @match       *://*.musicbrainz.org/genre/*
+// @match       *://*.musicbrainz.org/instrument/*
+// @match       *://*.musicbrainz.org/label/*
+// @match       *://*.musicbrainz.org/place/*
+// @match       *://*.musicbrainz.org/recording/*
+// @match       *://*.musicbrainz.org/release-group/*
+// @match       *://*.musicbrainz.org/release/*
+// @match       *://*.musicbrainz.org/series/*
+// @match       *://*.musicbrainz.org/work/*
+// @connect     self
+// @icon        https://musicbrainz.org/static/images/favicons/android-chrome-512x512.png
+// @grant       none
+// @run-at      document-end
+// @updateURL   https://github.com/chaban-mb/userscripts/raw/main/src/MusicBrainz%20Ajax%20Collection%20Links.user.js
+// @downloadURL https://github.com/chaban-mb/userscripts/raw/main/src/MusicBrainz%20Ajax%20Collection%20Links.user.js
 // ==/UserScript==
 
 (function () {

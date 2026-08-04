@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name        MusicBrainz: Highlight identical barcodes and toggle merge checkboxes
 // @namespace   https://musicbrainz.org/user/chaban
-// @version     1.4.1
-// @tag         ai-created
+// @version     1.4.2
 // @description Highlights sets of identical barcodes and toggles checkboxes for merging on click
+// @tag         ai-created
 // @author      chaban
 // @license     MIT
 // @match       *://*.musicbrainz.org/*/*/releases*
@@ -17,8 +17,8 @@
 // @icon        https://musicbrainz.org/static/images/favicons/android-chrome-512x512.png
 // @grant       none
 // @run-at      document-idle
-// @updateURL    https://github.com/chaban-mb/userscripts/raw/main/src/MusicBrainz%20Highlight%20identical%20barcodes%20and%20toggle%20merge%20checkboxes.user.js
-// @downloadURL  https://github.com/chaban-mb/userscripts/raw/main/src/MusicBrainz%20Highlight%20identical%20barcodes%20and%20toggle%20merge%20checkboxes.user.js
+// @updateURL   https://github.com/chaban-mb/userscripts/raw/main/src/MusicBrainz%20Highlight%20identical%20barcodes%20and%20toggle%20merge%20checkboxes.user.js
+// @downloadURL https://github.com/chaban-mb/userscripts/raw/main/src/MusicBrainz%20Highlight%20identical%20barcodes%20and%20toggle%20merge%20checkboxes.user.js
 // ==/UserScript==
 
 (function () {

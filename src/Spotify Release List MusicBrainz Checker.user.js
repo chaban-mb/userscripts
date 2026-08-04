@@ -1,21 +1,21 @@
 // ==UserScript==
-// @name         Spotify Release List: MusicBrainz Checker
-// @namespace    https://musicbrainz.org/user/chaban
-// @version      1.0.2
-// @tag          ai-created
-// @description  Checks releases on Spotify Release List instances against MusicBrainz. Fades or hides found releases and collapses date groups where everything is catalogued.
-// @author       chaban
-// @license      MIT
-// @icon         https://musicbrainz.org/static/images/favicons/android-chrome-512x512.png
-// @match        https://spotifyreleaselist.netlify.app/*
-// @match        https://*.spotifyreleaselist.netlify.app/*
-// @match        https://spotifylist.mybrainz.dev/*
-// @connect      musicbrainz.org
-// @grant        GM.xmlHttpRequest
-// @grant        GM.addStyle
-// @require      ../lib/MusicBrainzAPI.js
-// @updateURL    https://github.com/chaban-mb/userscripts/raw/main/src/Spotify%20Release%20List%20MusicBrainz%20Checker.user.js
-// @downloadURL  https://github.com/chaban-mb/userscripts/raw/main/src/Spotify%20Release%20List%20MusicBrainz%20Checker.user.js
+// @name        Spotify Release List: MusicBrainz Checker
+// @namespace   https://musicbrainz.org/user/chaban
+// @version     1.0.3
+// @description Checks releases on Spotify Release List instances against MusicBrainz. Fades or hides found releases and collapses date groups where everything is catalogued.
+// @tag         ai-created
+// @author      chaban
+// @license     MIT
+// @match       https://spotifyreleaselist.netlify.app/*
+// @match       https://*.spotifyreleaselist.netlify.app/*
+// @match       https://spotifylist.mybrainz.dev/*
+// @connect     musicbrainz.org
+// @require     ../lib/MusicBrainzAPI.js
+// @icon        https://musicbrainz.org/static/images/favicons/android-chrome-512x512.png
+// @grant       GM.xmlHttpRequest
+// @grant       GM.addStyle
+// @updateURL   https://github.com/chaban-mb/userscripts/raw/main/src/Spotify%20Release%20List%20MusicBrainz%20Checker.user.js
+// @downloadURL https://github.com/chaban-mb/userscripts/raw/main/src/Spotify%20Release%20List%20MusicBrainz%20Checker.user.js
 // ==/UserScript==
 
 (function () {

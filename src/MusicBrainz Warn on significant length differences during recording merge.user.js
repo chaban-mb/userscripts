@@ -1,16 +1,16 @@
 // ==UserScript==
-// @name         MusicBrainz: Warn on significant length differences during recording merge (MBS-10966)
-// @namespace    https://musicbrainz.org/user/chaban
-// @version      1.3
-// @description  Adds a warning on the recording merge page when the lengths differ by at least 15 seconds
-// @tag          ai-created
-// @author       chaban
-// @license      MIT
-// @match        *://*.musicbrainz.org/recording/merge*
-// @icon         https://musicbrainz.org/static/images/favicons/android-chrome-512x512.png
-// @grant        none
-// @updateURL    https://github.com/chaban-mb/userscripts/raw/main/src/MusicBrainz%20Warn%20on%20significant%20length%20differences%20during%20recording%20merge.user.js
-// @downloadURL  https://github.com/chaban-mb/userscripts/raw/main/src/MusicBrainz%20Warn%20on%20significant%20length%20differences%20during%20recording%20merge.user.js
+// @name        MusicBrainz: Warn on significant length differences during recording merge
+// @namespace   https://musicbrainz.org/user/chaban
+// @version     1.3.1
+// @description Adds a warning on the recording merge page when the lengths differ by at least 15 seconds
+// @tag         ai-created
+// @author      chaban
+// @license     MIT
+// @match       *://*.musicbrainz.org/recording/merge*
+// @icon        https://musicbrainz.org/static/images/favicons/android-chrome-512x512.png
+// @grant       none
+// @updateURL   https://github.com/chaban-mb/userscripts/raw/main/src/MusicBrainz%20Warn%20on%20significant%20length%20differences%20during%20recording%20merge.user.js
+// @downloadURL https://github.com/chaban-mb/userscripts/raw/main/src/MusicBrainz%20Warn%20on%20significant%20length%20differences%20during%20recording%20merge.user.js
 // ==/UserScript==
 
 (function () {

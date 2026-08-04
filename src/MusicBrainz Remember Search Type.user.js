@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name        MusicBrainz: Remember Search Type
 // @namespace   https://musicbrainz.org/user/chaban
-// @version     1.0.1
-// @tag         ai-created
+// @version     1.0.2
 // @description Remembers the last selected entity type in the header search bar (expires after 48h).
+// @tag         ai-created
 // @author      chaban
 // @license     MIT
 // @match       *://*.musicbrainz.org/*
@@ -11,8 +11,8 @@
 // @grant       GM_getValue
 // @grant       GM_setValue
 // @run-at      document-end
-// @updateURL    https://github.com/chaban-mb/userscripts/raw/main/src/MusicBrainz%20Remember%20Search%20Type.user.js
-// @downloadURL  https://github.com/chaban-mb/userscripts/raw/main/src/MusicBrainz%20Remember%20Search%20Type.user.js
+// @updateURL   https://github.com/chaban-mb/userscripts/raw/main/src/MusicBrainz%20Remember%20Search%20Type.user.js
+// @downloadURL https://github.com/chaban-mb/userscripts/raw/main/src/MusicBrainz%20Remember%20Search%20Type.user.js
 // ==/UserScript==
 
 (async function () {

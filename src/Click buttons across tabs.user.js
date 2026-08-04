@@ -1,25 +1,25 @@
 // ==UserScript==
-// @name         Click buttons across tabs
-// @namespace    https://musicbrainz.org/user/chaban
-// @version      4.10.5
-// @tag          ai-created
-// @description  Clicks specified buttons across tabs using the Broadcast Channel API and closes tabs after successful submission.
-// @author       chaban
-// @license      MIT
-// @match        *://*.musicbrainz.org/*
-// @match        *://magicisrc.kepstin.ca/*
-// @match        *://magicisrc-beta.kepstin.ca/*
-// @match        *://isrchunt.com/*
-// @run-at       document-start
-// @grant        GM_registerMenuCommand
-// @grant        GM_unregisterMenuCommand
-// @grant        GM.getValue
-// @grant        GM.setValue
-// @grant        window.close
-// @grant        unsafeWindow
+// @name        Click buttons across tabs
+// @namespace   https://musicbrainz.org/user/chaban
+// @version     4.10.6
+// @description Clicks specified buttons across tabs using the Broadcast Channel API and closes tabs after successful submission.
+// @tag         ai-created
+// @author      chaban
+// @license     MIT
+// @match       *://*.musicbrainz.org/*
+// @match       *://magicisrc.kepstin.ca/*
+// @match       *://magicisrc-beta.kepstin.ca/*
+// @match       *://isrchunt.com/*
+// @grant       GM_registerMenuCommand
+// @grant       GM_unregisterMenuCommand
+// @grant       GM.getValue
+// @grant       GM.setValue
+// @grant       window.close
+// @grant       unsafeWindow
+// @run-at      document-start
 // @noframes
-// @updateURL    https://github.com/chaban-mb/userscripts/raw/main/src/Click%20buttons%20across%20tabs.user.js
-// @downloadURL  https://github.com/chaban-mb/userscripts/raw/main/src/Click%20buttons%20across%20tabs.user.js
+// @updateURL   https://github.com/chaban-mb/userscripts/raw/main/src/Click%20buttons%20across%20tabs.user.js
+// @downloadURL https://github.com/chaban-mb/userscripts/raw/main/src/Click%20buttons%20across%20tabs.user.js
 // ==/UserScript==
 
 (async function () {

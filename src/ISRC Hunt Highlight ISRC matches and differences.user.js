@@ -1,16 +1,16 @@
 // ==UserScript==
-// @name         ISRC Hunt: Highlight ISRC matches and differences
-// @namespace    https://musicbrainz.org/user/chaban
-// @version      1.2.2
-// @description  Highlights matching ISRCs in green and non-matches red.
-// @tag          ai-created
-// @author       chaban
-// @license      MIT
-// @match        *://isrchunt.com/spotify/importisrc*
-// @match        *://isrchunt.com/deezer/importisrc*
-// @grant        none
-// @updateURL    https://github.com/chaban-mb/userscripts/raw/main/src/ISRC%20Hunt%20Highlight%20ISRC%20matches%20and%20differences.user.js
-// @downloadURL  https://github.com/chaban-mb/userscripts/raw/main/src/ISRC%20Hunt%20Highlight%20ISRC%20matches%20and%20differences.user.js
+// @name        ISRC Hunt: Highlight ISRC matches and differences
+// @namespace   https://musicbrainz.org/user/chaban
+// @version     1.2.3
+// @description Highlights matching ISRCs in green and non-matches red.
+// @tag         ai-created
+// @author      chaban
+// @license     MIT
+// @match       *://isrchunt.com/spotify/importisrc*
+// @match       *://isrchunt.com/deezer/importisrc*
+// @grant       none
+// @updateURL   https://github.com/chaban-mb/userscripts/raw/main/src/ISRC%20Hunt%20Highlight%20ISRC%20matches%20and%20differences.user.js
+// @downloadURL https://github.com/chaban-mb/userscripts/raw/main/src/ISRC%20Hunt%20Highlight%20ISRC%20matches%20and%20differences.user.js
 // ==/UserScript==
 
 (function() {

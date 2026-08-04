@@ -1,18 +1,19 @@
 // ==UserScript==
-// @name         SecondHandSongs to MusicBrainz Linker
-// @namespace    https://musicbrainz.org/user/chaban
-// @version      1.4
-// @tag          ai-created
-// @description  Adds links from secondhandsongs.com to MusicBrainz entities.
-// @author       chaban
-// @license      MIT
-// @match        https://secondhandsongs.com/*
-// @require      https://ajax.googleapis.com/ajax/libs/jquery/2.2.4/jquery.min.js
-// @require      https://raw.githubusercontent.com/murdos/musicbrainz-userscripts/master/lib/mblinks.js
-// @require      https://raw.githubusercontent.com/murdos/musicbrainz-userscripts/master/lib/mbimportstyle.js
-// @grant        none
-// @updateURL    https://github.com/chaban-mb/userscripts/raw/main/src/SecondHandSongs%20to%20MusicBrainz%20Linker.user.js
-// @downloadURL  https://github.com/chaban-mb/userscripts/raw/main/src/SecondHandSongs%20to%20MusicBrainz%20Linker.user.js
+// @name        SecondHandSongs to MusicBrainz Linker
+// @namespace   https://musicbrainz.org/user/chaban
+// @version     1.4.1
+// @description Adds links from secondhandsongs.com to MusicBrainz entities.
+// @tag         ai-created
+// @author      chaban
+// @license     MIT
+// @match       https://secondhandsongs.com/*
+// @require     https://ajax.googleapis.com/ajax/libs/jquery/2.2.4/jquery.min.js
+// @require     https://raw.githubusercontent.com/murdos/musicbrainz-userscripts/master/lib/mblinks.js
+// @require     https://raw.githubusercontent.com/murdos/musicbrainz-userscripts/master/lib/mbimportstyle.js
+// @icon        https://secondhandsongs.com/art/favicon.png
+// @grant       none
+// @updateURL   https://github.com/chaban-mb/userscripts/raw/main/src/SecondHandSongs%20to%20MusicBrainz%20Linker.user.js
+// @downloadURL https://github.com/chaban-mb/userscripts/raw/main/src/SecondHandSongs%20to%20MusicBrainz%20Linker.user.js
 // ==/UserScript==
 
 // prevent JQuery conflicts, see http://wiki.greasespot.net/@grant

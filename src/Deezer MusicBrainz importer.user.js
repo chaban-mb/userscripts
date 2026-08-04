@@ -1,20 +1,20 @@
 // ==UserScript==
-// @name         Deezer: MusicBrainz importer
-// @namespace    https://musicbrainz.org/user/chaban
-// @version      1.0.1
-// @description  Adds buttons for MusicBrainz, ListenBrainz, Harmony, ISRC Hunt and SAMBL to Deezer.
-// @tag          ai-created
-// @author       chaban
-// @license      MIT
-// @icon         https://www.deezer.com/favicon.ico
-// @match        *://*.deezer.com/*
-// @connect      musicbrainz.org
-// @connect      listenbrainz.org
-// @grant        GM.xmlHttpRequest
-// @grant        GM.addStyle
-// @require      ../lib/MusicBrainzAPI.js
-// @updateURL    https://github.com/chaban-mb/userscripts/raw/main/src/Deezer%20MusicBrainz%20importer.user.js
-// @downloadURL  https://github.com/chaban-mb/userscripts/raw/main/src/Deezer%20MusicBrainz%20importer.user.js
+// @name        Deezer: MusicBrainz importer
+// @namespace   https://musicbrainz.org/user/chaban
+// @version     1.0.2
+// @description Adds buttons for MusicBrainz, ListenBrainz, Harmony, ISRC Hunt and SAMBL to Deezer.
+// @tag         ai-created
+// @author      chaban
+// @license     MIT
+// @match       *://*.deezer.com/*
+// @connect     musicbrainz.org
+// @connect     listenbrainz.org
+// @require     ../lib/MusicBrainzAPI.js
+// @icon        https://www.deezer.com/favicon.ico
+// @grant       GM.xmlHttpRequest
+// @grant       GM.addStyle
+// @updateURL   https://github.com/chaban-mb/userscripts/raw/main/src/Deezer%20MusicBrainz%20importer.user.js
+// @downloadURL https://github.com/chaban-mb/userscripts/raw/main/src/Deezer%20MusicBrainz%20importer.user.js
 // ==/UserScript==
 
 (function () {

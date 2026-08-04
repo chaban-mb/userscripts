@@ -1,20 +1,20 @@
 // ==UserScript==
-// @name         MusicBrainz: Import from Discogs CSV
-// @namespace    https://musicbrainz.org/user/chaban
-// @version      0.2.4
-// @tag          ai-created
-// @description  Imports releases to a MusicBrainz collection based on a Discogs CSV export by matching Discogs IDs to MusicBrainz Releases.
-// @author       chaban
-// @license      MIT
-// @match        https://*.musicbrainz.org/collection/*
-// @exclude      https://*musicbrainz.org/collection/*/*
-// @match        https://*.musicbrainz.eu/collection/*
-// @exclude      https://*musicbrainz.eu/collection/*/*
-// @grant        GM_xmlhttpRequest
-// @connect      self
-// @require      https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js
-// @updateURL    https://github.com/chaban-mb/userscripts/raw/main/src/MusicBrainz%20Import%20from%20Discogs%20CSV.user.js
-// @downloadURL  https://github.com/chaban-mb/userscripts/raw/main/src/MusicBrainz%20Import%20from%20Discogs%20CSV.user.js
+// @name        MusicBrainz: Import from Discogs CSV
+// @namespace   https://musicbrainz.org/user/chaban
+// @version     0.2.5
+// @description Imports releases to a MusicBrainz collection based on a Discogs CSV export by matching Discogs IDs to MusicBrainz Releases.
+// @tag         ai-created
+// @author      chaban
+// @license     MIT
+// @match       https://*.musicbrainz.org/collection/*
+// @match       https://*.musicbrainz.eu/collection/*
+// @exclude     https://*musicbrainz.org/collection/*/*
+// @exclude     https://*musicbrainz.eu/collection/*/*
+// @connect     self
+// @require     https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js
+// @grant       GM_xmlhttpRequest
+// @updateURL   https://github.com/chaban-mb/userscripts/raw/main/src/MusicBrainz%20Import%20from%20Discogs%20CSV.user.js
+// @downloadURL https://github.com/chaban-mb/userscripts/raw/main/src/MusicBrainz%20Import%20from%20Discogs%20CSV.user.js
 // ==/UserScript==
 
 /* global Papa */

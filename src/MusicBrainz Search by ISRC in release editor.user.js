@@ -1,17 +1,17 @@
 // ==UserScript==
-// @name         MusicBrainz: Search by ISRC in release editor
-// @namespace    https://musicbrainz.org/user/chaban
-// @version      1.1.3
-// @tag          ai-created
-// @description  Hooks into the inline recording search of the release editor to allow searching by ISRC.
-// @author       chaban
-// @license      MIT
-// @match        *://*.musicbrainz.org/release/*/edit*
-// @match        *://*.musicbrainz.org/release/add*
-// @icon         https://musicbrainz.org/static/images/favicons/android-chrome-512x512.png
-// @grant        none
-// @updateURL    https://github.com/chaban-mb/userscripts/raw/main/src/MusicBrainz%20Search%20by%20ISRC%20in%20release%20editor.user.js
-// @downloadURL  https://github.com/chaban-mb/userscripts/raw/main/src/MusicBrainz%20Search%20by%20ISRC%20in%20release%20editor.user.js
+// @name        MusicBrainz: Search by ISRC in release editor
+// @namespace   https://musicbrainz.org/user/chaban
+// @version     1.1.4
+// @description Hooks into the inline recording search of the release editor to allow searching by ISRC.
+// @tag         ai-created
+// @author      chaban
+// @license     MIT
+// @match       *://*.musicbrainz.org/release/*/edit*
+// @match       *://*.musicbrainz.org/release/add*
+// @icon        https://musicbrainz.org/static/images/favicons/android-chrome-512x512.png
+// @grant       none
+// @updateURL   https://github.com/chaban-mb/userscripts/raw/main/src/MusicBrainz%20Search%20by%20ISRC%20in%20release%20editor.user.js
+// @downloadURL https://github.com/chaban-mb/userscripts/raw/main/src/MusicBrainz%20Search%20by%20ISRC%20in%20release%20editor.user.js
 // ==/UserScript==
 
 (function() {

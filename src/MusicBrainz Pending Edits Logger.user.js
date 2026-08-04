@@ -1,14 +1,18 @@
 // ==UserScript==
-// @name         MusicBrainz: Pending Edits Logger
-// @namespace    https://github.com/chaban-mb/userscripts
-// @version      1.0.0
-// @description  Real-time diagnostic & debug auditor logging pending changes across MusicBrainz editors (Relationship Editors, External Links Editor, and HTML Form fields).
-// @author       chaban
-// @match        https://musicbrainz.org/*
-// @match        https://*.musicbrainz.org/*
-// @icon         https://musicbrainz.org/static/images/favicons/favicon-32x32.png
-// @grant        none
-// @run-at       document-end
+// @name        MusicBrainz: Pending Edits Logger
+// @namespace   https://musicbrainz.org/user/chaban
+// @version     1.0.1
+// @description Real-time diagnostic & debug auditor logging pending changes across MusicBrainz editors (Relationship Editors, External Links Editor, and HTML Form fields).
+// @tag         ai-created
+// @author      chaban
+// @license     MIT
+// @match       https://musicbrainz.org/*
+// @match       https://*.musicbrainz.org/*
+// @icon        https://musicbrainz.org/static/images/favicons/android-chrome-512x512.png
+// @grant       none
+// @run-at      document-end
+// @updateURL   https://github.com/chaban-mb/userscripts/raw/main/src/MusicBrainz%20Pending%20Edits%20Logger.user.js
+// @downloadURL https://github.com/chaban-mb/userscripts/raw/main/src/MusicBrainz%20Pending%20Edits%20Logger.user.js
 // ==/UserScript==
 
 (function () {

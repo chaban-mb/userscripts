@@ -1,15 +1,17 @@
 // ==UserScript==
-// @name         SoundCloud Metadata Inspector
-// @namespace    https://github.com/chaban-mb/userscripts
-// @version      1.1.0
-// @description  Metadata inspector for viewing hidden data like ISRC, UPCs, timestamps, etc.
-// @tag          ai-created
-// @author       chaban
-// @license      MIT
-// @match        https://soundcloud.com/*
-// @icon         https://a-v2.sndcdn.com/assets/images/sc-icons/favicon-48x48-8466dd3758.png
-// @grant        none
-// @run-at       document-start
+// @name        SoundCloud Metadata Inspector
+// @namespace   https://github.com/chaban-mb/userscripts
+// @version     1.1.1
+// @description Metadata inspector for viewing hidden data like ISRC, UPCs, timestamps, etc.
+// @tag         ai-created
+// @author      chaban
+// @license     MIT
+// @match       https://soundcloud.com/*
+// @icon        https://a-v2.sndcdn.com/assets/images/sc-icons/favicon-48x48-8466dd3758.png
+// @grant       none
+// @run-at      document-start
+// @updateURL   https://github.com/chaban-mb/userscripts/raw/main/src/SoundCloud%20Metadata%20Inspector.user.js
+// @downloadURL https://github.com/chaban-mb/userscripts/raw/main/src/SoundCloud%20Metadata%20Inspector.user.js
 // ==/UserScript==
 
 (function () {

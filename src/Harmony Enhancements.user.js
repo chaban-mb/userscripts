@@ -1,20 +1,20 @@
 // ==UserScript==
-// @name         Harmony: Enhancements
-// @namespace    https://musicbrainz.org/user/chaban
-// @version      1.27.9
-// @tag          ai-created
-// @description  Adds some convenience features, various UI and behavior settings, as well as an improved language detection to Harmony.
-// @author       chaban
-// @license      MIT
-// @match        https://harmony.pulsewidth.org.uk/*
-// @match        https://harmony.mybrainz.dev/*
-// @icon         https://harmony.pulsewidth.org.uk/harmony-logo.svg
-// @grant        GM_getValue
-// @grant        GM_setValue
-// @grant        GM_deleteValue
-// @grant        GM_addStyle
-// @updateURL    https://github.com/chaban-mb/userscripts/raw/main/src/Harmony%20Enhancements.user.js
-// @downloadURL  https://github.com/chaban-mb/userscripts/raw/main/src/Harmony%20Enhancements.user.js
+// @name        Harmony: Enhancements
+// @namespace   https://musicbrainz.org/user/chaban
+// @version     1.27.10
+// @description Adds some convenience features, various UI and behavior settings, as well as an improved language detection to Harmony.
+// @tag         ai-created
+// @author      chaban
+// @license     MIT
+// @match       https://harmony.pulsewidth.org.uk/*
+// @match       https://harmony.mybrainz.dev/*
+// @icon        https://harmony.pulsewidth.org.uk/harmony-logo.svg
+// @grant       GM_getValue
+// @grant       GM_setValue
+// @grant       GM_deleteValue
+// @grant       GM_addStyle
+// @updateURL   https://github.com/chaban-mb/userscripts/raw/main/src/Harmony%20Enhancements.user.js
+// @downloadURL https://github.com/chaban-mb/userscripts/raw/main/src/Harmony%20Enhancements.user.js
 // ==/UserScript==
 
 (function () {

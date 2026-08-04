@@ -1,17 +1,17 @@
 // ==UserScript==
-// @name         MusicBrainz: Guess release language and script
-// @namespace    https://musicbrainz.org/user/chaban
-// @version      1.0.4
-// @tag          ai-created
-// @description  Guess release language and script from release tracklist using Language Detector API
-// @author       ROpdebee, chaban
-// @license      MIT
-// @match        *://*.musicbrainz.org/release/add*
-// @match        *://*.musicbrainz.org/release/*/edit*
-// @icon         https://musicbrainz.org/static/images/favicons/android-chrome-512x512.png
-// @grant        none
-// @updateURL    https://github.com/chaban-mb/userscripts/raw/main/src/MusicBrainz%20Guess%20release%20language%20and%20script.user.js
-// @downloadURL  https://github.com/chaban-mb/userscripts/raw/main/src/MusicBrainz%20Guess%20release%20language%20and%20script.user.js
+// @name        MusicBrainz: Guess release language and script
+// @namespace   https://musicbrainz.org/user/chaban
+// @version     1.0.5
+// @description Guess release language and script from release tracklist using Language Detector API
+// @tag         ai-created
+// @author      ROpdebee, chaban
+// @license     MIT
+// @match       *://*.musicbrainz.org/release/add*
+// @match       *://*.musicbrainz.org/release/*/edit*
+// @icon        https://musicbrainz.org/static/images/favicons/android-chrome-512x512.png
+// @grant       none
+// @updateURL   https://github.com/chaban-mb/userscripts/raw/main/src/MusicBrainz%20Guess%20release%20language%20and%20script.user.js
+// @downloadURL https://github.com/chaban-mb/userscripts/raw/main/src/MusicBrainz%20Guess%20release%20language%20and%20script.user.js
 // ==/UserScript==
 
 (function () {

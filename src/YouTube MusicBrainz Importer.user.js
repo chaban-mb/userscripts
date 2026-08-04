@@ -1,26 +1,26 @@
 // ==UserScript==
-// @name         YouTube: MusicBrainz Importer
-// @namespace    https://musicbrainz.org/user/chaban
-// @version      2.10.1
-// @description  Imports YouTube videos to MusicBrainz as a new standalone recording
-// @tag          ai-created
-// @author       nikki, RustyNova, chaban
-// @license      MIT
-// @match        *://www.youtube.com/*
-// @match        *://*.musicbrainz.org/recording/create*
-// @connect      musicbrainz.org
-// @connect      listenbrainz.org
-// @icon         https://www.google.com/s2/favicons?sz=256&domain=youtube.com
-// @grant        GM.xmlHttpRequest
-// @grant        GM.getValue
-// @grant        GM.setValue
-// @grant        GM.deleteValue
-// @grant        GM.registerMenuCommand
-// @run-at       document-end
+// @name        YouTube: MusicBrainz Importer
+// @namespace   https://musicbrainz.org/user/chaban
+// @version     2.10.2
+// @description Imports YouTube videos to MusicBrainz as a new standalone recording
+// @tag         ai-created
+// @author      nikki, RustyNova, chaban
+// @license     MIT
+// @match       *://www.youtube.com/*
+// @match       *://*.musicbrainz.org/recording/create*
+// @connect     musicbrainz.org
+// @connect     listenbrainz.org
+// @require     ../lib/MusicBrainzAPI.js
+// @icon        https://www.google.com/s2/favicons?sz=256&domain=youtube.com
+// @grant       GM.xmlHttpRequest
+// @grant       GM.getValue
+// @grant       GM.setValue
+// @grant       GM.deleteValue
+// @grant       GM.registerMenuCommand
+// @run-at      document-end
 // @noframes
-// @require      ../lib/MusicBrainzAPI.js
-// @updateURL    https://github.com/chaban-mb/userscripts/raw/main/src/YouTube%20MusicBrainz%20Importer.user.js
-// @downloadURL  https://github.com/chaban-mb/userscripts/raw/main/src/YouTube%20MusicBrainz%20Importer.user.js
+// @updateURL   https://github.com/chaban-mb/userscripts/raw/main/src/YouTube%20MusicBrainz%20Importer.user.js
+// @downloadURL https://github.com/chaban-mb/userscripts/raw/main/src/YouTube%20MusicBrainz%20Importer.user.js
 // ==/UserScript==
 
 //**************************************************************************//

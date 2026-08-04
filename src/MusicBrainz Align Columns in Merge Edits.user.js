@@ -1,25 +1,25 @@
 // ==UserScript==
-// @name         MusicBrainz: Align Columns in Merge Edits
-// @namespace    https://musicbrainz.org/user/chaban
-// @version      2.4.5
-// @tag          ai-created
-// @description  Aligns columns in merge edit tables for easier comparison.
-// @author       chaban
-// @license      MIT
-// @match        *://*.musicbrainz.org/edit/*
-// @match        *://*.musicbrainz.org/search/edits*
-// @match        *://*.musicbrainz.org/*/*/edits*
-// @match        *://*.musicbrainz.org/*/*/open_edits*
-// @match        *://*.musicbrainz.org/user/*/edits*
-// @match        *://*.musicbrainz.org/user/*/votes*
-// @icon         https://musicbrainz.org/static/images/favicons/android-chrome-512x512.png
-// @grant        GM.getValue
-// @grant        GM.setValue
-// @grant        GM.registerMenuCommand
-// @grant        GM.unregisterMenuCommand
-// @run-at       document-idle
-// @updateURL    https://github.com/chaban-mb/userscripts/raw/main/src/MusicBrainz%20Align%20Columns%20in%20Merge%20Edits.user.js
-// @downloadURL  https://github.com/chaban-mb/userscripts/raw/main/src/MusicBrainz%20Align%20Columns%20in%20Merge%20Edits.user.js
+// @name        MusicBrainz: Align Columns in Merge Edits
+// @namespace   https://musicbrainz.org/user/chaban
+// @version     2.4.6
+// @description Aligns columns in merge edit tables for easier comparison.
+// @tag         ai-created
+// @author      chaban
+// @license     MIT
+// @match       *://*.musicbrainz.org/edit/*
+// @match       *://*.musicbrainz.org/search/edits*
+// @match       *://*.musicbrainz.org/*/*/edits*
+// @match       *://*.musicbrainz.org/*/*/open_edits*
+// @match       *://*.musicbrainz.org/user/*/edits*
+// @match       *://*.musicbrainz.org/user/*/votes*
+// @icon        https://musicbrainz.org/static/images/favicons/android-chrome-512x512.png
+// @grant       GM.getValue
+// @grant       GM.setValue
+// @grant       GM.registerMenuCommand
+// @grant       GM.unregisterMenuCommand
+// @run-at      document-idle
+// @updateURL   https://github.com/chaban-mb/userscripts/raw/main/src/MusicBrainz%20Align%20Columns%20in%20Merge%20Edits.user.js
+// @downloadURL https://github.com/chaban-mb/userscripts/raw/main/src/MusicBrainz%20Align%20Columns%20in%20Merge%20Edits.user.js
 // ==/UserScript==
 
 (function () {

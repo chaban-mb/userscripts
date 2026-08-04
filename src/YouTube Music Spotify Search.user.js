@@ -1,15 +1,16 @@
 // ==UserScript==
-// @name         YouTube Music: Spotify Search
-// @namespace    https://musicbrainz.org/user/chaban
-// @version      1.1.0
-// @description  Adds a context-aware "Search on Spotify" item to the menu for songs and albums.
-// @author       chaban
-// @license      MIT
-// @match        https://music.youtube.com/*
-// @connect      spotify.com
-// @grant        GM_openInTab
-// @updateURL    https://github.com/chaban-mb/userscripts/raw/main/src/YouTube%20Music%20Spotify%20Search.user.js
-// @downloadURL  https://github.com/chaban-mb/userscripts/raw/main/src/YouTube%20Music%20Spotify%20Search.user.js
+// @name        YouTube Music: Spotify Search
+// @namespace   https://musicbrainz.org/user/chaban
+// @version     1.1.1
+// @description Adds a context-aware "Search on Spotify" item to the menu for songs and albums.
+// @author      chaban
+// @license     MIT
+// @match       https://music.youtube.com/*
+// @connect     spotify.com
+// @icon        https://music.youtube.com/img/favicon_144.png
+// @grant       GM_openInTab
+// @updateURL   https://github.com/chaban-mb/userscripts/raw/main/src/YouTube%20Music%20Spotify%20Search.user.js
+// @downloadURL https://github.com/chaban-mb/userscripts/raw/main/src/YouTube%20Music%20Spotify%20Search.user.js
 // ==/UserScript==
 
 (function() {

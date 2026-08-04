@@ -1,38 +1,38 @@
 // ==UserScript==
-// @name         MusicBrainz: Hotkeys for selected entities
-// @namespace    https://musicbrainz.org/user/chaban
-// @version      1.7.0
-// @description  Adds hotkeys to perform actions on selected entities. "A" = Artwork, "D" = Delete, "E" = Edit, "W" = Merge, "Q" = Aliases, "R" = Relationship Editor, "H" = Editing History
-// @tag          ai-created
-// @author       chaban
-// @license      MIT
-// @match        *://*.musicbrainz.org/artist*
-// @match        *://*.musicbrainz.org/area/*
-// @match        *://*.musicbrainz.org/release-group/*
-// @match        *://*.musicbrainz.org/release/*
-// @match        *://*.musicbrainz.org/recording/*
-// @match        *://*.musicbrainz.org/work/*
-// @match        *://*.musicbrainz.org/label/*
-// @match        *://*.musicbrainz.org/place/*
-// @match        *://*.musicbrainz.org/instrument/*
-// @match        *://*.musicbrainz.org/genre/*
-// @match        *://*.musicbrainz.org/event/*
-// @match        *://*.musicbrainz.org/series/*
-// @match        *://*.musicbrainz.org/collection/*
-// @match        *://*.musicbrainz.org/isrc/*
-// @match        *://*.musicbrainz.org/iswc/*
-// @match        *://*.musicbrainz.org/report/*
-// @match        *://*.musicbrainz.org/*/*/artists
-// @match        *://*.musicbrainz.org/*/*/releases
-// @match        *://*.musicbrainz.org/*/*/recordings
-// @match        *://*.musicbrainz.org/*/*/release-groups
-// @match        *://*.musicbrainz.org/*/*/events
-// @match        *://*.musicbrainz.org/*/*/labels
-// @match        *://*.musicbrainz.org/*/*/places
-// @icon         https://musicbrainz.org/static/images/favicons/android-chrome-512x512.png
-// @grant        none
-// @updateURL    https://github.com/chaban-mb/userscripts/raw/main/src/MusicBrainz%20Hotkeys%20for%20selected%20entities.user.js
-// @downloadURL  https://github.com/chaban-mb/userscripts/raw/main/src/MusicBrainz%20Hotkeys%20for%20selected%20entities.user.js
+// @name        MusicBrainz: Hotkeys for selected entities
+// @namespace   https://musicbrainz.org/user/chaban
+// @version     1.7.1
+// @description Adds hotkeys to perform actions on selected entities. "A" = Artwork, "D" = Delete, "E" = Edit, "W" = Merge, "Q" = Aliases, "R" = Relationship Editor, "H" = Editing History
+// @tag         ai-created
+// @author      chaban
+// @license     MIT
+// @match       *://*.musicbrainz.org/artist*
+// @match       *://*.musicbrainz.org/area/*
+// @match       *://*.musicbrainz.org/release-group/*
+// @match       *://*.musicbrainz.org/release/*
+// @match       *://*.musicbrainz.org/recording/*
+// @match       *://*.musicbrainz.org/work/*
+// @match       *://*.musicbrainz.org/label/*
+// @match       *://*.musicbrainz.org/place/*
+// @match       *://*.musicbrainz.org/instrument/*
+// @match       *://*.musicbrainz.org/genre/*
+// @match       *://*.musicbrainz.org/event/*
+// @match       *://*.musicbrainz.org/series/*
+// @match       *://*.musicbrainz.org/collection/*
+// @match       *://*.musicbrainz.org/isrc/*
+// @match       *://*.musicbrainz.org/iswc/*
+// @match       *://*.musicbrainz.org/report/*
+// @match       *://*.musicbrainz.org/*/*/artists
+// @match       *://*.musicbrainz.org/*/*/releases
+// @match       *://*.musicbrainz.org/*/*/recordings
+// @match       *://*.musicbrainz.org/*/*/release-groups
+// @match       *://*.musicbrainz.org/*/*/events
+// @match       *://*.musicbrainz.org/*/*/labels
+// @match       *://*.musicbrainz.org/*/*/places
+// @icon        https://musicbrainz.org/static/images/favicons/android-chrome-512x512.png
+// @grant       none
+// @updateURL   https://github.com/chaban-mb/userscripts/raw/main/src/MusicBrainz%20Hotkeys%20for%20selected%20entities.user.js
+// @downloadURL https://github.com/chaban-mb/userscripts/raw/main/src/MusicBrainz%20Hotkeys%20for%20selected%20entities.user.js
 // ==/UserScript==
 
 (function () {

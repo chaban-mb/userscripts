@@ -1,18 +1,18 @@
 // ==UserScript==
-// @name         MusicBrainz: Mass Merge Recordings from Edit
-// @namespace    https://musicbrainz.org/user/chaban
-// @version      1.0.2
-// @tag          ai-created
-// @description  Batch merge recordings from an "Edit medium" page.
-// @author       chaban, jesus2099
-// @license      GPL-3.0-or-later; http://www.gnu.org/licenses/gpl-3.0.txt
-// @match        *://*.musicbrainz.org/edit/*
-// @match        *://*.musicbrainz.eu/edit/*
-// @connect      self
-// @icon         https://musicbrainz.org/static/images/favicons/android-chrome-512x512.png
-// @grant        GM_xmlhttpRequest
-// @updateURL    https://github.com/chaban-mb/userscripts/raw/main/src/MusicBrainz%20Mass%20Merge%20Recordings%20from%20Edit.user.js
-// @downloadURL  https://github.com/chaban-mb/userscripts/raw/main/src/MusicBrainz%20Mass%20Merge%20Recordings%20from%20Edit.user.js
+// @name        MusicBrainz: Mass Merge Recordings from Edit
+// @namespace   https://musicbrainz.org/user/chaban
+// @version     1.0.3
+// @description Batch merge recordings from an "Edit medium" page.
+// @tag         ai-created
+// @author      chaban, jesus2099
+// @license     GPL-3.0-or-later; http://www.gnu.org/licenses/gpl-3.0.txt
+// @match       *://*.musicbrainz.org/edit/*
+// @match       *://*.musicbrainz.eu/edit/*
+// @connect     self
+// @icon        https://musicbrainz.org/static/images/favicons/android-chrome-512x512.png
+// @grant       GM_xmlhttpRequest
+// @updateURL   https://github.com/chaban-mb/userscripts/raw/main/src/MusicBrainz%20Mass%20Merge%20Recordings%20from%20Edit.user.js
+// @downloadURL https://github.com/chaban-mb/userscripts/raw/main/src/MusicBrainz%20Mass%20Merge%20Recordings%20from%20Edit.user.js
 // ==/UserScript==
 
 (function() {

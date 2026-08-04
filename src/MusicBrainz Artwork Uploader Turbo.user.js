@@ -1,18 +1,18 @@
 // ==UserScript==
-// @name         MusicBrainz: Artwork Uploader Turbo
-// @namespace    https://musicbrainz.org/user/chaban
-// @version      3.3.9
-// @tag          ai-created
-// @description  Allows for multiple artwork images to be uploaded simultaneously and recursively upload directories.
-// @author       chaban
-// @license      MIT
-// @match        *://*.musicbrainz.org/release/*/add-cover-art*
-// @match        *://*.musicbrainz.org/event/*/add-event-art*
-// @grant        none
-// @icon         https://musicbrainz.org/static/images/favicons/android-chrome-512x512.png
-// @run-at       document-start
-// @updateURL    https://github.com/chaban-mb/userscripts/raw/main/src/MusicBrainz%20Artwork%20Uploader%20Turbo.user.js
-// @downloadURL  https://github.com/chaban-mb/userscripts/raw/main/src/MusicBrainz%20Artwork%20Uploader%20Turbo.user.js
+// @name        MusicBrainz: Artwork Uploader Turbo
+// @namespace   https://musicbrainz.org/user/chaban
+// @version     3.3.10
+// @description Allows for multiple artwork images to be uploaded simultaneously and recursively upload directories.
+// @tag         ai-created
+// @author      chaban
+// @license     MIT
+// @match       *://*.musicbrainz.org/release/*/add-cover-art*
+// @match       *://*.musicbrainz.org/event/*/add-event-art*
+// @icon        https://musicbrainz.org/static/images/favicons/android-chrome-512x512.png
+// @grant       none
+// @run-at      document-start
+// @updateURL   https://github.com/chaban-mb/userscripts/raw/main/src/MusicBrainz%20Artwork%20Uploader%20Turbo.user.js
+// @downloadURL https://github.com/chaban-mb/userscripts/raw/main/src/MusicBrainz%20Artwork%20Uploader%20Turbo.user.js
 // ==/UserScript==
 
 (function () {

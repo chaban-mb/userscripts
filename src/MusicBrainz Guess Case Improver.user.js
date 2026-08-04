@@ -1,20 +1,20 @@
 // ==UserScript==
-// @name         MusicBrainz: Guess Case Improver
-// @namespace    https://musicbrainz.org/user/chaban
-// @version      0.10.7
-// @tag          ai-created
-// @description  Improves the native "Guess Case" for release, recording and track titles with advanced artist and ETI parsing. Also removes artist from title and duplicate artists after using "Guess feat. artists" on tracklists.
-// @author       chaban
-// @license      MIT
-// @match        https://*.musicbrainz.org/recording/create*
-// @match        https://*.musicbrainz.org/recording/*/edit
-// @match        https://*.musicbrainz.org/release/*/edit*
-// @match        https://*.musicbrainz.org/release/add*
-// @match        https://*.musicbrainz.org/artist/*/credit/*/edit
-// @icon         https://musicbrainz.org/static/images/favicons/android-chrome-512x512.png
-// @grant        none
-// @updateURL    https://github.com/chaban-mb/userscripts/raw/main/src/MusicBrainz%20Guess%20Case%20Improver.user.js
-// @downloadURL  https://github.com/chaban-mb/userscripts/raw/main/src/MusicBrainz%20Guess%20Case%20Improver.user.js
+// @name        MusicBrainz: Guess Case Improver
+// @namespace   https://musicbrainz.org/user/chaban
+// @version     0.10.8
+// @description Improves the native "Guess Case" for release, recording and track titles with advanced artist and ETI parsing. Also removes artist from title and duplicate artists after using "Guess feat. artists" on tracklists.
+// @tag         ai-created
+// @author      chaban
+// @license     MIT
+// @match       https://*.musicbrainz.org/recording/create*
+// @match       https://*.musicbrainz.org/recording/*/edit
+// @match       https://*.musicbrainz.org/release/*/edit*
+// @match       https://*.musicbrainz.org/release/add*
+// @match       https://*.musicbrainz.org/artist/*/credit/*/edit
+// @icon        https://musicbrainz.org/static/images/favicons/android-chrome-512x512.png
+// @grant       none
+// @updateURL   https://github.com/chaban-mb/userscripts/raw/main/src/MusicBrainz%20Guess%20Case%20Improver.user.js
+// @downloadURL https://github.com/chaban-mb/userscripts/raw/main/src/MusicBrainz%20Guess%20Case%20Improver.user.js
 // ==/UserScript==
 
 (function () {

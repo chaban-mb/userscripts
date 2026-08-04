@@ -1,14 +1,14 @@
 // ==UserScript==
 // @name        ISRC Hunt: Rewrite Harmony URLs
 // @namespace   https://musicbrainz.org/user/chaban
-// @version     1.2
+// @version     1.2.1
 // @description Rewrites links to Harmony to use "category=preferred"
 // @author      chaban
 // @license     MIT
 // @match       *://isrchunt.com/*
 // @grant       none
-// @updateURL    https://github.com/chaban-mb/userscripts/raw/main/src/ISRC%20Hunt%20Rewrite%20Harmony%20URLs.user.js
-// @downloadURL  https://github.com/chaban-mb/userscripts/raw/main/src/ISRC%20Hunt%20Rewrite%20Harmony%20URLs.user.js
+// @updateURL   https://github.com/chaban-mb/userscripts/raw/main/src/ISRC%20Hunt%20Rewrite%20Harmony%20URLs.user.js
+// @downloadURL https://github.com/chaban-mb/userscripts/raw/main/src/ISRC%20Hunt%20Rewrite%20Harmony%20URLs.user.js
 // ==/UserScript==
 
 [].forEach.call(document.querySelectorAll('a[href*="harmony"]'), function (el) {

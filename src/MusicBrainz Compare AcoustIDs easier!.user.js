@@ -1,29 +1,29 @@
 // ==UserScript==
-// @name          MusicBrainz: Compare AcoustIDs easier!
-// @namespace     https://musicbrainz.org/user/chaban
-// @version       1.1.3
-// @tag           ai-created
-// @description   Displays AcoustID fingerprints in more places at MusicBrainz.
-// @author        otringal, chaban
-// @license       MIT
-// @match         *://*.musicbrainz.org/artist/*/recordings*
-// @match         *://*.musicbrainz.org/artist/*/*edits*
-// @match         *://*.musicbrainz.org/collection/*/*
-// @match         *://*.musicbrainz.org/edit/*
-// @match         *://*.musicbrainz.org/recording/*
-// @match         *://*.musicbrainz.org/release-group/*
-// @match         *://*.musicbrainz.org/release/*
-// @match         *://*.musicbrainz.org/search/*
-// @match         *://*.musicbrainz.org/user/*/edits*
-// @match         *://*.musicbrainz.org/user/*/votes*
-// @exclude       *musicbrainz.org/release/*/edit*
-// @exclude       *musicbrainz.org/release/*/edit-relationships*
-// @icon          https://acoustid.org/static/acoustid-wave-12.png
-// @connect       api.acoustid.org
-// @grant         none
-// @run-at        document-end
-// @updateURL    https://github.com/chaban-mb/userscripts/raw/main/src/MusicBrainz%20Compare%20AcoustIDs%20easier!.user.js
-// @downloadURL  https://github.com/chaban-mb/userscripts/raw/main/src/MusicBrainz%20Compare%20AcoustIDs%20easier!.user.js
+// @name        MusicBrainz: Compare AcoustIDs easier!
+// @namespace   https://musicbrainz.org/user/chaban
+// @version     1.1.4
+// @description Displays AcoustID fingerprints in more places at MusicBrainz.
+// @tag         ai-created
+// @author      otringal, chaban
+// @license     MIT
+// @match       *://*.musicbrainz.org/artist/*/recordings*
+// @match       *://*.musicbrainz.org/artist/*/*edits*
+// @match       *://*.musicbrainz.org/collection/*/*
+// @match       *://*.musicbrainz.org/edit/*
+// @match       *://*.musicbrainz.org/recording/*
+// @match       *://*.musicbrainz.org/release-group/*
+// @match       *://*.musicbrainz.org/release/*
+// @match       *://*.musicbrainz.org/search/*
+// @match       *://*.musicbrainz.org/user/*/edits*
+// @match       *://*.musicbrainz.org/user/*/votes*
+// @exclude     *musicbrainz.org/release/*/edit*
+// @exclude     *musicbrainz.org/release/*/edit-relationships*
+// @connect     api.acoustid.org
+// @icon        https://acoustid.org/static/acoustid-wave-12.png
+// @grant       none
+// @run-at      document-end
+// @updateURL   https://github.com/chaban-mb/userscripts/raw/main/src/MusicBrainz%20Compare%20AcoustIDs%20easier!.user.js
+// @downloadURL https://github.com/chaban-mb/userscripts/raw/main/src/MusicBrainz%20Compare%20AcoustIDs%20easier!.user.js
 // ==/UserScript==
 
 (function () {
