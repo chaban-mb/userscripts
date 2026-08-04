@@ -36,6 +36,8 @@
             files: [],
             ui: {},
             upvm: null, // To hold the captured ViewModel instance
+            antiThrottlingPCs: null,
+            antiThrottlingTimer: null,
         },
 
         // --- LOGGER UTILITY ---
@@ -53,24 +55,63 @@
         },
 
         // --- WEB RTC THROTTLING BYPASS ---
-        async setupThrottlingBypass() {
+        /**
+         * @summary Discharges active WebRTC peer connections to restore normal OS power state.
+         * @param {string} [reason='Manual discharge'] - Descriptive reason for discharging connections.
+         */
+        teardownThrottlingBypass(reason = 'Manual discharge') {
+            if (ArtworkUploaderTurbo.state.antiThrottlingTimer) {
+                clearTimeout(ArtworkUploaderTurbo.state.antiThrottlingTimer);
+                ArtworkUploaderTurbo.state.antiThrottlingTimer = null;
+            }
+            if (ArtworkUploaderTurbo.state.antiThrottlingPCs) {
+                ArtworkUploaderTurbo.logger.log(`Discharging WebRTC throttling bypass [Reason: ${reason}].`);
+                ArtworkUploaderTurbo.state.antiThrottlingPCs.forEach(pc => {
+                    try {
+                        pc.close();
+                    } catch (e) {
+                        ArtworkUploaderTurbo.logger.error('Error closing RTCPeerConnection:', e);
+                    }
+                });
+                ArtworkUploaderTurbo.state.antiThrottlingPCs = null;
+            }
+        },
+
+        /**
+         * @summary Acquires or refreshes WebRTC local loopback connections to bypass Intensive Throttling.
+         * Resets a 30-second watchdog timer to automatically discharge connections if idle.
+         * @param {number} [timeoutMs=30000] - Duration in milliseconds before auto-discharging.
+         */
+        async setupThrottlingBypass(timeoutMs = 30000) {
+            if (ArtworkUploaderTurbo.state.antiThrottlingTimer) {
+                clearTimeout(ArtworkUploaderTurbo.state.antiThrottlingTimer);
+            }
+            ArtworkUploaderTurbo.state.antiThrottlingTimer = setTimeout(() => {
+                ArtworkUploaderTurbo.teardownThrottlingBypass('Safety watchdog timeout (30s inactivity)');
+            }, timeoutMs);
+
             if (ArtworkUploaderTurbo.state.antiThrottlingPCs) return;
             if (typeof RTCPeerConnection === 'undefined') {
                 ArtworkUploaderTurbo.logger.warn('WebRTC not supported or disabled. Intensive throttling bypass skipped.');
                 return;
             }
             ArtworkUploaderTurbo.logger.log('Initializing WebRTC loopback to bypass Intensive Throttling...');
-            const pc1 = new RTCPeerConnection(), pc2 = new RTCPeerConnection();
-            pc1.createDataChannel("keep-alive");
-            pc1.onicecandidate = e => e.candidate && pc2.addIceCandidate(e.candidate);
-            pc2.onicecandidate = e => e.candidate && pc1.addIceCandidate(e.candidate);
-            const offer = await pc1.createOffer();
-            await pc1.setLocalDescription(offer);
-            await pc2.setRemoteDescription(offer);
-            const answer = await pc2.createAnswer();
-            await pc2.setLocalDescription(answer);
-            await pc1.setRemoteDescription(answer);
-            ArtworkUploaderTurbo.state.antiThrottlingPCs = [pc1, pc2];
+            try {
+                const pc1 = new RTCPeerConnection(), pc2 = new RTCPeerConnection();
+                pc1.createDataChannel("keep-alive");
+                pc1.onicecandidate = e => e.candidate && pc2.addIceCandidate(e.candidate);
+                pc2.onicecandidate = e => e.candidate && pc1.addIceCandidate(e.candidate);
+                const offer = await pc1.createOffer();
+                await pc1.setLocalDescription(offer);
+                await pc2.setRemoteDescription(offer);
+                const answer = await pc2.createAnswer();
+                await pc2.setLocalDescription(answer);
+                await pc1.setRemoteDescription(answer);
+                ArtworkUploaderTurbo.state.antiThrottlingPCs = [pc1, pc2];
+            } catch (e) {
+                ArtworkUploaderTurbo.logger.error('Failed to setup WebRTC throttling bypass:', e);
+                ArtworkUploaderTurbo.teardownThrottlingBypass('Initialization failure');
+            }
         },
 
         // --- UI RENDERING ---
@@ -309,11 +350,15 @@
                 ArtworkUploaderTurbo.UI.updateDebugUI();
                 this._prepareUI(formName);
 
-                await ArtworkUploaderTurbo.setupThrottlingBypass();
+                try {
+                    await ArtworkUploaderTurbo.setupThrottlingBypass();
 
-                const pipeline = new this.Pipeline(gid, ArtworkUploaderTurbo.state.files, formName);
-                await pipeline.start();
-                this._finalize(pipeline.hasCriticalError, entityType, archiveName, gid, formName);
+                    const pipeline = new this.Pipeline(gid, ArtworkUploaderTurbo.state.files, formName);
+                    await pipeline.start();
+                    this._finalize(pipeline.hasCriticalError, entityType, archiveName, gid, formName);
+                } finally {
+                    ArtworkUploaderTurbo.teardownThrottlingBypass('Upload process finished');
+                }
             },
 
             _prepareUI(formName) {
@@ -462,6 +507,7 @@
 
                         const file = this.filesToSign.shift();
                         if (!file) { await new Promise(r => setTimeout(r, 100)); continue; }
+                        await ArtworkUploaderTurbo.setupThrottlingBypass();
                         if (!file._script) file._script = {};
 
                         while (true) {
@@ -487,6 +533,7 @@
                     while (this.processedFileCount < this.allFiles.length && !this.hasCriticalError) {
                         const file = this.filesToUpload.shift();
                         if (!file) { await new Promise(r => setTimeout(r, 100)); continue; }
+                        await ArtworkUploaderTurbo.setupThrottlingBypass();
 
                         while (true) {
                             try {
@@ -513,6 +560,7 @@
                     while (this.processedFileCount < this.allFiles.length && !this.hasCriticalError) {
                         const file = this.filesToSubmit.shift();
                         if (!file) { await new Promise(r => setTimeout(r, 100)); continue; }
+                        await ArtworkUploaderTurbo.setupThrottlingBypass();
 
                         const position = startingPosition + this.allFiles.indexOf(file);
 
