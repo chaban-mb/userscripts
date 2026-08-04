@@ -51,6 +51,7 @@
     let debugLogChannel;
     let activeClosureObserver = null;
     let activeKeepAlives = [];
+    let throttlingBypassTimer = null;
 
     const navEntry = performance.getEntriesByType('navigation')[0];
     if (navEntry && navEntry.type === 'reload') {
@@ -61,27 +62,62 @@
     }
 
     /**
-     * @summary Initializes a WebRTC local loopback connection to force Chrome to classify the tab as "active"
-     * and bypass Intensive Throttling, ensuring microtasks for cross-tab locks execute smoothly.
+     * @summary Discharges and closes active WebRTC loopback peer connections, restoring normal OS standby state.
+     * @param {string} [reason='Manual discharge'] - Descriptive reason for discharging WebRTC peer connections.
      */
-    async function setupThrottlingBypass() {
+    function teardownThrottlingBypass(reason = 'Manual discharge') {
+        if (throttlingBypassTimer) {
+            clearTimeout(throttlingBypassTimer);
+            throttlingBypassTimer = null;
+        }
+        if (activeKeepAlives.length > 0) {
+            debugLog(`Discharging WebRTC throttling bypass [Reason: ${reason}].`, '#d97706');
+            activeKeepAlives.forEach(pc => {
+                try {
+                    pc.close();
+                } catch (e) {
+                    console.error('Error closing RTCPeerConnection:', e);
+                }
+            });
+            activeKeepAlives = [];
+        }
+    }
+
+    /**
+     * @summary Acquires or refreshes WebRTC local loopback connections on demand to bypass Chrome Intensive Throttling.
+     * Starts or resets a 30-second safety watchdog timer to automatically discharge connections if idle.
+     * @param {number} [timeoutMs=30000] - Duration in milliseconds before auto-discharging if not refreshed.
+     */
+    async function acquireThrottlingBypass(timeoutMs = 30000) {
+        if (throttlingBypassTimer) {
+            clearTimeout(throttlingBypassTimer);
+        }
+        throttlingBypassTimer = setTimeout(() => {
+            teardownThrottlingBypass('Safety watchdog timeout (30s inactivity)');
+        }, timeoutMs);
+
         if (activeKeepAlives.length > 0) return;
         if (typeof RTCPeerConnection === 'undefined') {
             debugLog('WebRTC is undefined. Skipping throttling bypass.', 'orange');
             return;
         }
-        debugLog('Initializing WebRTC loopback to bypass Intensive Throttling.', 'green');
-        const pc1 = new RTCPeerConnection(), pc2 = new RTCPeerConnection();
-        pc1.createDataChannel("keep-alive");
-        pc1.onicecandidate = e => e.candidate && pc2.addIceCandidate(e.candidate);
-        pc2.onicecandidate = e => e.candidate && pc1.addIceCandidate(e.candidate);
-        const offer = await pc1.createOffer();
-        await pc1.setLocalDescription(offer);
-        await pc2.setRemoteDescription(offer);
-        const answer = await pc2.createAnswer();
-        await pc2.setLocalDescription(answer);
-        await pc1.setRemoteDescription(answer);
-        activeKeepAlives = [pc1, pc2];
+        debugLog('Acquiring WebRTC loopback on demand to bypass Intensive Throttling.', 'green');
+        try {
+            const pc1 = new RTCPeerConnection(), pc2 = new RTCPeerConnection();
+            pc1.createDataChannel("keep-alive");
+            pc1.onicecandidate = e => e.candidate && pc2.addIceCandidate(e.candidate);
+            pc2.onicecandidate = e => e.candidate && pc1.addIceCandidate(e.candidate);
+            const offer = await pc1.createOffer();
+            await pc1.setLocalDescription(offer);
+            await pc2.setRemoteDescription(offer);
+            const answer = await pc2.createAnswer();
+            await pc2.setLocalDescription(answer);
+            await pc1.setRemoteDescription(answer);
+            activeKeepAlives = [pc1, pc2];
+        } catch (e) {
+            console.error('Failed to initialize WebRTC throttling bypass:', e);
+            teardownThrottlingBypass('Initialization failure');
+        }
     }
 
     /**
@@ -106,13 +142,13 @@
         // Rule for closing tab after manual merge or edit submission.
         {
             hostnames: ['musicbrainz.org'],
-            paths: ['/merge', '/edit'],
-            buttonSelector: 'button.submit.positive[type="submit"]',
+            paths: ['/merge', '/edit', '/add-cover-art', '/add-event-art'],
+            buttonSelector: 'button.submit.positive[type="submit"], button#enter-edit, button#add-cover-art-submit, button#add-event-art-submit',
             shouldCloseAfterSuccess: true,
             requiredSetting: MB_ENABLE_MANUAL_MERGE_AUTOCLOSE,
             referrerPatterns: {
                 hostnames: ['musicbrainz.org'],
-                paths: ['/merge', '/edit'],
+                paths: ['/merge', '/edit', '/add-cover-art', '/add-event-art'],
             },
         },
         // Rules for clicking buttons
@@ -126,12 +162,12 @@
         },
         {
             hostnames: ['musicbrainz.org'],
-            paths: ['/edit', '/edit-relationships', '/add-cover-art'],
+            paths: ['/edit', '/edit-relationships', '/add-cover-art', '/add-event-art'],
             channelName: 'mb_edit_channel',
             messageTrigger: 'submit-edit',
-            buttonSelector: 'button.submit.positive[type="submit"]',
+            buttonSelector: 'button.submit.positive[type="submit"], button#enter-edit, button#add-cover-art-submit, button#add-event-art-submit',
             menuCommandName: 'MusicBrainz: Submit Edit (All Tabs)',
-            successUrlPatterns: [/^https?:\/\/(?:beta\.)?musicbrainz\.org\/(?!collection\/)[^/]+\/[a-f0-9\-]{36}(?:\/cover-art)?\/?$/],
+            successUrlPatterns: [/^https?:\/\/(?:beta\.)?musicbrainz\.org\/(?!collection\/)[^/]+\/[a-f0-9\-]{36}(?:\/(?:cover|event)-art)?\/?$/],
             shouldCloseAfterSuccess: true,
             isNoOp: () => {
                 const noChangesBanner = document.querySelector('.banner.warning-header');
@@ -141,7 +177,7 @@
             },
             submissionHandler: (config, _ignoredTrigger) => {
                 const isRelationshipEditor = location.pathname.endsWith('/edit-relationships');
-                const isCoverArtPage = location.pathname.endsWith('/add-cover-art');
+                const isCoverArtPage = location.pathname.endsWith('/add-cover-art') || location.pathname.endsWith('/add-event-art');
                 const hasSeedingHash = location.hash.includes('seed-urls-v1') || location.hash.includes('seed-');
 
                 /**
@@ -193,14 +229,11 @@
                         if (!node || typeof node !== 'object' || visited.has(node)) return;
                         visited.add(node);
 
-                        // Check if current node is a relationship object (must have linkTypeID)
-                        if (node.linkTypeID) {
-                            const status = node._status ?? node.status;
-                            const lineage = Array.isArray(node._lineage) ? node._lineage : [];
-                            const isUnloaded = lineage.length > 0 && !lineage.includes('loaded from database');
-
-                            if (status > 0 || isUnloaded || (typeof node.id === 'number' && node.id < 0)) {
-                                uniqueEditIds.add(node.id);
+                        // Check if current node is a relationship object
+                        if ('linkTypeID' in node || '_status' in node || 'entity0' in node) {
+                            const status = node._status ?? node.status ?? 0;
+                            if (status > 0) {
+                                uniqueEditIds.add(node);
                             }
                         }
 
@@ -237,44 +270,198 @@
 
                 /**
                  * Programmatically checks if the External Links Editor has pending edits.
+                 * Hybrid approach: MB.releaseEditor.externalLinksData() programmatic state in Release Editor,
+                 * DOM highlight class inspection (.rel-add, .rel-edit, .rel-remove) for standalone editors.
                  * @returns {boolean} True if any link or relationship is new, removed, or modified.
                  */
                 const hasPendingExternalLinkEdits = () => {
                     const win = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
-                    const editor = document.getElementById('external-links-editor');
-                    if (!editor) return false;
 
-                    const fiberKey = Object.keys(editor).find(k =>
-                        k.startsWith('__reactFiber$') || k.startsWith('__reactContainer$')
-                    );
-                    if (!fiberKey) return false;
+                    // 1. Release Editor State
+                    const relEdLinksData = win.MB?.releaseEditor?.externalLinksData;
+                    if (relEdLinksData) {
+                        try {
+                            const links = typeof relEdLinksData === 'function' ? relEdLinksData() : relEdLinksData;
+                            if (links && (links.size !== undefined || Array.isArray(links))) {
+                                const iterateLinks = (linksTree) => {
+                                    const result = [];
+                                    if (win.MB?.tree?.iterate) {
+                                        try {
+                                            for (const link of win.MB.tree.iterate(linksTree)) {
+                                                result.push(link);
+                                            }
+                                            return result;
+                                        } catch (e) {}
+                                    }
+                                    if (linksTree && typeof linksTree.values === 'function') {
+                                        return Array.from(linksTree.values());
+                                    }
+                                    if (Array.isArray(linksTree)) return linksTree;
+                                    return [];
+                                };
 
-                    let node = editor[fiberKey];
-                    while (node) {
-                        const state = node.memoizedState?.memoizedState || node.memoizedState;
-                        if (state?.links && state.links.size > 0) {
-                            const links = win.MB?.tree ? win.MB.tree.iterate(state.links) : state.links;
+                                const isRelationshipPending = (rel) => {
+                                    if (!rel) return false;
+                                    if (rel.originalState == null || rel.removed) return true;
 
-                            for (const link of links) {
-                                // Ignore the empty placeholder field MB appends to the bottom
-                                if (!link.url && (!link.relationships || link.relationships.length === 0)) continue;
+                                    const orig = rel.originalState;
+                                    return Object.keys(orig).some(key => {
+                                        if (key === 'originalState' || key === 'removed') return false;
+                                        return JSON.stringify(rel[key] ?? null) !== JSON.stringify(orig[key] ?? null);
+                                    });
+                                };
 
-                                if (link.isNew) return true;
-
-                                for (const rel of link.relationships || []) {
-                                    // Unchanged relationships maintain exact reference equality (rel.originalState === rel).
-                                    // Any edit creates a new object copy, breaking equality.
-                                    // Seeded/new relationships have orig === null.
-                                    if (rel.originalState !== rel || rel.removed) {
-                                        return true;
+                                const linkList = iterateLinks(links);
+                                for (const link of linkList) {
+                                    const rels = Array.isArray(link.relationships) ? link.relationships : [];
+                                    for (const rel of rels) {
+                                        if (isRelationshipPending(rel)) return true;
                                     }
                                 }
+                                return false;
                             }
-                        }
-                        node = node.return;
+                        } catch (e) {}
                     }
 
+                    // 2. DOM Highlight Fallback (Standalone Entity Editors)
+                    const editor = document.getElementById('external-links-editor') ||
+                                   document.querySelector('.external-links-editor-container');
+                    if (!editor) return false;
+
+                    const highlights = editor.querySelectorAll('.rel-add, .rel-edit, .rel-remove');
+                    if (highlights.length > 0) return true;
+
+                    const newInputs = Array.from(editor.querySelectorAll('input.value.with-button, tr.add-relationship input'))
+                        .filter(input => input.value.trim() !== '');
+                    if (newInputs.length > 0) return true;
+
                     return false;
+                };
+
+                const normalizeText = (str) => {
+                    if (typeof str !== 'string') return str;
+                    return str.replace(/\u00a0/g, ' ').trim();
+                };
+
+                /**
+                 * Programmatically checks standard HTML form inputs (name, artist credit, ISRCs, dates, comment, edit_note) via FormData snapshots.
+                 * @returns {boolean} True if any form data field differs from its initial page load snapshot.
+                 */
+                const getFormDataMap = (form) => {
+                    const map = new Map();
+                    try {
+                        const formData = new FormData(form);
+                        const removedKeys = new Set();
+
+                        for (const [key, val] of formData.entries()) {
+                            if (key.endsWith('.removed') && val === '1') {
+                                removedKeys.add(key.slice(0, -8));
+                            }
+                        }
+
+                        for (const [key, val] of formData.entries()) {
+                            if (!key || key.includes('csrf') || key.includes('confirm') || key === 'tag' || key.includes('edit_note') || key.includes('edit-note')) continue;
+                            if (key.endsWith('.removed')) continue;
+                            if (removedKeys.has(key)) continue;
+
+                            const cleanVal = normalizeText(val);
+                            if (!cleanVal) continue;
+
+                            // Group indexed keys e.g. "edit-recording.isrcs.3" -> "edit-recording.isrcs"
+                            const groupKey = key.replace(/\.\d+$/, '');
+
+                            if (!map.has(groupKey)) map.set(groupKey, []);
+                            map.get(groupKey).push(cleanVal);
+                        }
+
+                        for (const arr of map.values()) {
+                            arr.sort();
+                        }
+                    } catch (e) {}
+                    return map;
+                };
+
+                const initialFormSnapshots = new Map();
+                let hydrationCaptured = false;
+                let hydrationListenerAdded = false;
+
+                const getEditForms = () => {
+                    return Array.from(document.forms).filter(form => {
+                        const action = form.getAttribute('action') || '';
+                        const className = form.className || '';
+                        return className.includes('edit-') ||
+                               action.includes('/edit') || action.includes('/add') || action.includes('/create') || action.includes('/merge') ||
+                               form.closest('#release-editor, #relationship-editor, #external-links-editor') !== null;
+                    });
+                };
+
+                const hasDirtyFormInputs = () => {
+                    const editForms = getEditForms();
+                    
+                    if (!hydrationCaptured) {
+                        editForms.forEach(form => {
+                            if (!initialFormSnapshots.has(form)) {
+                                initialFormSnapshots.set(form, getFormDataMap(form));
+                            }
+                        });
+                    }
+
+                    if (!hydrationListenerAdded) {
+                        hydrationListenerAdded = true;
+
+                        const refreshBaseline = () => {
+                            setTimeout(() => {
+                                const currentForms = getEditForms();
+                                currentForms.forEach(form => {
+                                    initialFormSnapshots.set(form, getFormDataMap(form));
+                                });
+                                hydrationCaptured = true;
+                            }, 100);
+                        };
+
+                        if (document.readyState === 'complete') {
+                            refreshBaseline();
+                        } else {
+                            window.addEventListener('load', refreshBaseline, { once: true });
+                        }
+
+                        document.addEventListener('mb-hydration', refreshBaseline);
+                    }
+
+                    for (const form of editForms) {
+                        if (!initialFormSnapshots.has(form)) {
+                            initialFormSnapshots.set(form, getFormDataMap(form));
+                        }
+                        const initialMap = initialFormSnapshots.get(form);
+                        const currentMap = getFormDataMap(form);
+
+                        const allKeys = new Set([...initialMap.keys(), ...currentMap.keys()]);
+                        for (const key of allKeys) {
+                            const origVals = initialMap.get(key) || [];
+                            const currVals = currentMap.get(key) || [];
+
+                            if (origVals.join(', ') !== currVals.join(', ')) {
+                                return true;
+                            }
+                        }
+                    }
+                    return false;
+                };
+
+                /**
+                 * Inspects Release Editor viewmodel for pending edits (MB.releaseEditor.allEdits()).
+                 * @returns {number} Count of active pending edits in Release Editor.
+                 */
+                const getPendingReleaseEditorEditsCount = () => {
+                    const win = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
+                    const editor = win.MB?.releaseEditor;
+                    if (editor?.allEdits) {
+                        try {
+                            const edits = editor.allEdits();
+                            if (Array.isArray(edits)) return edits.length;
+                        } catch (e) {}
+                    }
+                    return 0;
                 };
 
                 /**
@@ -282,13 +469,32 @@
                  * @returns {number} Count of pending edits (or >0 if edits exist).
                  */
                 const getPendingEditsCount = () => {
-                    if (isRelationshipEditor) {
-                        return getPendingRelationshipEditsCount();
+                    let totalCount = 0;
+
+                    const releaseEditorEdits = getPendingReleaseEditorEditsCount();
+                    if (releaseEditorEdits > 0) {
+                        totalCount += releaseEditorEdits;
                     }
+
+                    if (isRelationshipEditor) {
+                        totalCount += getPendingRelationshipEditsCount();
+                    }
+
+                    if (hasPendingExternalLinkEdits()) {
+                        totalCount += 1;
+                    }
+
+                    if (hasDirtyFormInputs()) {
+                        totalCount += 1;
+                    }
+
+                    if (totalCount > 0) return totalCount;
+
                     if (isCoverArtPage) {
                         return document.querySelector(config.buttonSelector) ? 1 : 0;
                     }
-                    return hasPendingExternalLinkEdits() ? 1 : 0;
+
+                    return 0;
                 };
 
                 /**
@@ -327,12 +533,18 @@
                         // If unseeded tab has 0 edits, do not submit or close; ignore trigger
                         if (pendingEdits === 0 && !isSeededOrInjected) {
                             debugLog('Unseeded tab has 0 edits. Skipping submit trigger to preserve tab for user...', 'orange');
+                            sessionStorage.removeItem(SUBMISSION_TRIGGERED_FLAG);
                             return;
                         }
 
                         waitForButtonAndClick(config, null, false).then(() => {
                             setTimeout(() => {
                                 rateLimitedMBSubmit(async () => {
+                                    const triggerState = JSON.stringify({
+                                        channel: config.channelName,
+                                        messageTrigger: config.messageTrigger
+                                    });
+                                    sessionStorage.setItem(SUBMISSION_TRIGGERED_FLAG, triggerState);
                                     await waitForButtonAndClick(config, null, true);
                                 });
                             }, 0);
@@ -456,6 +668,7 @@
                         }
                         if (loginButton) {
                             debugLog('User is not logged into MagicISRC. Aborting submission on this tab.', 'orange');
+                            sessionStorage.removeItem(SUBMISSION_TRIGGERED_FLAG);
                             return cleanupAndExit();
                         }
                         return false;
@@ -614,6 +827,7 @@
      * @param {string} reason - The reason for closing, used in debug logs.
      */
     async function closeTab(reason) {
+        teardownThrottlingBypass(`Tab closing: ${reason}`);
         const disableAutoClose = await GM.getValue(DISABLE_AUTO_CLOSE_SETTING, false);
 
         if (disableAutoClose) {
@@ -751,7 +965,8 @@
         const configsForMenu = activeConfigs.filter(c => !c.autoClick && c.menuCommandName);
 
         for (const config of configsForMenu) {
-            registerCommand(config.menuCommandName, () => {
+            registerCommand(config.menuCommandName, async () => {
+                await acquireThrottlingBypass();
                 const channel = new BroadcastChannel(config.channelName);
                 channel.postMessage(config.messageTrigger);
                 channel.close();
@@ -770,8 +985,10 @@
         const submitsPerSecond = await GM.getValue(MUSICBRAINZ_SUBMITS_PER_SECOND_SETTING, DEFAULT_MB_SUBMITS_PER_SECOND);
         const requiredInterval = 1000 / submitsPerSecond;
 
+        await acquireThrottlingBypass();
         debugLog(`Requesting MB submission lock...`);
         navigator.locks.request(MB_SUBMIT_COORDINATION_LOCK_KEY, async () => {
+            await acquireThrottlingBypass();
             debugLog(`Acquired MB submission lock.`, 'green');
             await callback();
             if (!limiterDisabled) {
@@ -855,15 +1072,16 @@
                     if (event.data !== config.messageTrigger) return;
 
                     debugLog(`Received trigger "${event.data}".`);
-                    const triggerState = JSON.stringify({
-                        channel: config.channelName,
-                        messageTrigger: config.messageTrigger
-                    });
-                    sessionStorage.setItem(SUBMISSION_TRIGGERED_FLAG, triggerState);
 
                     if (config.submissionHandler) {
                         config.submissionHandler(config, triggerAction);
                     } else {
+                        const triggerState = JSON.stringify({
+                            channel: config.channelName,
+                            messageTrigger: config.messageTrigger
+                        });
+                        sessionStorage.setItem(SUBMISSION_TRIGGERED_FLAG, triggerState);
+                        await acquireThrottlingBypass();
                         triggerAction();
                     }
                 };
@@ -973,8 +1191,6 @@
                 console.log(`%c[${scriptName}] [${timestamp}] ${msgTabId} ${message}`, `color: ${color}`);
             };
         }
-
-        await setupThrottlingBypass();
 
         const activeConfigs = getActiveConfigs();
         if (activeConfigs.length > 0) {
