@@ -72,22 +72,30 @@ def get_main_file_content(rel_path_str, main_branch="main"):
         return None
 
 def parse_semver(version_str):
-    match = re.match(r'^(\d+)\.(\d+)\.(\d+)$', version_str)
+    match = re.match(r'^(\d+)\.(\d+)(?:\.(\d+))?$', version_str)
     if match:
-        return [int(x) for x in match.groups()]
+        major, minor, patch = match.groups()
+        has_patch = patch is not None
+        return [int(major), int(minor), int(patch) if has_patch else 0, has_patch]
     return None
 
 def bump_version(version_str, bump_type):
     parts = parse_semver(version_str)
     if not parts:
-        print(f"Error: Version '{version_str}' is not a valid Semantic Version (x.y.z). Please correct the '@version' tag in the script header.")
+        print(f"Error: Version '{version_str}' is not a valid Semantic Version (x.y or x.y.z). Please correct the '@version' tag in the script header.")
         return None
-    major, minor, patch = parts
+    major, minor, patch, has_patch = parts
     if bump_type == 'patch':
+        if not has_patch:
+            return f"{major}.{minor}.1"
         return f"{major}.{minor}.{patch + 1}"
     elif bump_type == 'minor':
+        if not has_patch:
+            return f"{major}.{minor + 1}"
         return f"{major}.{minor + 1}.0"
     elif bump_type == 'major':
+        if not has_patch:
+            return f"{major + 1}.0"
         return f"{major + 1}.0.0"
     return None
 
@@ -691,8 +699,69 @@ def do_release(non_interactive=False, json_output=False, bump_strategy="auto", s
             subprocess.run(['git', 'stash', 'pop'], check=True)
             print()
 
+def do_bump(bump_type="patch", scripts_filter="all", json_output=False):
+    repo_root = Path(__file__).resolve().parent.parent
+    main_branch = get_main_branch_name()
+
+    diff_files = get_git_stdout(['git', 'diff', '--name-only', main_branch, '--', 'src/', 'lib/']).splitlines()
+    untracked_files = get_git_stdout(['git', 'ls-files', '--others', '--exclude-standard', '--', 'src/', 'lib/']).splitlines()
+    modified_files = run_cmd("git diff --name-only HEAD -- src/ lib/").splitlines()
+
+    all_files = sorted(list(set(diff_files + untracked_files + modified_files)))
+    userscripts = [f for f in all_files if f.endswith('.user.js') or (f.startswith('lib/') and f.endswith('.js'))]
+
+    if not userscripts:
+        print(f"\n{COLOR_CYAN}No modified or unreleased scripts found in src/ or lib/.{COLOR_RESET}\n")
+        return 0
+
+    bumped_results = []
+    for rel_path_str in userscripts:
+        full_path = repo_root / rel_path_str
+        if not full_path.exists():
+            continue
+
+        try:
+            current_content = full_path.read_text(encoding='utf-8')
+        except Exception:
+            continue
+
+        curr_ver, curr_name = extract_version_and_name(current_content)
+        if not curr_ver:
+            continue
+
+        main_content = get_main_file_content(rel_path_str, main_branch)
+        main_ver = None
+        if main_content is not None:
+            main_ver, _ = extract_version_and_name(main_content)
+
+        # Determine target version
+        base_ver = main_ver or curr_ver
+        if curr_ver != main_ver:
+            base_ver = curr_ver
+
+        new_ver = bump_version(base_ver, bump_type)
+
+        if new_ver and new_ver != curr_ver:
+            if update_version_in_file(full_path, new_ver):
+                bumped_results.append({
+                    'rel_path': rel_path_str,
+                    'name': curr_name or full_path.name,
+                    'old_version': curr_ver,
+                    'new_version': new_ver,
+                    'main_version': main_ver
+                })
+
+    if json_output:
+        print(json.dumps({'bumped': bumped_results}, indent=2))
+    else:
+        print(f"\n{COLOR_CYAN}{COLOR_BOLD}Batch {bump_type.upper()} Version Bump Results ({len(bumped_results)} scripts bumped):{COLOR_RESET}")
+        for r in bumped_results:
+            print(f"  * {r['name']} ({r['old_version']} -> {COLOR_GREEN}{COLOR_BOLD}{r['new_version']}{COLOR_RESET})")
+        print()
+    return 0
+
 def resolve_command(arg):
-    commands = ['check', 'cleanup', 'release', 'build']
+    commands = ['check', 'cleanup', 'release', 'build', 'bump']
     if arg in commands:
         return arg
 
@@ -731,6 +800,12 @@ def main():
     release_parser.add_argument("--commit-type", "-t", default=None, help="Custom commit type override for new commits (e.g. fix, feat, refactor)")
     release_parser.add_argument("--commit-msg", "-m", default=None, help="Custom commit description override for new commits")
 
+    # Subcommand: bump
+    bump_cmd_parser = subparsers.add_parser("bump", help="Batch bump version tags for modified/unreleased userscripts")
+    bump_cmd_parser.add_argument("--bump-type", choices=["patch", "minor", "major"], default="patch", help="Bump strategy (default: patch)")
+    bump_cmd_parser.add_argument("--scripts", default="all", help="Comma-separated script paths or 'all' (default: all)")
+    bump_cmd_parser.add_argument("--json", action="store_true", help="Output JSON results")
+
     # Subcommand: build
     subparsers.add_parser("build", help="Rebuild docs/USERSCRIPTS.md markdown listing")
 
@@ -743,6 +818,8 @@ def main():
             sys.exit(do_check(json_format=json_flag, concise=concise_flag))
         elif args.command == "cleanup":
             do_cleanup(args.branch, args.main_branch)
+        elif args.command == "bump":
+            do_bump(bump_type=args.bump_type, scripts_filter=args.scripts, json_output=getattr(args, 'json', False))
         elif args.command == "release":
             do_release(
                 non_interactive=args.non_interactive,
