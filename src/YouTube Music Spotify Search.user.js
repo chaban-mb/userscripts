@@ -1,19 +1,15 @@
 // ==UserScript==
-// @name        YouTube Music: Spotify Search
-// @namespace   https://musicbrainz.org/user/chaban
-// @version     1.1.4
-// @description Adds a context-aware "Search on Spotify" item to the menu for songs and albums.
-// @tag         ai-created
-// @author      chaban
-// @license     MIT
-// @homepageURL https://github.com/chaban-mb/userscripts
-// @supportURL  https://github.com/chaban-mb/userscripts/issues
-// @match       https://music.youtube.com/*
-// @connect     spotify.com
-// @icon        https://music.youtube.com/img/favicon_144.png
-// @grant       GM.openInTab
-// @updateURL   https://github.com/chaban-mb/userscripts/raw/dist/src/YouTube%20Music%20Spotify%20Search.user.js
-// @downloadURL https://github.com/chaban-mb/userscripts/raw/dist/src/YouTube%20Music%20Spotify%20Search.user.js
+// @name         YouTube Music: Spotify Search
+// @namespace    https://musicbrainz.org/user/chaban
+// @version      1.1.0
+// @description  Adds a context-aware "Search on Spotify" item to the menu for songs and albums.
+// @author       chaban
+// @license      MIT
+// @match        https://music.youtube.com/*
+// @connect      spotify.com
+// @grant        GM_openInTab
+// @updateURL    https://github.com/chaban-mb/userscripts/raw/dist/src/YouTube%20Music%20Spotify%20Search.user.js
+// @downloadURL  https://github.com/chaban-mb/userscripts/raw/dist/src/YouTube%20Music%20Spotify%20Search.user.js
 // ==/UserScript==
 
 (function() {
@@ -214,7 +210,7 @@
             event.preventDefault();
             event.stopPropagation();
             const spotifyUrl = `https://open.spotify.com/search/${encodeURIComponent(context.query)}`;
-            GM.openInTab(spotifyUrl, { active: true });
+            GM_openInTab(spotifyUrl, { active: true });
             if (menu?.close) menu.close();
         }, true);
 
