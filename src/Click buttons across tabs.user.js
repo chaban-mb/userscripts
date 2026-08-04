@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Click buttons across tabs
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      4.10.4
+// @version      4.10.5
 // @tag          ai-created
 // @description  Clicks specified buttons across tabs using the Broadcast Channel API and closes tabs after successful submission.
 // @author       chaban
@@ -27,7 +27,7 @@
 
     const scriptName = GM.info.script.name;
     const tabId = `[${Math.random().toString(36).substring(2, 6)}]`;
-    console.log(`%c[${scriptName}] ${tabId} Script initialization started on ${location.href}`, 'font-weight: bold;');
+    console.debug(`[${scriptName}] ${tabId} Script initialization started on ${location.href}`);
 
     const SUBMISSION_TRIGGERED_FLAG = 'broadcastChannelSubmissionState';
     const REFERRER_CLOSE_TRIGGERED_FLAG = 'referrerCloseTriggeredState';
@@ -56,9 +56,9 @@
     const navEntry = performance.getEntriesByType('navigation')[0];
     if (navEntry && navEntry.type === 'reload') {
         sessionStorage.removeItem(SUBMISSION_TRIGGERED_FLAG);
-        console.log(`%c[${scriptName}] ${tabId} Manual reload detected — cleared ${SUBMISSION_TRIGGERED_FLAG}`, 'font-weight: bold; color: #d97706;');
+        console.debug(`[${scriptName}] ${tabId} Manual reload detected — cleared ${SUBMISSION_TRIGGERED_FLAG}`);
     } else {
-        console.log(`%c[${scriptName}] ${tabId} Navigation type "${navEntry?.type || 'navigate'}" — retaining session state`, 'font-weight: bold;');
+        console.debug(`[${scriptName}] ${tabId} Navigation type "${navEntry?.type || 'navigate'}" — retaining session state`);
     }
 
     /**
@@ -76,7 +76,7 @@
                 try {
                     pc.close();
                 } catch (e) {
-                    console.error('Error closing RTCPeerConnection:', e);
+                    console.error(`[${scriptName}] ${tabId} Failed closing RTCPeerConnection:`, e);
                 }
             });
             activeKeepAlives = [];
@@ -115,7 +115,7 @@
             await pc1.setRemoteDescription(answer);
             activeKeepAlives = [pc1, pc2];
         } catch (e) {
-            console.error('Failed to initialize WebRTC throttling bypass:', e);
+            console.error(`[${scriptName}] ${tabId} Failed to initialize WebRTC throttling bypass:`, { href: location.href, error: e });
             teardownThrottlingBypass('Initialization failure');
         }
     }
@@ -244,7 +244,9 @@
                                     const val = Array.isArray(entry) ? entry[1] : entry;
                                     traverse(val);
                                 }
-                            } catch (e) {}
+                            } catch (e) {
+                                console.debug(`[${scriptName}] WBT node traversal fallback:`, e);
+                            }
                             return;
                         }
 
@@ -291,7 +293,9 @@
                                                 result.push(link);
                                             }
                                             return result;
-                                        } catch (e) {}
+                                        } catch (e) {
+                                            console.debug(`[${scriptName}] Tree iterate fallback for external links:`, e);
+                                        }
                                     }
                                     if (linksTree && typeof linksTree.values === 'function') {
                                         return Array.from(linksTree.values());
@@ -320,7 +324,9 @@
                                 }
                                 return false;
                             }
-                        } catch (e) {}
+                        } catch (e) {
+                            console.debug(`[${scriptName}] External links viewmodel check fallback:`, e);
+                        }
                     }
 
                     // 2. DOM Highlight Fallback (Standalone Entity Editors)
@@ -1022,7 +1028,7 @@
                     }
                 }
             } catch (e) {
-                console.error(`[${scriptName}] Error parsing pending submission state:`, e);
+                console.error(`[${scriptName}] ${tabId} Error parsing pending submission state:`, { key: SUBMISSION_TRIGGERED_FLAG, error: e });
                 sessionStorage.removeItem(SUBMISSION_TRIGGERED_FLAG);
             }
         }
@@ -1126,7 +1132,7 @@
                     return;
                 }
             } catch (e) {
-                console.error(`[${scriptName}] Error during referrer-close check:`, e);
+                console.error(`[${scriptName}] ${tabId} Error during referrer-close check:`, { referrer: document.referrer, error: e });
             }
         }
 
@@ -1142,7 +1148,7 @@
                 c.channelName === state.channel && c.messageTrigger === state.messageTrigger
             );
         } catch (e) {
-            console.error(`[${scriptName}] Error parsing submission state:`, e);
+            console.error(`[${scriptName}] ${tabId} Error parsing submission state:`, { flag: submissionFlag, error: e });
             sessionStorage.removeItem(SUBMISSION_TRIGGERED_FLAG);
             return;
         }
