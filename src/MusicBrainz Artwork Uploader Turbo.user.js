@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MusicBrainz: Artwork Uploader Turbo
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      3.3.8
+// @version      3.3.9
 // @tag          ai-created
 // @description  Allows for multiple artwork images to be uploaded simultaneously and recursively upload directories.
 // @author       chaban
@@ -596,7 +596,7 @@
                                         ArtworkUploaderTurbo.logger.log(`[DEBUG] Successfully refreshed signature for ${file.name}`);
                                         continue; // retry submission
                                     } catch (refreshError) {
-                                        ArtworkUploaderTurbo.logger.error(`Error refreshing signature for ${file.name}:`, refreshError);
+                                        ArtworkUploaderTurbo.logger.error(`Failed to refresh signature`, { fileName: file.name, gid: this.gid, error: refreshError });
                                         if (!(await this._handleRetry(file, [refreshError]))) break;
                                     }
                                 }
