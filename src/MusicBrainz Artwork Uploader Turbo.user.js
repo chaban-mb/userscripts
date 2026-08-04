@@ -1,20 +1,18 @@
 // ==UserScript==
-// @name        MusicBrainz: Artwork Uploader Turbo
-// @namespace   https://musicbrainz.org/user/chaban
-// @version     3.3.11
-// @description Allows for multiple artwork images to be uploaded simultaneously and recursively upload directories.
-// @tag         ai-created
-// @author      chaban
-// @license     MIT
-// @homepageURL https://github.com/chaban-mb/userscripts
-// @supportURL  https://github.com/chaban-mb/userscripts/issues
-// @match       *://*.musicbrainz.org/release/*/add-cover-art*
-// @match       *://*.musicbrainz.org/event/*/add-event-art*
-// @icon        https://musicbrainz.org/static/images/favicons/android-chrome-512x512.png
-// @grant       none
-// @run-at      document-start
-// @updateURL   https://github.com/chaban-mb/userscripts/raw/dist/src/MusicBrainz%20Artwork%20Uploader%20Turbo.user.js
-// @downloadURL https://github.com/chaban-mb/userscripts/raw/dist/src/MusicBrainz%20Artwork%20Uploader%20Turbo.user.js
+// @name         MusicBrainz: Artwork Uploader Turbo
+// @namespace    https://musicbrainz.org/user/chaban
+// @version      3.3.8
+// @tag          ai-created
+// @description  Allows for multiple artwork images to be uploaded simultaneously and recursively upload directories.
+// @author       chaban
+// @license      MIT
+// @match        *://*.musicbrainz.org/release/*/add-cover-art*
+// @match        *://*.musicbrainz.org/event/*/add-event-art*
+// @grant        none
+// @icon         https://musicbrainz.org/static/images/favicons/android-chrome-512x512.png
+// @run-at       document-start
+// @updateURL    https://github.com/chaban-mb/userscripts/raw/dist/src/MusicBrainz%20Artwork%20Uploader%20Turbo.user.js
+// @downloadURL  https://github.com/chaban-mb/userscripts/raw/dist/src/MusicBrainz%20Artwork%20Uploader%20Turbo.user.js
 // ==/UserScript==
 
 (function () {
@@ -597,7 +595,7 @@
                                         ArtworkUploaderTurbo.logger.log(`[DEBUG] Successfully refreshed signature for ${file.name}`);
                                         continue; // retry submission
                                     } catch (refreshError) {
-                                        ArtworkUploaderTurbo.logger.error(`Failed to refresh signature`, { fileName: file.name, gid: this.gid, error: refreshError });
+                                        ArtworkUploaderTurbo.logger.error(`Error refreshing signature for ${file.name}:`, refreshError);
                                         if (!(await this._handleRetry(file, [refreshError]))) break;
                                     }
                                 }
