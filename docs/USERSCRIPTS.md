@@ -581,7 +581,7 @@ Quickly deselect all checkboxes on the page by pressing the <kbd>Esc</kbd> key.
 - **Keyboard Shortcut:** Clears selection without manual clicking.
 - **Targeted Selection:** Primarily focused on checkboxes used for merging and within the release relationship editor.
 
-## MusicBrainz: Warn on significant length differences during recording merge (MBS-10966)
+## MusicBrainz: Warn on significant length differences during recording merge
 
 [![Install](https://img.shields.io/badge/Install-success.svg?style=for-the-badge&logo=tampermonkey)](https://github.com/chaban-mb/userscripts/raw/main/src/MusicBrainz%20Warn%20on%20significant%20length%20differences%20during%20recording%20merge.user.js)
 [![Source](https://img.shields.io/badge/Source-grey.svg?style=for-the-badge&logo=github)](https://github.com/chaban-mb/userscripts/blob/main/src/MusicBrainz%20Warn%20on%20significant%20length%20differences%20during%20recording%20merge.user.js)
