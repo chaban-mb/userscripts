@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        Click buttons across tabs
 // @namespace   https://musicbrainz.org/user/chaban
-// @version     4.10.6
+// @version     4.10.7
 // @description Clicks specified buttons across tabs using the Broadcast Channel API and closes tabs after successful submission.
 // @tag         ai-created
 // @author      chaban
@@ -27,7 +27,8 @@
 
     const scriptName = GM.info.script.name;
     const tabId = `[${Math.random().toString(36).substring(2, 6)}]`;
-    console.debug(`[${scriptName}] ${tabId} Script initialization started on ${location.href}`);
+    const getTimestamp = () => new Date().toISOString();
+    console.debug(`[${scriptName}] [${getTimestamp()}] ${tabId} Script initialization started on ${location.href}`);
 
     const SUBMISSION_TRIGGERED_FLAG = 'broadcastChannelSubmissionState';
     const REFERRER_CLOSE_TRIGGERED_FLAG = 'referrerCloseTriggeredState';
@@ -56,9 +57,9 @@
     const navEntry = performance.getEntriesByType('navigation')[0];
     if (navEntry && navEntry.type === 'reload') {
         sessionStorage.removeItem(SUBMISSION_TRIGGERED_FLAG);
-        console.debug(`[${scriptName}] ${tabId} Manual reload detected — cleared ${SUBMISSION_TRIGGERED_FLAG}`);
+        console.debug(`[${scriptName}] [${getTimestamp()}] ${tabId} Manual reload detected — cleared ${SUBMISSION_TRIGGERED_FLAG}`);
     } else {
-        console.debug(`[${scriptName}] ${tabId} Navigation type "${navEntry?.type || 'navigate'}" — retaining session state`);
+        console.debug(`[${scriptName}] [${getTimestamp()}] ${tabId} Navigation type "${navEntry?.type || 'navigate'}" — retaining session state`);
     }
 
     /**
@@ -76,7 +77,7 @@
                 try {
                     pc.close();
                 } catch (e) {
-                    console.error(`[${scriptName}] ${tabId} Failed closing RTCPeerConnection:`, e);
+                    console.error(`[${scriptName}] [${getTimestamp()}] ${tabId} Failed closing RTCPeerConnection:`, e);
                 }
             });
             activeKeepAlives = [];
@@ -115,7 +116,7 @@
             await pc1.setRemoteDescription(answer);
             activeKeepAlives = [pc1, pc2];
         } catch (e) {
-            console.error(`[${scriptName}] ${tabId} Failed to initialize WebRTC throttling bypass:`, { href: location.href, error: e });
+            console.error(`[${scriptName}] [${getTimestamp()}] ${tabId} Failed to initialize WebRTC throttling bypass:`, { href: location.href, error: e });
             teardownThrottlingBypass('Initialization failure');
         }
     }
@@ -245,7 +246,7 @@
                                     traverse(val);
                                 }
                             } catch (e) {
-                                console.debug(`[${scriptName}] WBT node traversal fallback:`, e);
+                                console.debug(`[${scriptName}] [${getTimestamp()}] WBT node traversal fallback:`, e);
                             }
                             return;
                         }
@@ -294,7 +295,7 @@
                                             }
                                             return result;
                                         } catch (e) {
-                                            console.debug(`[${scriptName}] Tree iterate fallback for external links:`, e);
+                                            console.debug(`[${scriptName}] [${getTimestamp()}] Tree iterate fallback for external links:`, e);
                                         }
                                     }
                                     if (linksTree && typeof linksTree.values === 'function') {
@@ -325,7 +326,7 @@
                                 return false;
                             }
                         } catch (e) {
-                            console.debug(`[${scriptName}] External links viewmodel check fallback:`, e);
+                            console.debug(`[${scriptName}] [${getTimestamp()}] External links viewmodel check fallback:`, e);
                         }
                     }
 
@@ -722,7 +723,7 @@
             tabId,
             message,
             color,
-            timestamp: new Date().toISOString(),
+            timestamp: getTimestamp(),
         });
     }
 
@@ -1028,7 +1029,7 @@
                     }
                 }
             } catch (e) {
-                console.error(`[${scriptName}] ${tabId} Error parsing pending submission state:`, { key: SUBMISSION_TRIGGERED_FLAG, error: e });
+                console.error(`[${scriptName}] [${getTimestamp()}] ${tabId} Error parsing pending submission state:`, { key: SUBMISSION_TRIGGERED_FLAG, error: e });
                 sessionStorage.removeItem(SUBMISSION_TRIGGERED_FLAG);
             }
         }
@@ -1132,7 +1133,7 @@
                     return;
                 }
             } catch (e) {
-                console.error(`[${scriptName}] ${tabId} Error during referrer-close check:`, { referrer: document.referrer, error: e });
+                console.error(`[${scriptName}] [${getTimestamp()}] ${tabId} Error during referrer-close check:`, { referrer: document.referrer, error: e });
             }
         }
 
@@ -1148,7 +1149,7 @@
                 c.channelName === state.channel && c.messageTrigger === state.messageTrigger
             );
         } catch (e) {
-            console.error(`[${scriptName}] ${tabId} Error parsing submission state:`, { flag: submissionFlag, error: e });
+            console.error(`[${scriptName}] [${getTimestamp()}] ${tabId} Error parsing submission state:`, { flag: submissionFlag, error: e });
             sessionStorage.removeItem(SUBMISSION_TRIGGERED_FLAG);
             return;
         }
