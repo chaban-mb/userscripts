@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        Click buttons across tabs
 // @namespace   https://musicbrainz.org/user/chaban
-// @version     4.10.7
+// @version     4.10.8
 // @description Clicks specified buttons across tabs using the Broadcast Channel API and closes tabs after successful submission.
 // @tag         ai-created
 // @author      chaban
@@ -246,7 +246,7 @@
                                     traverse(val);
                                 }
                             } catch (e) {
-                                console.debug(`[${scriptName}] [${getTimestamp()}] WBT node traversal fallback:`, e);
+                                console.debug(`[${scriptName}] [${getTimestamp()}] ${tabId} WBT node traversal fallback:`, e);
                             }
                             return;
                         }
@@ -295,7 +295,7 @@
                                             }
                                             return result;
                                         } catch (e) {
-                                            console.debug(`[${scriptName}] [${getTimestamp()}] Tree iterate fallback for external links:`, e);
+                                            console.debug(`[${scriptName}] [${getTimestamp()}] ${tabId} Tree iterate fallback for external links:`, e);
                                         }
                                     }
                                     if (linksTree && typeof linksTree.values === 'function') {
@@ -326,7 +326,7 @@
                                 return false;
                             }
                         } catch (e) {
-                            console.debug(`[${scriptName}] [${getTimestamp()}] External links viewmodel check fallback:`, e);
+                            console.debug(`[${scriptName}] [${getTimestamp()}] ${tabId} External links viewmodel check fallback:`, e);
                         }
                     }
 
@@ -1211,7 +1211,7 @@
         wrapHistoryMethod('replaceState', evaluatePageForClosure);
         window.addEventListener('popstate', evaluatePageForClosure);
 
-        debugLog(`Initialization finished.`);
+        console.debug(`[${scriptName}] [${getTimestamp()}] ${tabId} Initialization finished.`);
     }
 
     main();
