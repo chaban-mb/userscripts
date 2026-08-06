@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        Click buttons across tabs
 // @namespace   https://musicbrainz.org/user/chaban
-// @version     4.10.8
+// @version     4.10.9
 // @description Clicks specified buttons across tabs using the Broadcast Channel API and closes tabs after successful submission.
 // @tag         ai-created
 // @author      chaban
@@ -53,6 +53,134 @@
     let activeClosureObserver = null;
     let activeKeepAlives = [];
     let throttlingBypassTimer = null;
+
+    const initialFormSnapshots = new Map();
+    let hydrationCaptured = false;
+    let hydrationListenerAdded = false;
+
+    const normalizeText = (str) => {
+        if (typeof str !== 'string') return str;
+        return str.replace(/\u00a0/g, ' ').trim();
+    };
+
+    /**
+     * Finds all edit forms on the page (matching MusicBrainz edit, create, add, merge, reorder, cover art, and event art forms).
+     * @returns {HTMLFormElement[]} Array of edit form elements.
+     */
+    const getEditForms = () => {
+        return Array.from(document.forms).filter(form => {
+            const action = form.getAttribute('action') || '';
+            const className = form.className || '';
+            const id = form.id || '';
+            return className.includes('edit-') || className.includes('cover-art') || className.includes('event-art') ||
+                   action.includes('/edit') || action.includes('/add') || action.includes('/reorder') || action.includes('/create') || action.includes('/merge') ||
+                   id.includes('reorder') ||
+                   form.closest('#release-editor, #relationship-editor, #external-links-editor, #reorder-cover-art, #reorder-event-art') !== null;
+        });
+    };
+
+    /**
+     * Generates a key-value snapshot map of standard HTML form inputs via FormData.
+     * @param {HTMLFormElement} form - Target form element.
+     * @returns {Map<string, string[]>} Map of form input keys to sorted array values.
+     */
+    const getFormDataMap = (form) => {
+        const map = new Map();
+        try {
+            const formData = new FormData(form);
+            const removedKeys = new Set();
+
+            for (const [key, val] of formData.entries()) {
+                if (key.endsWith('.removed') && val === '1') {
+                    removedKeys.add(key.slice(0, -8));
+                }
+            }
+
+            for (const [key, val] of formData.entries()) {
+                if (!key || key.includes('csrf') || key.includes('confirm') || key === 'tag' || key.includes('edit_note') || key.includes('edit-note')) continue;
+                if (key.endsWith('.removed')) continue;
+                if (removedKeys.has(key)) continue;
+
+                const cleanVal = normalizeText(val);
+                if (!cleanVal) continue;
+
+                // Group indexed keys e.g. "edit-recording.isrcs.3" -> "edit-recording.isrcs"
+                const groupKey = key.replace(/\.\d+$/, '');
+
+                if (!map.has(groupKey)) map.set(groupKey, []);
+                map.get(groupKey).push(cleanVal);
+            }
+
+            for (const arr of map.values()) {
+                arr.sort();
+            }
+        } catch (e) {}
+        return map;
+    };
+
+    /**
+     * Initializes baseline snapshots of active edit forms on page load and hydration events.
+     */
+    function initFormSnapshots() {
+        const editForms = getEditForms();
+        if (!hydrationCaptured) {
+            editForms.forEach(form => {
+                if (!initialFormSnapshots.has(form)) {
+                    initialFormSnapshots.set(form, getFormDataMap(form));
+                }
+            });
+        }
+
+        if (!hydrationListenerAdded) {
+            hydrationListenerAdded = true;
+
+            const refreshBaseline = () => {
+                setTimeout(() => {
+                    const currentForms = getEditForms();
+                    currentForms.forEach(form => {
+                        initialFormSnapshots.set(form, getFormDataMap(form));
+                    });
+                    hydrationCaptured = true;
+                }, 100);
+            };
+
+            if (document.readyState === 'complete') {
+                refreshBaseline();
+            } else {
+                window.addEventListener('load', refreshBaseline, { once: true });
+            }
+
+            document.addEventListener('mb-hydration', refreshBaseline);
+        }
+    }
+
+    /**
+     * Programmatically checks standard HTML form inputs via FormData snapshots.
+     * @returns {boolean} True if any form data field differs from its baseline snapshot.
+     */
+    const hasDirtyFormInputs = () => {
+        initFormSnapshots();
+        const editForms = getEditForms();
+
+        for (const form of editForms) {
+            if (!initialFormSnapshots.has(form)) {
+                initialFormSnapshots.set(form, getFormDataMap(form));
+            }
+            const initialMap = initialFormSnapshots.get(form);
+            const currentMap = getFormDataMap(form);
+
+            const allKeys = new Set([...initialMap.keys(), ...currentMap.keys()]);
+            for (const key of allKeys) {
+                const origVals = initialMap.get(key) || [];
+                const currVals = currentMap.get(key) || [];
+
+                if (origVals.join(', ') !== currVals.join(', ')) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    };
 
     const navEntry = performance.getEntriesByType('navigation')[0];
     if (navEntry && navEntry.type === 'reload') {
@@ -342,116 +470,6 @@
                         .filter(input => input.value.trim() !== '');
                     if (newInputs.length > 0) return true;
 
-                    return false;
-                };
-
-                const normalizeText = (str) => {
-                    if (typeof str !== 'string') return str;
-                    return str.replace(/\u00a0/g, ' ').trim();
-                };
-
-                /**
-                 * Programmatically checks standard HTML form inputs (name, artist credit, ISRCs, dates, comment, edit_note) via FormData snapshots.
-                 * @returns {boolean} True if any form data field differs from its initial page load snapshot.
-                 */
-                const getFormDataMap = (form) => {
-                    const map = new Map();
-                    try {
-                        const formData = new FormData(form);
-                        const removedKeys = new Set();
-
-                        for (const [key, val] of formData.entries()) {
-                            if (key.endsWith('.removed') && val === '1') {
-                                removedKeys.add(key.slice(0, -8));
-                            }
-                        }
-
-                        for (const [key, val] of formData.entries()) {
-                            if (!key || key.includes('csrf') || key.includes('confirm') || key === 'tag' || key.includes('edit_note') || key.includes('edit-note')) continue;
-                            if (key.endsWith('.removed')) continue;
-                            if (removedKeys.has(key)) continue;
-
-                            const cleanVal = normalizeText(val);
-                            if (!cleanVal) continue;
-
-                            // Group indexed keys e.g. "edit-recording.isrcs.3" -> "edit-recording.isrcs"
-                            const groupKey = key.replace(/\.\d+$/, '');
-
-                            if (!map.has(groupKey)) map.set(groupKey, []);
-                            map.get(groupKey).push(cleanVal);
-                        }
-
-                        for (const arr of map.values()) {
-                            arr.sort();
-                        }
-                    } catch (e) {}
-                    return map;
-                };
-
-                const initialFormSnapshots = new Map();
-                let hydrationCaptured = false;
-                let hydrationListenerAdded = false;
-
-                const getEditForms = () => {
-                    return Array.from(document.forms).filter(form => {
-                        const action = form.getAttribute('action') || '';
-                        const className = form.className || '';
-                        return className.includes('edit-') ||
-                               action.includes('/edit') || action.includes('/add') || action.includes('/create') || action.includes('/merge') ||
-                               form.closest('#release-editor, #relationship-editor, #external-links-editor') !== null;
-                    });
-                };
-
-                const hasDirtyFormInputs = () => {
-                    const editForms = getEditForms();
-                    
-                    if (!hydrationCaptured) {
-                        editForms.forEach(form => {
-                            if (!initialFormSnapshots.has(form)) {
-                                initialFormSnapshots.set(form, getFormDataMap(form));
-                            }
-                        });
-                    }
-
-                    if (!hydrationListenerAdded) {
-                        hydrationListenerAdded = true;
-
-                        const refreshBaseline = () => {
-                            setTimeout(() => {
-                                const currentForms = getEditForms();
-                                currentForms.forEach(form => {
-                                    initialFormSnapshots.set(form, getFormDataMap(form));
-                                });
-                                hydrationCaptured = true;
-                            }, 100);
-                        };
-
-                        if (document.readyState === 'complete') {
-                            refreshBaseline();
-                        } else {
-                            window.addEventListener('load', refreshBaseline, { once: true });
-                        }
-
-                        document.addEventListener('mb-hydration', refreshBaseline);
-                    }
-
-                    for (const form of editForms) {
-                        if (!initialFormSnapshots.has(form)) {
-                            initialFormSnapshots.set(form, getFormDataMap(form));
-                        }
-                        const initialMap = initialFormSnapshots.get(form);
-                        const currentMap = getFormDataMap(form);
-
-                        const allKeys = new Set([...initialMap.keys(), ...currentMap.keys()]);
-                        for (const key of allKeys) {
-                            const origVals = initialMap.get(key) || [];
-                            const currVals = currentMap.get(key) || [];
-
-                            if (origVals.join(', ') !== currVals.join(', ')) {
-                                return true;
-                            }
-                        }
-                    }
                     return false;
                 };
 
@@ -1206,7 +1224,10 @@
 
         setupMagicISRC();
 
-        onDOMLoaded(evaluatePageForClosure);
+        onDOMLoaded(() => {
+            initFormSnapshots();
+            evaluatePageForClosure();
+        });
         wrapHistoryMethod('pushState', evaluatePageForClosure);
         wrapHistoryMethod('replaceState', evaluatePageForClosure);
         window.addEventListener('popstate', evaluatePageForClosure);
