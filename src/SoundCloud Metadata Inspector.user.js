@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        SoundCloud Metadata Inspector
 // @namespace   https://github.com/chaban-mb/userscripts
-// @version     1.1.1
+// @version     1.1.2
 // @description Metadata inspector for viewing hidden data like ISRC, UPCs, timestamps, etc.
 // @tag         ai-created
 // @author      chaban
@@ -1049,9 +1049,10 @@
         spec.sections.forEach((sec) => {
             if (sec.title) lines.push(`## ${sec.title}`);
             if (sec.items && sec.items.length > 0) {
-                sec.items.forEach(([label, textVal]) => {
+                sec.items.forEach(([label, textVal, opts]) => {
                     if (label && !isEmptyVal(textVal)) {
-                        lines.push(`- **${label}:** ${textVal}`);
+                        const badgeSuffix = opts?.sourceBadge ? ` (${opts.sourceBadge})` : "";
+                        lines.push(`- **${label}:** ${textVal}${badgeSuffix}`);
                     }
                 });
             }
@@ -1323,8 +1324,12 @@
      * @returns {Array<[string, string, Element|null, Element|null, boolean]>} Array of timeline row specifications.
      */
     function parseReleaseTimeline(meta) {
-        const makeReleaseBadge = () => badge("orange", "RELEASE");
-        const makeTrackBadge = () => meta.isPlaylist ? badge("blue", "TRACKS") : badge("gray", "TRACK");
+        const trackBadgeText = meta.isPlaylist ? "TRACKS" : "TRACK";
+        const releaseBadgeText = "RELEASE";
+        const combinedBadgeText = `RELEASE, ${trackBadgeText}`;
+
+        const makeReleaseBadge = () => badge("orange", releaseBadgeText);
+        const makeTrackBadge = () => meta.isPlaylist ? badge("blue", trackBadgeText) : badge("gray", trackBadgeText);
         const makeCombinedBadges = () => el("div", { className: "sc-badge-group" }, [makeReleaseBadge(), makeTrackBadge()]);
 
         const relDates = {
@@ -1363,19 +1368,19 @@
             const rVal = relDates[key];
             const tVal = trkDates[key];
             const fieldKey = dateKeyMap[key];
-            const opts = fieldKey ? getFieldSpecOptions(fieldKey, meta) : null;
+            const baseOpts = fieldKey ? getFieldSpecOptions(fieldKey, meta) : {};
 
             if (rVal && tVal) {
                 if (rVal === tVal) {
-                    timelineItems.push([key, rVal, opts, makeCombinedBadges()]);
+                    timelineItems.push([key, rVal, { ...baseOpts, sourceBadge: combinedBadgeText }, makeCombinedBadges()]);
                 } else {
-                    timelineItems.push([key, rVal, opts, makeReleaseBadge()]);
-                    timelineItems.push([key, tVal, null, makeTrackBadge()]);
+                    timelineItems.push([key, rVal, { ...baseOpts, sourceBadge: releaseBadgeText }, makeReleaseBadge()]);
+                    timelineItems.push([key, tVal, { sourceBadge: trackBadgeText }, makeTrackBadge()]);
                 }
             } else if (rVal) {
-                timelineItems.push([key, rVal, opts, makeReleaseBadge()]);
+                timelineItems.push([key, rVal, { ...baseOpts, sourceBadge: releaseBadgeText }, makeReleaseBadge()]);
             } else if (tVal) {
-                timelineItems.push([key, tVal, null, makeTrackBadge()]);
+                timelineItems.push([key, tVal, { sourceBadge: trackBadgeText }, makeTrackBadge()]);
             }
         });
 
@@ -2029,7 +2034,9 @@
                     el("div", { className: "sc-entity-details" }, [
                         el("span", { className: "sc-entity-title-truncate", textContent: spec.title }),
                         el("span", { className: "sc-entity-subtitle" }, [
-                            el("a", { href: spec.profileUrl, target: "_blank", className: "sc-entity-subtitle-link", textContent: `by ${spec.user}` })
+                            spec.profileUrl
+                                ? el("a", { href: spec.profileUrl, target: "_blank", className: "sc-entity-subtitle-link", textContent: spec.user })
+                                : document.createTextNode(spec.user)
                         ])
                     ])
                 ]));
