@@ -200,7 +200,7 @@ def prompt_user(prompt_msg, default='', non_interactive=False, auto_choice=None)
     res = input(prompt_msg).strip()
     return res if res else str(default)
 
-def do_release(non_interactive=False, json_output=False, bump_strategy="auto", scripts_filter="all", custom_commit_type=None, custom_commit_msg=None, dry_run=False):
+def do_release(non_interactive=False, json_output=False, bump_strategy="auto", scripts_filter="all", custom_commit_type=None, custom_commit_msg=None, dry_run=False, apply_push=False):
     remote = get_git_remote()
     main_branch = get_main_branch_name(remote)
     commits_created = 0
@@ -605,7 +605,7 @@ def do_release(non_interactive=False, json_output=False, bump_strategy="auto", s
         print(f"      {COLOR_CYAN}git rebase {main_branch}{COLOR_RESET}")
         print(f"      {COLOR_CYAN}git push {remote} {release_branch} --force-with-lease{COLOR_RESET}\n")
 
-    auto_apply = 'n' if non_interactive else 'y'
+    auto_apply = 'y' if apply_push else ('n' if non_interactive else 'y')
     confirm = prompt_user(f"{COLOR_BOLD}Do you want to apply these operations and push changes? (y/N):{COLOR_RESET} ", default='y', non_interactive=non_interactive, auto_choice=auto_apply).lower()
     if confirm != 'y':
         print(f"\n{COLOR_YELLOW}Release finalized locally on current branch ('{release_branch}'). Merging and pushing to '{main_branch}' skipped (releasing to main requires human execution).{COLOR_RESET}")
@@ -793,6 +793,7 @@ def main():
     # Subcommand: release
     release_parser = subparsers.add_parser("release", help="Release assistant for version bumping, list rebuilding and branch syncing")
     release_parser.add_argument("--non-interactive", "-y", "--auto", action="store_true", help="Automated non-interactive mode for LLM execution")
+    release_parser.add_argument("--push", "--apply", "-p", action="store_true", help="Automatically apply git merge/rebase and push operations to remote")
     release_parser.add_argument("--dry-run", "-n", action="store_true", help="Simulate release workflow without creating commits or modifying files")
     release_parser.add_argument("--json", action="store_true", help="Output JSON results")
     release_parser.add_argument("--bump-type", choices=["patch", "minor", "major", "none", "auto"], default="auto", help="Bump strategy in automated mode (default: auto)")
@@ -828,7 +829,8 @@ def main():
                 scripts_filter=args.scripts,
                 custom_commit_type=args.commit_type,
                 custom_commit_msg=args.commit_msg,
-                dry_run=args.dry_run
+                dry_run=args.dry_run,
+                apply_push=args.push
             )
         elif args.command == "build":
             do_build()
