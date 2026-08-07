@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        Click buttons across tabs
 // @namespace   https://musicbrainz.org/user/chaban
-// @version     4.10.9
+// @version     4.11.0
 // @description Clicks specified buttons across tabs using the Broadcast Channel API and closes tabs after successful submission.
 // @tag         ai-created
 // @author      chaban
@@ -73,9 +73,9 @@
             const className = form.className || '';
             const id = form.id || '';
             return className.includes('edit-') || className.includes('cover-art') || className.includes('event-art') ||
-                   action.includes('/edit') || action.includes('/add') || action.includes('/reorder') || action.includes('/create') || action.includes('/merge') ||
-                   id.includes('reorder') ||
-                   form.closest('#release-editor, #relationship-editor, #external-links-editor, #reorder-cover-art, #reorder-event-art') !== null;
+                action.includes('/edit') || action.includes('/add') || action.includes('/reorder') || action.includes('/create') || action.includes('/merge') ||
+                id.includes('reorder') ||
+                form.closest('#release-editor, #relationship-editor, #external-links-editor, #reorder-cover-art, #reorder-event-art') !== null;
         });
     };
 
@@ -114,7 +114,7 @@
             for (const arr of map.values()) {
                 arr.sort();
             }
-        } catch (e) {}
+        } catch (e) { }
         return map;
     };
 
@@ -258,12 +258,12 @@
      * @property {string} [messageTrigger] - The message that triggers the action on the channel.
      * @property {string} [menuCommandName] - The name for the userscript menu command.
      * @property {(RegExp|string)[]} [successUrlPatterns] - URL patterns that indicate a successful submission.
-     * @property {boolean} [shouldCloseAfterSuccess=false] - Whether to close the tab after a successful submission.
      * @property {boolean} [autoClick=false] - Whether to click the button automatically on page load.
      * @property {string} [requiredSetting] - A GM setting key that must be true for this rule to activate.
      * @property {() => boolean} [isNoOp] - A function that checks if the current page state represents a no-op submission.
      * @property {(config: SiteConfig, triggerAction: () => Promise<boolean>) => void} [submissionHandler] - Custom logic to execute when a submission is triggered.
      * @property {{hostnames: string[], paths: (string|RegExp)[]}} [referrerPatterns] - If present, this rule becomes a referrer-based closer.
+     * @property {string[]} [attributeFilter] - Optional array of attribute names to filter MutationObserver attribute changes.
      */
 
     /** @type {SiteConfig[]} */
@@ -273,7 +273,6 @@
             hostnames: ['musicbrainz.org'],
             paths: ['/merge', '/edit', '/add-cover-art', '/add-event-art'],
             buttonSelector: 'button.submit.positive[type="submit"], button#enter-edit, button#add-cover-art-submit, button#add-event-art-submit',
-            shouldCloseAfterSuccess: true,
             requiredSetting: MB_ENABLE_MANUAL_MERGE_AUTOCLOSE,
             referrerPatterns: {
                 hostnames: ['musicbrainz.org'],
@@ -283,21 +282,26 @@
         // Rules for clicking buttons
         {
             hostnames: ['musicbrainz.org'],
+            paths: ['/edit'],
+            buttonSelector: '.canonicalizer-button',
+            autoClick: true,
+            successUrlPatterns: [],
+        },
+        {
+            hostnames: ['musicbrainz.org'],
             paths: ['/edit-relationships'],
             buttonSelector: '.rel-editor > button',
             autoClick: true,
             successUrlPatterns: [],
-            shouldCloseAfterSuccess: false,
         },
         {
             hostnames: ['musicbrainz.org'],
             paths: ['/edit', '/edit-relationships', '/add-cover-art', '/add-event-art'],
             channelName: 'mb_edit_channel',
             messageTrigger: 'submit-edit',
-            buttonSelector: 'button.submit.positive[type="submit"], button#enter-edit, button#add-cover-art-submit, button#add-event-art-submit',
+            buttonSelector: 'button.submit.positive[type="submit"], button#enter-edit',
             menuCommandName: 'MusicBrainz: Submit Edit (All Tabs)',
             successUrlPatterns: [/^https?:\/\/(?:beta\.)?musicbrainz\.org\/(?!collection\/)[^/]+\/[a-f0-9\-]{36}(?:\/(?:cover|event)-art)?\/?$/],
-            shouldCloseAfterSuccess: true,
             isNoOp: () => {
                 const noChangesBanner = document.querySelector('.banner.warning-header');
                 return noChangesBanner?.textContent.includes(
@@ -460,7 +464,7 @@
 
                     // 2. DOM Highlight Fallback (Standalone Entity Editors)
                     const editor = document.getElementById('external-links-editor') ||
-                                   document.querySelector('.external-links-editor-container');
+                        document.querySelector('.external-links-editor-container');
                     if (!editor) return false;
 
                     const highlights = editor.querySelectorAll('.rel-add, .rel-edit, .rel-remove');
@@ -484,7 +488,7 @@
                         try {
                             const edits = editor.allEdits();
                             if (Array.isArray(edits)) return edits.length;
-                        } catch (e) {}
+                        } catch (e) { }
                     }
                     return 0;
                 };
@@ -653,7 +657,6 @@
             buttonSelector: '[onclick^="doSubmitISRCs"]',
             menuCommandName: 'MagicISRC: Submit ISRCs (All Tabs)',
             successUrlPatterns: [/\?.*submit=1/],
-            shouldCloseAfterSuccess: true,
             submissionHandler: (config, triggerAction) => {
                 onDOMLoaded(() => {
                     const performCheck = (obs) => {
@@ -712,7 +715,6 @@
             buttonSelector: 'form[action$="/importisrc"][method="post"] button[type="submit"]',
             menuCommandName: 'ISRC Hunt: Submit ISRCs (All Tabs)',
             successUrlPatterns: [/\?.*submitted=1/],
-            shouldCloseAfterSuccess: true,
             submissionHandler: (_config, triggerAction) => {
                 debugLog(`Requesting ISRC Hunt submit lock...`);
                 navigator.locks.request(ISRC_HUNT_SUBMIT_LOCK_KEY, async () => {
@@ -805,26 +807,25 @@
             onDOMLoaded(() => {
                 if (checkAndAct(null)) return;
 
-                let rafId = null;
+                let isScheduled = false;
                 const observer = new MutationObserver((mutations, obs) => {
-                    // Throttle the heavy DOM check to once per frame
-                    if (!rafId) {
-                        rafId = requestAnimationFrame(() => {
-                            rafId = null;
+                    if (!isScheduled) {
+                        isScheduled = true;
+                        queueMicrotask(() => {
+                            isScheduled = false;
                             checkAndAct(obs);
                         });
                     }
                 });
 
-                // Optimized config: only watch relevant attributes instead of every single one
-                const optimizedConfig = {
+                const observerConfig = {
                     childList: true,
                     subtree: true,
                     attributes: true,
-                    attributeFilter: ['disabled', 'class', 'style', 'value']
+                    ...(config.attributeFilter ? { attributeFilter: config.attributeFilter } : {}),
                 };
 
-                observer.observe(document.body, optimizedConfig);
+                observer.observe(document.body, observerConfig);
             });
         });
     }
@@ -866,11 +867,10 @@
 
     /**
      * @summary Handles the reload logic for MagicISRC pages with exponential backoff and a Web Lock.
-     * @param {boolean} [manual=false] - If true, bypasses the 'enableReload' check and forces the reload logic.
      */
-    async function handleMagicISRCReload(manual = false) {
+    async function handleMagicISRCReload() {
         const enableReload = await GM.getValue(MAGICISRC_ENABLE_AUTO_RELOAD, true);
-        if (!enableReload && !manual) {
+        if (!enableReload) {
             debugLog(`MagicISRC automatic reload is DISABLED.`, 'orange');
             return;
         }
@@ -1012,16 +1012,22 @@
 
         await acquireThrottlingBypass();
         debugLog(`Requesting MB submission lock...`);
-        navigator.locks.request(MB_SUBMIT_COORDINATION_LOCK_KEY, async () => {
-            await acquireThrottlingBypass();
-            debugLog(`Acquired MB submission lock.`, 'green');
-            await callback();
-            if (!limiterDisabled) {
-                debugLog(`Holding lock for ${requiredInterval.toFixed(0)}ms to respect rate limit...`, 'orange');
-                await new Promise(resolve => setTimeout(resolve, requiredInterval));
-            } else {
-                debugLog(`Rate limiter disabled. Releasing lock immediately.`, 'green');
-            }
+        return new Promise(resolve => {
+            navigator.locks.request(MB_SUBMIT_COORDINATION_LOCK_KEY, async () => {
+                try {
+                    await acquireThrottlingBypass();
+                    debugLog(`Acquired MB submission lock.`, 'green');
+                    await callback();
+                    if (!limiterDisabled) {
+                        debugLog(`Holding lock for ${requiredInterval.toFixed(0)}ms to respect rate limit...`, 'orange');
+                        await new Promise(res => setTimeout(res, requiredInterval));
+                    } else {
+                        debugLog(`Rate limiter disabled. Releasing lock immediately.`, 'green');
+                    }
+                } finally {
+                    resolve();
+                }
+            });
         });
     }
 
@@ -1132,8 +1138,14 @@
      * Uses an active observer if a submission flag exists but conditions aren't met yet (hydration handling).
      */
     async function evaluatePageForClosure() {
-        // --- 1. Check for Referrer-Based Close Condition ---
         const referrerFlag = sessionStorage.getItem(REFERRER_CLOSE_TRIGGERED_FLAG);
+        const submissionFlag = sessionStorage.getItem(SUBMISSION_TRIGGERED_FLAG);
+
+        if (referrerFlag || submissionFlag) {
+            debugLog(`Evaluating page closure [ReferrerFlag: ${Boolean(referrerFlag)}, SubFlag: ${Boolean(submissionFlag)}]`, 'purple');
+        }
+
+        // --- 1. Check for Referrer-Based Close Condition ---
         if (document.referrer && referrerFlag) {
             if (document.referrer === window.location.href) {
                 sessionStorage.removeItem(REFERRER_CLOSE_TRIGGERED_FLAG);
@@ -1156,7 +1168,6 @@
         }
 
         // --- 2. Check for Submission-Based Close Condition ---
-        const submissionFlag = sessionStorage.getItem(SUBMISSION_TRIGGERED_FLAG);
         if (!submissionFlag) return;
 
         let config = null;
