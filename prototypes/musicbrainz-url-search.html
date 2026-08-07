@@ -105,33 +105,73 @@
             color: #555;
         }
 
-        /* Specific styling for the URL MBID column to prevent breaking */
-        td:nth-child(1) {
+        /* Specific styling for the URL MBID & Target URL columns */
+        td:nth-child(1), td:nth-child(2) {
             white-space: nowrap; /* Prevent text from wrapping */
             overflow: hidden; /* Hide overflow content */
             text-overflow: ellipsis; /* Show ellipsis for hidden content */
-            max-width: 150px; /* Optional: give it a max-width if needed, but auto should handle it */
+            max-width: 200px;
         }
 
         th.clickable-header-active {
             cursor: pointer;
-            color: #3498db;
-            transition: color 0.2s ease;
+            color: #2c3e50;
+            transition: color 0.2s ease, background-color 0.2s ease;
+            user-select: none;
         }
         th.clickable-header-active:hover {
-            color: #2980b9;
+            color: #3498db;
+            background-color: #e8f4fc;
+        }
+        th.clickable-header-active:focus-visible {
+            outline: 2px solid #3498db;
+            outline-offset: -2px;
         }
         th.clickable-header-disabled {
             cursor: not-allowed;
             opacity: 0.7;
         }
 
-        .sort-arrow {
-            margin-left: 5px;
-            font-size: 0.8em;
+        .header-text {
             vertical-align: middle;
         }
+        .header-icon {
+            display: inline-block;
+            margin-left: 4px;
+            font-size: 0.85em;
+            vertical-align: middle;
+            opacity: 0.75;
+        }
+        th.clickable-header-active:hover .header-icon {
+            opacity: 1;
+        }
 
+        .doc-links {
+            font-size: 0.8em;
+            color: #666;
+            margin-top: -8px;
+            margin-bottom: 4px;
+        }
+        .doc-links a {
+            color: #3498db;
+            text-decoration: none;
+        }
+        .doc-links a:hover {
+            text-decoration: underline;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 2px 6px;
+            font-size: 0.78em;
+            border-radius: 4px;
+            font-weight: 600;
+        }
+        .badge-incomplete {
+            background-color: #fef3c7;
+            color: #92400e;
+            border: 1px solid #fde68a;
+        }
 
         tbody tr:nth-child(odd) {
             background-color: #f9f9f9;
@@ -206,6 +246,116 @@
                 padding: 8px;
             }
         }
+
+        .input-clear-wrapper {
+            position: relative;
+            display: flex;
+            align-items: center;
+            width: 100%;
+        }
+
+        .input-clear-wrapper input {
+            padding-right: 36px !important;
+        }
+
+        button.clear-input-btn, .clear-input-btn {
+            position: absolute !important;
+            right: 10px !important;
+            top: 50% !important;
+            transform: translateY(-50%) !important;
+            width: 24px !important;
+            height: 24px !important;
+            min-width: 0 !important;
+            padding: 0 !important;
+            margin: 0 !important;
+            background: transparent !important;
+            border: none !important;
+            border-radius: 50% !important;
+            color: #95a5a6 !important;
+            font-size: 16px !important;
+            font-weight: bold !important;
+            cursor: pointer !important;
+            display: none;
+            line-height: 24px !important;
+            text-align: center !important;
+            box-shadow: none !important;
+            z-index: 10 !important;
+        }
+
+        button.clear-input-btn:hover, .clear-input-btn:hover {
+            color: #e74c3c !important;
+            background-color: #f2f2f2 !important;
+        }
+
+        .button-group {
+            display: flex;
+            gap: 10px;
+            width: 100%;
+        }
+
+        .button-group button {
+            flex: 1;
+        }
+
+        button.secondary-button {
+            background-color: #95a5a6;
+        }
+
+        button.secondary-button:hover {
+            background-color: #7f8c8d;
+        }
+
+        .autocomplete-wrapper {
+            position: relative;
+            width: 100%;
+        }
+
+        .autocomplete-dropdown {
+            position: absolute;
+            top: calc(100% + 4px);
+            left: 0;
+            right: 0;
+            background: #ffffff;
+            border: 1px solid #d1d5db;
+            border-radius: 8px;
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+            z-index: 1000;
+            max-height: 240px;
+            overflow-y: auto;
+            display: none;
+        }
+
+        .autocomplete-item {
+            padding: 10px 14px;
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid #f3f4f6;
+            font-size: 14px;
+            color: #374151;
+            transition: background-color 0.15s ease;
+        }
+
+        .autocomplete-item:last-child {
+            border-bottom: none;
+        }
+
+        .autocomplete-item:hover, .autocomplete-item.active {
+            background-color: #e0f2fe;
+            color: #0369a1;
+        }
+
+        .autocomplete-tag {
+            font-size: 0.78em;
+            background: #f0f9ff;
+            color: #0284c7;
+            padding: 3px 8px;
+            border-radius: 6px;
+            border: 1px solid #bae6fd;
+            white-space: nowrap;
+            margin-left: 8px;
+        }
     </style>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
 </head>
@@ -213,22 +363,50 @@
     <h1>MusicBrainz URL Search</h1>
 
     <div class="search-container">
-        <label for="urlInput" class="sr-only">Enter URL:</label>
-        <input type="text" id="urlInput" placeholder="e.g., *wikipedia.org* or youtube.com/*">
+        <label for="urlInput">Enter URL Pattern:</label>
+        <div class="input-clear-wrapper">
+            <input type="text" id="urlInput" placeholder="e.g., *wikipedia.org* or youtube.com/*">
+            <button type="button" class="clear-input-btn" id="clearUrlBtn" aria-label="Clear URL pattern">&times;</button>
+        </div>
+        <div class="doc-links">
+            <a href="https://musicbrainz.org/doc/Search" target="_blank" rel="noopener noreferrer">MB Search Syntax Docs</a> •
+            <a href="https://musicbrainz.org/doc/Development/XML_Web_Service/Version_2" target="_blank" rel="noopener noreferrer">WS/2 Search API Docs</a>
+        </div>
 
-        <label for="entityTypeInput" style="font-size: 0.9em; margin-top: 10px;">Filter by Entity Type (e.g., "artist OR group"):</label>
-        <input type="text" id="entityTypeInput" placeholder="e.g., artist OR group">
+        <label for="entityTypeInput" style="font-size: 0.9em; margin-top: 10px;">Filter by Entity Type (e.g., "artist OR release-group"):</label>
+        <div class="autocomplete-wrapper">
+            <div class="input-clear-wrapper">
+                <input type="text" id="entityTypeInput" placeholder="e.g., artist OR release-group" autocomplete="off">
+                <button type="button" class="clear-input-btn" id="clearEntityTypeBtn" aria-label="Clear entity type">&times;</button>
+            </div>
+            <div id="entityTypeDropdown" class="autocomplete-dropdown"></div>
+        </div>
 
-        <label for="relationTypeInput" style="font-size: 0.9em; margin-top: 10px;">Filter by Relation Type (e.g., "official homepage" OR "social media"):</label>
-        <input type="text" id="relationTypeInput" placeholder="e.g., wikipedia AND wikidata">
+        <label for="relationTypeInput" style="font-size: 0.9em; margin-top: 10px;">Filter by Relationship Type:</label>
+        <div class="autocomplete-wrapper">
+            <div class="input-clear-wrapper">
+                <input type="text" id="relationTypeInput" placeholder="e.g., official homepage OR streaming" autocomplete="off">
+                <button type="button" class="clear-input-btn" id="clearRelationTypeBtn" aria-label="Clear relationship type">&times;</button>
+            </div>
+            <div id="relationTypeDropdown" class="autocomplete-dropdown"></div>
+        </div>
+        <div class="doc-links">
+            <a href="https://musicbrainz.org/relationships" target="_blank" rel="noopener noreferrer">MB Relationships Reference</a>
+        </div>
 
         <label for="targetIdInput" style="font-size: 0.9em; margin-top: 10px;">Filter by Target MBID (e.g., artist MBID, release MBID):</label>
-        <input type="text" id="targetIdInput" placeholder="e.g., 5b11f4ce-a62d-471e-81fc-a69a8278c7da">
+        <div class="input-clear-wrapper">
+            <input type="text" id="targetIdInput" placeholder="e.g., 5b11f4ce-a62d-471e-81fc-a69a8278c7da">
+            <button type="button" class="clear-input-btn" id="clearTargetIdBtn" aria-label="Clear target MBID">&times;</button>
+        </div>
 
         <label for="autoPaginationLimit" style="font-size: 0.9em; margin-top: 10px;">Max. auto. Results (0 for all):</label>
         <input type="number" id="autoPaginationLimit" value="100" min="0" step="100">
 
-        <button id="searchButton">Search</button>
+        <div class="button-group">
+            <button id="searchButton">Search</button>
+            <button id="clearAllButton" type="button" class="secondary-button">Clear All Filters</button>
+        </div>
         <div class="progress-bar-container" id="progressBarContainer">
             <div class="progress-bar-fill" id="progressBarFill"></div>
         </div>
@@ -244,15 +422,16 @@
             <table id="results-table">
                 <thead>
                     <tr>
-                        <th id="urlMbidHeader">URL MBID</th>
-                        <th id="entityTypeHeader" class="clickable-header-active">Entity Type <span class="sort-arrow"></span></th>
-                        <th id="entityNameHeader" class="clickable-header-active">Entity Name <span class="sort-arrow"></span></th>
-                        <th id="relationTypeHeader" class="clickable-header-active">Relation Type <span class="sort-arrow"></span></th>
-                        <th id="editLinkHeader">Edit Link</th>
+                        <th id="urlMbidHeader" tabindex="0" role="button" aria-label="URL MBID, click to copy column values"><span class="header-text">URL MBID</span> <span class="header-icon" aria-hidden="true">📋</span></th>
+                        <th id="targetUrlHeader" tabindex="0" role="button" aria-label="Target URL, click to copy column values"><span class="header-text">Target URL</span> <span class="header-icon" aria-hidden="true">📋</span></th>
+                        <th id="entityTypeHeader" tabindex="0" role="button" aria-label="Entity Type, click to sort" aria-sort="none" class="clickable-header-active"><span class="header-text">Entity Type</span> <span class="sort-arrow" aria-hidden="true">↕</span></th>
+                        <th id="entityNameHeader" tabindex="0" role="button" aria-label="Entity Name, click to sort" aria-sort="none" class="clickable-header-active"><span class="header-text">Entity Name</span> <span class="sort-arrow" aria-hidden="true">↕</span></th>
+                        <th id="relationTypeHeader" tabindex="0" role="button" aria-label="Relationship Type, click to sort" aria-sort="none" class="clickable-header-active"><span class="header-text">Relationship Type</span> <span class="sort-arrow" aria-hidden="true">↕</span></th>
+                        <th id="editLinkHeader" tabindex="0" role="button" aria-label="Edit Link, click to copy column values"><span class="header-text">Edit Link</span> <span class="header-icon" aria-hidden="true">📋</span></th>
                     </tr>
                 </thead>
                 <tbody>
-                    <tr class="no-results-message-row"><td colspan="5">No results yet.</td></tr>
+                    <tr class="no-results-message-row"><td colspan="6">No results yet.</td></tr>
                 </tbody>
             </table>
         </div>
@@ -260,15 +439,239 @@
     </div>
 
     <script>
+        const FALLBACK_LINK_TYPES = [
+            { name: "allmusic", entities: ["artist", "genre", "recording", "release", "release-group", "work"] },
+            { name: "amazon asin", entities: ["release"] },
+            { name: "bandcamp", entities: ["artist", "genre", "label"] },
+            { name: "bandsintown", entities: ["artist", "event", "place"] },
+            { name: "BBC Music page", entities: ["artist"] },
+            { name: "biography", entities: ["artist"] },
+            { name: "blog", entities: ["artist", "label", "place"] },
+            { name: "BookBrainz", entities: ["artist", "label", "release", "release-group", "work"] },
+            { name: "catalog site", entities: ["label"] },
+            { name: "discography", entities: ["artist", "release-group"] },
+            { name: "discography entry", entities: ["release"] },
+            { name: "discogs", entities: ["artist", "genre", "label", "place", "release", "release-group", "series"] },
+            { name: "download for free", entities: ["artist", "recording", "release"] },
+            { name: "fanpage", entities: ["artist", "label"] },
+            { name: "geonames", entities: ["area"] },
+            { name: "get the music", entities: ["artist", "genre", "recording", "release"] },
+            { name: "history site", entities: ["label"] },
+            { name: "image", entities: ["artist", "instrument", "place"] },
+            { name: "IMDb", entities: ["artist", "label", "place", "release-group", "work"] },
+            { name: "IMDB samples", entities: ["recording"] },
+            { name: "IMSLP", entities: ["artist"] },
+            { name: "information page", entities: ["instrument"] },
+            { name: "interview", entities: ["artist"] },
+            { name: "last.fm", entities: ["artist", "event", "label", "place"] },
+            { name: "license", entities: ["recording", "release"] },
+            { name: "logo", entities: ["label"] },
+            { name: "lyrics", entities: ["artist", "release-group", "work"] },
+            { name: "myspace", entities: ["artist", "label", "place"] },
+            { name: "official homepage", entities: ["artist", "event", "place", "release-group", "series"] },
+            { name: "official site", entities: ["label"] },
+            { name: "online community", entities: ["artist"] },
+            { name: "online data", entities: ["artist", "label", "place"] },
+            { name: "other databases", entities: ["area", "artist", "event", "genre", "instrument", "label", "place", "recording", "release", "release-group", "series", "work"] },
+            { name: "poster", entities: ["event"] },
+            { name: "production", entities: ["recording", "release"] },
+            { name: "purchase for download", entities: ["artist", "recording", "release"] },
+            { name: "purchase for mail-order", entities: ["artist", "release"] },
+            { name: "purevolume", entities: ["artist"] },
+            { name: "review", entities: ["event", "release-group"] },
+            { name: "score", entities: ["work"] },
+            { name: "secondhandsongs", entities: ["artist", "release", "work"] },
+            { name: "setlistfm", entities: ["artist", "event", "place"] },
+            { name: "show notes", entities: ["release"] },
+            { name: "social network", entities: ["artist", "event", "label", "place", "series"] },
+            { name: "songfacts", entities: ["work"] },
+            { name: "songkick", entities: ["artist", "event", "place"] },
+            { name: "soundcloud", entities: ["artist", "label", "series"] },
+            { name: "streaming music", entities: ["artist", "recording", "release"] },
+            { name: "vgmdb", entities: ["artist", "event", "label", "release"] },
+            { name: "VIAF", entities: ["artist", "label", "work"] },
+            { name: "video channel", entities: ["artist", "event", "label", "place", "series"] },
+            { name: "wikidata", entities: ["area", "artist", "event", "genre", "instrument", "label", "place", "release-group", "series", "work"] },
+            { name: "wikipedia", entities: ["area", "artist", "event", "instrument", "label", "place", "release-group", "series", "work"] },
+            { name: "youtube", entities: ["artist", "event", "label", "place", "series"] }
+        ];
+
+        class CustomAutocompleteController {
+            constructor({ input, dropdown, getCandidates, onSelect }) {
+                this.input = input;
+                this.dropdown = dropdown;
+                this.getCandidates = getCandidates;
+                this.onSelect = onSelect;
+                this.activeIndex = -1;
+                this.candidates = [];
+
+                this._initEvents();
+            }
+
+            _parseQueryPrefix(val) {
+                if (!val) return { prefixContext: '', currentToken: '' };
+
+                const boundaryRegex = /^(.*?\b(?:AND|OR|NOT)\b\s*|.*?[()]\s*|.*\s+)?([^()\s]*)$/i;
+                const match = val.match(boundaryRegex);
+                if (match) {
+                    let prefix = match[1] || '';
+                    let token = match[2] || '';
+                    if (prefix && !/\s$/.test(prefix)) {
+                        prefix += ' ';
+                    }
+                    return {
+                        prefixContext: prefix,
+                        currentToken: token.replace(/^"/, '')
+                    };
+                }
+                return {
+                    prefixContext: '',
+                    currentToken: val.replace(/^"/, '')
+                };
+            }
+
+            _initEvents() {
+                this.input.addEventListener('input', () => this.updateSuggestions());
+                this.input.addEventListener('focus', () => this.updateSuggestions());
+
+                // Hide dropdown instantly whenever focus shifts to any element outside this input
+                document.addEventListener('focusin', (e) => {
+                    if (e.target !== this.input && !this.dropdown.contains(e.target)) {
+                        this.hide();
+                    }
+                });
+
+                this.input.addEventListener('keydown', (e) => {
+                    if (!this.dropdown.style.display || this.dropdown.style.display === 'none') {
+                        return;
+                    }
+
+                    if (e.key === 'ArrowDown') {
+                        e.preventDefault();
+                        this._moveActive(1);
+                    } else if (e.key === 'ArrowUp') {
+                        e.preventDefault();
+                        this._moveActive(-1);
+                    } else if (e.key === 'Enter') {
+                        if (this.activeIndex >= 0 && this.activeIndex < this.candidates.length) {
+                            e.preventDefault();
+                            this.selectCandidate(this.candidates[this.activeIndex]);
+                        }
+                    } else if (e.key === 'Tab') {
+                        if (this.activeIndex >= 0 && this.activeIndex < this.candidates.length) {
+                            this.selectCandidate(this.candidates[this.activeIndex]);
+                        }
+                        this.hide();
+                    } else if (e.key === 'Escape') {
+                        this.hide();
+                    }
+                });
+
+                document.addEventListener('click', (e) => {
+                    if (!this.input.contains(e.target) && !this.dropdown.contains(e.target)) {
+                        this.hide();
+                    }
+                });
+            }
+
+            updateSuggestions() {
+                const { currentToken } = this._parseQueryPrefix(this.input.value);
+                this.candidates = this.getCandidates(currentToken);
+
+                if (!this.candidates || this.candidates.length === 0) {
+                    this.hide();
+                    return;
+                }
+
+                this.dropdown.innerHTML = '';
+                this.activeIndex = -1;
+
+                const fragment = document.createDocumentFragment();
+                this.candidates.forEach((item, index) => {
+                    const div = document.createElement('div');
+                    div.className = 'autocomplete-item';
+
+                    const labelSpan = document.createElement('span');
+                    labelSpan.textContent = item.label;
+                    div.appendChild(labelSpan);
+
+                    if (item.tag) {
+                        const tagSpan = document.createElement('span');
+                        tagSpan.className = 'autocomplete-tag';
+                        tagSpan.textContent = item.tag;
+                        div.appendChild(tagSpan);
+                    }
+
+                    div.addEventListener('mousedown', (e) => {
+                        e.preventDefault();
+                        this.selectCandidate(item);
+                    });
+
+                    fragment.appendChild(div);
+                });
+
+                this.dropdown.appendChild(fragment);
+                this.dropdown.style.display = 'block';
+            }
+
+            _moveActive(step) {
+                const items = this.dropdown.querySelectorAll('.autocomplete-item');
+                if (!items.length) return;
+
+                if (this.activeIndex >= 0 && this.activeIndex < items.length) {
+                    items[this.activeIndex].classList.remove('active');
+                }
+
+                this.activeIndex += step;
+                if (this.activeIndex < 0) this.activeIndex = items.length - 1;
+                if (this.activeIndex >= items.length) this.activeIndex = 0;
+
+                items[this.activeIndex].classList.add('active');
+                items[this.activeIndex].scrollIntoView({ block: 'nearest' });
+            }
+
+            selectCandidate(candidate) {
+                let { prefixContext } = this._parseQueryPrefix(this.input.value);
+
+                if (prefixContext && prefixContext.trim().length > 0) {
+                    const trimmed = prefixContext.trim();
+                    const endsWithOp = /\b(?:AND|OR|NOT)\b$/i.test(trimmed) || /[()]$/.test(trimmed);
+                    if (!endsWithOp) {
+                        prefixContext = `${trimmed} OR `;
+                    }
+                }
+
+                if (prefixContext && !prefixContext.endsWith(' ')) {
+                    prefixContext += ' ';
+                }
+                const formattedValue = candidate.value.includes(' ') ? `"${candidate.value}"` : candidate.value;
+                this.input.value = `${prefixContext}${formattedValue} `;
+                this.input.dispatchEvent(new Event('input', { bubbles: true }));
+                this.hide();
+                this.input.focus();
+                if (this.onSelect) this.onSelect();
+            }
+
+            hide() {
+                this.dropdown.style.display = 'none';
+                this.activeIndex = -1;
+            }
+        }
+
         class MusicBrainzSearchApp {
             API_LIMIT = 100;
             REQUEST_DELAY = 1000;
-            USER_AGENT = 'MusicBrainzURLSearchApp/1.0( https://musicbrainz.org/user/chaban )';
+            USER_AGENT = 'MusicBrainzURLSearchApp/1.0 ( https://musicbrainz.org/user/chaban )';
+            CACHE_KEY_LINK_TYPES = 'mb_link_types_cache_v1';
+            CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
+            ENTITY_TYPES = ['artist', 'release', 'release-group', 'recording', 'work', 'label', 'area', 'event', 'instrument', 'place', 'series', 'genre', 'url'];
 
             constructor() {
                 this.urlInput = document.getElementById('urlInput');
                 this.entityTypeInput = document.getElementById('entityTypeInput');
+                this.entityTypeDropdown = document.getElementById('entityTypeDropdown');
                 this.relationTypeInput = document.getElementById('relationTypeInput');
+                this.relationTypeDropdown = document.getElementById('relationTypeDropdown');
                 this.targetIdInput = document.getElementById('targetIdInput');
                 this.autoPaginationLimitInput = document.getElementById('autoPaginationLimit');
                 this.searchButton = document.getElementById('searchButton');
@@ -276,6 +679,7 @@
                 this.errorMessage = document.getElementById('errorMessage');
                 this.loadMoreButton = document.getElementById('loadMoreButton');
                 this.urlMbidHeader = document.getElementById('urlMbidHeader');
+                this.targetUrlHeader = document.getElementById('targetUrlHeader');
                 this.entityTypeHeader = document.getElementById('entityTypeHeader');
                 this.entityNameHeader = document.getElementById('entityNameHeader');
                 this.relationTypeHeader = document.getElementById('relationTypeHeader');
@@ -286,6 +690,12 @@
                 this.createdTimestampSpan = document.getElementById('createdTimestamp');
                 this.entityTypeStatsDiv = document.getElementById('entityTypeStats');
 
+                this.clearUrlBtn = document.getElementById('clearUrlBtn');
+                this.clearEntityTypeBtn = document.getElementById('clearEntityTypeBtn');
+                this.clearRelationTypeBtn = document.getElementById('clearRelationTypeBtn');
+                this.clearTargetIdBtn = document.getElementById('clearTargetIdBtn');
+                this.clearAllButton = document.getElementById('clearAllButton');
+
                 this.currentOffset = 0;
                 this.totalResultsCount = 0;
                 this.dynamicMaxAutoFetchLimit = 100;
@@ -295,23 +705,193 @@
                 this.totalExpectedAutoRequests = 0;
                 this.entityTypeCounts = {};
                 this.countedEntitiesForStats = new Set();
+                this.allLinkTypes = [];
 
                 this.currentSortColumn = null;
                 this.currentSortDirection = {};
                 this.originalTableRows = [];
 
                 this._initializeUI();
+                this._initAutocompletes();
+                this._initInputClearButtons();
                 this._attachEventListeners();
+                this._loadRelationshipTypes();
+            }
+
+            _initInputClearButtons() {
+                const inputsWithClear = [
+                    { input: this.urlInput, btn: this.clearUrlBtn },
+                    { input: this.entityTypeInput, btn: this.clearEntityTypeBtn, ac: this.entityAutocomplete },
+                    { input: this.relationTypeInput, btn: this.clearRelationTypeBtn, ac: this.relationAutocomplete },
+                    { input: this.targetIdInput, btn: this.clearTargetIdBtn }
+                ];
+
+                inputsWithClear.forEach(({ input, btn, ac }) => {
+                    if (!input || !btn) return;
+                    const toggleBtn = () => {
+                        btn.style.display = (input.value && input.value.length > 0) ? 'block' : 'none';
+                    };
+
+                    toggleBtn();
+
+                    ['input', 'focus', 'blur', 'keyup', 'change', 'paste'].forEach(evt => {
+                        input.addEventListener(evt, toggleBtn);
+                    });
+
+                    btn.addEventListener('mousedown', (e) => {
+                        e.preventDefault();
+                    });
+
+                    btn.addEventListener('click', (e) => {
+                        e.preventDefault();
+                        input.value = '';
+                        toggleBtn();
+                        if (ac) ac.hide();
+                        input.focus();
+                    });
+                });
+
+                if (this.clearAllButton) {
+                    this.clearAllButton.addEventListener('click', () => {
+                        [this.urlInput, this.entityTypeInput, this.relationTypeInput, this.targetIdInput].forEach(inp => {
+                            if (inp) inp.value = '';
+                        });
+                        [this.clearUrlBtn, this.clearEntityTypeBtn, this.clearRelationTypeBtn, this.clearTargetIdBtn].forEach(btn => {
+                            if (btn) btn.style.display = 'none';
+                        });
+                        if (this.entityAutocomplete) this.entityAutocomplete.hide();
+                        if (this.relationAutocomplete) this.relationAutocomplete.hide();
+                        this.urlInput.focus();
+                    });
+                }
             }
 
             _initializeUI() {
                 this.loadMoreButton.style.display = 'none';
                 this.progressBarContainer.style.display = 'none';
                 this._toggleHeaderClickability(false);
-                this.resultsTableBody.innerHTML = '<tr class="no-results-message-row"><td colspan="5">No results yet.</td></tr>';
+                this.resultsTableBody.innerHTML = '<tr class="no-results-message-row"><td colspan="6">No results yet.</td></tr>';
                 this.originalTableRows = [];
                 this.entityTypeStatsDiv.innerHTML = '';
                 this._clearSortIndicators();
+            }
+
+            _initAutocompletes() {
+                this.entityAutocomplete = new CustomAutocompleteController({
+                    input: this.entityTypeInput,
+                    dropdown: this.entityTypeDropdown,
+                    getCandidates: (currentToken) => {
+                        const token = currentToken.toLowerCase();
+                        return this.ENTITY_TYPES
+                            .filter(type => !token || type.toLowerCase().includes(token))
+                            .map(type => ({ value: type, label: type, tag: 'entity' }));
+                    }
+                });
+
+                this.relationAutocomplete = new CustomAutocompleteController({
+                    input: this.relationTypeInput,
+                    dropdown: this.relationTypeDropdown,
+                    getCandidates: (currentToken) => {
+                        if (!this.allLinkTypes || !this.allLinkTypes.length) return [];
+
+                        const activeEntityFilter = this._parseActiveToken(this.entityTypeInput.value);
+                        const token = currentToken.toLowerCase();
+
+                        // Deduplicate by name
+                        const nameMap = new Map();
+                        this.allLinkTypes.forEach(lt => {
+                            if (lt.deprecated) return;
+
+                            const name = lt.name;
+                            let entities = [];
+
+                            if (lt.entities) {
+                                entities = lt.entities;
+                            } else if (lt.type0 === 'url' || lt.type1 === 'url') {
+                                const targetEntity = lt.type0 === 'url' ? lt.type1 : lt.type0;
+                                entities = [targetEntity];
+                            } else {
+                                return;
+                            }
+
+                            if (!nameMap.has(name)) {
+                                nameMap.set(name, new Set());
+                            }
+                            entities.forEach(e => nameMap.get(name).add(e));
+                        });
+
+                        const uniqueTypes = Array.from(nameMap.entries()).map(([name, entitySet]) => ({
+                            name,
+                            entities: Array.from(entitySet)
+                        }));
+
+                        const filtered = uniqueTypes.filter(item => !token || item.name.toLowerCase().includes(token));
+
+                        filtered.sort((a, b) => {
+                            const aMatches = activeEntityFilter && a.entities.includes(activeEntityFilter);
+                            const bMatches = activeEntityFilter && b.entities.includes(activeEntityFilter);
+                            if (aMatches && !bMatches) return -1;
+                            if (!aMatches && bMatches) return 1;
+                            return a.name.localeCompare(b.name);
+                        });
+
+                        return filtered.map(item => ({
+                            value: item.name,
+                            label: item.name,
+                            tag: `${item.entities.join(', ')} ↔ url`
+                        }));
+                    }
+                });
+            }
+
+            _parseActiveToken(val) {
+                if (!val) return '';
+                const parts = val.trim().split(/\s+(?:AND|OR|NOT)\s+|\s+/i);
+                return parts[parts.length - 1].toLowerCase().replace(/^"/, '').replace(/"$/, '');
+            }
+
+            async _loadRelationshipTypes() {
+                try {
+                    const cached = localStorage.getItem(this.CACHE_KEY_LINK_TYPES);
+                    if (cached) {
+                        const parsed = JSON.parse(cached);
+                        if (parsed.timestamp && (Date.now() - parsed.timestamp < this.CACHE_TTL_MS) && Array.isArray(parsed.data) && parsed.data.length > 0) {
+                            this.allLinkTypes = parsed.data;
+                            return;
+                        }
+                    }
+
+                    const response = await fetch('https://musicbrainz.org/ws/js/type-info/link_type');
+                    if (response.ok) {
+                        const json = await response.json();
+                        if (json && Array.isArray(json.link_type_list)) {
+                            this.allLinkTypes = json.link_type_list;
+                            try {
+                                localStorage.setItem(this.CACHE_KEY_LINK_TYPES, JSON.stringify({
+                                    timestamp: Date.now(),
+                                    data: this.allLinkTypes
+                                }));
+                            } catch (e) {
+                                console.warn('Could not cache relationship types to localStorage:', e);
+                            }
+                            return;
+                        }
+                    }
+                } catch (e) {
+                    console.info('CORS/network restriction prevented fetching /ws/js/type-info/link_type. Falling back to bundled relationship types dictionary.', e);
+                }
+
+                // Fallback for CORS (file://), unauthenticated cross-origin requests, or network failures
+                this.allLinkTypes = FALLBACK_LINK_TYPES;
+            }
+
+            _attachHeaderKeyHandler(header, handler) {
+                header.addEventListener('keydown', (e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        handler();
+                    }
+                });
             }
 
             _attachEventListeners() {
@@ -324,10 +904,22 @@
                 this.loadMoreButton.addEventListener('click', this.fetchAndDisplayResults.bind(this));
 
                 this.urlMbidHeader.addEventListener('click', () => this._copyColumnValuesToClipboard(0));
-                this.entityTypeHeader.addEventListener('click', () => this._sortTable(1));
-                this.entityNameHeader.addEventListener('click', () => this._sortTable(2));
-                this.relationTypeHeader.addEventListener('click', () => this._sortTable(3));
-                this.editLinkHeader.addEventListener('click', () => this._copyColumnValuesToClipboard(4));
+                this._attachHeaderKeyHandler(this.urlMbidHeader, () => this._copyColumnValuesToClipboard(0));
+
+                this.targetUrlHeader.addEventListener('click', () => this._copyColumnValuesToClipboard(1));
+                this._attachHeaderKeyHandler(this.targetUrlHeader, () => this._copyColumnValuesToClipboard(1));
+
+                this.entityTypeHeader.addEventListener('click', () => this._sortTable(2));
+                this._attachHeaderKeyHandler(this.entityTypeHeader, () => this._sortTable(2));
+
+                this.entityNameHeader.addEventListener('click', () => this._sortTable(3));
+                this._attachHeaderKeyHandler(this.entityNameHeader, () => this._sortTable(3));
+
+                this.relationTypeHeader.addEventListener('click', () => this._sortTable(4));
+                this._attachHeaderKeyHandler(this.relationTypeHeader, () => this._sortTable(4));
+
+                this.editLinkHeader.addEventListener('click', () => this._copyColumnValuesToClipboard(5));
+                this._attachHeaderKeyHandler(this.editLinkHeader, () => this._copyColumnValuesToClipboard(5));
             }
 
             _handleEnterKey(event) {
@@ -359,7 +951,7 @@
             }
 
             _toggleHeaderClickability(enable) {
-                [this.urlMbidHeader, this.editLinkHeader].forEach(header => {
+                [this.urlMbidHeader, this.targetUrlHeader, this.editLinkHeader].forEach(header => {
                     if (enable) {
                         header.classList.add('clickable-header-active');
                         header.classList.remove('clickable-header-disabled');
@@ -380,7 +972,10 @@
 
             _clearSortIndicators() {
                 document.querySelectorAll('.sort-arrow').forEach(arrow => {
-                    arrow.textContent = '';
+                    arrow.textContent = '↕';
+                });
+                [this.entityTypeHeader, this.entityNameHeader, this.relationTypeHeader].forEach(h => {
+                    h.setAttribute('aria-sort', 'none');
                 });
             }
 
@@ -420,10 +1015,15 @@
 
                 this._clearSortIndicators();
 
-                const currentHeader = this.resultsTableBody.closest('table').querySelector(`th:nth-child(${columnIndex + 1}) .sort-arrow`);
+                const currentHeader = this.resultsTableBody.closest('table').querySelector(`th:nth-child(${columnIndex + 1})`);
                 if (currentHeader) {
-                    currentHeader.textContent = (this.currentSortDirection[columnIndex] === 'asc') ? '▲' :
-                                                (this.currentSortDirection[columnIndex] === 'desc') ? '▼' : '';
+                    const arrowSpan = currentHeader.querySelector('.sort-arrow');
+                    if (arrowSpan) {
+                        arrowSpan.textContent = (this.currentSortDirection[columnIndex] === 'asc') ? '▲' :
+                                                (this.currentSortDirection[columnIndex] === 'desc') ? '▼' : '↕';
+                    }
+                    currentHeader.setAttribute('aria-sort', this.currentSortDirection[columnIndex] === 'asc' ? 'ascending' :
+                                                             this.currentSortDirection[columnIndex] === 'desc' ? 'descending' : 'none');
                 }
 
                 let sortedRows;
@@ -512,7 +1112,6 @@
                 const targetId = this.targetIdInput.value.trim();
 
                 let query = `url:${encodeURIComponent(url)}`;
-                // Allow Lucene syntax for entityType
                 if (entityType) {
                     query += ` AND targettype:(${encodeURIComponent(entityType)})`;
                 }
@@ -552,14 +1151,13 @@
                 const userDefinedLimit = parseInt(this.autoPaginationLimitInput.value, 10);
                 this.dynamicMaxAutoFetchLimit = (isNaN(userDefinedLimit) || userDefinedLimit <= 0) ? Infinity : userDefinedLimit;
 
-
                 if (!url) {
                     this.errorMessage.textContent = 'Please enter a URL.';
-                    this.resultsTableBody.innerHTML = '<tr class="no-results-message-row"><td colspan="5">Please enter a URL.</td></tr>';
+                    this.resultsTableBody.innerHTML = '<tr class="no-results-message-row"><td colspan="6">Please enter a URL.</td></tr>';
                     return;
                 }
 
-                this.resultsTableBody.innerHTML = '<tr class="loading-message-row"><td colspan="5">Searching...</td></tr>';
+                this.resultsTableBody.innerHTML = '<tr class="loading-message-row"><td colspan="6">Searching...</td></tr>';
 
                 try {
                     await this._delayRequest();
@@ -624,14 +1222,14 @@
                         }
 
                     } else {
-                        this.resultsTableBody.innerHTML = '<tr class="no-results-message-row"><td colspan="5">No URL entities found for this URL and filter.</td></tr>';
+                        this.resultsTableBody.innerHTML = '<tr class="no-results-message-row"><td colspan="6">No URL entities found for this URL and filter.</td></tr>';
                         this._toggleHeaderClickability(false);
                         this.progressBarContainer.style.display = 'none';
                     }
 
                 } catch (error) {
                     console.error('Error fetching data:', error);
-                    this.resultsTableBody.innerHTML = '<tr class="no-results-message-row"><td colspan="5">Error fetching data: ' + error.message + '.</td></tr>';
+                    this.resultsTableBody.innerHTML = '<tr class="no-results-message-row"><td colspan="6">Error fetching data: ' + error.message + '.</td></tr>';
                     this.errorMessage.textContent = `Error fetching data: ${error.message}. This may mean the URL or filter is invalid, or no matching entities exist.`;
                     this._toggleHeaderClickability(false);
                     this.progressBarContainer.style.display = 'none';
@@ -645,22 +1243,6 @@
 
                 try {
                     await this._delayRequest();
-
-                    const url = this.urlInput.value.trim();
-                    const entityType = this.entityTypeInput.value.trim();
-                    const relationType = this.relationTypeInput.value.trim();
-                    const targetId = this.targetIdInput.value.trim();
-
-                    let query = `url:${encodeURIComponent(url)}`;
-                    if (entityType) {
-                        query += ` AND targettype:(${encodeURIComponent(entityType)})`; // Applied Lucene syntax handling
-                    }
-                    if (relationType) {
-                        query += ` AND relationtype:(${encodeURIComponent(relationType)})`;
-                    }
-                    if (targetId) {
-                        query += ` AND targetid:${encodeURIComponent(targetId)}`;
-                    }
 
                     const currentRequestLimit = (this.dynamicMaxAutoFetchLimit === Infinity || this.dynamicMaxAutoFetchLimit >= this.API_LIMIT)
                                                 ? this.API_LIMIT
@@ -714,7 +1296,8 @@
             }
 
             _getEntityType(relation) {
-                const entityTypes = ['artist', 'release', 'release-group', 'recording', 'work', 'label', 'area', 'event', 'instrument', 'place', 'series'];
+                if (relation['target-type']) return relation['target-type'];
+                const entityTypes = ['artist', 'release', 'release-group', 'recording', 'work', 'label', 'area', 'event', 'instrument', 'place', 'series', 'genre', 'url'];
                 for (const type of entityTypes) {
                     if (relation[type]) {
                         return type;
@@ -726,18 +1309,21 @@
             _getEntityName(relation) {
                 if (!relation) return 'N/A';
 
+                const targetType = relation['target-type'];
+                if (targetType && relation[targetType]) {
+                    const targetObj = relation[targetType];
+                    let name = targetObj.name || targetObj.title || 'N/A';
+                    if (targetObj.disambiguation) {
+                        name += ` (${targetObj.disambiguation})`;
+                    }
+                    return name;
+                }
+
                 const entityTypeMap = {
-                    'artist': 'name',
-                    'release': 'title',
-                    'release-group': 'title',
-                    'recording': 'title',
-                    'work': 'title',
-                    'label': 'name',
-                    'area': 'name',
-                    'event': 'name',
-                    'instrument': 'name',
-                    'place': 'name',
-                    'series': 'name'
+                    'artist': 'name', 'release': 'title', 'release-group': 'title',
+                    'recording': 'title', 'work': 'title', 'label': 'name',
+                    'area': 'name', 'event': 'name', 'instrument': 'name',
+                    'place': 'name', 'series': 'name', 'genre': 'name', 'url': 'resource'
                 };
                 for (const type in entityTypeMap) {
                     if (relation[type] && relation[type][entityTypeMap[type]]) {
@@ -752,7 +1338,11 @@
             }
 
             _getEntityId(relation) {
-                const entityTypes = ['artist', 'release', 'release-group', 'recording', 'work', 'label', 'area', 'event', 'instrument', 'place', 'series'];
+                const targetType = relation['target-type'];
+                if (targetType && relation[targetType] && relation[targetType].id) {
+                    return relation[targetType].id;
+                }
+                const entityTypes = ['artist', 'release', 'release-group', 'recording', 'work', 'label', 'area', 'event', 'instrument', 'place', 'series', 'genre', 'url'];
                 for (const type of entityTypes) {
                     if (relation[type] && relation[type].id) {
                         return relation[type].id;
@@ -762,7 +1352,7 @@
             }
 
             _getRelationType(relation) {
-                return relation.type || 'N/A';
+                return relation.type || relation['link-type'] || 'N/A';
             }
 
             _displayEntityTypeStats() {
@@ -780,111 +1370,179 @@
                 this.entityTypeStatsDiv.innerHTML = statsHtml;
             }
 
+            _createTableRow(urlEntity, relation = null, isLoading = false) {
+                const tr = document.createElement('tr');
+                tr.dataset.mbid = urlEntity.id;
+
+                const mbidTd = document.createElement('td');
+                mbidTd.innerHTML = `<a href="https://musicbrainz.org/url/${urlEntity.id}" target="_blank" rel="noopener noreferrer">${urlEntity.id}</a>`;
+                tr.appendChild(mbidTd);
+
+                const targetUrlTd = document.createElement('td');
+                const resourceUrl = urlEntity.resource || 'N/A';
+                targetUrlTd.innerHTML = resourceUrl !== 'N/A'
+                    ? `<a href="${resourceUrl}" target="_blank" rel="noopener noreferrer" title="${resourceUrl}">${resourceUrl}</a>`
+                    : 'N/A';
+                tr.appendChild(targetUrlTd);
+
+                const entityTypeTd = document.createElement('td');
+                const entityNameTd = document.createElement('td');
+                const relationTypeTd = document.createElement('td');
+
+                const entityType = relation ? this._getEntityType(relation) : 'N/A';
+                if (entityType !== 'N/A') {
+                    entityTypeTd.textContent = entityType;
+                    if (relation) {
+                        const entityId = this._getEntityId(relation);
+                        const key = entityId ? `${entityType}-${entityId}` : `${entityType}-${urlEntity.id}-no-target`;
+                        if (!this.countedEntitiesForStats.has(key)) {
+                            this.entityTypeCounts[entityType] = (this.entityTypeCounts[entityType] || 0) + 1;
+                            this.countedEntitiesForStats.add(key);
+                        }
+                    }
+                } else if (isLoading) {
+                    entityTypeTd.innerHTML = `<span class="badge badge-incomplete">Resolving...</span>`;
+                } else {
+                    entityTypeTd.innerHTML = `<span class="badge badge-incomplete">Unlinked</span>`;
+                    const key = `unlinked-${urlEntity.id}`;
+                    if (!this.countedEntitiesForStats.has(key)) {
+                        this.entityTypeCounts['Unlinked'] = (this.entityTypeCounts['Unlinked'] || 0) + 1;
+                        this.countedEntitiesForStats.add(key);
+                    }
+                }
+
+                const entityName = relation ? this._getEntityName(relation) : 'N/A';
+                if (entityName !== 'N/A') {
+                    const entityId = relation ? this._getEntityId(relation) : null;
+                    if (entityId && entityType !== 'N/A') {
+                        const link = document.createElement('a');
+                        link.href = `https://musicbrainz.org/${entityType}/${entityId}`;
+                        link.target = '_blank';
+                        link.rel = 'noopener noreferrer';
+                        link.textContent = entityName;
+                        entityNameTd.appendChild(link);
+                    } else {
+                        entityNameTd.textContent = entityName;
+                    }
+                } else if (isLoading) {
+                    entityNameTd.innerHTML = `<span class="badge badge-incomplete">Resolving...</span>`;
+                } else {
+                    entityNameTd.textContent = 'N/A';
+                }
+
+                const relationType = relation ? this._getRelationType(relation) : 'N/A';
+                if (relationType !== 'N/A') {
+                    relationTypeTd.textContent = relationType;
+                } else if (isLoading) {
+                    relationTypeTd.innerHTML = `<span class="badge badge-incomplete">Resolving...</span>`;
+                } else {
+                    relationTypeTd.textContent = 'N/A';
+                }
+
+                tr.appendChild(entityTypeTd);
+                tr.appendChild(entityNameTd);
+                tr.appendChild(relationTypeTd);
+
+                const editLinkTd = document.createElement('td');
+                editLinkTd.innerHTML = `<a href="https://musicbrainz.org/url/${urlEntity.id}/edit" target="_blank" rel="noopener noreferrer">Edit</a>`;
+                tr.appendChild(editLinkTd);
+
+                return tr;
+            }
+
+            async _fetchUrlEntityRelationships(mbid) {
+                try {
+                    await this._delayRequest();
+                    const incParams = 'artist-rels+release-rels+release-group-rels+recording-rels+work-rels+label-rels+area-rels+event-rels+place-rels+series-rels+instrument-rels+url-rels';
+                    const url = `https://musicbrainz.org/ws/2/url/${mbid}?inc=${incParams}&fmt=json`;
+                    const res = await fetch(url, {
+                        headers: { 'User-Agent': this.USER_AGENT }
+                    });
+                    if (res.ok) {
+                        const data = await res.json();
+                        return data.relations || [];
+                    }
+                } catch (e) {
+                    console.warn(`Could not resolve relationships for URL MBID ${mbid} via WS/2 API:`, e);
+                }
+                return [];
+            }
+
+            async _resolveRelationshipsInBackground(unresolvedMbids) {
+                for (const urlEntity of unresolvedMbids) {
+                    const relations = await this._fetchUrlEntityRelationships(urlEntity.id);
+
+                    const existingRow = this.resultsTableBody.querySelector(`tr[data-mbid="${urlEntity.id}"]`);
+
+                    if (relations && relations.length > 0) {
+                        if (existingRow) existingRow.remove();
+                        const idx = this.originalTableRows.indexOf(existingRow);
+                        if (idx !== -1) this.originalTableRows.splice(idx, 1);
+
+                        relations.forEach(rel => {
+                            const tr = this._createTableRow(urlEntity, rel);
+                            this.originalTableRows.push(tr);
+                            this.resultsTableBody.appendChild(tr);
+                        });
+                    } else {
+                        if (existingRow) {
+                            const entityTypeTd = existingRow.children[2];
+                            entityTypeTd.innerHTML = `<span class="badge badge-incomplete">Unlinked</span>`;
+                        }
+                        const key = `unlinked-${urlEntity.id}`;
+                        if (!this.countedEntitiesForStats.has(key)) {
+                            this.entityTypeCounts['Unlinked'] = (this.entityTypeCounts['Unlinked'] || 0) + 1;
+                            this.countedEntitiesForStats.add(key);
+                        }
+                    }
+
+                    if (this.currentSortColumn !== null && this.currentSortDirection[this.currentSortColumn] !== 'none') {
+                        this._sortTable(this.currentSortColumn, true);
+                    } else {
+                        this._displayEntityTypeStats();
+                    }
+                }
+            }
+
             async _processAndDisplayResults(urls) {
                 if (!urls || urls.length === 0) {
                     return;
                 }
 
+                const unresolvedMbids = [];
+
                 for (const urlEntity of urls) {
                     if (!this.fetchedMbids.has(urlEntity.id)) {
                         this.fetchedMbids.add(urlEntity.id);
 
-                        if (urlEntity['relation-list'] && urlEntity['relation-list'].length > 0) {
-                            for (const relationListItem of urlEntity['relation-list']) {
-                                if (relationListItem.relations && relationListItem.relations.length > 0) {
-                                    for (const relation of relationListItem.relations) {
-                                        const tr = document.createElement('tr');
+                        const relations = urlEntity.relations || (urlEntity['relation-list'] && urlEntity['relation-list'][0]?.relations);
 
-                                        const mbidTd = document.createElement('td');
-                                        mbidTd.innerHTML = `<a href="https://musicbrainz.org/url/${urlEntity.id}" target="_blank" rel="noopener noreferrer">${urlEntity.id}</a>`;
-                                        tr.appendChild(mbidTd);
-
-                                        const entityType = this._getEntityType(relation);
-                                        const entityTypeTd = document.createElement('td');
-                                        entityTypeTd.textContent = entityType;
-                                        tr.appendChild(entityTypeTd);
-
-                                        const entityName = this._getEntityName(relation);
-                                        const entityNameTd = document.createElement('td');
-                                        entityNameTd.textContent = entityName;
-                                        tr.appendChild(entityNameTd);
-
-                                        const relationType = this._getRelationType(relation);
-                                        const relationTypeTd = document.createElement('td');
-                                        relationTypeTd.textContent = relationType;
-                                        tr.appendChild(relationTypeTd);
-
-                                        const editLinkTd = document.createElement('td');
-                                        editLinkTd.innerHTML = `<a href="https://musicbrainz.org/url/${urlEntity.id}/edit" target="_blank" rel="noopener noreferrer">Edit</a>`;
-                                        tr.appendChild(editLinkTd);
-
-                                        this.originalTableRows.push(tr);
-
-                                        const entityId = this._getEntityId(relation);
-                                        if (entityId) {
-                                            const uniqueEntityKey = `${entityType}-${entityId}`;
-                                            if (!this.countedEntitiesForStats.has(uniqueEntityKey)) {
-                                                this.entityTypeCounts[entityType] = (this.entityTypeCounts[entityType] || 0) + 1;
-                                                this.countedEntitiesForStats.add(uniqueEntityKey);
-                                            }
-                                        } else {
-                                            const uniqueEntityKey = `${entityType}-${urlEntity.id}-${relationType}-no-target`;
-                                            if (!this.countedEntitiesForStats.has(uniqueEntityKey)) {
-                                                this.entityTypeCounts[entityType] = (this.entityTypeCounts[entityType] || 0) + 1;
-                                                this.countedEntitiesForStats.add(uniqueEntityKey);
-                                            }
-                                        }
-                                    }
-                                } else {
-                                    const tr = document.createElement('tr');
-                                    const mbidTd = document.createElement('td');
-                                    mbidTd.innerHTML = `<a href="https://musicbrainz.org/url/${urlEntity.id}" target="_blank" rel="noopener noreferrer">${urlEntity.id}</a>`;
-                                    tr.appendChild(mbidTd);
-                                    const entityTypeTd = document.createElement('td'); entityTypeTd.textContent = 'N/A'; tr.appendChild(entityTypeTd);
-                                    const entityNameTd = document.createElement('td'); entityNameTd.textContent = 'N/A'; tr.appendChild(entityNameTd);
-                                    const relationTypeTd = document.createElement('td'); relationTypeTd.textContent = 'N/A'; tr.appendChild(relationTypeTd);
-                                    const editLinkTd = document.createElement('td');
-                                    editLinkTd.innerHTML = `<a href="https://musicbrainz.org/url/${urlEntity.id}/edit" target="_blank" rel="noopener noreferrer">Edit</a>`;
-                                    tr.appendChild(editLinkTd);
-                                    this.originalTableRows.push(tr);
-                                    const uniqueEntityKey = `N/A-${urlEntity.id}-no-relations`;
-                                    if (!this.countedEntitiesForStats.has(uniqueEntityKey)) {
-                                        this.entityTypeCounts['N/A'] = (this.entityTypeCounts['N/A'] || 0) + 1;
-                                        this.countedEntitiesForStats.add(uniqueEntityKey);
-                                    }
-                                }
+                        if (relations && relations.length > 0) {
+                            for (const relation of relations) {
+                                const tr = this._createTableRow(urlEntity, relation);
+                                this.originalTableRows.push(tr);
+                                this.resultsTableBody.appendChild(tr);
                             }
                         } else {
-                            const tr = document.createElement('tr');
-                            const mbidTd = document.createElement('td');
-                            mbidTd.innerHTML = `<a href="https://musicbrainz.org/url/${urlEntity.id}" target="_blank" rel="noopener noreferrer">${urlEntity.id}</a>`;
-                            tr.appendChild(mbidTd);
-                            const entityTypeTd = document.createElement('td'); entityTypeTd.textContent = 'N/A'; tr.appendChild(entityTypeTd);
-                            const entityNameTd = document.createElement('td'); entityNameTd.textContent = 'N/A'; tr.appendChild(entityNameTd);
-                            const relationTypeTd = document.createElement('td'); relationTypeTd.textContent = 'N/A'; tr.appendChild(relationTypeTd);
-                            const editLinkTd = document.createElement('td');
-                            editLinkTd.innerHTML = `<a href="https://musicbrainz.org/url/${urlEntity.id}/edit" target="_blank" rel="noopener noreferrer">Edit</a>`;
-                            tr.appendChild(editLinkTd);
+                            // Render placeholder row immediately so UI displays result without blocking!
+                            const tr = this._createTableRow(urlEntity, null, true);
                             this.originalTableRows.push(tr);
-                            const uniqueEntityKey = `N/A-${urlEntity.id}-no-relation-list`;
-                            if (!this.countedEntitiesForStats.has(uniqueEntityKey)) {
-                                this.entityTypeCounts['N/A'] = (this.entityTypeCounts['N/A'] || 0) + 1;
-                                this.countedEntitiesForStats.add(uniqueEntityKey);
-                            }
+                            this.resultsTableBody.appendChild(tr);
+                            unresolvedMbids.push(urlEntity);
                         }
                     }
                 }
 
                 if (this.currentSortColumn !== null && this.currentSortDirection[this.currentSortColumn] !== 'none') {
                     this._sortTable(this.currentSortColumn, true);
-                } else {
-                    this.resultsTableBody.innerHTML = '';
-                    const fragment = document.createDocumentFragment();
-                    this.originalTableRows.forEach(row => fragment.appendChild(row));
-                    this.resultsTableBody.appendChild(fragment);
                 }
 
                 this._displayEntityTypeStats();
+
+                // Background progressive infilling of missing relationship data
+                if (unresolvedMbids.length > 0) {
+                    this._resolveRelationshipsInBackground(unresolvedMbids);
+                }
             }
         }
 
