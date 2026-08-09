@@ -96,7 +96,7 @@
         .btn-theme { display:inline-flex;align-items:center;gap:8px;background:var(--bg-card);border:1px solid var(--border-color);padding:6px 14px;border-radius:30px;font-size:12px;font-weight:500;color:var(--text-muted);cursor:pointer;box-shadow:none;transition:var(--transition-fast);font-family:inherit; }
         .btn-theme:hover { color:var(--text-main);background:var(--bg-card-hover);border-color:var(--accent-primary); }
         .api-badge { display:flex;align-items:center;gap:8px;background:var(--bg-card);border:1px solid var(--border-color);padding:6px 14px;border-radius:30px;font-size:12px;font-weight:500;color:var(--text-muted); }
-        .status-dot { width:8px;height:8px;background-color:var(--accent-success);border-radius:50%;box-shadow:0 0 8px var(--accent-success); }
+        .status-dot { width:8px;height:8px;background-color:var(--accent-success);border-radius:50%;box-shadow:0 0 8px var(--accent-success);transition:var(--transition-fast); }
 
         .card-container { background-color:var(--bg-card);border:1px solid var(--border-color);border-radius:var(--radius-lg);box-shadow:var(--shadow-card);padding:24px;width:100%;max-width:1720px;margin-bottom:24px; }
 
@@ -143,6 +143,7 @@
         button.btn-success:hover:not(:disabled) { background-color:var(--accent-success-hover);filter:brightness(1.1); }
         button.btn-secondary { background-color:var(--border-color);color:var(--text-main); }
         button.btn-secondary:hover:not(:disabled) { background-color:var(--bg-card-hover);filter:brightness(1.1); }
+        button:disabled, button.action-btn:disabled { opacity:0.45;cursor:not-allowed!important;filter:grayscale(0.3)!important;box-shadow:none!important;pointer-events:none; }
         button.action-btn:disabled { opacity:0.5;cursor:not-allowed;transform:none!important;box-shadow:none!important; }
         .toggle-row { display:inline-flex!important;align-items:center!important;gap:10px!important;margin-top:6px!important;margin-bottom:10px!important;cursor:pointer!important;user-select:none!important;font-size:13px!important;font-weight:500!important;color:var(--text-main)!important; }
         .toggle-row input[type="checkbox"] { width:18px!important;height:18px!important;margin:0!important;accent-color:var(--accent-primary);cursor:pointer!important; }
@@ -243,7 +244,7 @@
             <button id="themeToggleBtn" type="button" class="btn-theme">&#127763; Theme: Auto</button>
             <div class="api-badge">
                 <div class="status-dot" id="statusDot"></div>
-                <span id="apiBadgeText">Checking MusicBrainz API...</span>
+                <span id="apiBadgeText">Online</span>
             </div>
         </div>
     </header>
@@ -514,8 +515,10 @@
             this.totalExpectedBatches = 0;
             this.resolveTotal         = 0;
             this.resolveCompleted     = 0;
+            this.isFetchComplete      = false;
             this.abortController      = new AbortController();
             this.state                = FetchSession.State.IDLE;
+            this.lastActiveState      = FetchSession.State.FETCHING;
             this.pauseReason          = null;
             this.errorMessage         = null;
         }
@@ -527,15 +530,26 @@
         isPaused()    { return this.state === FetchSession.State.PAUSED; }
         isComplete()  { return this.state === FetchSession.State.COMPLETE; }
 
-        abort() {
+        abort(reason = 'user_abort') {
             this.abortController.abort();
+            this.lastActiveState = this.state;
             this.state = FetchSession.State.PAUSED;
-            this.pauseReason = 'user_abort';
+            this.pauseReason = reason;
+        }
+
+        pause(reason = 'offline') {
+            this.abortController.abort();
+            this.lastActiveState = this.state;
+            this.state = FetchSession.State.PAUSED;
+            this.pauseReason = reason;
         }
 
         resume() {
             this.abortController = new AbortController();
-            this.state       = FetchSession.State.FETCHING;
+            this.state       = this.isFetchComplete
+                ? FetchSession.State.RESOLVING
+                : FetchSession.State.FETCHING;
+            this.lastActiveState = this.state;
             this.pauseReason = null;
             this.errorMessage = null;
         }
@@ -585,7 +599,7 @@
                 this.rowIds.delete(oldId);
                 this.rowIds.add(patch.id);
             }
-            Object.assign(item, patch, { isLoading: false });
+            Object.assign(item, { isLoading: false }, patch);
             this._trackStats(item);
             this._emit('update', { item, oldId });
         }
@@ -639,6 +653,7 @@
 
         // ── Session ──────────────────────────────────────────────────────
         setSession(session) { this._session = session; this._renderControls(); }
+        setOffline(isOffline) { this._isOffline = isOffline; this._renderControls(); }
         renderAll() { this._renderControls(); this._renderKpi(); this._renderExportCounts(); }
 
         // ── DataStore events ─────────────────────────────────────────────
@@ -698,33 +713,50 @@
         // ── Buttons ───────────────────────────────────────────────────────
         _renderActionButtons(session, store) {
             const active = session?.isActive();
-            this.el.abortButton.style.display  = active ? 'inline-flex' : 'none';
-            this.el.searchButton.disabled      = active;
-            if (this.el.resolveUnresolvedBtn)  this.el.resolveUnresolvedBtn.disabled = active;
+            const isOffline = !navigator.onLine || Boolean(this._isOffline);
 
-            // ceiling is only reliable once the first batch has returned (totalResultsCount > 0).
-            // When aborted before first batch, totalResultsCount = 0 so ceiling = 0 and the
-            // fetchedMbids.size < ceiling check would always be false — hide the resume button
-            // incorrectly. Instead: always allow resume if paused and we have a query to retry.
+            this.el.abortButton.style.display  = active ? 'inline-flex' : 'none';
+            this.el.searchButton.disabled      = active || isOffline;
+            this.el.searchButton.title         = isOffline ? 'Cannot search while offline' : '';
+
+            if (this.el.resolveUnresolvedBtn) {
+                this.el.resolveUnresolvedBtn.disabled = active || isOffline;
+                this.el.resolveUnresolvedBtn.title    = isOffline ? 'Cannot resolve relationships while offline' : '';
+            }
+
             const total   = store.totalResultsCount;
             const ceiling = session
                 ? (isFinite(session.userLimit) ? Math.min(session.userLimit, total) : total)
                 : 0;
-            const showResume = session?.isPaused() &&
-                (total === 0 || store.fetchedMbids.size < ceiling);
+            const isResolvingPhase = session?.isResolving() || (session?.isPaused() && session.isFetchComplete);
+            const showResume = session?.isPaused() && (
+                isResolvingPhase
+                    ? store.resultsData.some(d => !d.isResolved && !d.isResolvedChecked)
+                    : (total === 0 || store.fetchedMbids.size < ceiling)
+            );
             const fetched = store.fetchedMbids.size;
             const remaining = Math.max(0, ceiling - fetched);
             const nextN   = Math.min(session?.batchSize ?? 100, remaining || (session?.batchSize ?? 100));
-            const label   = showResume && total > 0
-                ? `&#9654;&#65039; Fetch Next ${nextN.toLocaleString()} Results (${fetched.toLocaleString()}/${total.toLocaleString()} fetched)`
-                : '&#9654;&#65039; Resume Fetching';
+
+            let label = '&#9654;&#65039; Resume Fetching';
+            if (isResolvingPhase) {
+                const unres = store.resultsData.filter(d => !d.isResolved && !d.isResolvedChecked).length;
+                label = `&#9654;&#65039; Resume Resolving (${unres} remaining)`;
+            } else if (showResume && total > 0) {
+                label = `&#9654;&#65039; Fetch Next ${nextN.toLocaleString()} Results (${fetched.toLocaleString()}/${total.toLocaleString()} fetched)`;
+            }
 
             const tableVisible = this.el.resultsContent.style.display !== 'none'
                               && this.el.renderWarningPanel.style.display === 'none';
             this.el.topResumeButton.style.display    = (showResume && !tableVisible) ? 'inline-flex' : 'none';
             this.el.topResumeButton.innerHTML        = label;
+            this.el.topResumeButton.disabled         = isOffline;
+            this.el.topResumeButton.title            = isOffline ? 'Cannot resume while offline' : '';
+
             this.el.bottomResumeButton.style.display = (showResume && tableVisible)  ? 'inline-flex' : 'none';
             this.el.bottomResumeButton.innerHTML     = label;
+            this.el.bottomResumeButton.disabled      = isOffline;
+            this.el.bottomResumeButton.title         = isOffline ? 'Cannot resume while offline' : '';
         }
 
         _renderExportToolbar(session) {
@@ -868,18 +900,8 @@
             this.lastRequestTime = 0;
             this.onStatusChange  = onStatusChange;
             this.allLinkTypes    = [];
-            this.checkConnection();
+            if (!navigator.onLine) this._status('Offline', 'error');
             this._loadRelationshipTypes();
-        }
-
-        async checkConnection() {
-            if (!navigator.onLine) { this._status('Offline','error'); return false; }
-            this._status('Connecting to MusicBrainz API\u2026','warning');
-            try {
-                const r = await fetch('https://musicbrainz.org/ws/2/area/?query=area:London&fmt=json&limit=1', { headers:{ 'User-Agent':this.USER_AGENT } });
-                if (r.ok) { this._status('Connected to MusicBrainz WS/2 API','online'); return true; }
-                this._status(`MusicBrainz API Status (HTTP ${r.status})`,'warning'); return false;
-            } catch { this._status(navigator.onLine ? 'MusicBrainz API Unreachable' : 'Offline','error'); return false; }
         }
 
         _status(text, type='online') { this.onStatusChange?.(text, type); }
@@ -890,8 +912,13 @@
             this.lastRequestTime = Date.now();
         }
 
-        async fetchWithRetry(url, options={}, retries=3, delayMs=2000) {
-            if (!navigator.onLine) throw new Error('No network connection.');
+        async fetchWithRetry(url, options={}, retries=3, delayMs=1500) {
+            if (!navigator.onLine) {
+                this._status('Offline', 'error');
+                const offErr = new Error('No network connection.');
+                offErr.name = 'OfflineError';
+                throw offErr;
+            }
             let lastErr;
             for (let attempt = 0; attempt <= retries; attempt++) {
                 if (options.signal?.aborted) throw new DOMException('Aborted','AbortError');
@@ -899,7 +926,10 @@
                 if (options.signal?.aborted) throw new DOMException('Aborted','AbortError');
                 try {
                     const res = await fetch(url, { headers:{ 'User-Agent':this.USER_AGENT }, ...options });
-                    if (res.ok) { this._status('Connected to MusicBrainz WS/2 API','online'); return res; }
+                    if (res.ok) {
+                        this._status('Online', 'online');
+                        return res;
+                    }
                     if ([503,429].includes(res.status) || res.status >= 500) {
                         this._status(`Rate Limited / Retrying (HTTP ${res.status})\u2026`,'warning');
                         await new Promise(r => setTimeout(r, delayMs * 1.5 ** attempt));
@@ -908,12 +938,26 @@
                     throw new Error(`HTTP ${res.status}`);
                 } catch (err) {
                     if (err.name === 'AbortError') throw err;
-                    if (!navigator.onLine) throw new Error('Network connection lost.');
+                    if (!navigator.onLine) {
+                        this._status('Offline', 'error');
+                        const offErr = new Error('Network connection lost.');
+                        offErr.name = 'OfflineError';
+                        throw offErr;
+                    }
                     if (attempt < retries) {
                         this._status(`Retrying (${attempt+1}/${retries})\u2026`,'warning');
                         await new Promise(r => setTimeout(r, delayMs * 1.5 ** attempt));
                         lastErr = err;
-                    } else { this._status('MusicBrainz API Error','error'); throw err; }
+                    } else {
+                        if (!navigator.onLine) {
+                            this._status('Offline', 'error');
+                            const offErr = new Error('Network connection lost.');
+                            offErr.name = 'OfflineError';
+                            throw offErr;
+                        }
+                        this._status('MusicBrainz API Error','error');
+                        throw err;
+                    }
                 }
             }
             throw lastErr || new Error('Request failed after retries.');
@@ -927,12 +971,10 @@
             return `https://musicbrainz.org/ws/2/url/?query=${q}&fmt=json&limit=${limit}&offset=${offset}`;
         }
 
-        async fetchUrlEntityRelationships(mbid) {
+        async fetchUrlEntityRelationships(mbid, signal) {
             const inc = 'artist-rels+release-rels+release-group-rels+recording-rels+work-rels+label-rels+area-rels+event-rels+place-rels+series-rels+instrument-rels+url-rels';
-            try {
-                const res = await this.fetchWithRetry(`https://musicbrainz.org/ws/2/url/${mbid}?inc=${inc}&fmt=json`, {}, 2, 1500);
-                return (await res.json()).relations || [];
-            } catch (e) { console.warn(`Could not resolve MBID ${mbid}:`, e); return []; }
+            const res = await this.fetchWithRetry(`https://musicbrainz.org/ws/2/url/${mbid}?inc=${inc}&fmt=json`, { signal }, 2, 1500);
+            return (await res.json()).relations || [];
         }
 
         async _loadRelationshipTypes() {
@@ -971,36 +1013,53 @@
 
         async run(session) {
             try {
-                // First page: establishes totalResultsCount + totalExpectedBatches
-                if (session.offset === 0) {
-                    const data = await this._fetchPage(session);
-                    if (!data) return;
+                // Phase 1: Fetching
+                if (!session.isFetchComplete) {
+                    session.state = FetchSession.State.FETCHING;
+                    session.lastActiveState = FetchSession.State.FETCHING;
+                    this.ui.setSession(session);
 
-                    this.store.totalResultsCount = data.count;
-                    const ceiling = isFinite(session.userLimit) ? Math.min(session.userLimit, data.count) : data.count;
-                    session.totalExpectedBatches = Math.max(1, Math.ceil(ceiling / session.batchSize));
-                    this.ui.setSession(session);   // refresh progress with correct total
-                    this._processPage(data.urls || [], session);
+                    if (session.offset === 0) {
+                        const data = await this._fetchPage(session);
+                        if (!data) return;
+
+                        this.store.totalResultsCount = data.count;
+                        const ceiling = isFinite(session.userLimit) ? Math.min(session.userLimit, data.count) : data.count;
+                        session.totalExpectedBatches = Math.max(1, Math.ceil(ceiling / session.batchSize));
+                        this.ui.setSession(session);
+                        this._processPage(data.urls || [], session);
+                    }
+
+                    const ceiling = isFinite(session.userLimit)
+                        ? Math.min(session.userLimit, this.store.totalResultsCount)
+                        : this.store.totalResultsCount;
+
+                    while (session.isFetching() &&
+                           this.store.fetchedMbids.size < ceiling &&
+                           session.offset < this.store.totalResultsCount) {
+                        const data = await this._fetchPage(session);
+                        if (!data) break;
+                        this._processPage(data.urls || [], session);
+                    }
+
+                    if (session.signal.aborted || session.isPaused()) return;
+                    session.isFetchComplete = true;
                 }
 
-                const ceiling = isFinite(session.userLimit)
-                    ? Math.min(session.userLimit, this.store.totalResultsCount)
-                    : this.store.totalResultsCount;
-
-                while (session.isFetching() &&
-                       this.store.fetchedMbids.size < ceiling &&
-                       session.offset < this.store.totalResultsCount) {
-                    const data = await this._fetchPage(session);
-                    if (!data) break;
-                    this._processPage(data.urls || [], session);
+                // Phase 2: Resolving
+                if (session.resolveAfterFetch) {
+                    await this.resolveUnresolved(session);
+                } else if (!session.isPaused()) {
+                    session.state = FetchSession.State.COMPLETE;
                 }
-
-                if (session.isFetching()) session.state = FetchSession.State.COMPLETE;
 
             } catch (err) {
-                if (err.name !== 'AbortError' && !session.isPaused()) {
+                if (err.name === 'OfflineError' || !navigator.onLine || err.name === 'TypeError') {
+                    session.pause('offline');
+                } else if (err.name !== 'AbortError' && !session.isPaused()) {
                     session.state = FetchSession.State.ERROR;
                     session.errorMessage = err.message;
+                    this.api._status('MusicBrainz API Error', 'error');
                     console.error('FetchOrchestrator error:', { sessionId: session.id, offset: session.offset, error: err.message });
                     this.toast.show(`Error: ${err.message}`, 'error', 5000);
                 }
@@ -1017,7 +1076,7 @@
             const data = await res.json();
             session.completedBatches++;
             session.offset += (data.urls?.length ?? 0);
-            this.ui.setSession(session);   // live progress update each page
+            this.ui.setSession(session);
             return data;
         }
 
@@ -1028,28 +1087,30 @@
                     rels.forEach((rel, idx) => {
                         const info = extractRelationInfo(rel);
                         this.store.addItem({
-                            id:           `${urlEntity.id}-${info.entityType}-${info.entityId || 'no-target'}-${idx}`,
-                            urlMbid:      urlEntity.id,
-                            targetUrl:    urlEntity.resource || 'N/A',
-                            entityType:   info.entityType,
-                            entityName:   info.entityName,
-                            entityId:     info.entityId,
-                            relationType: info.relationType,
-                            isResolved:   info.isLinked,
-                            isLoading:    false,
+                            id:                `${urlEntity.id}-${info.entityType}-${info.entityId || 'no-target'}-${idx}`,
+                            urlMbid:           urlEntity.id,
+                            targetUrl:         urlEntity.resource || 'N/A',
+                            entityType:        info.entityType,
+                            entityName:        info.entityName,
+                            entityId:          info.entityId,
+                            relationType:      info.relationType,
+                            isResolved:        info.isLinked,
+                            isResolvedChecked: true,
+                            isLoading:         false,
                         });
                     });
                 } else {
                     const isLoading = Boolean(session.resolveAfterFetch);
                     this.store.addItem({
-                        id:           `unresolved-${urlEntity.id}`,
-                        urlMbid:      urlEntity.id,
-                        targetUrl:    urlEntity.resource || 'N/A',
-                        entityType:   isLoading ? 'Resolving...' : 'Unresolved',
-                        entityName:   isLoading ? 'Resolving...' : 'N/A',
-                        entityId:     null,
-                        relationType: isLoading ? 'Resolving...' : 'N/A',
-                        isResolved:   false,
+                        id:                `unresolved-${urlEntity.id}`,
+                        urlMbid:           urlEntity.id,
+                        targetUrl:         urlEntity.resource || 'N/A',
+                        entityType:        isLoading ? 'Resolving...' : 'Unresolved',
+                        entityName:        isLoading ? 'Resolving...' : 'N/A',
+                        entityId:          null,
+                        relationType:      isLoading ? 'Resolving...' : 'N/A',
+                        isResolved:        false,
+                        isResolvedChecked: false,
                         isLoading,
                     });
                 }
@@ -1058,75 +1119,107 @@
 
         /** Post-run resolution phase — called only after pagination completes or on button click */
         async resolveUnresolved(session) {
-            const unresolved = this.store.resultsData.filter(d => d.isLoading || !d.isResolved);
+            const unresolved = this.store.resultsData.filter(d => !d.isResolved && !d.isResolvedChecked);
             if (!unresolved.length) {
-                this.toast.show('No unresolved relationship items to resolve.', 'info');
+                if (!session.isPaused()) session.state = FetchSession.State.COMPLETE;
                 return;
             }
 
             session.state = FetchSession.State.RESOLVING;
-            session.resolveTotal = unresolved.length;
-            session.resolveCompleted = 0;
+            session.lastActiveState = FetchSession.State.RESOLVING;
+            const totalCount = this.store.resultsData.length;
+            const completedCount = this.store.resultsData.filter(d => d.isResolved || d.isResolvedChecked).length;
+            session.resolveTotal = totalCount;
+            session.resolveCompleted = completedCount;
             this.ui.setSession(session);
+            this.ui.renderAll();
 
             this.toast.show(`Resolving ${unresolved.length} unresolved URLs via WS/2\u2026`, 'info');
 
             for (let idx = 0; idx < unresolved.length; idx++) {
-                if (session.signal.aborted) break;
+                if (session.signal.aborted || !session.isResolving()) break;
                 const item = unresolved[idx];
 
                 if (!item.isLoading) {
                     this.store.updateItem(item.id, { isLoading: true });
                 }
 
-                const rels = await this.api.fetchUrlEntityRelationships(item.urlMbid);
-                if (session.signal.aborted) break;
+                try {
+                    const rels = await this.api.fetchUrlEntityRelationships(item.urlMbid, session.signal);
+                    if (session.signal.aborted || !session.isResolving()) {
+                        this.store.updateItem(item.id, { isLoading: false });
+                        break;
+                    }
 
-                if (rels.length > 0) {
-                    const firstRel = rels[0];
-                    const info = extractRelationInfo(firstRel);
-                    const newId = `${item.urlMbid}-${info.entityType}-${info.entityId || 'no-target'}-0`;
-                    this.store.updateItem(item.id, {
-                        id:           newId,
-                        entityType:   info.entityType,
-                        entityName:   info.entityName,
-                        entityId:     info.entityId,
-                        relationType: info.relationType,
-                        isResolved:   info.isLinked,
-                    });
-                    for (let i = 1; i < rels.length; i++) {
-                        const extraInfo = extractRelationInfo(rels[i]);
-                        this.store.addItem({
-                            id:           `${item.urlMbid}-${extraInfo.entityType}-${extraInfo.entityId || 'no-target'}-${i}`,
-                            urlMbid:      item.urlMbid,
-                            targetUrl:    item.targetUrl,
-                            entityType:   extraInfo.entityType,
-                            entityName:   extraInfo.entityName,
-                            entityId:     extraInfo.entityId,
-                            relationType: extraInfo.relationType,
-                            isResolved:   extraInfo.isLinked,
-                            isLoading:    false,
+                    if (rels.length > 0) {
+                        const firstRel = rels[0];
+                        const info = extractRelationInfo(firstRel);
+                        const newId = `${item.urlMbid}-${info.entityType}-${info.entityId || 'no-target'}-0`;
+                        this.store.updateItem(item.id, {
+                            id:                newId,
+                            entityType:        info.entityType,
+                            entityName:        info.entityName,
+                            entityId:          info.entityId,
+                            relationType:      info.relationType,
+                            isResolved:        info.isLinked,
+                            isResolvedChecked: true,
+                            isLoading:         false,
+                        });
+                        for (let i = 1; i < rels.length; i++) {
+                            const extraInfo = extractRelationInfo(rels[i]);
+                            this.store.addItem({
+                                id:                `${item.urlMbid}-${extraInfo.entityType}-${extraInfo.entityId || 'no-target'}-${i}`,
+                                urlMbid:           item.urlMbid,
+                                targetUrl:         item.targetUrl,
+                                entityType:        extraInfo.entityType,
+                                entityName:        extraInfo.entityName,
+                                entityId:          extraInfo.entityId,
+                                relationType:      extraInfo.relationType,
+                                isResolved:        extraInfo.isLinked,
+                                isResolvedChecked: true,
+                                isLoading:         false,
+                            });
+                        }
+                    } else {
+                        this.store.updateItem(item.id, {
+                            entityType:        'Unresolved',
+                            entityName:        'N/A',
+                            relationType:      'N/A',
+                            isResolved:        false,
+                            isResolvedChecked: true,
+                            isLoading:         false,
                         });
                     }
-                } else {
-                    this.store.updateItem(item.id, {
-                        entityType:   'Unresolved',
-                        entityName:   'N/A',
-                        relationType: 'N/A',
-                        isResolved:   false,
-                    });
-                }
 
-                session.resolveCompleted = idx + 1;
-                this.ui.setSession(session);
+                    session.resolveCompleted++;
+                    this.ui.setSession(session);
+                } catch (err) {
+                    this.store.updateItem(item.id, { isLoading: false });
+                    if (err.name === 'OfflineError' || !navigator.onLine) {
+                        session.pause('offline');
+                        break;
+                    }
+                    if (err.name === 'AbortError' || session.signal.aborted) {
+                        break;
+                    }
+                    console.warn(`Could not resolve MBID ${item.urlMbid}:`, err);
+                    this.store.updateItem(item.id, {
+                        entityType:        'Unresolved',
+                        entityName:        'N/A',
+                        relationType:      'N/A',
+                        isResolved:        false,
+                        isResolvedChecked: true,
+                        isLoading:         false,
+                    });
+                    session.resolveCompleted++;
+                    this.ui.setSession(session);
+                }
             }
 
-            if (!session.signal.aborted) {
+            if (!session.signal.aborted && !session.isPaused() && session.isResolving()) {
                 session.state = FetchSession.State.COMPLETE;
                 this.toast.show('Relationship resolution complete.', 'success');
             }
-            this.ui.setSession(session);
-            this.ui.renderAll();
         }
     }
 
@@ -1331,9 +1424,11 @@
         }
 
         _updateApiBadge(text, type='online') {
+            this._isOffline = (type === 'error' && (text === 'Offline' || text.includes('Offline')));
+            if (this.ui) this.ui.setOffline(this._isOffline);
             if (this.el.apiBadgeText) this.el.apiBadgeText.textContent = text;
             if (this.el.statusDot) {
-                const c = { online:'var(--accent-success)', busy:'var(--accent-primary)', warning:'var(--accent-warning)', error:'var(--accent-danger)' }[type] || 'var(--accent-success)';
+                const c = { online:'var(--accent-success)', warning:'var(--accent-warning)', error:'var(--accent-danger)' }[type] || 'var(--accent-success)';
                 this.el.statusDot.style.backgroundColor = c;
                 this.el.statusDot.style.boxShadow = `0 0 8px ${c}`;
             }
@@ -1347,14 +1442,37 @@
             this.el.exportToolbar.style.display       = 'none';
             this.el.renderWarningPanel.style.display  = 'none';
             this.el.resultsContent.style.display      = 'block';
+
+            if (!navigator.onLine) {
+                this._updateApiBadge('Offline', 'error');
+            } else {
+                this._updateApiBadge('Online', 'online');
+            }
+            this.ui.renderAll();
         }
 
         _initEventListeners() {
+            let onlineResumeTimeout = null;
             window.addEventListener('online', () => {
-                this.api.checkConnection();
+                this._updateApiBadge('Online', 'online');
+                this.ui._renderControls();
+                clearTimeout(onlineResumeTimeout);
+                onlineResumeTimeout = setTimeout(() => {
+                    if (this._session && !this._session.isComplete() && (this._session.isPaused() || this._session.state === FetchSession.State.ERROR)) {
+                        this.toast.show('Network restored. Resuming\u2026', 'info');
+                        this._resume();
+                    }
+                }, 400);
             });
             window.addEventListener('offline', () => {
+                clearTimeout(onlineResumeTimeout);
                 this._updateApiBadge('Offline', 'error');
+                if (this._session && !this._session.isComplete()) {
+                    this._session.pause('offline');
+                    this.toast.show('Network offline. Fetching paused.', 'warning');
+                }
+                this.ui.setSession(this._session);
+                this.ui.renderAll();
             });
 
             this.el.searchButton.addEventListener('click', () => this._startSearch());
@@ -1389,16 +1507,23 @@
             });
 
             this.el.resolveUnresolvedBtn?.addEventListener('click', async () => {
+                if (!navigator.onLine) {
+                    this.toast.show('Cannot resolve relationships while offline.', 'warning');
+                    return;
+                }
                 if (!this._session) {
                     this._session = new FetchSession({
                         url: this.el.urlInput.value.trim(),
                         batchSize: 100,
                         userLimit: Infinity,
-                        resolveAfterFetch: false
+                        resolveAfterFetch: true
                     });
                 }
+                this.store.resultsData.forEach(d => { if (!d.isResolved) d.isResolvedChecked = false; });
+                this._session.resolveAfterFetch = true;
+                this._session.isFetchComplete   = true;
                 this._session.resume();
-                await this.orch.resolveUnresolved(this._session);
+                await this.orch.run(this._session);
             });
 
             this.el.exportCsvBtn?.addEventListener('click',  () => this._export('csv'));
@@ -1431,6 +1556,10 @@
 
         // ── Search lifecycle ─────────────────────────────────────────────
         async _startSearch() {
+            if (!navigator.onLine) {
+                this.toast.show('Cannot start search while offline.', 'warning');
+                return;
+            }
             const url = this.el.urlInput.value.trim();
             if (!url) {
                 this.el.urlInput.classList.add('input-invalid');
@@ -1451,24 +1580,15 @@
                 entityType:        this.el.entityTypeInput.value.trim(),
                 relationType:      this.el.relationTypeInput.value.trim(),
                 targetId:          this.el.targetIdInput.value.trim(),
-                resolveAfterFetch: this.el.resolveMissingCheckbox?.checked,
+                resolveAfterFetch: Boolean(this.el.resolveMissingCheckbox?.checked),
             });
-            this._session.state = FetchSession.State.FETCHING;
 
             this.store.reset();
             this.el.renderWarningPanel.style.display = 'none';
             this.el.resultsContent.style.display = 'block';
             if (this.el.selectAllCheckbox) this.el.selectAllCheckbox.checked = false;
 
-            this.ui.setSession(this._session);
             await this.orch.run(this._session);
-
-            if (this._session.isComplete() && this._session.resolveAfterFetch) {
-                await this.orch.resolveUnresolved(this._session);
-            }
-
-            this.ui.setSession(this._session);
-            this.ui.renderAll();
 
             if (this._session.isComplete()) {
                 this.toast.show(`Fetched ${this.store.resultsData.length.toLocaleString()} results.`, 'success');
@@ -1486,17 +1606,10 @@
         }
 
         async _resume() {
-            if (!this._session?.isPaused()) return;
+            if (!navigator.onLine) return;
+            if (!this._session || this._session.isComplete() || this._session.isActive()) return;
             this._session.resume();
-            this.ui.setSession(this._session);
             await this.orch.run(this._session);
-
-            if (this._session.isComplete() && this._session.resolveAfterFetch) {
-                await this.orch.resolveUnresolved(this._session);
-            }
-
-            this.ui.setSession(this._session);
-            this.ui.renderAll();
         }
 
         _clearAll() {
