@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        Click buttons across tabs
 // @namespace   https://musicbrainz.org/user/chaban
-// @version     4.11.0
+// @version     4.12.0
 // @description Clicks specified buttons across tabs using the Broadcast Channel API and closes tabs after successful submission.
 // @tag         ai-created
 // @author      chaban
@@ -80,6 +80,36 @@
     };
 
     /**
+     * Checks if standard HTML form inputs are dirty via native DOM properties (defaultValue, defaultChecked, defaultSelected).
+     * @param {HTMLFormElement} form - Target form element.
+     * @returns {boolean} True if any form element differs from its native default value.
+     */
+    const isNativeFormDirty = (form) => {
+        if (!form || !form.elements) return false;
+
+        for (const el of form.elements) {
+            const name = el.name || '';
+            if (!name || name.includes('csrf') || name.includes('confirm') || name === 'tag' || name.includes('edit_note') || name.includes('edit-note')) {
+                continue;
+            }
+
+            if (el instanceof HTMLInputElement) {
+                if (el.type === 'checkbox' || el.type === 'radio') {
+                    if (el.defaultChecked !== el.checked) return true;
+                } else if (el.type !== 'submit' && el.type !== 'button' && el.type !== 'hidden') {
+                    if (normalizeText(el.defaultValue) !== normalizeText(el.value)) return true;
+                }
+            } else if (el instanceof HTMLTextAreaElement) {
+                if (normalizeText(el.defaultValue) !== normalizeText(el.value)) return true;
+            } else if (el instanceof HTMLSelectElement) {
+                const isSelectDirty = Array.from(el.options).some(opt => opt.defaultSelected !== opt.selected);
+                if (isSelectDirty) return true;
+            }
+        }
+        return false;
+    };
+
+    /**
      * Generates a key-value snapshot map of standard HTML form inputs via FormData.
      * @param {HTMLFormElement} form - Target form element.
      * @returns {Map<string, string[]>} Map of form input keys to sorted array values.
@@ -125,7 +155,7 @@
         const editForms = getEditForms();
         if (!hydrationCaptured) {
             editForms.forEach(form => {
-                if (!initialFormSnapshots.has(form)) {
+                if (!initialFormSnapshots.has(form) && !isNativeFormDirty(form)) {
                     initialFormSnapshots.set(form, getFormDataMap(form));
                 }
             });
@@ -138,7 +168,9 @@
                 setTimeout(() => {
                     const currentForms = getEditForms();
                     currentForms.forEach(form => {
-                        initialFormSnapshots.set(form, getFormDataMap(form));
+                        if (!initialFormSnapshots.has(form) && !isNativeFormDirty(form)) {
+                            initialFormSnapshots.set(form, getFormDataMap(form));
+                        }
                     });
                     hydrationCaptured = true;
                 }, 100);
@@ -155,14 +187,18 @@
     }
 
     /**
-     * Programmatically checks standard HTML form inputs via FormData snapshots.
-     * @returns {boolean} True if any form data field differs from its baseline snapshot.
+     * Programmatically checks standard HTML form inputs via native dirty state and FormData snapshots.
+     * @returns {boolean} True if any form data field differs from its baseline snapshot or native default.
      */
     const hasDirtyFormInputs = () => {
         initFormSnapshots();
         const editForms = getEditForms();
 
         for (const form of editForms) {
+            if (isNativeFormDirty(form)) {
+                return true;
+            }
+
             if (!initialFormSnapshots.has(form)) {
                 initialFormSnapshots.set(form, getFormDataMap(form));
             }
