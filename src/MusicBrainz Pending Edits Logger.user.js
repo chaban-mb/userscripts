@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        MusicBrainz: Pending Edits Logger
 // @namespace   https://musicbrainz.org/user/chaban
-// @version     1.0.1
+// @version     1.0.2
 // @description Real-time diagnostic & debug auditor logging pending changes across MusicBrainz editors (Relationship Editors, External Links Editor, and HTML Form fields).
 // @tag         ai-created
 // @author      chaban
@@ -301,12 +301,13 @@
                 report.externalLinkEdits.count = report.externalLinkEdits.items.length;
             }
         }
+
         const normalizeText = (str) => {
             if (typeof str !== 'string') return str;
             return str.replace(/\u00a0/g, ' ').trim();
         };
 
-        // 3. HTML Form Inputs Audit via FormData
+        // 3. HTML Form Inputs Audit via Native DOM Properties & FormData
         const getEditForms = () => {
             return Array.from(document.forms).filter(form => {
                 const action = form.getAttribute('action') || '';
@@ -317,6 +318,35 @@
                     id.includes('reorder') ||
                     form.closest('#release-editor, #relationship-editor, #external-links-editor, #reorder-cover-art, #reorder-event-art') !== null;
             });
+        };
+
+        const isNativeElementDirty = (el) => {
+            if (!el || !el.name) return false;
+            const name = el.name;
+            if (name.includes('csrf') || name.includes('confirm') || name === 'tag' || name.includes('edit_note') || name.includes('edit-note')) {
+                return false;
+            }
+
+            if (el instanceof HTMLInputElement) {
+                if (el.type === 'checkbox' || el.type === 'radio') {
+                    return el.defaultChecked !== el.checked;
+                } else if (el.type !== 'submit' && el.type !== 'button' && el.type !== 'hidden') {
+                    return normalizeText(el.defaultValue) !== normalizeText(el.value);
+                }
+            } else if (el instanceof HTMLTextAreaElement) {
+                return normalizeText(el.defaultValue) !== normalizeText(el.value);
+            } else if (el instanceof HTMLSelectElement) {
+                return Array.from(el.options).some(opt => opt.defaultSelected !== opt.selected);
+            }
+            return false;
+        };
+
+        const isNativeFormDirty = (form) => {
+            if (!form || !form.elements) return false;
+            for (const el of form.elements) {
+                if (isNativeElementDirty(el)) return true;
+            }
+            return false;
         };
 
         const getFormDataMap = (form) => {
@@ -364,14 +394,14 @@
 
         const editForms = getEditForms();
 
-        if (!window.__mbInitialFormSnapshots || !window.__mbHydrationCaptured) {
-            if (!window.__mbInitialFormSnapshots) {
-                window.__mbInitialFormSnapshots = new Map();
-            }
-            editForms.forEach(form => {
-                window.__mbInitialFormSnapshots.set(form, getFormDataMap(form));
-            });
+        if (!window.__mbInitialFormSnapshots) {
+            window.__mbInitialFormSnapshots = new Map();
         }
+        editForms.forEach(form => {
+            if (!window.__mbInitialFormSnapshots.has(form) && !isNativeFormDirty(form)) {
+                window.__mbInitialFormSnapshots.set(form, getFormDataMap(form));
+            }
+        });
 
         if (!window.__mbHydrationListenerAdded) {
             window.__mbHydrationListenerAdded = true;
@@ -380,7 +410,9 @@
                 setTimeout(() => {
                     const currentForms = getEditForms();
                     currentForms.forEach(form => {
-                        window.__mbInitialFormSnapshots.set(form, getFormDataMap(form));
+                        if (!window.__mbInitialFormSnapshots.has(form) && !isNativeFormDirty(form)) {
+                            window.__mbInitialFormSnapshots.set(form, getFormDataMap(form));
+                        }
                     });
                     window.__mbHydrationCaptured = true;
                     checkAndLogChanges(eventSource);
@@ -396,7 +428,42 @@
             document.addEventListener('mb-hydration', () => refreshBaseline('mb_hydration'));
         }
 
+        const recordedFieldKeys = new Set();
+
         editForms.forEach(form => {
+            // First check native DOM dirty inputs directly
+            if (form.elements) {
+                for (const el of form.elements) {
+                    if (isNativeElementDirty(el)) {
+                        const name = el.name;
+                        let origVal = '';
+                        let currVal = '';
+                        if (el instanceof HTMLInputElement && (el.type === 'checkbox' || el.type === 'radio')) {
+                            origVal = String(el.defaultChecked);
+                            currVal = String(el.checked);
+                        } else if (el instanceof HTMLSelectElement) {
+                            const origOpts = Array.from(el.options).filter(o => o.defaultSelected).map(o => o.value);
+                            const currOpts = Array.from(el.options).filter(o => o.selected).map(o => o.value);
+                            origVal = origOpts.join(', ');
+                            currVal = currOpts.join(', ');
+                        } else {
+                            origVal = normalizeText(el.defaultValue);
+                            currVal = normalizeText(el.value);
+                        }
+
+                        if (!recordedFieldKeys.has(name)) {
+                            recordedFieldKeys.add(name);
+                            report.formInputEdits.items.push({
+                                name,
+                                original: origVal,
+                                current: currVal
+                            });
+                        }
+                    }
+                }
+            }
+
+            // Also check FormData snapshot diffs for hidden/dynamic inputs
             if (!window.__mbInitialFormSnapshots.has(form)) {
                 window.__mbInitialFormSnapshots.set(form, getFormDataMap(form));
             }
@@ -405,6 +472,7 @@
 
             const allKeys = new Set([...initialMap.keys(), ...currentMap.keys()]);
             for (const key of allKeys) {
+                if (recordedFieldKeys.has(key)) continue;
                 const origVals = initialMap.get(key) || [];
                 const currVals = currentMap.get(key) || [];
 
@@ -412,6 +480,7 @@
                 const currStr = currVals.join(', ');
 
                 if (origStr !== currStr) {
+                    recordedFieldKeys.add(key);
                     report.formInputEdits.items.push({
                         name: key,
                         original: origStr,
