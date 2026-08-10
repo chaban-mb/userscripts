@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        YouTube: MusicBrainz Importer
 // @namespace   https://musicbrainz.org/user/chaban
-// @version     2.10.2
+// @version     2.11.0
 // @description Imports YouTube videos to MusicBrainz as a new standalone recording
 // @tag         ai-created
 // @author      nikki, RustyNova, chaban
@@ -246,7 +246,7 @@
             const headers = {
                 "Referer": location.origin,
                 "Origin": location.origin,
-                ...(details.headers || {})
+                ...details.headers
             };
 
             return new Promise((resolve, reject) => {
@@ -512,7 +512,6 @@
          * @returns {Object|null}
          */
         extractVideoData(videoId) {
-            const startTime = performance.now();
             const playerResponse = this.getRawPlayerResponse();
 
             // 3. Check movie_player DOM component fallback
@@ -803,8 +802,24 @@
             this._containerDiv.appendChild(this._form);
         },
 
+        setPending: function () {
+            if (this._containerDiv.style.display === 'flex') {
+                this._containerDiv.style.opacity = '0.5';
+                this._containerDiv.style.pointerEvents = 'none';
+                if (this._submitButton) {
+                    this._submitButton.disabled = true;
+                }
+            }
+        },
+
+        hide: function () {
+            this._containerDiv.style.display = 'none';
+            this._containerDiv.style.opacity = '1';
+            this._containerDiv.style.pointerEvents = 'auto';
+        },
+
         /**
-         * Resets the button state, clearing previous form fields and setting to loading.
+         * Resets the button state and clears previous form fields.
          */
         resetState: function () {
             Array.from(this._form.querySelectorAll('input[type="hidden"]')).forEach(input => this._form.removeChild(input));
@@ -816,8 +831,10 @@
             this._textElement.innerText = L10n.getString('loading');
             this._submitButton.className = Config.CLASS_NAMES.BUTTON;
             this._submitButton.disabled = true;
-            this._form.style.display = 'flex';
-            this._containerDiv.style.display = 'flex';
+            this._form.style.display = 'none';
+            this._containerDiv.style.display = 'none';
+            this._containerDiv.style.opacity = '1';
+            this._containerDiv.style.pointerEvents = 'auto';
         },
 
         /**
@@ -881,6 +898,13 @@
          * @param {string} videoId - The YouTube video ID.
          */
         prepareAddButton: function (youtubeVideoData, canonicalYtUrl, artistMbid, videoId) {
+            // Clear any previous form fields and link elements
+            Array.from(this._form.querySelectorAll('input[type="hidden"]')).forEach(input => this._form.removeChild(input));
+            while (this._containerDiv.firstChild) {
+                this._containerDiv.removeChild(this._containerDiv.firstChild);
+            }
+            this._containerDiv.appendChild(this._form);
+
             const title = youtubeVideoData.snippet.title;
             const artist = youtubeVideoData.snippet.channelTitle;
 
@@ -912,6 +936,9 @@
             this._submitButton.className = `${Config.CLASS_NAMES.BUTTON} ${Config.CLASS_NAMES.BUTTON_READY}`;
             this._submitButton.disabled = false;
             this._form.style.display = 'flex';
+            this._containerDiv.style.display = 'flex';
+            this._containerDiv.style.opacity = '1';
+            this._containerDiv.style.pointerEvents = 'auto';
 
             const invalidateCacheAndPrefetch = () => {
                 console.debug(`[${GM.info.script.name}] Import button clicked. Clearing cache for video ID: ${videoId}`);
@@ -921,8 +948,6 @@
                     const youtubeChannelUrl = new URL(`https://www.youtube.com/channel/${youtubeVideoData.snippet.channelId}`).toString();
                     YouTubeMusicBrainzImporter._mbApi.invalidateCacheForUrl(youtubeChannelUrl);
                 }
-                YouTubeMusicBrainzImporter._prefetchedVideoId = null;
-                YouTubeMusicBrainzImporter._prefetchedDataPromise = null;
             };
             this._submitButton.addEventListener('mousedown', invalidateCacheAndPrefetch);
         },
@@ -937,6 +962,10 @@
          */
         displayExistingButton: function (allRelevantRecordingRelations, urlEntityId, youtubeVideoData, canonicalYtUrl) {
             this._form.style.display = 'none';
+            while (this._containerDiv.firstChild) {
+                this._containerDiv.removeChild(this._containerDiv.firstChild);
+            }
+
             const link = document.createElement('a');
             link.style.textDecoration = 'none';
             link.target = '_blank';
@@ -983,6 +1012,9 @@
                 button.className = `${Config.CLASS_NAMES.BUTTON} ${Config.CLASS_NAMES.BUTTON_ADDED}`;
             }
             this._containerDiv.appendChild(link);
+            this._containerDiv.style.display = 'flex';
+            this._containerDiv.style.opacity = '1';
+            this._containerDiv.style.pointerEvents = 'auto';
             console.debug(`[${GM.info.script.name}] Displaying existing link button.`);
         },
 
@@ -1090,17 +1122,31 @@
             this._currentButton = newButton;
             this._containerDiv.appendChild(this._currentButton);
             this._containerDiv.style.display = 'flex';
+            this._containerDiv.style.opacity = '1';
+            this._containerDiv.style.pointerEvents = 'auto';
+        },
+
+        setPending: function () {
+            if (this._containerDiv.style.display === 'flex') {
+                this._containerDiv.style.opacity = '0.5';
+                this._containerDiv.style.pointerEvents = 'none';
+                if (this._currentButton) {
+                    this._currentButton.disabled = true;
+                }
+            }
         },
 
         hide: function () {
             this._containerDiv.style.display = 'none';
+            this._containerDiv.style.opacity = '1';
+            this._containerDiv.style.pointerEvents = 'auto';
         },
 
         resetState: function () {
             this._clearContainer();
-            const loadingButton = this._createButton(L10n.getString('loading'), '', '', null);
-            loadingButton.disabled = true;
-            this._replaceButton(loadingButton);
+            this._containerDiv.style.display = 'none';
+            this._containerDiv.style.opacity = '1';
+            this._containerDiv.style.pointerEvents = 'auto';
         },
 
         setStateTokenNeeded: function (onSuccessCallback) {
@@ -1516,12 +1562,8 @@
      * Main application logic for the userscript.
      */
     const YouTubeMusicBrainzImporter = {
-        _previousUrl: '',
         _processingVideoId: null,
         _currentProcessingPromise: null,
-        _navigationTimeoutId: null,
-        _prefetchedDataPromise: null,
-        _prefetchedVideoId: null,
         _mbApi: null,
 
         lookupMbUrls: async function (canonicalUrls) {
@@ -1559,8 +1601,6 @@
             RecordingButtonManager.init();
             PlaylistButtonManager.init(); // Initialize playlist button manager
             this._setupObservers();
-            this._setupUrlChangeListeners();
-            this._previousUrl = window.location.href;
 
             this.triggerUpdate(DOMScanner.getVideoId());
         },
@@ -1592,6 +1632,7 @@
                         height: 100%;
                         display: flex;
                         align-items: center;
+                        transition: opacity 0.15s ease;
                     }
                     .${Config.CLASS_NAMES.BUTTON} {
                         border-radius: 18px;
@@ -1674,74 +1715,11 @@
          * Sets up observers for YouTube's SPA navigation.
          */
         _setupObservers: function () {
-            document.addEventListener('yt-navigate-finish', (event) => {
+            document.addEventListener('yt-navigate-finish', () => {
                 console.debug(`[${GM.info.script.name}] 'yt-navigate-finish' event detected.`);
-
-                if (this._navigationTimeoutId) {
-                    clearTimeout(this._navigationTimeoutId);
-                    this._navigationTimeoutId = null;
-                    console.debug(`[${GM.info.script.name}] Cleared previous navigation timeout.`);
-                }
-
-                this._navigationTimeoutId = setTimeout(() => {
-                    const currentVideoId = DOMScanner.getVideoId();
-                    this.triggerUpdate(currentVideoId);
-                }, 500);
-            });
-        },
-
-        /**
-         * Sets up event listeners for URL changes to initiate pre-fetching of data.
-         */
-        _setupUrlChangeListeners: function () {
-            document.addEventListener('yt-navigate-start', () => {
-                this._lastNavStartTimestamp = performance.now();
                 const currentVideoId = DOMScanner.getVideoId();
-                if (currentVideoId && currentVideoId !== this._prefetchedVideoId) {
-                    console.debug(`[${GM.info.script.name}] 'yt-navigate-start' detected for video ID: ${currentVideoId}. Initiating pre-fetch.`);
-                    this._prefetchedVideoId = currentVideoId;
-                    this._prefetchedDataPromise = this._startPrefetching(currentVideoId);
-                } else if (!currentVideoId && this._prefetchedVideoId) {
-                    console.debug(`[${GM.info.script.name}] Navigated away from video page. Clearing pre-fetch state.`);
-                    this._prefetchedVideoId = null;
-                    this._prefetchedDataPromise = null;
-                }
+                this.triggerUpdate(currentVideoId);
             });
-
-            window.addEventListener('popstate', () => {
-                const currentVideoId = DOMScanner.getVideoId();
-                if (currentVideoId && currentVideoId !== this._prefetchedVideoId) {
-                    console.debug(`[${GM.info.script.name}] 'popstate' detected for video ID: ${currentVideoId}. Initiating pre-fetch.`);
-                    this._prefetchedVideoId = currentVideoId;
-                    this._prefetchedDataPromise = this._startPrefetching(currentVideoId);
-                } else if (!currentVideoId && this._prefetchedVideoId) {
-                    console.debug(`[${GM.info.script.name}] Navigated away from video page. Clearing pre-fetch state.`);
-                    this._prefetchedVideoId = null;
-                    this._prefetchedDataPromise = null;
-                }
-            });
-
-            console.debug(`[${GM.info.script.name}] URL change listeners (yt-navigate-start, popstate) set up.`);
-        },
-
-
-        /**
-         * Initiates the pre-fetching of YouTube and MusicBrainz data for a given video ID.
-         * @param {string} videoId - The YouTube video ID.
-         * @returns {Promise<[Object|null, Map<string, Object|null>]>} A promise that resolves with an array
-         * containing [youtubeVideoData, musicBrainzUrlResultsMap] or [null, null] on error.
-         */
-        _startPrefetching: async function (videoId) {
-            try {
-                const canonicalYtUrl = new URL(`https://www.youtube.com/watch?v=${videoId}`).toString();
-                const urlsToQuery = [canonicalYtUrl];
-                const mbResults = await this.lookupMbUrls(urlsToQuery);
-                console.debug(`[${GM.info.script.name}] Pre-fetching MusicBrainz URL lookups completed for video ID: ${videoId}.`);
-                return mbResults;
-            } catch (error) {
-                console.error(`[${GM.info.script.name}] Error during pre-fetching for video ID: ${videoId}:`, error);
-                return null;
-            }
         },
 
         /**
@@ -1755,9 +1733,9 @@
                 return;
             }
 
-            RecordingButtonManager.resetState();
             if (!videoId) {
-                RecordingButtonManager._containerDiv.style.display = 'none';
+                RecordingButtonManager.hide();
+                PlaylistButtonManager.hide();
                 this._processingVideoId = null;
                 this._currentProcessingPromise = null;
                 console.debug(`[${GM.info.script.name}] Not a YouTube video page. Hiding button.`);
@@ -1767,43 +1745,25 @@
             this._processingVideoId = videoId;
             console.debug(`[${GM.info.script.name}] Triggering update for video ID: ${videoId}`);
 
-            if (videoId === this._prefetchedVideoId && this._prefetchedDataPromise) {
-                console.debug(`[${GM.info.script.name}] Using pre-fetched MusicBrainz lookup data for video ID: ${videoId}.`);
-                this._currentProcessingPromise = this._prefetchedDataPromise
-                    .then((mbResults) => this._performUpdate(videoId, mbResults))
-                    .finally(() => {
-                        if (this._processingVideoId === videoId) {
-                            this._processingVideoId = null;
-                            this._currentProcessingPromise = null;
-                            this._prefetchedDataPromise = null;
-                            this._prefetchedVideoId = null;
-                        }
-                    });
-            } else {
-                console.debug(`[${GM.info.script.name}] No pre-fetched data or different video. Performing full update for video ID: ${videoId}.`);
-                this._currentProcessingPromise = this._performUpdate(videoId)
-                    .finally(() => {
-                        if (this._processingVideoId === videoId) {
-                            this._processingVideoId = null;
-                            this._currentProcessingPromise = null;
-                        }
-                    });
-            }
+            this._currentProcessingPromise = this._performUpdate(videoId)
+                .finally(() => {
+                    if (this._processingVideoId === videoId) {
+                        this._processingVideoId = null;
+                        this._currentProcessingPromise = null;
+                    }
+                });
         },
 
         /**
-         * The actual function that performs the API calls and UI updates.
+         * Performs the unified API calls and updates recording and playlist UI buttons.
+         * @summary Unified single-pass extraction, MusicBrainz lookup, and UI resolution pipeline.
          * @param {string} videoId - The YouTube video ID to process.
-         * @param {Object|null} [prefetchedYtData=null] - Optional pre-fetched YouTube video data.
-         * @param {Map<string, Object|null>|null} [prefetchedMbResults=null] - Optional pre-fetched MusicBrainz URL lookup results.
          * @returns {Promise<void>} A promise that resolves when the update is complete.
          */
-        _performUpdate: async function (videoId, prefetchedMbResults = null) {
-            const updateStart = performance.now();
+        _performUpdate: async function (videoId) {
             const dockElement = await DOMScanner.getButtonAnchorElement();
             RecordingButtonManager.appendToDock(dockElement);
             PlaylistButtonManager.appendToDock(dockElement);
-            const initialDockMs = (performance.now() - updateStart).toFixed(2);
 
             const ytData = InPageDataExtractor.extractVideoData(videoId);
 
@@ -1824,43 +1784,41 @@
             const canonicalYtUrl = new URL(`https://www.youtube.com/watch?v=${videoId}`).toString();
             const youtubeChannelUrl = ytData.snippet.channelId ? new URL(`https://www.youtube.com/channel/${ytData.snippet.channelId}`).toString() : null;
 
-            // ===== Run Recording Importer Logic and Playlist Logic in Parallel =====
-            const recStart = performance.now();
-            let recDuration = '0';
-            const recordingPromise = this._handleRecordingImport(ytData, canonicalYtUrl, youtubeChannelUrl, prefetchedMbResults)
-                .then(() => {
-                    recDuration = (performance.now() - recStart).toFixed(2);
-                    console.debug(`[${GM.info.script.name}] Recording Importer Button Ready (${recDuration}ms)`);
-                });
+            const isVideoCached = this._mbApi.cache.has(canonicalYtUrl);
+            const isChannelCached = youtubeChannelUrl ? this._mbApi.cache.has(youtubeChannelUrl) : true;
+            const isFullyCached = isVideoCached && isChannelCached;
 
-            const plStart = performance.now();
-            let plDuration = '0';
-            const playlistPromise = this._handlePlaylistLogic(ytData, canonicalYtUrl)
-                .then(() => {
-                    plDuration = (performance.now() - plStart).toFixed(2);
-                    console.debug(`[${GM.info.script.name}] Playlist Importer Button Ready (${plDuration}ms)`);
-                });
+            // If uncached, set pending dimmed state while querying to avoid layout jump
+            if (!isFullyCached) {
+                RecordingButtonManager.setPending();
+                PlaylistButtonManager.setPending();
+            }
+
+            // Prepare Single Query Array (Batched lookup)
+            const urlsToQuery = [canonicalYtUrl];
+            if (youtubeChannelUrl) urlsToQuery.push(youtubeChannelUrl);
+
+            // Fetch MusicBrainz Data (single batched HTTP request for both video and channel)
+            const mbResults = await this.lookupMbUrls(urlsToQuery);
+
+            // ===== Run Recording Importer Logic and Playlist Logic in Parallel =====
+            const recordingPromise = this._handleRecordingImport(ytData, canonicalYtUrl, youtubeChannelUrl, mbResults);
+            const playlistPromise = this._handlePlaylistLogic(ytData, canonicalYtUrl);
 
             await Promise.all([recordingPromise, playlistPromise]);
-
-            const totalUiRefreshMs = (performance.now() - updateStart).toFixed(2);
-            const totalEndToEndMs = this._lastNavStartTimestamp ? (performance.now() - this._lastNavStartTimestamp).toFixed(2) : totalUiRefreshMs;
-
-            console.debug(`[${GM.info.script.name}] UI Dock Attached: ${initialDockMs}ms | Full MB/LB State Resolution: ${totalUiRefreshMs}ms | End-to-End Navigation Delta: ${totalEndToEndMs}ms`);
         },
 
-        _handleRecordingImport: async function (ytData, canonicalYtUrl, youtubeChannelUrl, prefetchedMbResults) {
-            RecordingButtonManager.resetState();
-            let mbResults = prefetchedMbResults;
-
+        /**
+         * Resolves recording import status and configures the recording button.
+         * @summary Evaluates MusicBrainz URL relationships and configures button state.
+         * @param {Object} ytData - Extracted video data.
+         * @param {string} canonicalYtUrl - Canonical watch URL.
+         * @param {string|null} youtubeChannelUrl - Canonical channel URL if available.
+         * @param {Map<string, Object|null>} mbResults - Map of MusicBrainz lookup results.
+         * @returns {Promise<void>}
+         */
+        _handleRecordingImport: async function (ytData, canonicalYtUrl, youtubeChannelUrl, mbResults) {
             try {
-                const urlsToQuery = [canonicalYtUrl];
-                if (youtubeChannelUrl) urlsToQuery.push(youtubeChannelUrl);
-
-                if (!mbResults) {
-                    mbResults = await this.lookupMbUrls(urlsToQuery);
-                }
-
                 const mbVideoUrlEntity = mbResults.get(canonicalYtUrl);
                 const artistMbid = youtubeChannelUrl ? this._extractArtistMbid(mbResults.get(youtubeChannelUrl)) : null;
 
@@ -1888,8 +1846,6 @@
         },
 
         _handlePlaylistLogic: async function (ytData, canonicalYtUrl) {
-            PlaylistButtonManager.resetState();
-
             const { parsedTracks } = Utils.parseTracklist(ytData.snippet.description);
             if (parsedTracks.length === 0) {
                 PlaylistButtonManager.hide();
