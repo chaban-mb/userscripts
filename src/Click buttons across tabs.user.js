@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        Click buttons across tabs
 // @namespace   https://musicbrainz.org/user/chaban
-// @version     4.12.0
+// @version     4.12.1
 // @description Clicks specified buttons across tabs using the Broadcast Channel API and closes tabs after successful submission.
 // @tag         ai-created
 // @author      chaban
@@ -713,6 +713,13 @@
                         if (submitButton) {
                             debugLog('MagicISRC submit button found. Proceeding with submission.', 'green');
                             sessionStorage.removeItem(RELOAD_ATTEMPTS_KEY);
+
+                            const triggerState = JSON.stringify({
+                                channel: config.channelName,
+                                messageTrigger: config.messageTrigger
+                            });
+                            sessionStorage.setItem(SUBMISSION_TRIGGERED_FLAG, triggerState);
+
                             navigator.locks.request(MAGICISRC_SUBMIT_LOCK_KEY, async () => {
                                 debugLog(`Acquired MagicISRC submit lock. Waiting 1s before submission.`, 'green');
                                 await new Promise(resolve => setTimeout(resolve, 1000));
@@ -751,8 +758,13 @@
             buttonSelector: 'form[action$="/importisrc"][method="post"] button[type="submit"]',
             menuCommandName: 'ISRC Hunt: Submit ISRCs (All Tabs)',
             successUrlPatterns: [/\?.*submitted=1/],
-            submissionHandler: (_config, triggerAction) => {
+            submissionHandler: (config, triggerAction) => {
                 debugLog(`Requesting ISRC Hunt submit lock...`);
+                const triggerState = JSON.stringify({
+                    channel: config.channelName,
+                    messageTrigger: config.messageTrigger
+                });
+                sessionStorage.setItem(SUBMISSION_TRIGGERED_FLAG, triggerState);
                 navigator.locks.request(ISRC_HUNT_SUBMIT_LOCK_KEY, async () => {
                     debugLog(`Acquired ISRC Hunt submit lock. Waiting 1s before submission.`, 'green');
                     await new Promise(resolve => setTimeout(resolve, 1000));
