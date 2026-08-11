@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        Click buttons across tabs
 // @namespace   https://musicbrainz.org/user/chaban
-// @version     4.12.3
+// @version     4.12.4
 // @description Clicks specified buttons across tabs using the Broadcast Channel API and closes tabs after successful submission.
 // @tag         ai-created
 // @author      chaban
@@ -218,12 +218,15 @@
         return false;
     };
 
+    const isAutoReload = sessionStorage.getItem('magicisrc_auto_reloading') === 'true';
+    sessionStorage.removeItem('magicisrc_auto_reloading');
+
     const navEntry = performance.getEntriesByType('navigation')[0];
-    if (navEntry && navEntry.type === 'reload') {
+    if (navEntry && navEntry.type === 'reload' && !isAutoReload) {
         sessionStorage.removeItem(SUBMISSION_TRIGGERED_FLAG);
         console.debug(`[${scriptName}] [${getTimestamp()}] ${tabId} Manual reload detected — cleared ${SUBMISSION_TRIGGERED_FLAG}`);
     } else {
-        console.debug(`[${scriptName}] [${getTimestamp()}] ${tabId} Navigation type "${navEntry?.type || 'navigate'}" — retaining session state`);
+        console.debug(`[${scriptName}] [${getTimestamp()}] ${tabId} Navigation type "${navEntry?.type || 'navigate'}" or auto-reload — retaining session state`);
     }
 
     /**
@@ -354,16 +357,32 @@
             submissionHandler: (config, _ignoredTrigger) => {
                 const isRelationshipEditor = location.pathname.endsWith('/edit-relationships');
                 const isCoverArtPage = location.pathname.endsWith('/add-cover-art') || location.pathname.endsWith('/add-event-art');
-                const hasSeedingHash = location.hash.includes('seed-urls-v1') || location.hash.includes('seed-');
+                const hasSeedingHash = location.hash.includes('seed-urls-v1');
 
                 /**
                  * Detects if the current page was opened with seeded or injected parameters.
+                 * Checks for hash seeding payloads (#seed-urls-v1=...) as well as GET query parameters
+                 * pre-filling any MusicBrainz entity form (e.g. edit-label.*, edit-artist.*, edit-release.*) or x_seed.
                  * @returns {boolean} True if page has URL parameters or hash indicating external seeding/injection.
                  */
                 const hasSeededOrInjectedParams = () => {
                     if (hasSeedingHash) return true;
                     const search = location.search;
-                    return search.includes('x_seed') || search.includes('seed') || search.includes('add-link') || search.includes('edit-artist.url');
+                    if (!search) return false;
+
+                    try {
+                        const params = new URLSearchParams(search);
+                        for (const key of params.keys()) {
+                            if (/^(?:edit-[a-z]+|x_seed)/i.test(key)) {
+                                return true;
+                            }
+                        }
+                    } catch (e) {
+                        if (/(?:edit-[a-z]+\.|x_seed)/i.test(search)) {
+                            return true;
+                        }
+                    }
+                    return false;
                 };
 
                 /**
@@ -375,7 +394,7 @@
                     try {
                         const hash = location.hash.startsWith('#') ? location.hash.slice(1) : location.hash;
                         const urlParams = new URLSearchParams(hash);
-                        const rawJson = urlParams.get('seed-urls-v1') || urlParams.get('seed');
+                        const rawJson = urlParams.get('seed-urls-v1');
                         if (rawJson) {
                             JSON.parse(rawJson);
                         }
@@ -707,6 +726,11 @@
             menuCommandName: 'MagicISRC: Submit ISRCs (All Tabs)',
             successUrlPatterns: [/\?.*submit=1/],
             submissionHandler: (config, triggerAction) => {
+                const triggerState = JSON.stringify({
+                    channel: config.channelName,
+                    messageTrigger: config.messageTrigger
+                });
+                sessionStorage.setItem(SUBMISSION_TRIGGERED_FLAG, triggerState);
                 onDOMLoaded(() => {
                     const performCheck = (obs) => {
                         const cleanupAndExit = () => {
@@ -726,12 +750,6 @@
                         if (submitButton) {
                             debugLog('MagicISRC submit button found. Proceeding with submission.', 'green');
                             sessionStorage.removeItem(RELOAD_ATTEMPTS_KEY);
-
-                            const triggerState = JSON.stringify({
-                                channel: config.channelName,
-                                messageTrigger: config.messageTrigger
-                            });
-                            sessionStorage.setItem(SUBMISSION_TRIGGERED_FLAG, triggerState);
 
                             navigator.locks.request(MAGICISRC_SUBMIT_LOCK_KEY, async () => {
                                 debugLog(`Acquired MagicISRC submit lock. Waiting 1s before submission.`, 'green');
@@ -946,6 +964,7 @@
             const delay = (backoffSeconds + jitter) * 1000;
             debugLog(`MagicISRC error detected. Reload attempt ${attempts}. Retrying in ${Math.round(delay / 1000)}s.`, 'red');
             sessionStorage.setItem(RELOAD_ATTEMPTS_KEY, attempts.toString());
+            sessionStorage.setItem('magicisrc_auto_reloading', 'true');
             await new Promise(resolve => setTimeout(resolve, delay));
             debugLog(`Performing full page reload to re-trigger logic.`, 'red');
             location.reload();
