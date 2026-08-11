@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        Click buttons across tabs
 // @namespace   https://musicbrainz.org/user/chaban
-// @version     4.12.1
+// @version     4.12.2
 // @description Clicks specified buttons across tabs using the Broadcast Channel API and closes tabs after successful submission.
 // @tag         ai-created
 // @author      chaban
@@ -320,6 +320,13 @@
             hostnames: ['musicbrainz.org'],
             paths: ['/edit'],
             buttonSelector: '.canonicalizer-button',
+            autoClick: true,
+            successUrlPatterns: [],
+        },
+        {
+            hostnames: ['musicbrainz.org'],
+            paths: ['/edit'],
+            buttonSelector: '.wikidata-converter-all-button',
             autoClick: true,
             successUrlPatterns: [],
         },
