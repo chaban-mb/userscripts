@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        Click buttons across tabs
 // @namespace   https://musicbrainz.org/user/chaban
-// @version     4.12.2
+// @version     4.12.3
 // @description Clicks specified buttons across tabs using the Broadcast Channel API and closes tabs after successful submission.
 // @tag         ai-created
 // @author      chaban
@@ -673,6 +673,12 @@
                         waitForButtonAndClick(config, null, false).then(() => {
                             setTimeout(() => {
                                 rateLimitedMBSubmit(async () => {
+                                    const triggerState = JSON.stringify({
+                                        channel: config.channelName,
+                                        messageTrigger: config.messageTrigger
+                                    });
+                                    sessionStorage.setItem(SUBMISSION_TRIGGERED_FLAG, triggerState);
+
                                     await waitForButtonAndClick(config, null, true);
                                 });
                             }, 0);
