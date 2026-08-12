@@ -507,6 +507,10 @@
                 const resp = this._lastEventDetail.response;
                 playerResponse = resp.playerResponse || resp.endpoint?.watchEndpoint?.playerResponse;
             }
+            if (!playerResponse) {
+                const moviePlayer = document.getElementById('movie_player');
+                playerResponse = moviePlayer?.getPlayerResponse?.() || document.querySelector('ytd-watch-flexy')?.playerData;
+            }
             if (!playerResponse && window.ytInitialPlayerResponse) {
                 playerResponse = window.ytInitialPlayerResponse;
             }
@@ -557,6 +561,12 @@
                 || document.querySelector('meta[itemprop="genre"]')?.content
                 || '';
 
+            const publishDate = playerResponse?.microformat?.playerMicroformatRenderer?.publishDate
+                || playerResponse?.microformat?.playerMicroformatRenderer?.uploadDate
+                || document.querySelector('meta[itemprop="datePublished"]')?.content
+                || document.querySelector('meta[itemprop="uploadDate"]')?.content
+                || '';
+
             if (!title && !channelTitle) {
                 return null;
             }
@@ -570,6 +580,7 @@
                     channelId,
                     description,
                     category,
+                    publishedAt: publishDate,
                 },
                 contentDetails: {
                     duration: `PT${durationSeconds}S`,
@@ -598,6 +609,7 @@
                 console.log(`Title: "${domData.snippet?.title || ''}"`);
                 console.log(`Channel: "${domData.snippet?.channelTitle || ''}" (ID: "${domData.snippet?.channelId || ''}")`);
                 console.log(`Duration: ${formatMsToHms(domData.contentDetails?.durationMs)} (${domData.contentDetails?.durationMs || 0}ms)`);
+                console.log(`Published: ${domData.snippet?.publishedAt || 'N/A'}`);
 
                 console.debug('Extracted Video Metadata:', domData);
                 console.debug('Raw Video Player Response:', rawPlayerResponse);
@@ -1007,6 +1019,16 @@
                 this._addReleaseField('artist_credit.names.0.mbid', artistMbid);
             } else {
                 this._addReleaseField('artist_credit.names.0.name', artist);
+            }
+
+            if (youtubeVideoData.snippet?.publishedAt) {
+                const dateMatch = youtubeVideoData.snippet.publishedAt.match(/^(\d{4})(?:-(\d{2})(?:-(\d{2}))?)?/);
+                if (dateMatch) {
+                    const [, year, month, day] = dateMatch;
+                    if (year) this._addReleaseField('events.0.date.year', year);
+                    if (month) this._addReleaseField('events.0.date.month', month);
+                    if (day) this._addReleaseField('events.0.date.day', day);
+                }
             }
 
             this._addReleaseField('urls.0.url', canonicalYtUrl);
