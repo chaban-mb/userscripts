@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        Click buttons across tabs
 // @namespace   https://musicbrainz.org/user/chaban
-// @version     4.12.4
+// @version     4.13.0
 // @description Clicks specified buttons across tabs using the Broadcast Channel API and closes tabs after successful submission.
 // @tag         ai-created
 // @author      chaban
@@ -95,15 +95,27 @@
 
             if (el instanceof HTMLInputElement) {
                 if (el.type === 'checkbox' || el.type === 'radio') {
-                    if (el.defaultChecked !== el.checked) return true;
+                    if (el.defaultChecked !== el.checked) {
+                        debugLog(`isNativeFormDirty: field "${name}" (type: ${el.type}) dirty: defaultChecked=${el.defaultChecked}, checked=${el.checked}`, 'yellow');
+                        return true;
+                    }
                 } else if (el.type !== 'submit' && el.type !== 'button' && el.type !== 'hidden') {
-                    if (normalizeText(el.defaultValue) !== normalizeText(el.value)) return true;
+                    if (normalizeText(el.defaultValue) !== normalizeText(el.value)) {
+                        debugLog(`isNativeFormDirty: field "${name}" (type: ${el.type}) dirty: defaultValue="${el.defaultValue}", value="${el.value}"`, 'yellow');
+                        return true;
+                    }
                 }
             } else if (el instanceof HTMLTextAreaElement) {
-                if (normalizeText(el.defaultValue) !== normalizeText(el.value)) return true;
+                if (normalizeText(el.defaultValue) !== normalizeText(el.value)) {
+                    debugLog(`isNativeFormDirty: textarea "${name}" dirty: defaultValue="${el.defaultValue}", value="${el.value}"`, 'yellow');
+                    return true;
+                }
             } else if (el instanceof HTMLSelectElement) {
                 const isSelectDirty = Array.from(el.options).some(opt => opt.defaultSelected !== opt.selected);
-                if (isSelectDirty) return true;
+                if (isSelectDirty) {
+                    debugLog(`isNativeFormDirty: select "${name}" dirty: selected options differ from defaultSelected`, 'yellow');
+                    return true;
+                }
             }
         }
         return false;
@@ -155,7 +167,7 @@
         const editForms = getEditForms();
         if (!hydrationCaptured) {
             editForms.forEach(form => {
-                if (!initialFormSnapshots.has(form) && !isNativeFormDirty(form)) {
+                if (!isNativeFormDirty(form)) {
                     initialFormSnapshots.set(form, getFormDataMap(form));
                 }
             });
@@ -168,8 +180,9 @@
                 setTimeout(() => {
                     const currentForms = getEditForms();
                     currentForms.forEach(form => {
-                        if (!initialFormSnapshots.has(form) && !isNativeFormDirty(form)) {
+                        if (!isNativeFormDirty(form)) {
                             initialFormSnapshots.set(form, getFormDataMap(form));
+                            debugLog(`initFormSnapshots: baseline snapshot captured for form "${form.id || form.className || 'unnamed'}" (${initialFormSnapshots.get(form).size} field groups).`, 'teal');
                         }
                     });
                     hydrationCaptured = true;
@@ -193,6 +206,10 @@
     const hasDirtyFormInputs = () => {
         initFormSnapshots();
         const editForms = getEditForms();
+        if (editForms.length === 0) {
+            debugLog('hasDirtyFormInputs: 0 edit forms found on page.', 'gray');
+            return false;
+        }
 
         for (const form of editForms) {
             if (isNativeFormDirty(form)) {
@@ -211,10 +228,36 @@
                 const currVals = currentMap.get(key) || [];
 
                 if (origVals.join(', ') !== currVals.join(', ')) {
+                    // Check if this field in the DOM is actually natively dirty (to handle late-hydrated inputs with default values)
+                    const elements = form.querySelectorAll(`[name="${key}"], [name^="${key}."]`);
+                    let isFieldNativelyDirty = false;
+                    for (const el of elements) {
+                        if (el instanceof HTMLInputElement) {
+                            if (el.type === 'checkbox' || el.type === 'radio') {
+                                if (el.defaultChecked !== el.checked) isFieldNativelyDirty = true;
+                            } else if (el.type !== 'submit' && el.type !== 'button' && el.type !== 'hidden') {
+                                if (normalizeText(el.defaultValue) !== normalizeText(el.value)) isFieldNativelyDirty = true;
+                            }
+                        } else if (el instanceof HTMLTextAreaElement) {
+                            if (normalizeText(el.defaultValue) !== normalizeText(el.value)) isFieldNativelyDirty = true;
+                        } else if (el instanceof HTMLSelectElement) {
+                            if (Array.from(el.options).some(opt => opt.defaultSelected !== opt.selected)) isFieldNativelyDirty = true;
+                        }
+                    }
+
+                    // If the field exists in the DOM with pristine default values, it was mounted by MusicBrainz React/templates post-baseline
+                    if (!isFieldNativelyDirty && origVals.length === 0) {
+                        debugLog(`hasDirtyFormInputs: newly mounted React field "${key}" has pristine default value — updating baseline.`, 'teal');
+                        initialMap.set(key, currVals);
+                        continue;
+                    }
+
+                    debugLog(`hasDirtyFormInputs: FormData diff on "${key}": baseline=[${origVals.join(', ')}], current=[${currVals.join(', ')}]`, 'yellow');
                     return true;
                 }
             }
         }
+        debugLog(`hasDirtyFormInputs: audited ${editForms.length} form(s) — clean (0 dirty inputs).`, 'teal');
         return false;
     };
 
@@ -366,22 +409,31 @@
                  * @returns {boolean} True if page has URL parameters or hash indicating external seeding/injection.
                  */
                 const hasSeededOrInjectedParams = () => {
-                    if (hasSeedingHash) return true;
+                    if (hasSeedingHash) {
+                        debugLog('hasSeededOrInjectedParams: true (matched #seed-urls-v1 hash)', 'teal');
+                        return true;
+                    }
                     const search = location.search;
-                    if (!search) return false;
+                    if (!search) {
+                        debugLog('hasSeededOrInjectedParams: false (no URL query search params)', 'gray');
+                        return false;
+                    }
 
                     try {
                         const params = new URLSearchParams(search);
                         for (const key of params.keys()) {
-                            if (/^(?:edit-[a-z]+|x_seed)/i.test(key)) {
+                            if (/^(?:edit-[a-z-]+|x_seed)/i.test(key)) {
+                                debugLog(`hasSeededOrInjectedParams: true (matched seeded parameter "${key}")`, 'teal');
                                 return true;
                             }
                         }
                     } catch (e) {
-                        if (/(?:edit-[a-z]+\.|x_seed)/i.test(search)) {
+                        if (/(?:edit-[a-z-]+\.|x_seed)/i.test(search)) {
+                            debugLog(`hasSeededOrInjectedParams: true (matched fallback search pattern)`, 'teal');
                             return true;
                         }
                     }
+                    debugLog(`hasSeededOrInjectedParams: false (query params did not match seeded entity patterns: "${search.slice(0, 60)}...")`, 'gray');
                     return false;
                 };
 
@@ -527,16 +579,15 @@
                     // 2. DOM Highlight Fallback (Standalone Entity Editors)
                     const editor = document.getElementById('external-links-editor') ||
                         document.querySelector('.external-links-editor-container');
-                    if (!editor) return false;
+                    if (!editor) {
+                        debugLog('hasPendingExternalLinkEdits: no external links editor found in DOM.', 'gray');
+                        return false;
+                    }
 
                     const highlights = editor.querySelectorAll('.rel-add, .rel-edit, .rel-remove');
-                    if (highlights.length > 0) return true;
-
-                    const newInputs = Array.from(editor.querySelectorAll('input.value.with-button, tr.add-relationship input'))
-                        .filter(input => input.value.trim() !== '');
-                    if (newInputs.length > 0) return true;
-
-                    return false;
+                    const isPending = highlights.length > 0;
+                    debugLog(`hasPendingExternalLinkEdits (standalone): found ${highlights.length} highlight elements (${isPending ? 'DIRTY' : 'clean'}).`, isPending ? 'yellow' : 'teal');
+                    return isPending;
                 };
 
                 /**
@@ -549,7 +600,10 @@
                     if (editor?.allEdits) {
                         try {
                             const edits = editor.allEdits();
-                            if (Array.isArray(edits)) return edits.length;
+                            if (Array.isArray(edits)) {
+                                debugLog(`getPendingReleaseEditorEditsCount: ${edits.length} edit(s) in MB.releaseEditor.allEdits()`, edits.length > 0 ? 'yellow' : 'teal');
+                                return edits.length;
+                            }
                         } catch (e) { }
                     }
                     return 0;
@@ -567,17 +621,23 @@
                         totalCount += releaseEditorEdits;
                     }
 
+                    let relEdits = 0;
                     if (isRelationshipEditor) {
-                        totalCount += getPendingRelationshipEditsCount();
+                        relEdits = getPendingRelationshipEditsCount();
+                        totalCount += relEdits;
                     }
 
-                    if (hasPendingExternalLinkEdits()) {
+                    const hasExtLinkEdits = hasPendingExternalLinkEdits();
+                    if (hasExtLinkEdits) {
                         totalCount += 1;
                     }
 
-                    if (hasDirtyFormInputs()) {
+                    const hasFormEdits = hasDirtyFormInputs();
+                    if (hasFormEdits) {
                         totalCount += 1;
                     }
+
+                    debugLog(`getPendingEditsCount breakdown: releaseEditor=${releaseEditorEdits}, relationshipEditor=${relEdits}, externalLinks=${hasExtLinkEdits ? 1 : 0}, formInputs=${hasFormEdits ? 1 : 0} -> Total=${totalCount}`, totalCount > 0 ? 'yellow' : 'teal');
 
                     if (totalCount > 0) return totalCount;
 
@@ -603,10 +663,12 @@
                 const waitForSeedingAndProceed = () => {
                     const validHash = isValidSeedingHash();
                     const isSeededOrInjected = hasSeededOrInjectedParams();
+                    debugLog(`waitForSeedingAndProceed: isRelationshipEditor=${isRelationshipEditor}, hasSeedingHash=${hasSeedingHash}, validHash=${validHash}, isSeededOrInjected=${isSeededOrInjected}`, 'teal');
 
                     // If NOT seeding (or hash is invalid), evaluate general page state
                     if (!isRelationshipEditor || !hasSeedingHash || !validHash) {
                         const pendingEdits = getPendingEditsCount();
+                        debugLog(`State evaluation: pendingEdits=${pendingEdits}, isSeededOrInjected=${isSeededOrInjected}`, pendingEdits === 0 ? 'teal' : 'yellow');
 
                         // Only auto-close as a pre-submission no-op if the tab has seeded/injected parameters!
                         if (pendingEdits === 0 && isSeededOrInjected) {
@@ -628,6 +690,7 @@
                             return;
                         }
 
+                        debugLog(`Proceeding with submission: pendingEdits=${pendingEdits} on ${isSeededOrInjected ? 'seeded' : 'unseeded'} tab.`, 'green');
                         waitForButtonAndClick(config, null, false).then(() => {
                             setTimeout(() => {
                                 rateLimitedMBSubmit(async () => {
@@ -806,9 +869,24 @@
     ];
 
     /**
+     * Accessible color palette ensuring high WCAG contrast in both Light and Dark devtools themes.
+     */
+    const LOG_COLOR_PALETTE = {
+        yellow: '#d97706',    // Dark amber (high contrast on white and dark backgrounds)
+        amber: '#d97706',
+        orange: '#ea580c',    // Deep burnt orange
+        green: '#16a34a',     // Medium emerald/forest green
+        teal: '#0891b2',      // Deep cyan/teal
+        blue: '#2563eb',      // Royal blue
+        gray: '#64748b',      // Slate gray
+        red: '#dc2626',       // Vivid crimson
+        olivedrab: '#65a30d', // Warm olive
+    };
+
+    /**
      * @summary Sends a log message to all tabs if debug logging is enabled.
      * @param {string} message The message to log.
-     * @param {string} [color] Optional CSS color for the message.
+     * @param {string} [color] Optional CSS color or palette key for the message.
      */
     async function debugLog(message, color = 'teal') {
         const debugEnabled = await GM.getValue(DEBUG_LOGGING_SETTING, false);
@@ -818,10 +896,12 @@
             debugLogChannel = new BroadcastChannel(DEBUG_LOG_CHANNEL_NAME);
         }
 
+        const resolvedColor = LOG_COLOR_PALETTE[color] || color;
+
         debugLogChannel.postMessage({
             tabId,
             message,
-            color,
+            color: resolvedColor,
             timestamp: getTimestamp(),
         });
     }
@@ -1304,7 +1384,8 @@
             const logReceiver = new BroadcastChannel(DEBUG_LOG_CHANNEL_NAME);
             logReceiver.onmessage = (event) => {
                 const { tabId: msgTabId, message, color, timestamp } = event.data;
-                console.log(`%c[${scriptName}] [${timestamp}] ${msgTabId} ${message}`, `color: ${color}`);
+                const resolvedColor = LOG_COLOR_PALETTE[color] || color;
+                console.log(`%c[${scriptName}] [${timestamp}] ${msgTabId} ${message}`, `color: ${resolvedColor}; font-weight: 500;`);
             };
         }
 
