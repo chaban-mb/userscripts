@@ -18,19 +18,20 @@ This script is based on the [Bandcamp: Show publish date](https://greasyfork.org
 - **Source Transparency:** Shows where each date comes from (e.g., "release date" vs "publish date").
 - **Smart Sorting:** Automatically sorts and displays the dates chronologically.
 
-## Beatport: MusicBrainz Importer
+## Beatport: MusicBrainz Checker
 
-[![Install](https://img.shields.io/badge/Install-success.svg?style=for-the-badge&logo=tampermonkey)](https://github.com/chaban-mb/userscripts/raw/main/src/Beatport%20MusicBrainz%20Importer.user.js)
-[![Source](https://img.shields.io/badge/Source-grey.svg?style=for-the-badge&logo=github)](https://github.com/chaban-mb/userscripts/blob/main/src/Beatport%20MusicBrainz%20Importer.user.js)
+[![Install](https://img.shields.io/badge/Install-success.svg?style=for-the-badge&logo=tampermonkey)](https://github.com/chaban-mb/userscripts/raw/main/src/Beatport%20MusicBrainz%20Checker.user.js)
+[![Source](https://img.shields.io/badge/Source-grey.svg?style=for-the-badge&logo=github)](https://github.com/chaban-mb/userscripts/blob/main/src/Beatport%20MusicBrainz%20Checker.user.js)
 
-Enhances Beatport with MusicBrainz integration for easier importing of missing releases.
+Adds MusicBrainz release status icons to Beatport browse and list pages (`/my-beatport`, `/label/`, `/artist/`, `/track/`, `/genre/`, `/chart/`).
 
-Based on the original Beatport status and import scripts by [RustyNova](https://github.com/RustyNova016/MusicBrainz-UserScripts/).
+Based on the original Beatport status script by [RustyNova](https://github.com/RustyNova016/MusicBrainz-UserScripts/).
 
 ### Features
-- **Status Icons:** Adds icons to releases indicating if they are already on MusicBrainz or need importing via Harmony.
-- **Quick Links:** Provides "Open in MusicBrainz" or "Search in MusicBrainz" buttons on release pages.
-- **Harmony Integration:** One-click import for missing releases using Harmony.
+
+- **Status Icons:** Checks releases against MusicBrainz via URL lookup and displays status icons on table rows.
+- **Direct MusicBrainz Link:** If a release is catalogued in MusicBrainz, clicking the icon opens the MusicBrainz release page.
+- **Quick Import Link:** If a release is missing from MusicBrainz, clicking the missing icon opens the Beatport release page in a new tab (ready for 1-click importing via [Murdos' Beatport Importer](https://github.com/murdos/musicbrainz-userscripts)).
 
 ## CheckBoxMate Modernized
 
