@@ -271,12 +271,14 @@ def do_release(non_interactive=False, json_output=False, bump_strategy="auto", s
 
     print("Checking unreleased userscripts...")
     unreleased_info = []
+    deleted_scripts = []
 
     mapping = parse_commit_scopes()
 
     for rel_path_str in userscripts:
         full_path = repo_root / rel_path_str
         if not full_path.exists():
+            deleted_scripts.append(rel_path_str)
             continue
 
         try:
@@ -307,47 +309,64 @@ def do_release(non_interactive=False, json_output=False, bump_strategy="auto", s
             'slug': get_slug(rel_path_str, mapping)
         })
 
-    print(f"\n{COLOR_CYAN}{COLOR_BOLD}Available scripts for release:{COLOR_RESET}")
-    for idx, info in enumerate(unreleased_info, 1):
-        if info['main_version'] is None:
-            status_str = f"{COLOR_CYAN}[NEW]{COLOR_RESET}"
-        elif info['needs_bump']:
-            status_str = f"{COLOR_RED}{COLOR_BOLD}[BUMP NEEDED]{COLOR_RESET}"
-        else:
-            status_str = f"{COLOR_GREEN}{COLOR_BOLD}[BUMPED]{COLOR_RESET}"
-        ver_str = f"({info['main_version']} -> {info['curr_version']})" if info['main_version'] else f"(New: {info['curr_version']})"
-        print(f"  {idx}) {status_str} {info['name']} {ver_str}")
-
-    print(f"\n{COLOR_CYAN}{COLOR_BOLD}Select scripts to release:{COLOR_RESET}")
-    print("  Enter numbers separated by commas (e.g. 1,3)")
-    print("  Enter 'all' to release all scripts")
-    print("  Enter 'q' to quit")
-
-    choice = prompt_user(f"{COLOR_BOLD}Choice:{COLOR_RESET} ", default=scripts_filter, non_interactive=non_interactive, auto_choice=scripts_filter).lower()
-    if choice in ['q', 'quit', 'exit']:
-        print(f"{COLOR_RED}Aborting.{COLOR_RESET}\n")
+    if not unreleased_info and not deleted_scripts:
+        print(f"\n{COLOR_CYAN}No unreleased changes found in src/ or lib/ compared to {main_branch}.{COLOR_RESET}\n")
         return
 
-    selected_indices = []
-    if choice in ['all', 'a'] or (choice == '' and len(unreleased_info) == 1):
-        selected_indices = list(range(len(unreleased_info)))
+    if deleted_scripts:
+        print(f"\n{COLOR_RED}{COLOR_BOLD}Deleted script(s) (will be removed on {main_branch}):{COLOR_RESET}")
+        for d in deleted_scripts:
+            print(f"  * {COLOR_RED}[DELETED]{COLOR_RESET} {d}")
+
+    if not unreleased_info:
+        print(f"\n{COLOR_CYAN}No modified/new scripts to select. Only deleted script(s) detected.{COLOR_RESET}")
+        proceed = prompt_user("Proceed with releasing deletion(s)? (y/N): ", default='y', non_interactive=non_interactive, auto_choice='y').lower()
+        if proceed != 'y':
+            print(f"{COLOR_RED}Aborting.{COLOR_RESET}\n")
+            return
+        selected_scripts = []
     else:
-        try:
-            selected_indices = [int(i.strip()) - 1 for i in choice.split(',') if i.strip()]
-        except ValueError:
-            print(f"{COLOR_RED}Invalid input. Aborting.{COLOR_RESET}\n")
+        print(f"\n{COLOR_CYAN}{COLOR_BOLD}Available scripts for release:{COLOR_RESET}")
+        for idx, info in enumerate(unreleased_info, 1):
+            if info['main_version'] is None:
+                status_str = f"{COLOR_CYAN}[NEW]{COLOR_RESET}"
+            elif info['needs_bump']:
+                status_str = f"{COLOR_RED}{COLOR_BOLD}[BUMP NEEDED]{COLOR_RESET}"
+            else:
+                status_str = f"{COLOR_GREEN}{COLOR_BOLD}[BUMPED]{COLOR_RESET}"
+            ver_str = f"({info['main_version']} -> {info['curr_version']})" if info['main_version'] else f"(New: {info['curr_version']})"
+            print(f"  {idx}) {status_str} {info['name']} {ver_str}")
+
+        print(f"\n{COLOR_CYAN}{COLOR_BOLD}Select scripts to release:{COLOR_RESET}")
+        print("  Enter numbers separated by commas (e.g. 1,3)")
+        print("  Enter 'all' to release all scripts")
+        print("  Enter 'q' to quit")
+
+        choice = prompt_user(f"{COLOR_BOLD}Choice:{COLOR_RESET} ", default=scripts_filter, non_interactive=non_interactive, auto_choice=scripts_filter).lower()
+        if choice in ['q', 'quit', 'exit']:
+            print(f"{COLOR_RED}Aborting.{COLOR_RESET}\n")
             return
 
-    selected_scripts = []
-    for idx in selected_indices:
-        if 0 <= idx < len(unreleased_info):
-            selected_scripts.append(unreleased_info[idx])
+        selected_indices = []
+        if choice in ['all', 'a'] or (choice == '' and len(unreleased_info) == 1):
+            selected_indices = list(range(len(unreleased_info)))
         else:
-            print(f"{COLOR_YELLOW}Invalid index {idx + 1}. Skipping.{COLOR_RESET}")
+            try:
+                selected_indices = [int(i.strip()) - 1 for i in choice.split(',') if i.strip()]
+            except ValueError:
+                print(f"{COLOR_RED}Invalid input. Aborting.{COLOR_RESET}\n")
+                return
 
-    if not selected_scripts:
-        print(f"{COLOR_YELLOW}No scripts selected.{COLOR_RESET}\n")
-        return
+        selected_scripts = []
+        for idx in selected_indices:
+            if 0 <= idx < len(unreleased_info):
+                selected_scripts.append(unreleased_info[idx])
+            else:
+                print(f"{COLOR_YELLOW}Invalid index {idx + 1}. Skipping.{COLOR_RESET}")
+
+        if not selected_scripts:
+            print(f"{COLOR_YELLOW}No scripts selected.{COLOR_RESET}\n")
+            return
 
     for script in selected_scripts:
         print(f"\n{COLOR_CYAN}{COLOR_BOLD}Processing release for:{COLOR_RESET} {script['name']}")
@@ -578,6 +597,16 @@ def do_release(non_interactive=False, json_output=False, bump_strategy="auto", s
             print(f"      {COLOR_GREEN}{commit}{COLOR_RESET}")
     else:
         print(f"      {COLOR_YELLOW}No new commits ({release_branch} and {main_branch} are already in sync).{COLOR_RESET}")
+
+    if deleted_scripts:
+        if is_full_release:
+            print(f"\n  * {COLOR_RED}{COLOR_BOLD}Deleted script(s) to be removed on {main_branch} ({len(deleted_scripts)} file(s)):{COLOR_RESET}")
+            for d in deleted_scripts:
+                print(f"      {COLOR_RED}* {d}{COLOR_RESET}")
+        else:
+            print(f"\n  * {COLOR_RED}{COLOR_BOLD}Deleted script(s) remaining on '{release_branch}' ({len(deleted_scripts)} file(s)):{COLOR_RESET}")
+            for d in deleted_scripts:
+                print(f"      {COLOR_RED}* {d}{COLOR_RESET}")
 
     if infra_changed_files:
         if is_full_release:
