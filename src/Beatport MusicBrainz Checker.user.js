@@ -1,19 +1,16 @@
 // ==UserScript==
 // @name         Beatport: MusicBrainz Checker
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      2.8.2
+// @version      2.7.0
 // @description  Adds MusicBrainz status icons to Beatport releases on list pages and links missing releases for importing
 // @tag          ai-created
 // @author       RustyNova, chaban
 // @license      MIT
-// @homepageURL https://github.com/chaban-mb/userscripts
-// @supportURL  https://github.com/chaban-mb/userscripts/issues
 // @match        https://www.beatport.com/*
 // @connect      musicbrainz.org
 
 // @icon         https://www.google.com/s2/favicons?sz=64&domain=beatport.com
 // @grant        GM.xmlHttpRequest
-// @grant        unsafeWindow
 // @run-at       document-idle
 // @updateURL    https://github.com/chaban-mb/userscripts/raw/dist/src/Beatport%20MusicBrainz%20Checker.user.js
 // @downloadURL  https://github.com/chaban-mb/userscripts/raw/dist/src/Beatport%20MusicBrainz%20Checker.user.js
@@ -58,7 +55,6 @@ class MusicBrainzAPI {
      * @param {string} [options.user_agent] - User Agent header identification string.
      * @param {number} [options.max_retries=5] - Maximum retry attempts for failed requests.
      * @param {number} [options.batch_size=100] - URL batch chunk size.
-     * @param {number} [options.timeout=15000] - Timeout per network request in milliseconds.
      */
     constructor(options = {}) {
         let defaultOrigin = 'https://musicbrainz.org';
@@ -72,7 +68,6 @@ class MusicBrainzAPI {
         this.rate_limit_delay = 1000;
         this.max_retries = options.max_retries || 5;
         this.batch_size = options.batch_size || 100;
-        this.timeout = options.timeout || 15000;
         this.cache = new Map();
         this.next_available_request_time = 0;
     }
@@ -98,14 +93,10 @@ class MusicBrainzAPI {
      * @summary Internal low-level fetch request runner with retry handling.
      * @param {string} endpoint - API resource endpoint.
      * @param {Object} [params={}] - Search parameters.
-     * @param {Object|null} [tracker=null] - Optional diagnostic statistics tracker.
      * @returns {Promise<Object>} The JSON parsed response body.
      * @private
      */
-    async _request(endpoint, params = {}, tracker = null) {
-        if (tracker) {
-            tracker.requests++;
-        }
+    async _request(endpoint, params = {}) {
         const url = new URL(`${this.base_url}/${endpoint}`);
         params.fmt = 'json';
         for (const [key, value] of Object.entries(params)) {
@@ -124,17 +115,14 @@ class MusicBrainzAPI {
             const now = Date.now();
             const waitTime = this.next_available_request_time - now;
             if (waitTime > 0) {
-                if (tracker) tracker.rateLimitWaitMs += waitTime;
                 await new Promise(resolve => setTimeout(resolve, waitTime));
             }
 
-            const reqStartTime = Date.now();
             try {
                 const response = await new Promise((resolve, reject) => {
                     GM.xmlHttpRequest({
                         method: 'GET',
                         url: url.toString(),
-                        timeout: this.timeout,
                         headers: {
                             'User-Agent': this.user_agent,
                             'Accept': 'application/json',
@@ -142,9 +130,6 @@ class MusicBrainzAPI {
                         },
                         anonymous: true,
                         onload: (res) => {
-                            if (tracker) {
-                                tracker.networkDurationMs += (Date.now() - reqStartTime);
-                            }
                             const responseTime = Date.now();
                             const headers = this._parseHeaders(res.responseHeaders);
                             const rateLimitReset = parseInt(headers['x-ratelimit-reset'], 10) * 1000;
@@ -162,7 +147,7 @@ class MusicBrainzAPI {
                             if (res.status >= 200 && res.status < 300) {
                                 resolve(JSON.parse(res.responseText));
                             } else if (res.status === 503) {
-                                reject(new Error('503 Service Unavailable (rate limit or server overloaded)'));
+                                reject(new Error('Rate limit hit or server overloaded'));
                             } else {
                                 const isPermanent = res.status >= 400 && res.status < 500;
                                 const error = isPermanent
@@ -173,16 +158,10 @@ class MusicBrainzAPI {
                             }
                         },
                         onerror: (err) => {
-                            if (tracker) {
-                                tracker.networkDurationMs += (Date.now() - reqStartTime);
-                            }
                             this.next_available_request_time = Date.now() + 5000;
                             reject(new Error('Network error'));
                         },
                         ontimeout: () => {
-                            if (tracker) {
-                                tracker.networkDurationMs += (Date.now() - reqStartTime);
-                            }
                             this.next_available_request_time = Date.now() + 5000;
                             reject(new Error('Request timed out'));
                         },
@@ -193,11 +172,6 @@ class MusicBrainzAPI {
             } catch (error) {
                 if (error instanceof PermanentError) {
                     throw error; // Stop retrying and propagate the error.
-                }
-
-                if (tracker) {
-                    tracker.retries++;
-                    tracker.errors.push(`Attempt ${i + 1}/${this.max_retries} failed: ${error.message}`);
                 }
 
                 if (!navigator.onLine) {
@@ -215,25 +189,8 @@ class MusicBrainzAPI {
 
                 if (i === this.max_retries - 1) throw error;
                 const delay = this.rate_limit_delay * Math.pow(2, i);
-                if (tracker) {
-                    tracker.retryBackoffWaitMs += delay;
-                }
                 await new Promise(resolve => setTimeout(resolve, delay));
             }
-        }
-    }
-
-    /**
-     * @summary Normalizes a URL string to its canonical WHATWG/RFC 3986 format.
-     * @param {string} url - The URL string to normalize.
-     * @returns {string} The normalized URL string.
-     */
-    static normalizeUrl(url) {
-        if (!url) return url;
-        try {
-            return new URL(url).href;
-        } catch {
-            return url;
         }
     }
 
@@ -245,9 +202,7 @@ class MusicBrainzAPI {
      */
     async lookupUrl(urls, inc = []) {
         const isInputArray = Array.isArray(urls);
-        const rawUrls = isInputArray ? urls : [urls];
-        const normalizedUrls = rawUrls.map(u => MusicBrainzAPI.normalizeUrl(u));
-        const urlArray = isInputArray ? [...new Set(normalizedUrls)] : normalizedUrls;
+        const urlArray = isInputArray ? [...new Set(urls)] : [urls];
 
         if (urlArray.length === 0) {
             return isInputArray ? {} : null;
@@ -264,15 +219,6 @@ class MusicBrainzAPI {
             }
         }
 
-        const diagnostics = {
-            requests: 0,
-            retries: 0,
-            rateLimitWaitMs: 0,
-            retryBackoffWaitMs: 0,
-            networkDurationMs: 0,
-            errors: []
-        };
-
         if (uncachedUrls.length > 0) {
             const urlChunks = [];
             for (let i = 0; i < uncachedUrls.length; i += this.batch_size) {
@@ -283,7 +229,7 @@ class MusicBrainzAPI {
                 this._request('url', {
                     resource: chunk,
                     inc: inc.join('+')
-                }, diagnostics)
+                })
             );
 
             // Use Promise.allSettled to ensure all batches are processed, even if some fail.
@@ -298,11 +244,11 @@ class MusicBrainzAPI {
                     // The API returns a single object for a 1-item request, and an object with a `urls` array for multi-item requests.
                     if (chunk.length === 1) {
                         const url = chunk[0];
-                        const mbData = response && MusicBrainzAPI.normalizeUrl(response.resource) === url ? response : null;
+                        const mbData = response && response.resource === url ? response : null;
                         this.cache.set(url, mbData);
                         results.set(url, mbData);
                     } else {
-                        const responseMap = new Map(response.urls?.map(u => [MusicBrainzAPI.normalizeUrl(u.resource), u]) || []);
+                        const responseMap = new Map(response.urls?.map(u => [u.resource, u]) || []);
                         for (const url of chunk) {
                             const mbData = responseMap.get(url) || null;
                             this.cache.set(url, mbData);
@@ -311,7 +257,9 @@ class MusicBrainzAPI {
                     }
                 } else { // status === 'rejected'
                     const is404 = result.reason && result.reason.status === 404;
-                    if (!is404) {
+                    if (is404) {
+                        console.info(`MusicBrainz API URL lookup: URL not found in MusicBrainz database for chunk starting with ${chunk[0]}`);
+                    } else {
                         console.error(`MusicBrainz API batch lookup failed for chunk starting with ${chunk[0]}`, result.reason);
                     }
 
@@ -327,11 +275,6 @@ class MusicBrainzAPI {
                 }
             });
         }
-
-        results.diagnostics = diagnostics;
-        results.sources = new Map(
-            urlArray.map(url => [url, uncachedUrls.includes(url) ? 'network' : 'cache'])
-        );
 
         return isInputArray ? results : results.get(urlArray[0]);
     }
@@ -366,13 +309,6 @@ class MusicBrainzAPI {
         return results;
     }
 
-    /**
-     * Fetches details for a specific MusicBrainz entity by its MBID.
-     * @param {string} entity - The entity type (e.g., 'release', 'artist', 'recording').
-     * @param {string} mbid - The MusicBrainz Identifier (MBID) of the entity.
-     * @param {string[]} [inc=[]] - Array of sub-queries/relationships to include (e.g., ['recordings', 'artists', 'url-rels']).
-     * @returns {Promise<object>} A promise that resolves to the entity details object.
-     */
     get(entity, mbid, inc = []) {
         return this._request(`${entity}/${mbid}`, { inc: inc.join('+') });
     }
@@ -381,9 +317,10 @@ class MusicBrainzAPI {
         this.cache.clear();
     }
 
+
     invalidateCacheForUrl(url) {
         const urls = Array.isArray(url) ? url : [url];
-        urls.forEach(u => this.cache.delete(MusicBrainzAPI.normalizeUrl(u)));
+        urls.forEach(u => this.cache.delete(u));
     }
 
     /**
@@ -392,7 +329,7 @@ class MusicBrainzAPI {
      * @returns {object|undefined} The cached response or undefined if not cached.
      */
     getFromCache(url) {
-        return this.cache.get(MusicBrainzAPI.normalizeUrl(url));
+        return this.cache.get(url);
     }
 }
 
@@ -416,11 +353,10 @@ class PermanentError extends Error {
 
     /**
      * Missing release action provider:
-     * - 'auto': Automatically uses 'harmony' if Harmony Beatport Recovery (unsafeWindow.HBR) is installed, otherwise 'beatport'.
-     * - 'beatport': Opens Beatport release page in a new tab for 1-click import via Murdos Beatport Importer.
-     * - 'harmony': Opens Harmony import URL directly.
+     * - 'beatport': Opens Beatport release page in a new tab for 1-click import via Murdos Beatport Importer (default workaround while Cloudflare blocks Harmony server scraping).
+     * - 'harmony': Opens Harmony import URL directly (available when Harmony implements Beatport API support).
      */
-    MISSING_RELEASE_PROVIDER: 'auto',
+    MISSING_RELEASE_PROVIDER: 'beatport',
 
     HARMONY_BASE_URL: 'https://harmony.pulsewidth.org.uk/release',
     HARMONY_ICON_URL: 'https://harmony.pulsewidth.org.uk/favicon.svg',
@@ -441,7 +377,7 @@ class PermanentError extends Error {
 
     SELECTORS: {
       RELEASE_ROW: '[class*="TableRow"]',
-      RELEASE_LINK: 'a[href*="/release/"]:not(.status-icon)',
+      RELEASE_LINK: '[href*="/release/"]',
       ANCHOR: '.date',
       ICONS_CONTAINER: '.button_container'
     },
@@ -473,18 +409,6 @@ class PermanentError extends Error {
   };
 
   /**
-   * Resolves the effective missing release provider based on configuration
-   * and runtime environment (auto-detects Harmony Beatport Recovery).
-   * @returns {'harmony'|'beatport'} The active provider.
-   */
-  function getEffectiveMissingProvider() {
-    if (Config.MISSING_RELEASE_PROVIDER !== 'auto') {
-      return Config.MISSING_RELEASE_PROVIDER;
-    }
-    return unsafeWindow.HBR ? 'harmony' : 'beatport';
-  }
-
-  /**
    * Constructs the Harmony import URL for a given Beatport release URL.
    * @param {string} releaseUrl - The Beatport release URL.
    * @returns {string} The complete Harmony import URL.
@@ -503,10 +427,10 @@ class PermanentError extends Error {
   /**
    * Resolves the target destination URL for releases missing from MusicBrainz.
    * @param {string} releaseUrl - The Beatport release URL.
-   * @returns {string} The target URL based on the effective provider.
+   * @returns {string} The target URL based on Config.MISSING_RELEASE_PROVIDER.
    */
   function getMissingReleaseUrl(releaseUrl) {
-    if (getEffectiveMissingProvider() === 'harmony') {
+    if (Config.MISSING_RELEASE_PROVIDER === 'harmony') {
       return getHarmonyImportUrl(releaseUrl);
     }
     return releaseUrl;
@@ -517,7 +441,7 @@ class PermanentError extends Error {
    * @returns {string} Tooltip description.
    */
   function getMissingReleaseTitle() {
-    if (getEffectiveMissingProvider() === 'harmony') {
+    if (Config.MISSING_RELEASE_PROVIDER === 'harmony') {
       return 'Import with Harmony';
     }
     return 'Missing from MusicBrainz — Open release page to import';
@@ -638,9 +562,8 @@ class PermanentError extends Error {
           const normalizedUrl = `${parsedUrl.origin}${normalizedPathname}${parsedUrl.search}`;
 
           const lastProcessed = BeatportMusicBrainzImporter._processedRows.get(releaseRow);
-          const hasIcons = releaseRow.querySelector(Config.SELECTORS.ICONS_CONTAINER);
 
-          if (lastProcessed !== normalizedUrl || !hasIcons) {
+          if (lastProcessed !== normalizedUrl) {
             unprocessedReleases.push({
               url: url,
               element: releaseRow
@@ -666,11 +589,10 @@ class PermanentError extends Error {
      */
     init: function () {
       this._mbApi = new MusicBrainzAPI({
-        user_agent: `${Config.USER_AGENT}/${GM.info.script.version} ( ${GM.info.script.namespace} )`
+        user_agent: `${Config.USER_AGENT}/${GM_info.script.version} ( ${GM_info.script.namespace} )`
       });
       this._injectCSS();
       this._hookNextRouter();
-      this._setupDOMObserver();
       // Initial run
       setTimeout(() => this.runUpdate(), 1000);
     },
@@ -730,10 +652,35 @@ class PermanentError extends Error {
     _hookNextRouter: function () {
       const self = this;
 
+      const checkContentAndTrigger = (observer) => {
+        const itemsToProcess = DOMScanner.getReleasesToProcess();
+
+        if (itemsToProcess.length > 0) {
+          if (observer) observer.disconnect();
+          self.runUpdate();
+          return true;
+        }
+
+        return false;
+      };
+
       const valCheckNext = () => {
         if (unsafeWindow.next?.router?.events) {
           unsafeWindow.next.router.events.on('routeChangeComplete', () => {
-            self.runUpdate();
+            // 1. Immediate check for synchronous update
+            if (checkContentAndTrigger(null)) return;
+
+            // 2. Observer for async updates
+            const observer = new MutationObserver(() => {
+              checkContentAndTrigger(observer);
+            });
+
+            observer.observe(document.body, { childList: true, subtree: true });
+
+            // Timeout safety
+            setTimeout(() => {
+              observer.disconnect();
+            }, 10000);
           });
           return;
         }
@@ -742,31 +689,6 @@ class PermanentError extends Error {
       };
 
       valCheckNext();
-    },
-
-    /**
-     * Continuous debounced observer to restore status icons
-     * when React re-renders table rows or after background session refreshes.
-     */
-    _setupDOMObserver: function () {
-      let debounceTimer = null;
-      const observer = new MutationObserver((mutations) => {
-        const hasNewNodes = mutations.some(m => m.addedNodes.length > 0);
-        if (!hasNewNodes) {
-          return;
-        }
-
-        if (debounceTimer) {
-          clearTimeout(debounceTimer);
-        }
-        debounceTimer = setTimeout(() => {
-          if (DOMScanner.isSupportedPage() && DOMScanner.getReleasesToProcess().length > 0) {
-            this.runUpdate();
-          }
-        }, 300);
-      });
-
-      observer.observe(document.body, { childList: true, subtree: true });
     },
 
     /**
@@ -873,11 +795,6 @@ class PermanentError extends Error {
 
             // Update UI for newly fetched items
             updateUIForUrls(uncachedUrls);
-          }
-
-          // If DOM elements were replaced or added while fetching, schedule another pass
-          if (DOMScanner.getReleasesToProcess().length > 0) {
-            this._scheduleUpdate = true;
           }
 
         } while (this._scheduleUpdate);
