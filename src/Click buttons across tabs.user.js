@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        Click buttons across tabs
 // @namespace   https://musicbrainz.org/user/chaban
-// @version     4.13.0
+// @version     4.13.1
 // @description Clicks specified buttons across tabs using the Broadcast Channel API and closes tabs after successful submission.
 // @tag         ai-created
 // @author      chaban
@@ -398,9 +398,10 @@
                 );
             },
             submissionHandler: (config, _ignoredTrigger) => {
-                const isRelationshipEditor = location.pathname.endsWith('/edit-relationships');
+                const isReleaseRelationshipEditor = location.pathname.endsWith('/edit-relationships');
                 const isCoverArtPage = location.pathname.endsWith('/add-cover-art') || location.pathname.endsWith('/add-event-art');
                 const hasSeedingHash = location.hash.includes('seed-urls-v1');
+                const REL_HIGHLIGHT_SELECTOR = '.rel-add, .rel-edit, .rel-remove';
 
                 /**
                  * Detects if the current page was opened with seeded or injected parameters.
@@ -459,6 +460,7 @@
 
                 /**
                  * Inspects Relationship Editor state for newly added/edited relationships (_status > 0).
+                 * Supports both release relationship editor and standalone entity relationship editors.
                  * @returns {number} Count of active pending relationship edits.
                  */
                 function getPendingRelationshipEditsCount() {
@@ -467,7 +469,21 @@
                     const tree = win.MB?.tree;
                     const state = editor?.state;
 
-                    if (!state || !tree) return 0;
+                    const getDomFallbackCount = () => {
+                        const container = document.getElementById('relationship-editor') ||
+                            document.querySelector('.relationship-editor');
+                        if (!container) return 0;
+                        const relHighlights = container.querySelectorAll(REL_HIGHLIGHT_SELECTOR);
+                        if (relHighlights.length > 0) {
+                            debugLog(`getPendingRelationshipEditsCount (DOM fallback): found ${relHighlights.length} pending relationship edit highlight(s).`, 'yellow');
+                            return relHighlights.length;
+                        }
+                        return 0;
+                    };
+
+                    if (!state || !tree) {
+                        return getDomFallbackCount();
+                    }
 
                     const uniqueEditIds = new Set();
                     const visited = new Set();
@@ -480,7 +496,7 @@
                         if ('linkTypeID' in node || '_status' in node || 'entity0' in node) {
                             const status = node._status ?? node.status ?? 0;
                             if (status > 0) {
-                                uniqueEditIds.add(node);
+                                uniqueEditIds.add(node.id || node);
                             }
                         }
 
@@ -513,7 +529,14 @@
                     }
 
                     if (state.relationshipsBySource) traverse(state.relationshipsBySource);
+                    if (state.mediums) traverse(state.mediums);
 
+                    if (uniqueEditIds.size === 0) {
+                        const domCount = getDomFallbackCount();
+                        if (domCount > 0) return domCount;
+                    }
+
+                    debugLog(`getPendingRelationshipEditsCount: found ${uniqueEditIds.size} pending relationship edit(s).`, uniqueEditIds.size > 0 ? 'yellow' : 'teal');
                     return uniqueEditIds.size;
                 }
 
@@ -584,7 +607,7 @@
                         return false;
                     }
 
-                    const highlights = editor.querySelectorAll('.rel-add, .rel-edit, .rel-remove');
+                    const highlights = editor.querySelectorAll(REL_HIGHLIGHT_SELECTOR);
                     const isPending = highlights.length > 0;
                     debugLog(`hasPendingExternalLinkEdits (standalone): found ${highlights.length} highlight elements (${isPending ? 'DIRTY' : 'clean'}).`, isPending ? 'yellow' : 'teal');
                     return isPending;
@@ -621,9 +644,8 @@
                         totalCount += releaseEditorEdits;
                     }
 
-                    let relEdits = 0;
-                    if (isRelationshipEditor) {
-                        relEdits = getPendingRelationshipEditsCount();
+                    const relEdits = getPendingRelationshipEditsCount();
+                    if (relEdits > 0) {
                         totalCount += relEdits;
                     }
 
@@ -663,10 +685,10 @@
                 const waitForSeedingAndProceed = () => {
                     const validHash = isValidSeedingHash();
                     const isSeededOrInjected = hasSeededOrInjectedParams();
-                    debugLog(`waitForSeedingAndProceed: isRelationshipEditor=${isRelationshipEditor}, hasSeedingHash=${hasSeedingHash}, validHash=${validHash}, isSeededOrInjected=${isSeededOrInjected}`, 'teal');
+                    debugLog(`waitForSeedingAndProceed: isReleaseRelationshipEditor=${isReleaseRelationshipEditor}, hasSeedingHash=${hasSeedingHash}, validHash=${validHash}, isSeededOrInjected=${isSeededOrInjected}`, 'teal');
 
                     // If NOT seeding (or hash is invalid), evaluate general page state
-                    if (!isRelationshipEditor || !hasSeedingHash || !validHash) {
+                    if (!isReleaseRelationshipEditor || !hasSeedingHash || !validHash) {
                         const pendingEdits = getPendingEditsCount();
                         debugLog(`State evaluation: pendingEdits=${pendingEdits}, isSeededOrInjected=${isSeededOrInjected}`, pendingEdits === 0 ? 'teal' : 'yellow');
 
