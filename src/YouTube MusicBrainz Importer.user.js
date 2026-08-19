@@ -1226,8 +1226,8 @@
                 channelTitle = document.title.replace(/\s*-\s*YouTube$/, '').trim();
             }
 
-            const canonicalUrl = channelId ? `https://www.youtube.com/channel/${channelId}` : null;
-            const handleUrl = handle ? `https://www.youtube.com/${handle}` : null;
+            const canonicalUrl = channelId ? new URL(`https://www.youtube.com/channel/${channelId}`).href : null;
+            const handleUrl = handle ? new URL(`https://www.youtube.com/${handle.startsWith('@') ? handle : `@${handle}`}`).href : null;
 
             return {
                 channelId,
@@ -2370,13 +2370,6 @@
             if (channelData.canonicalUrl) urlsToQuery.push(channelData.canonicalUrl);
             if (channelData.handleUrl && !urlsToQuery.includes(channelData.handleUrl)) {
                 urlsToQuery.push(channelData.handleUrl);
-            }
-
-            // Also fallback to cleaned current URL if not already present
-            const cleanPath = location.pathname.replace(/\/videos$|\/featured$|\/playlists$|\/community$|\/about$|\/shorts$|\/streams$/, '');
-            const cleanLocationUrl = `${location.origin}${cleanPath}`;
-            if (!urlsToQuery.includes(cleanLocationUrl) && cleanLocationUrl.includes('youtube.com')) {
-                urlsToQuery.push(cleanLocationUrl);
             }
 
             if (urlsToQuery.length === 0) {
