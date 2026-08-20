@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        MusicBrainz: Auto login MusicBrainz ISRC importers
 // @namespace   https://musicbrainz.org/user/chaban
-// @version     2.3.1
+// @version     2.3.2
 // @description Attempts to login on MusicBrainz ISRC submission sites like ISRC Hunt or MagicISRC and automatically handle OAuth authorization
 // @tag         ai-created
 // @author      chaban
@@ -76,23 +76,34 @@
 
     /**
      * Configuration map of trusted OAuth client IDs and their authorization expectations.
-     * @type {Object.<string, {redirectUriBase: string, expectedScopes: string[], name: string}>}
+     * @type {Object.<string, {name: string, expectedScopes: string[], redirectBase: string, allowSubdomains?: boolean, isImporter?: boolean}>}
      */
     const trustedClients = {
-        'oxqZoCJWy9BQXgS7UTikeA': { // MagicISRC main site
-            redirectUriBase: 'https://magicisrc.kepstin.ca',
+        // MusicBrainz OAuth
+        'oxqZoCJWy9BQXgS7UTikeA': {
+            name: 'MagicISRC (main)',
             expectedScopes: ['profile', 'submit_isrc'],
-            name: 'MagicISRC (main)'
+            redirectBase: 'https://magicisrc.kepstin.ca',
+            isImporter: true
         },
-        'flI-ayzX2u2pzMWosH27FQ': { // MagicISRC beta site
-            redirectUriBase: 'https://magicisrc-beta.kepstin.ca',
+        'flI-ayzX2u2pzMWosH27FQ': {
+            name: 'MagicISRC (beta)',
             expectedScopes: ['profile', 'submit_isrc'],
-            name: 'MagicISRC (beta)'
+            redirectBase: 'https://magicisrc-beta.kepstin.ca',
+            isImporter: true
         },
-        'BzRD1-z1sMBfKVnOaJiMLIFL6_7WSaL5': { // ISRC Hunt
-            redirectUriBase: 'https://isrchunt.com',
+        'BzRD1-z1sMBfKVnOaJiMLIFL6_7WSaL5': {
+            name: 'ISRCHunt',
             expectedScopes: ['profile', 'submit_isrc'],
-            name: 'ISRCHunt'
+            redirectBase: 'https://isrchunt.com',
+            isImporter: true
+        },
+        // MetaBrainz OAuth
+        'Xe88DZesznjEzGaxAjBZYfqI': {
+            name: 'MusicBrainz',
+            expectedScopes: ['profile'],
+            redirectBase: 'https://musicbrainz.org/metabrainz/oauth2/callback',
+            allowSubdomains: true
         }
     };
 
@@ -101,7 +112,11 @@
      * @type {string[]}
      */
     const trustedImporterOrigins = [
-        ...new Set(Object.values(trustedClients).map(c => `${new URL(c.redirectUriBase).origin}/`))
+        ...new Set(
+            Object.values(trustedClients)
+                .filter(c => c.isImporter)
+                .map(c => `${new URL(c.redirectBase).origin}/`)
+        )
     ];
 
     /**
@@ -133,15 +148,29 @@
     };
 
     /**
-     * Checks if a target URL represents a valid MetaBrainz SSO callback to MusicBrainz.
+     * Validates whether a redirect URL matches the trusted client's configured redirect base and host rules.
      *
-     * @param {?URL} parsedUrl - Parsed URL instance of the redirect_uri parameter.
-     * @returns {boolean} True if the target URL is a valid MusicBrainz SSO callback.
+     * @param {?URL} redirectUrl - Parsed URL instance of the redirect_uri parameter.
+     * @param {{redirectBase: string, allowSubdomains?: boolean}} clientInfo - Client configuration.
+     * @returns {boolean} True if the redirect URL is valid.
      */
-    const isMetaBrainzSSORedirect = (parsedUrl) => {
-        if (!parsedUrl) return false;
-        const isMusicBrainzHost = parsedUrl.hostname === 'musicbrainz.org' || parsedUrl.hostname.endsWith('.musicbrainz.org');
-        return isMusicBrainzHost && parsedUrl.pathname === '/metabrainz/oauth2/callback';
+    const isValidRedirect = (redirectUrl, clientInfo) => {
+        if (!redirectUrl) return false;
+        const expectedUrl = new URL(clientInfo.redirectBase);
+
+        if (redirectUrl.protocol !== expectedUrl.protocol) return false;
+
+        const isHostValid = clientInfo.allowSubdomains
+            ? redirectUrl.hostname === expectedUrl.hostname || redirectUrl.hostname.endsWith(`.${expectedUrl.hostname}`)
+            : redirectUrl.hostname === expectedUrl.hostname;
+
+        if (!isHostValid) return false;
+
+        if (expectedUrl.pathname !== '/' && redirectUrl.pathname !== expectedUrl.pathname) {
+            return false;
+        }
+
+        return true;
     };
 
     /**
@@ -161,33 +190,18 @@
 
         try {
             const redirectUrl = redirectUri ? new URL(redirectUri) : null;
-            const currentHost = window.location.hostname;
+            const clientInfo = trustedClients[clientId];
 
-            if (currentHost === 'metabrainz.org' && isMetaBrainzSSORedirect(redirectUrl)) {
-                if (isValidScope(requestedScopeString, ['profile'])) {
-                    isTrustedClient = true;
-                    clientName = 'MetaBrainz SSO (MusicBrainz)';
-                    log(LOG_LEVELS.DEBUG, 'MetaBrainz SSO redirect matched for MusicBrainz.');
-                } else {
-                    log(LOG_LEVELS.WARN, 'MetaBrainz SSO validation FAILED: Scope mismatch.');
-                }
-            } else if (redirectUrl) {
-                const matchedClient = Object.entries(trustedClients).find(
-                    ([id, info]) => clientId === id && redirectUrl.origin === new URL(info.redirectUriBase).origin
-                );
-
-                if (matchedClient) {
-                    const [, clientInfo] = matchedClient;
-                    clientName = clientInfo.name;
-                    log(LOG_LEVELS.DEBUG, `Client ID and Redirect URI Origin matched for: ${clientName}`);
-
-                    if (isValidScope(requestedScopeString, clientInfo.expectedScopes)) {
-                        isTrustedClient = true;
-                        log(LOG_LEVELS.DEBUG, `Scope validation passed for ${clientName}.`);
-                    } else {
-                        log(LOG_LEVELS.WARN, `Final validation FAILED: Scopes did not match for ${clientName}.`);
-                    }
-                }
+            if (!clientInfo) {
+                log(LOG_LEVELS.WARN, `OAuth validation FAILED: Untrusted client_id '${clientId}'.`);
+            } else if (!isValidRedirect(redirectUrl, clientInfo)) {
+                log(LOG_LEVELS.WARN, `OAuth validation FAILED: Invalid redirect URI '${redirectUri}' for ${clientInfo.name}.`);
+            } else if (!isValidScope(requestedScopeString, clientInfo.expectedScopes)) {
+                log(LOG_LEVELS.WARN, `OAuth validation FAILED: Scope mismatch for ${clientInfo.name}.`);
+            } else {
+                isTrustedClient = true;
+                clientName = clientInfo.name;
+                log(LOG_LEVELS.DEBUG, `OAuth request validated for: ${clientName}`);
             }
         } catch (e) {
             log(LOG_LEVELS.ERROR, `Error during OAuth validation: ${e.message}. Script will not auto-confirm.`);
