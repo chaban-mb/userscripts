@@ -2201,7 +2201,19 @@ class PermanentError extends Error {
         setPending(isPending = true) {
             super.setPending(isPending);
             if (this._submitButton) {
+                if (isPending) {
+                    this._submitButton.update({
+                        label: L10n.getString('loading'),
+                        title: L10n.getString('loading'),
+                        variant: 'tonal',
+                        disabled: true
+                    });
+                    this._form.style.display = 'inline-flex';
+                }
                 this._submitButton.setPending(isPending);
+            }
+            if (isPending) {
+                this.show();
             }
         }
 
