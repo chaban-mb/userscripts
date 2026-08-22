@@ -1229,10 +1229,17 @@ class PermanentError extends Error {
             const channelTitle = videoDetails?.author || moviePlayerData?.author || document.querySelector('#owner #channel-name a')?.innerText || '';
             const channelId = videoDetails?.channelId || '';
 
-            // Extract channel handle if present in owner link or player metadata
-            const channelHandle = document.querySelector('#owner a[href*="/@"]')?.getAttribute('href')?.match(/\/(@[A-Za-z0-9_.-]+)/)?.[1]
-                || playerResponse?.microformat?.playerMicroformatRenderer?.ownerProfileUrl?.match(/\/(@[A-Za-z0-9_.-]+)/)?.[1]
-                || null;
+            // Extract channel handle from player microformat or channel cache first to avoid stale DOM scraping on SPA navigation
+            let channelHandle = playerResponse?.microformat?.playerMicroformatRenderer?.ownerProfileUrl?.match(/\/(@[A-Za-z0-9_.-]+)/)?.[1] || null;
+            if (!channelHandle && channelId) {
+                const cachedRecord = DOMScanner._channelCache.get(channelId);
+                if (cachedRecord?.handle) {
+                    channelHandle = cachedRecord.handle;
+                }
+            }
+            if (!channelHandle) {
+                channelHandle = document.querySelector('#owner a[href*="/@"]')?.getAttribute('href')?.match(/\/(@[A-Za-z0-9_.-]+)/)?.[1] || null;
+            }
 
             if (channelId && channelHandle) {
                 DOMScanner.cacheChannelData(channelHandle, channelId);
@@ -2305,6 +2312,8 @@ class PermanentError extends Error {
             this.resetState();
 
             let button;
+            let outcome = 'linked_recording';
+
             if (allRelevantRecordingRelations.length === 1) {
                 const existingRecordingRelation = allRelevantRecordingRelations[0];
                 const recordingMBID = existingRecordingRelation.recording.id;
@@ -2313,6 +2322,7 @@ class PermanentError extends Error {
                 const ytHasLength = youtubeVideoData && youtubeVideoData.contentDetails && (youtubeVideoData.contentDetails.durationMs > 0 || youtubeVideoData.contentDetails.directMs > 0);
 
                 if (!hasLength && ytHasLength) {
+                    outcome = 'update_length';
                     const lengthInMs = youtubeVideoData.contentDetails.durationMs || youtubeVideoData.contentDetails.directMs;
                     const scriptInfo = GM_info.script;
                     const editNote = `${canonicalYtUrl}\n—\n${scriptInfo.name} (v${scriptInfo.version})`;
@@ -2330,6 +2340,7 @@ class PermanentError extends Error {
                     });
                     console.debug(`[${GM.info.script.name}] Displaying 'Update Length' button for recording ${recordingMBID}.`);
                 } else {
+                    outcome = 'linked_recording';
                     button = new YTButton({
                         tag: 'a',
                         href: `//musicbrainz.org/recording/${recordingMBID}`,
@@ -2341,6 +2352,7 @@ class PermanentError extends Error {
                     });
                 }
             } else {
+                outcome = 'multi_linked';
                 console.debug(`[${GM.info.script.name}] Multiple recording relations found. Linking to URL entity page.`);
                 button = new YTButton({
                     tag: 'a',
@@ -2355,9 +2367,7 @@ class PermanentError extends Error {
 
             this.setContent(button);
             console.debug(`[${GM.info.script.name}] Displaying existing link button.`);
-            return allRelevantRecordingRelations.length === 1
-                ? (!hasLength && ytHasLength ? 'update_length' : 'linked_recording')
-                : 'multi_linked';
+            return outcome;
         }
     }
     const RecordingButtonManager = new RecordingButtonManagerClass();
