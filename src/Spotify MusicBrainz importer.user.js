@@ -59,6 +59,7 @@ class MusicBrainzAPI {
      * @param {string} [options.user_agent] - User Agent header identification string.
      * @param {number} [options.max_retries=5] - Maximum retry attempts for failed requests.
      * @param {number} [options.batch_size=100] - URL batch chunk size.
+     * @param {number} [options.timeout=15000] - Timeout per network request in milliseconds.
      */
     constructor(options = {}) {
         let defaultOrigin = 'https://musicbrainz.org';
@@ -72,6 +73,7 @@ class MusicBrainzAPI {
         this.rate_limit_delay = 1000;
         this.max_retries = options.max_retries || 5;
         this.batch_size = options.batch_size || 100;
+        this.timeout = options.timeout || 15000;
         this.cache = new Map();
         this.next_available_request_time = 0;
     }
@@ -127,11 +129,13 @@ class MusicBrainzAPI {
                 await new Promise(resolve => setTimeout(resolve, waitTime));
             }
 
+            const reqStartTime = Date.now();
             try {
                 const response = await new Promise((resolve, reject) => {
                     GM.xmlHttpRequest({
                         method: 'GET',
                         url: url.toString(),
+                        timeout: this.timeout,
                         headers: {
                             'User-Agent': this.user_agent,
                             'Accept': 'application/json',
@@ -139,6 +143,9 @@ class MusicBrainzAPI {
                         },
                         anonymous: true,
                         onload: (res) => {
+                            if (tracker) {
+                                tracker.networkDurationMs += (Date.now() - reqStartTime);
+                            }
                             const responseTime = Date.now();
                             const headers = this._parseHeaders(res.responseHeaders);
                             const rateLimitReset = parseInt(headers['x-ratelimit-reset'], 10) * 1000;
@@ -167,10 +174,16 @@ class MusicBrainzAPI {
                             }
                         },
                         onerror: (err) => {
+                            if (tracker) {
+                                tracker.networkDurationMs += (Date.now() - reqStartTime);
+                            }
                             this.next_available_request_time = Date.now() + 5000;
                             reject(new Error('Network error'));
                         },
                         ontimeout: () => {
+                            if (tracker) {
+                                tracker.networkDurationMs += (Date.now() - reqStartTime);
+                            }
                             this.next_available_request_time = Date.now() + 5000;
                             reject(new Error('Request timed out'));
                         },
@@ -257,6 +270,7 @@ class MusicBrainzAPI {
             retries: 0,
             rateLimitWaitMs: 0,
             retryBackoffWaitMs: 0,
+            networkDurationMs: 0,
             errors: []
         };
 
@@ -298,9 +312,7 @@ class MusicBrainzAPI {
                     }
                 } else { // status === 'rejected'
                     const is404 = result.reason && result.reason.status === 404;
-                    if (is404) {
-                        console.info(`MusicBrainz API URL lookup: URL not found in MusicBrainz database for chunk starting with ${chunk[0]}`);
-                    } else {
+                    if (!is404) {
                         console.error(`MusicBrainz API batch lookup failed for chunk starting with ${chunk[0]}`, result.reason);
                     }
 
