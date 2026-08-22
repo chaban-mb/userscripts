@@ -1178,16 +1178,20 @@
                 };
             });
 
-            console.info(`[${GM.info.script.name}] Video: "${ytData?.snippet?.title || ytData?.id || 'N/A'}"`, {
-                videoId: ytData?.id || '',
-                videoTitle: ytData?.snippet?.title || '',
-                channelTitle: ytData?.snippet?.channelTitle || '',
-                channelId: ytData?.snippet?.channelId || '',
-                channelHandle: ytData?.snippet?.channelHandle || '',
-                canonicalUrl: canonicalYtUrl || (ytData?.id ? `https://www.youtube.com/watch?v=${ytData.id}` : null),
-                videoDuration: `${formatMsToHms(ytData?.contentDetails?.durationMs)} (${ytData?.contentDetails?.durationMs || 0}ms)`,
+            const lookupDiagnostics = mbResults?.diagnostics || null;
+            const hasDetailedDiagnostics = lookupDiagnostics && (lookupDiagnostics.requests > 0 || lookupDiagnostics.retries > 0 || lookupDiagnostics.errors?.length > 0);
+
+            console.info(`[${GM.info.script.name}] Video: "${ytData ? (ytData.snippet.title || ytData.id) : 'N/A'}"`, {
+                videoId: ytData ? ytData.id : '',
+                videoTitle: ytData ? ytData.snippet.title : '',
+                channelTitle: ytData ? ytData.snippet.channelTitle : '',
+                channelId: ytData ? ytData.snippet.channelId : '',
+                channelHandle: ytData ? ytData.snippet.channelHandle : '',
+                canonicalUrl: canonicalYtUrl || (ytData ? `https://www.youtube.com/watch?v=${ytData.id}` : null),
+                videoDuration: ytData ? `${formatMsToHms(ytData.contentDetails.durationMs)} (${ytData.contentDetails.durationMs || 0}ms)` : 'N/A',
                 outcome,
                 lookupDuration: `${durationMs}ms`,
+                ...(hasDetailedDiagnostics ? { lookupDiagnostics } : {}),
                 musicbrainzLookups: lookups,
                 ...(error ? { error } : {})
             });
@@ -1235,6 +1239,9 @@
                 };
             });
 
+            const lookupDiagnostics = mbResults?.diagnostics || null;
+            const hasDetailedDiagnostics = lookupDiagnostics && (lookupDiagnostics.requests > 0 || lookupDiagnostics.retries > 0 || lookupDiagnostics.errors?.length > 0);
+
             console.info(`[${GM.info.script.name}] Channel: "${channelData.channelTitle || channelData.handle || 'N/A'}"`, {
                 channelTitle: channelData.channelTitle || '',
                 channelId: channelData.channelId || '',
@@ -1249,6 +1256,7 @@
                     links: externalLinks,
                     sources: linkSources
                 },
+                ...(hasDetailedDiagnostics ? { lookupDiagnostics } : {}),
                 musicbrainzLookups: lookups,
                 ...(error ? { error } : {})
             });
@@ -1594,6 +1602,7 @@
             // 4. Fallback: Query Innertube /browse only if channelId is known, uncached, and in-page extraction found nothing
             if (channelId && channelId.startsWith('UC') && !sources.cache.hit && discoveredUrls.size === 0) {
                 sources.innertubeContinuation.attempted = true;
+                const innertubeStartTime = performance.now();
                 try {
                     const apiKey = Utils.getYtcfgValue('INNERTUBE_API_KEY');
                     const context = Utils.getYtcfgValue('INNERTUBE_CONTEXT');
@@ -1637,6 +1646,8 @@
                 } catch (err) {
                     sources.innertubeContinuation.error = err.message || String(err);
                     Logger.warn('Failed to fetch Innertube About drawer continuation', err);
+                } finally {
+                    sources.innertubeContinuation.durationMs = Math.round(performance.now() - innertubeStartTime);
                 }
             }
 
