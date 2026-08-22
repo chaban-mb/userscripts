@@ -2637,6 +2637,8 @@
 
         // 2. Check if we should perform full update seeding via URL parameters (redirection)
         if (formName === 'release-update-seeder' && AppState.settings[SETTINGS_CONFIG.fullUpdateSeeding.key]) {
+            event.preventDefault();
+
             const rawParameters = generateAllParameters(AppState.data.release);
 
             // Scrape URL mappings (URLs and link types) from the main seeder form
@@ -2664,7 +2666,7 @@
             const action = form.getAttribute('action');
             if (action) {
                 const separator = action.includes('?') ? '&' : '?';
-                const seederTarget = localStorage.getItem('seeder.target') || '_blank';
+                const seederTarget = getSeederTarget();
                 const redirectUrl = `${action}${separator}${searchParams.toString()}`;
                 log(`Redirecting to MusicBrainz with ${parameters.size} parameters for full seeding.`);
                 window.open(redirectUrl, seederTarget);
