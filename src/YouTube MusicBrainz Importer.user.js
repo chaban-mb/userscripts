@@ -12,6 +12,7 @@
 // @connect     listenbrainz.org
 // @require     ../lib/MusicBrainzAPI.js
 // @icon        https://www.google.com/s2/favicons?sz=256&domain=youtube.com
+// @grant       unsafeWindow
 // @grant       GM.xmlHttpRequest
 // @grant       GM.getValue
 // @grant       GM.setValue
@@ -30,6 +31,8 @@
 
 (function () {
     'use strict';
+
+    const pageWin = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
 
     /**
      * Localization module to handle translations.
@@ -494,10 +497,82 @@
             if (obj.title) {
                 return this.extractTextFromYtObject(obj.title);
             }
-            if (obj.pageTitle) {
-                return this.extractTextFromYtObject(obj.pageTitle);
-            }
             return '';
+        },
+
+        /**
+         * Resolves and unwraps YouTube redirect URLs (e.g., https://www.youtube.com/redirect?q=...).
+         * @param {string} rawUrl
+         * @returns {string|null}
+         */
+        unwrapRedirectUrl: function (rawUrl) {
+            if (!rawUrl || typeof rawUrl !== 'string') return null;
+            let urlStr = rawUrl.trim();
+            if (!urlStr) return null;
+
+            try {
+                if (urlStr.includes('/redirect?') || urlStr.includes('youtube.com/redirect?')) {
+                    const parsed = new URL(urlStr, location.origin);
+                    const target = parsed.searchParams.get('q');
+                    if (target) {
+                        urlStr = target;
+                    }
+                }
+            } catch {
+                // Ignore parse errors, proceed with current string
+            }
+
+            // Ensure protocol is attached if string looks like a domain/path without leading slash
+            if (!/^https?:\/\//i.test(urlStr) && !urlStr.startsWith('/') && !urlStr.startsWith('#')) {
+                urlStr = `https://${urlStr}`;
+            }
+
+            return urlStr;
+        },
+
+        /**
+         * Checks if a URL is an internal YouTube navigation or asset URL.
+         * @param {string} url
+         * @returns {boolean}
+         */
+        isInternalYouTubeUrl: function (url) {
+            if (!url || typeof url !== 'string') return true;
+            if (url.startsWith('/') || url.startsWith('#') || url.startsWith('javascript:')) return true;
+            try {
+                const parsed = new URL(url, location.origin);
+                const host = parsed.hostname.toLowerCase();
+                if (host === 'youtube.com' || host.endsWith('.youtube.com') || host === 'youtu.be') {
+                    if (parsed.pathname === '/redirect' && parsed.searchParams.has('q')) {
+                        return false;
+                    }
+                    return true;
+                }
+                return host.endsWith('.googlevideo.com')
+                    || host.endsWith('.gstatic.com')
+                    || host === 'google.com'
+                    || host.endsWith('.google.com');
+            } catch {
+                return false;
+            }
+        },
+
+        /**
+         * Safely retrieves a configuration key from YouTube's ytcfg object.
+         * @param {string} key
+         * @param {*} [defaultValue=null]
+         * @returns {*}
+         */
+        getYtcfgValue: function (key, defaultValue = null) {
+            const ytcfg = pageWin.ytcfg;
+            if (!ytcfg) return defaultValue;
+            if (typeof ytcfg.get === 'function') {
+                const val = ytcfg.get(key);
+                if (val !== undefined && val !== null) return val;
+            }
+            if (ytcfg.data_ && ytcfg.data_[key] !== undefined && ytcfg.data_[key] !== null) {
+                return ytcfg.data_[key];
+            }
+            return defaultValue;
         },
 
         /**
@@ -515,7 +590,6 @@
             };
 
             return new Promise((resolve, reject) => {
-                console.debug(`[${GM.info.script.name}] [XHR Start] Sending request for ${apiName}. URL: ${details.url}`);
                 try {
                     GM.xmlHttpRequest({
                         method: details.method || 'GET',
@@ -525,7 +599,6 @@
                         anonymous: details.anonymous || false,
                         timeout: details.timeout || 10000,
                         onload: (response) => {
-                            console.debug(`[${GM.info.script.name}] [XHR Callback] onload received for ${apiName}. Status: ${response.status}`);
                             if (response.status >= 200 && response.status < 300) {
                                 resolve(response);
                             } else if (response.status === 503 && currentRetry < Config.MAX_RETRIES) {
@@ -587,9 +660,8 @@
                             reject(error);
                         }
                     });
-                    console.debug(`[${GM.info.script.name}] [XHR Scheduled] GM.xmlHttpRequest scheduled successfully for ${apiName}.`);
                 } catch (err) {
-                    console.error(`[${GM.info.script.name}] [XHR Exception] Direct crash scheduling GM.xmlHttpRequest for ${apiName}:`, err);
+                    console.error(`[${GM.info.script.name}] Direct crash scheduling GM.xmlHttpRequest for ${apiName}:`, err);
                     reject(err);
                 }
             });
@@ -794,7 +866,7 @@
                 || null;
 
             if (channelId && channelHandle) {
-                DOMScanner.cacheChannelId(channelHandle, channelId);
+                DOMScanner.cacheChannelData(channelHandle, channelId);
             }
 
             let durationSeconds = 0;
@@ -988,16 +1060,41 @@
         _channelCache: new Map(),
 
         /**
-         * Caches a mapping from a channel handle to its canonical channel ID.
-         * @param {string} handle
-         * @param {string} channelId
+         * Retrieves a cached channel record by channelId or handle.
+         * @param {string} key - channelId (UC...) or handle (@handle or handle)
+         * @returns {{ channelId?: string, handle?: string, externalLinks?: string[] }|null}
          */
-        cacheChannelId: function (handle, channelId) {
-            if (!handle || !channelId) return;
-            const cleanHandle = decodeURIComponent(handle).replace(/^@+/, '').trim();
-            if (!cleanHandle || cleanHandle.includes('/')) return;
+        getChannelRecord: function (key) {
+            if (!key || typeof key !== 'string') return null;
+            const normalizedKey = key.startsWith('UC') ? key : decodeURIComponent(key).replace(/^@+/, '').trim().toLowerCase();
+            return this._channelCache.get(normalizedKey) || null;
+        },
 
-            this._channelCache.set(cleanHandle.toLowerCase(), channelId);
+        /**
+         * Caches or updates a channel record mapping handle and channelId to a shared record.
+         * @param {string} [handle]
+         * @param {string} [channelId]
+         * @param {string[]} [externalLinks]
+         * @returns {{ channelId?: string, handle?: string, externalLinks?: string[] }}
+         */
+        cacheChannelData: function (handle, channelId, externalLinks = null) {
+            const cleanHandle = handle ? decodeURIComponent(handle).replace(/^@+/, '').trim().toLowerCase() : null;
+            const cleanId = channelId && channelId.startsWith('UC') ? channelId : null;
+
+            // Find existing record by either handle or channelId
+            let record = (cleanId && this._channelCache.get(cleanId))
+                || (cleanHandle && this._channelCache.get(cleanHandle))
+                || {};
+
+            if (cleanId) record.channelId = cleanId;
+            if (cleanHandle) record.handle = cleanHandle;
+            if (Array.isArray(externalLinks)) record.externalLinks = externalLinks;
+
+            // Index under both keys pointing to the same shared object reference
+            if (cleanId) this._channelCache.set(cleanId, record);
+            if (cleanHandle) this._channelCache.set(cleanHandle, record);
+
+            return record;
         },
 
         /**
@@ -1007,7 +1104,22 @@
          * @param {Map<string, Object|null>} mbResults - Map of MusicBrainz lookup results.
          * @param {Map<string, boolean>} [cachedUrlMap=null] - Cache hit status per URL before lookup.
          */
-        logVideoSummary: function (ytData, urlsToQuery, mbResults, cachedUrlMap = null) {
+        /**
+         * Outputs a consolidated Wide Event summary for video data extraction and MusicBrainz matching.
+         * @param {Object} summary
+         */
+        logVideoSummary: function (summary) {
+            const {
+                ytData,
+                canonicalYtUrl,
+                urlsToQuery,
+                mbResults,
+                cachedUrlMap,
+                outcome = 'unknown',
+                durationMs = 0,
+                error = null
+            } = summary;
+
             const formatMsToHms = (ms) => {
                 if (ms === null || ms === undefined || isNaN(ms)) return 'N/A';
                 const totalSec = Math.floor(ms / 1000);
@@ -1018,10 +1130,10 @@
                 return h > 0 ? `${h}:${pad(m)}:${pad(s)}` : `${m}:${pad(s)}`;
             };
 
-            const lookups = urlsToQuery.map(url => {
-                const mbUrlEntity = mbResults.get(url);
+            const lookups = (urlsToQuery || []).map(url => {
+                const mbUrlEntity = mbResults?.get?.(url);
                 const isVideo = url.includes('/watch?v=');
-                const source = mbResults.sources?.get(url) || (cachedUrlMap?.get(url) ? 'cache' : 'network');
+                const source = mbResults?.sources?.get?.(url) || (cachedUrlMap?.get?.(url) ? 'cache' : 'network');
 
                 if (isVideo) {
                     const recordingRelations = (mbUrlEntity?.relations || []).filter(
@@ -1066,27 +1178,41 @@
                 };
             });
 
-            console.info(`[${GM.info.script.name}] Video: "${ytData.snippet?.title || ytData.id}"`, {
-                videoId: ytData.id,
-                title: ytData.snippet?.title || '',
-                channel: ytData.snippet?.channelTitle || '',
-                channelId: ytData.snippet?.channelId || '',
-                duration: `${formatMsToHms(ytData.contentDetails?.durationMs)} (${ytData.contentDetails?.durationMs || 0}ms)`,
-                lookups
+            console.info(`[${GM.info.script.name}] Video: "${ytData?.snippet?.title || ytData?.id || 'N/A'}"`, {
+                videoId: ytData?.id || '',
+                videoTitle: ytData?.snippet?.title || '',
+                channelTitle: ytData?.snippet?.channelTitle || '',
+                channelId: ytData?.snippet?.channelId || '',
+                channelHandle: ytData?.snippet?.channelHandle || '',
+                canonicalUrl: canonicalYtUrl || (ytData?.id ? `https://www.youtube.com/watch?v=${ytData.id}` : null),
+                videoDuration: `${formatMsToHms(ytData?.contentDetails?.durationMs)} (${ytData?.contentDetails?.durationMs || 0}ms)`,
+                outcome,
+                lookupDuration: `${durationMs}ms`,
+                musicbrainzLookups: lookups,
+                ...(error ? { error } : {})
             });
         },
 
         /**
          * Outputs a consolidated Wide Event summary for channel data extraction and MusicBrainz matching.
-         * @param {{ channelId: string|null, handle: string|null, channelTitle: string, canonicalUrl: string|null, handleUrl: string|null }} channelData
-         * @param {string[]} urlsToQuery
-         * @param {Map<string, Object|null>} mbResults - Map of MusicBrainz lookup results.
-         * @param {Map<string, boolean>} [cachedUrlMap=null] - Cache hit status per URL before lookup.
+         * @param {Object} summary
          */
-        logChannelSummary: function (channelData, urlsToQuery, mbResults, cachedUrlMap = null) {
-            const lookups = urlsToQuery.map(url => {
-                const mbUrlEntity = mbResults.get(url);
-                const source = mbResults.sources?.get(url) || (cachedUrlMap?.get(url) ? 'cache' : 'network');
+        logChannelSummary: function (summary) {
+            const {
+                channelData,
+                urlsToQuery,
+                mbResults,
+                cachedUrlMap,
+                externalLinks = [],
+                linkSources = {},
+                outcome = 'unknown',
+                durationMs = 0,
+                error = null
+            } = summary;
+
+            const lookups = (urlsToQuery || []).map(url => {
+                const mbUrlEntity = mbResults?.get?.(url);
+                const source = mbResults?.sources?.get?.(url) || (cachedUrlMap?.get?.(url) ? 'cache' : 'network');
                 const entities = [];
                 if (mbUrlEntity?.relations) {
                     for (const rel of mbUrlEntity.relations) {
@@ -1115,7 +1241,16 @@
                 handle: channelData.handle || '',
                 canonicalUrl: channelData.canonicalUrl,
                 handleUrl: channelData.handleUrl,
-                lookups
+                resolutionSource: channelData.resolutionSource || 'unknown',
+                outcome,
+                lookupDuration: `${durationMs}ms`,
+                linkExtraction: {
+                    totalLinks: externalLinks.length,
+                    links: externalLinks,
+                    sources: linkSources
+                },
+                musicbrainzLookups: lookups,
+                ...(error ? { error } : {})
             });
         },
 
@@ -1139,9 +1274,9 @@
         },
 
         /**
-         * Extracts channel ID, handle, and display name from navigation event, URL, and cache.
+         * Extracts channel ID, handle, display name, and resolution source from navigation event, URL, DOM, and cache.
          * @param {CustomEvent} [event] Optional navigation event detail.
-         * @returns {{ channelId: string|null, handle: string|null, channelTitle: string, canonicalUrl: string|null, handleUrl: string|null }}
+         * @returns {{ channelId: string|null, handle: string|null, channelTitle: string, canonicalUrl: string|null, handleUrl: string|null, resolutionSource: string }}
          */
         getChannelData: function (event) {
             // 1. Extract Handle (@...) directly from URL pathname
@@ -1152,67 +1287,141 @@
                 handle = handleMatch[1];
             }
 
-            // 2. Extract Response object (SPA event response OR initial page load data)
-            const eventResponse = event?.detail?.response?.response
-                || event?.detail?.response
-                || (!event ? window.ytInitialData : null);
-
-            // 3. Extract Channel ID (UC...) from navigation event, initial data, URL, or session cache
+            // 2. Extract Channel ID (UC...) and Resolution Source
             let channelId = null;
+            let resolutionSource = 'unknown';
 
-            // Source A: Navigation event detail
-            if (event?.detail) {
-                const browseId = event.detail.endpoint?.browseEndpoint?.browseId
-                    || event.detail.response?.endpoint?.browseEndpoint?.browseId
-                    || eventResponse?.endpoint?.browseEndpoint?.browseId;
-                if (browseId && browseId.startsWith('UC')) {
-                    channelId = browseId;
+            // Source A: Direct URL pathname (/channel/UC...)
+            const pathChannelMatch = location.pathname.match(/\/channel\/(UC[A-Za-z0-9_-]+)/);
+            if (pathChannelMatch) {
+                channelId = pathChannelMatch[1];
+                resolutionSource = 'url_pathname';
+            }
+
+            // Source B: Navigation Event Payload (when event is present)
+            const eventDetail = event && event.detail;
+            const eventResponse = eventDetail
+                ? (eventDetail.response?.response || eventDetail.response || null)
+                : (!event ? pageWin.ytInitialData : null);
+
+            if (!channelId && eventDetail) {
+                // Check trackingParams browse_id (standard in YouTube navigation payloads)
+                const trackingParams = eventResponse && eventResponse.responseContext && eventResponse.responseContext.serviceTrackingParams;
+                if (Array.isArray(trackingParams)) {
+                    for (const stp of trackingParams) {
+                        if (Array.isArray(stp.params)) {
+                            const bidParam = stp.params.find(p => p && p.key === 'browse_id');
+                            if (bidParam && typeof bidParam.value === 'string' && bidParam.value.startsWith('UC')) {
+                                channelId = bidParam.value;
+                                resolutionSource = 'nav_tracking_params';
+                                break;
+                            }
+                        }
+                    }
+                }
+
+                // Check browseEndpoints in detail/response
+                if (!channelId) {
+                    const browseId = (eventDetail.endpoint && eventDetail.endpoint.browseEndpoint && eventDetail.endpoint.browseEndpoint.browseId)
+                        || (eventDetail.response && eventDetail.response.endpoint && eventDetail.response.endpoint.browseEndpoint && eventDetail.response.endpoint.browseEndpoint.browseId)
+                        || (eventResponse && eventResponse.endpoint && eventResponse.endpoint.browseEndpoint && eventResponse.endpoint.browseEndpoint.browseId);
+                    if (browseId && typeof browseId === 'string' && browseId.startsWith('UC')) {
+                        channelId = browseId;
+                        resolutionSource = 'nav_browse_endpoint';
+                    }
+                }
+
+                // Check metadata / header in eventResponse
+                if (!channelId && eventResponse) {
+                    const extId = (eventResponse.metadata && eventResponse.metadata.channelMetadataRenderer && eventResponse.metadata.channelMetadataRenderer.externalId)
+                        || (eventResponse.header && eventResponse.header.c4TabbedHeaderRenderer && eventResponse.header.c4TabbedHeaderRenderer.channelId);
+                    if (extId && typeof extId === 'string' && extId.startsWith('UC')) {
+                        channelId = extId;
+                        resolutionSource = 'nav_metadata';
+                    }
                 }
             }
 
-            // Source B: Event response / initial data metadata
-            if (!channelId && eventResponse) {
-                const extId = eventResponse?.metadata?.channelMetadataRenderer?.externalId
-                    || eventResponse?.header?.c4TabbedHeaderRenderer?.channelId;
-                if (extId && extId.startsWith('UC')) {
-                    channelId = extId;
-                }
-            }
-
-            // Source C: Direct URL pathname (/channel/UC...)
-            if (!channelId) {
-                const pathChannelMatch = location.pathname.match(/\/channel\/(UC[A-Za-z0-9_-]+)/);
-                if (pathChannelMatch) {
-                    channelId = pathChannelMatch[1];
-                }
-            }
-
-            // Source D: Session handle-to-channelId cache
-            if (!channelId && handle) {
-                channelId = this._channelCache.get(handle.toLowerCase()) || null;
-            }
-
-            // Source E: ytcfg globals
-            if (!channelId) {
-                if (window.ytcfg?.get?.('CHANNEL_ID') && window.ytcfg.get('CHANNEL_ID').startsWith('UC')) {
-                    channelId = window.ytcfg.get('CHANNEL_ID');
-                }
-            }
-
-            // Source F: Initial page load meta tags (only when event is absent)
+            // Source C: Initial Page Load (DOM & Initial Data when !event)
             if (!channelId && !event) {
-                const channelIdMeta = document.querySelector('meta[itemprop="channelId"], meta[itemprop="identifier"]');
-                if (channelIdMeta && channelIdMeta.content && channelIdMeta.content.startsWith('UC')) {
-                    channelId = channelIdMeta.content;
+                // Check DOM JSON-LD script tags
+                const ldScripts = document.querySelectorAll('script[type="application/ld+json"]');
+                for (const script of ldScripts) {
+                    try {
+                        const data = JSON.parse(script.textContent);
+                        const entityUrl = data && (data.mainEntity?.url || data.url);
+                        if (typeof entityUrl === 'string') {
+                            const m = entityUrl.match(/\/channel\/(UC[A-Za-z0-9_-]+)/);
+                            if (m) {
+                                channelId = m[1];
+                                resolutionSource = 'dom_json_ld';
+                                break;
+                            }
+                        }
+                    } catch (err) {
+                        Logger.warn('Failed to parse DOM JSON-LD script tag', err);
+                    }
+                }
+
+                // Check DOM Meta & Canonical Link
+                if (!channelId) {
+                    const channelIdMeta = document.querySelector('meta[itemprop="channelId"], meta[itemprop="identifier"]');
+                    if (channelIdMeta && channelIdMeta.content && channelIdMeta.content.startsWith('UC')) {
+                        channelId = channelIdMeta.content;
+                        resolutionSource = 'dom_meta';
+                    }
+                }
+
+                // Check initialData trackingParams / metadata
+                if (!channelId && pageWin.ytInitialData) {
+                    const trackingParams = pageWin.ytInitialData.responseContext && pageWin.ytInitialData.responseContext.serviceTrackingParams;
+                    if (Array.isArray(trackingParams)) {
+                        for (const stp of trackingParams) {
+                            if (Array.isArray(stp.params)) {
+                                const bidParam = stp.params.find(p => p && p.key === 'browse_id');
+                                if (bidParam && typeof bidParam.value === 'string' && bidParam.value.startsWith('UC')) {
+                                    channelId = bidParam.value;
+                                    resolutionSource = 'initial_data_tracking_params';
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    if (!channelId) {
+                        const extId = (pageWin.ytInitialData.metadata && pageWin.ytInitialData.metadata.channelMetadataRenderer && pageWin.ytInitialData.metadata.channelMetadataRenderer.externalId)
+                            || (pageWin.ytInitialData.header && pageWin.ytInitialData.header.c4TabbedHeaderRenderer && pageWin.ytInitialData.header.c4TabbedHeaderRenderer.channelId);
+                        if (extId && typeof extId === 'string' && extId.startsWith('UC')) {
+                            channelId = extId;
+                            resolutionSource = 'initial_data_metadata';
+                        }
+                    }
+                }
+
+                // Check ytcfg globals (only on initial load if no handle in URL)
+                if (!channelId && !handle) {
+                    const cfgId = pageWin.ytcfg?.get?.('CHANNEL_ID') || pageWin.ytcfg?.data_?.CHANNEL_ID;
+                    if (cfgId && typeof cfgId === 'string' && cfgId.startsWith('UC')) {
+                        channelId = cfgId;
+                        resolutionSource = 'initial_data_ytcfg';
+                    }
+                }
+            }
+
+            // Source D: Session Cache fallback
+            if (!channelId && handle) {
+                const cachedRecord = this.getChannelRecord(handle);
+                if (cachedRecord && cachedRecord.channelId) {
+                    channelId = cachedRecord.channelId;
+                    resolutionSource = 'handle_cache';
                 }
             }
 
             // Cache discovered mapping for subsequent navigation
-            if (handle && channelId) {
-                this.cacheChannelId(handle, channelId);
+            if (handle || channelId) {
+                this.cacheChannelData(handle, channelId);
             }
 
-            // 4. Extract Channel Title directly from event payload / initial data
+            // 3. Extract Channel Title directly from event payload / initial data / DOM
             let channelTitle = '';
             const eventTitle = Utils.extractTextFromYtObject(eventResponse?.metadata?.channelMetadataRenderer?.title)
                 || Utils.extractTextFromYtObject(eventResponse?.header?.pageHeaderRenderer?.content?.pageHeaderViewModel?.title)
@@ -1234,7 +1443,211 @@
                 handle,
                 channelTitle,
                 canonicalUrl,
-                handleUrl
+                handleUrl,
+                resolutionSource
+            };
+        },
+
+        /**
+         * Extracts verified external profile links from schema.org / microformat sameAs arrays and strings.
+         * @param {Object} obj
+         * @param {Set<string>} [discoveredUrls=new Set()]
+         * @param {WeakSet<Object>} [seenObjects=new WeakSet()]
+         * @returns {Set<string>}
+         */
+        findExternalLinksInPayload: function (obj, discoveredUrls = new Set(), seenObjects = new WeakSet()) {
+            if (!obj || typeof obj !== 'object') return discoveredUrls;
+            if (seenObjects.has(obj)) return discoveredUrls;
+            seenObjects.add(obj);
+
+            if (Array.isArray(obj)) {
+                for (const item of obj) {
+                    if (item && typeof item === 'object') {
+                        this.findExternalLinksInPayload(item, discoveredUrls, seenObjects);
+                    }
+                }
+                return discoveredUrls;
+            }
+
+            // Extract sameAs (array or string: schema.org, JSON-LD, microformat)
+            if (Array.isArray(obj.sameAs)) {
+                for (const rawUrl of obj.sameAs) {
+                    const clean = Utils.unwrapRedirectUrl(rawUrl);
+                    if (clean && !Utils.isInternalYouTubeUrl(clean)) {
+                        discoveredUrls.add(clean);
+                    }
+                }
+            } else if (typeof obj.sameAs === 'string') {
+                const clean = Utils.unwrapRedirectUrl(obj.sameAs);
+                if (clean && !Utils.isInternalYouTubeUrl(clean)) {
+                    discoveredUrls.add(clean);
+                }
+            }
+
+            // Skip heavy subtrees that never contain channel metadata / sameAs
+            const skipKeys = new Set([
+                'videoRenderer',
+                'reelItemRenderer',
+                'commentRenderer',
+                'postRenderer',
+                'compactVideoRenderer',
+                'playlistRenderer',
+                'shelfRenderer',
+                'richItemRenderer',
+                'richGridRenderer',
+                'horizontalListRenderer',
+                'thumbnail',
+                'avatar',
+                'lottieData',
+                'themedPalette',
+                'trackingParams'
+            ]);
+
+            for (const key of Object.keys(obj)) {
+                if (skipKeys.has(key)) continue;
+                const val = obj[key];
+                if (val && typeof val === 'object') {
+                    this.findExternalLinksInPayload(val, discoveredUrls, seenObjects);
+                }
+            }
+
+            return discoveredUrls;
+        },
+
+        /**
+         * Scans the active DOM JSON-LD metadata for sameAs profile links on initial page load.
+         * @param {Set<string>} [discoveredUrls=new Set()]
+         * @returns {Set<string>}
+         */
+        findExternalLinksInDOM: function (discoveredUrls = new Set()) {
+            // Extract from schema.org JSON-LD script tags
+            const ldScripts = document.querySelectorAll('script[type="application/ld+json"]');
+            for (const script of ldScripts) {
+                try {
+                    const data = JSON.parse(script.textContent);
+                    this.findExternalLinksInPayload(data, discoveredUrls);
+                } catch (err) {
+                    Logger.warn('Failed to parse JSON-LD script tag', err);
+                }
+            }
+
+            return discoveredUrls;
+        },
+
+        /**
+         * Fetches and extracts all external channel links (Patreon, Fanbox, Twitter, Instagram, official shop, etc.)
+         * from in-page objects, DOM elements, and Innertube API continuations.
+         * @param {{ channelId?: string|null, handle?: string|null }} channelData
+         * @param {CustomEvent} [event]
+         * @returns {Promise<{ externalLinks: string[], sources: Object }>}
+         */
+        fetchChannelExternalLinks: async function (channelData = {}, event) {
+            const discoveredUrls = new Set();
+            const sources = {
+                cache: { hit: false, count: 0 },
+                navigationPayload: { checked: false, count: 0 },
+                initialDataPayload: { checked: false, count: 0 },
+                dom: { checked: false, count: 0 },
+                innertubeContinuation: { attempted: false, method: null, status: null, count: 0, error: null }
+            };
+
+            const channelId = channelData.channelId;
+
+            // Check cached channel links
+            const cachedRecord = this.getChannelRecord(channelId || channelData.handle);
+            if (cachedRecord && Array.isArray(cachedRecord.externalLinks)) {
+                sources.cache = { hit: true, count: cachedRecord.externalLinks.length };
+                for (const u of cachedRecord.externalLinks) {
+                    discoveredUrls.add(u);
+                }
+            }
+
+            // 1. Extract from navigation event response (for current navigation)
+            const eventResponse = event?.detail?.response?.response
+                || event?.detail?.response
+                || null;
+            if (eventResponse) {
+                sources.navigationPayload.checked = true;
+                const before = discoveredUrls.size;
+                this.findExternalLinksInPayload(eventResponse, discoveredUrls);
+                sources.navigationPayload.count = discoveredUrls.size - before;
+            }
+
+            // 2. Extract from pageWin.ytInitialData ONLY on initial page load (when !event)
+            // This prevents stale links from prior channels persisting across SPA navigation
+            if (!event && pageWin.ytInitialData) {
+                sources.initialDataPayload.checked = true;
+                const before = discoveredUrls.size;
+                this.findExternalLinksInPayload(pageWin.ytInitialData, discoveredUrls);
+                sources.initialDataPayload.count = discoveredUrls.size - before;
+            }
+
+            // 3. Extract from active DOM & JSON-LD ONLY on initial page load (when !event)
+            // This prevents stale JSON-LD scripts from previous channels persisting across SPA navigation
+            if (!event) {
+                sources.dom.checked = true;
+                const domBefore = discoveredUrls.size;
+                this.findExternalLinksInDOM(discoveredUrls);
+                sources.dom.count = discoveredUrls.size - domBefore;
+            }
+
+            // 4. Fallback: Query Innertube /browse only if channelId is known, uncached, and in-page extraction found nothing
+            if (channelId && channelId.startsWith('UC') && !sources.cache.hit && discoveredUrls.size === 0) {
+                sources.innertubeContinuation.attempted = true;
+                try {
+                    const apiKey = Utils.getYtcfgValue('INNERTUBE_API_KEY');
+                    const context = Utils.getYtcfgValue('INNERTUBE_CONTEXT');
+                    const clientVersion = Utils.getYtcfgValue('INNERTUBE_CLIENT_VERSION');
+                    const clientName = Utils.getYtcfgValue('INNERTUBE_CONTEXT_CLIENT_NAME') || Utils.getYtcfgValue('INNERTUBE_CLIENT_NAME');
+
+                    if (!context) {
+                        sources.innertubeContinuation.error = 'Missing Innertube context';
+                    } else {
+                        const requestBody = {
+                            context,
+                            browseId: channelId,
+                            params: 'EghmZWF0dXJlZPIGBAoCEgA='
+                        };
+
+                        const url = `/youtubei/v1/browse?prettyPrint=false${apiKey ? `&key=${apiKey}` : ''}`;
+                        sources.innertubeContinuation.method = 'fetch';
+
+                        const headers = {
+                            'Content-Type': 'application/json'
+                        };
+                        if (clientName) headers['X-YouTube-Client-Name'] = String(clientName);
+                        if (clientVersion) headers['X-YouTube-Client-Version'] = String(clientVersion);
+
+                        const response = await fetch(url, {
+                            method: 'POST',
+                            headers,
+                            body: JSON.stringify(requestBody)
+                        });
+
+                        sources.innertubeContinuation.status = response.status;
+                        if (response.ok) {
+                            const responseData = await response.json();
+                            const beforeFetchCount = discoveredUrls.size;
+                            this.findExternalLinksInPayload(responseData, discoveredUrls);
+                            sources.innertubeContinuation.count = discoveredUrls.size - beforeFetchCount;
+                        } else {
+                            sources.innertubeContinuation.error = `HTTP ${response.status}`;
+                        }
+                    }
+                } catch (err) {
+                    sources.innertubeContinuation.error = err.message || String(err);
+                    Logger.warn('Failed to fetch Innertube About drawer continuation', err);
+                }
+            }
+
+            const externalLinks = Array.from(discoveredUrls);
+
+            // Cache discovered links
+            this.cacheChannelData(channelData.handle, channelId, externalLinks);
+
+            return {
+                externalLinks,
+                sources
             };
         },
 
@@ -1550,6 +1963,9 @@
 
             this.setContent(button);
             console.debug(`[${GM.info.script.name}] Displaying existing link button.`);
+            return allRelevantRecordingRelations.length === 1
+                ? (!hasLength && ytHasLength ? 'update_length' : 'linked_recording')
+                : 'multi_linked';
         }
     }
     const RecordingButtonManager = new RecordingButtonManagerClass();
@@ -1679,9 +2095,30 @@
             this._containerDiv.appendChild(this._button.container);
         }
 
+        reset() {
+            this.hide();
+            if (this._button) {
+                this._button.update({
+                    label: L10n.getString('loading'),
+                    title: L10n.getString('loading'),
+                    icon: SVGIcons.musicbrainz,
+                    variant: 'tonal',
+                    disabled: true
+                });
+            }
+        }
+
         setPending(isPending = true) {
             super.setPending(isPending);
             if (this._button) {
+                if (isPending) {
+                    this._button.update({
+                        label: L10n.getString('loading'),
+                        title: L10n.getString('loading'),
+                        variant: 'tonal',
+                        disabled: true
+                    });
+                }
                 this._button.setPending(isPending);
             }
             if (isPending) {
@@ -1729,9 +2166,36 @@
             this.show();
         }
 
-        displaySearchOrAdd(channelTitle, targetUrl, urlsToInvalidate = []) {
+        displaySearchOrAdd(channelTitle, targetUrl, urlsToInvalidate = [], externalLinks = []) {
             const cleanUrl = targetUrl || location.href.split('?')[0];
-            const createUrl = `//musicbrainz.org/artist/create?edit-artist.name=${encodeURIComponent(channelTitle)}&edit-artist.url.0.text=${encodeURIComponent(cleanUrl)}`;
+            const params = new URLSearchParams();
+            if (channelTitle) {
+                params.set('edit-artist.name', channelTitle);
+                params.set('edit-artist.sort_name', channelTitle);
+            }
+
+            let urlIndex = 0;
+            if (cleanUrl) {
+                params.set(`edit-artist.url.${urlIndex}.text`, cleanUrl);
+                urlIndex++;
+            }
+
+            const seen = new Set();
+            if (cleanUrl) seen.add(cleanUrl);
+
+            for (const link of externalLinks) {
+                if (link && !seen.has(link)) {
+                    seen.add(link);
+                    params.set(`edit-artist.url.${urlIndex}.text`, link);
+                    urlIndex++;
+                }
+            }
+
+            const scriptInfo = GM_info.script;
+            const editNote = `${cleanUrl}\n—\n${scriptInfo.name} (v${scriptInfo.version})`;
+            params.set('edit-artist.edit_note', editNote);
+
+            const createUrl = `//musicbrainz.org/artist/create?${params.toString()}`;
 
             this._button.update({
                 tag: 'a',
@@ -2324,7 +2788,7 @@
             } else if (DOMScanner.isChannelPage()) {
                 RecordingButtonManager.hide();
                 PlaylistButtonManager.hide();
-                ChannelButtonManager.hide();
+                ChannelButtonManager.reset();
                 this.triggerChannelUpdate(event);
             } else {
                 RecordingButtonManager.hide();
@@ -2349,7 +2813,7 @@
 
             this._processingChannelKey = channelKey;
 
-            this._currentChannelProcessingPromise = this._performChannelUpdate(channelData)
+            this._currentChannelProcessingPromise = this._performChannelUpdate(channelData, event)
                 .finally(() => {
                     if (this._processingChannelKey === channelKey) {
                         this._processingChannelKey = null;
@@ -2361,8 +2825,10 @@
         /**
          * Performs the channel lookup and renders the appropriate MusicBrainz channel action.
          * @param {{ channelId: string|null, handle: string|null, channelTitle: string, canonicalUrl: string|null, handleUrl: string|null }} channelData
+         * @param {CustomEvent} [event]
          */
-        _performChannelUpdate: async function (channelData) {
+        _performChannelUpdate: async function (channelData, event) {
+            const startTime = performance.now();
             const dockElement = await DOMScanner.getChannelAnchorElement();
             ChannelButtonManager.appendToDock(dockElement);
 
@@ -2383,8 +2849,18 @@
                 ChannelButtonManager.setPending();
             }
 
+            let mbResults = null;
+            let linkExtractionResult = { externalLinks: [], sources: {} };
+            let outcome = 'unknown';
+
             try {
-                const mbResults = await this.lookupMbUrls(urlsToQuery);
+                // Fetch MusicBrainz URL relationships and YouTube channel external links in parallel
+                const mbResultsPromise = this.lookupMbUrls(urlsToQuery);
+                const externalLinksPromise = DOMScanner.fetchChannelExternalLinks(channelData, event);
+
+                [mbResults, linkExtractionResult] = await Promise.all([mbResultsPromise, externalLinksPromise]);
+
+                const externalLinks = Array.isArray(linkExtractionResult) ? linkExtractionResult : (linkExtractionResult.externalLinks || []);
 
                 // Collect all matched entities across queried URLs
                 const foundEntities = [];
@@ -2408,21 +2884,50 @@
                     }
                 }
 
-                DOMScanner.logChannelSummary(channelData, urlsToQuery, mbResults, cachedUrlMap);
-
                 if (foundEntities.length === 1) {
                     const { targetType, id, name } = foundEntities[0];
                     ChannelButtonManager.displayLinkedEntity(targetType, id, name);
+                    outcome = `linked_${targetType}`;
                 } else if (foundEntities.length > 1) {
                     ChannelButtonManager.displayMultiLinked(urlEntityId);
+                    outcome = 'multi_linked';
                 } else {
-                    ChannelButtonManager.displaySearchOrAdd(channelData.channelTitle, channelData.canonicalUrl || channelData.handleUrl, urlsToQuery);
+                    ChannelButtonManager.displaySearchOrAdd(
+                        channelData.channelTitle,
+                        channelData.canonicalUrl || channelData.handleUrl,
+                        urlsToQuery,
+                        externalLinks
+                    );
+                    outcome = 'unlinked_add_artist';
                 }
+
+                DOMScanner.logChannelSummary({
+                    channelData,
+                    urlsToQuery,
+                    mbResults,
+                    cachedUrlMap,
+                    externalLinks,
+                    linkSources: linkExtractionResult.sources || {},
+                    outcome,
+                    durationMs: Math.round(performance.now() - startTime)
+                });
             } catch (error) {
                 console.error(`[${GM.info.script.name}] Error in channel lookup:`, error);
                 const apiName = error.apiName || 'API';
                 const errorMessage = error.status === 503 ? L10n.getString('errorApiRateLimit', { apiName }) : L10n.getString('errorProcessing');
                 ChannelButtonManager.displayError(errorMessage);
+
+                DOMScanner.logChannelSummary({
+                    channelData,
+                    urlsToQuery,
+                    mbResults: mbResults || new Map(),
+                    cachedUrlMap,
+                    externalLinks: linkExtractionResult.externalLinks || [],
+                    linkSources: linkExtractionResult.sources || {},
+                    outcome: 'error',
+                    error: { message: error.message, status: error.status, apiName },
+                    durationMs: Math.round(performance.now() - startTime)
+                });
             }
         },
 
@@ -2447,6 +2952,9 @@
             this._processingVideoId = videoId;
 
             this._currentProcessingPromise = this._performUpdate(videoId)
+                .catch((err) => {
+                    console.error(`[${GM.info.script.name}] Uncaught error processing video ${videoId}:`, err);
+                })
                 .finally(() => {
                     if (this._processingVideoId === videoId) {
                         this._processingVideoId = null;
@@ -2459,58 +2967,91 @@
          * Performs the unified API calls and updates recording and playlist UI buttons.
          * @summary Unified single-pass extraction, MusicBrainz lookup, and UI resolution pipeline.
          * @param {string} videoId - The YouTube video ID to process.
-         * @returns {Promise<void>} A promise that resolves when the update is complete.
+         * @returns {Promise<void>}
          */
         _performUpdate: async function (videoId) {
+            const startTime = performance.now();
             const dockElement = await DOMScanner.getButtonAnchorElement();
             RecordingButtonManager.appendToDock(dockElement);
             PlaylistButtonManager.appendToDock(dockElement);
 
-            const ytData = InPageDataExtractor.extractVideoData(videoId);
-
-            if (!ytData) {
-                console.warn(`[${GM.info.script.name}] Could not extract metadata for video ID: ${videoId}`);
-                RecordingButtonManager.displayInfo(L10n.getString('errorVideoNotFound'));
-                PlaylistButtonManager.hide();
-                return;
-            }
-
-            const canonicalYtUrl = new URL(`https://www.youtube.com/watch?v=${videoId}`).toString();
-            const youtubeChannelUrl = ytData.snippet.channelId ? new URL(`https://www.youtube.com/channel/${ytData.snippet.channelId}`).toString() : null;
-            const cleanHandle = ytData.snippet.channelHandle ? (ytData.snippet.channelHandle.startsWith('@') ? ytData.snippet.channelHandle : `@${ytData.snippet.channelHandle}`) : null;
-            const youtubeHandleUrl = cleanHandle ? new URL(`https://www.youtube.com/${cleanHandle}`).toString() : null;
-
-            // Prepare Single Query Array (Batched lookup)
-            const urlsToQuery = [canonicalYtUrl];
-            if (youtubeChannelUrl) urlsToQuery.push(youtubeChannelUrl);
-            if (youtubeHandleUrl && !urlsToQuery.includes(youtubeHandleUrl)) urlsToQuery.push(youtubeHandleUrl);
-
-            const cachedUrlMap = new Map(urlsToQuery.map(u => [u, this._mbApi.cache.has(u)]));
-            const isFullyCached = urlsToQuery.every(u => cachedUrlMap.get(u));
-
-            // If uncached, set pending dimmed state while querying to avoid layout jump
-            if (!isFullyCached) {
-                RecordingButtonManager.setPending();
-                PlaylistButtonManager.setPending();
-            }
-
-            // Fetch MusicBrainz Data (single batched HTTP request for both video and channel)
-            const mbResults = await this.lookupMbUrls(urlsToQuery);
-
-            const mbVideoUrlEntity = mbResults.get(canonicalYtUrl);
-            const artistMbid = youtubeChannelUrl ? this._extractArtistMbid(mbResults.get(youtubeChannelUrl)) : null;
+            let ytData = null;
+            let canonicalYtUrl = null;
+            let urlsToQuery = [];
+            let cachedUrlMap = new Map();
+            let mbResults = null;
+            let outcome = 'unknown';
 
             try {
-                DOMScanner.logVideoSummary(ytData, urlsToQuery, mbResults, cachedUrlMap);
-            } catch (diagError) {
-                console.error(`[${GM.info.script.name}] Error logging video summary:`, diagError);
+                ytData = InPageDataExtractor.extractVideoData(videoId);
+
+                if (!ytData) {
+                    console.warn(`[${GM.info.script.name}] Could not extract metadata for video ID: ${videoId}`);
+                    RecordingButtonManager.displayInfo(L10n.getString('errorVideoNotFound'));
+                    PlaylistButtonManager.hide();
+                    return;
+                }
+
+                canonicalYtUrl = new URL(`https://www.youtube.com/watch?v=${videoId}`).toString();
+                const youtubeChannelUrl = ytData.snippet.channelId ? new URL(`https://www.youtube.com/channel/${ytData.snippet.channelId}`).toString() : null;
+                const cleanHandle = ytData.snippet.channelHandle ? (ytData.snippet.channelHandle.startsWith('@') ? ytData.snippet.channelHandle : `@${ytData.snippet.channelHandle}`) : null;
+                const youtubeHandleUrl = cleanHandle ? new URL(`https://www.youtube.com/${cleanHandle}`).toString() : null;
+
+                // Prepare Single Query Array (Batched lookup)
+                urlsToQuery = [canonicalYtUrl];
+                if (youtubeChannelUrl) urlsToQuery.push(youtubeChannelUrl);
+                if (youtubeHandleUrl && !urlsToQuery.includes(youtubeHandleUrl)) urlsToQuery.push(youtubeHandleUrl);
+
+                cachedUrlMap = new Map(urlsToQuery.map(u => [u, this._mbApi.cache.has(u)]));
+                const isFullyCached = urlsToQuery.every(u => cachedUrlMap.get(u));
+
+                // If uncached, set pending dimmed state while querying to avoid layout jump
+                if (!isFullyCached) {
+                    RecordingButtonManager.setPending();
+                    PlaylistButtonManager.setPending();
+                }
+
+                // Fetch MusicBrainz Data (single batched HTTP request for both video and channel)
+                mbResults = await this.lookupMbUrls(urlsToQuery);
+
+                const mbVideoUrlEntity = mbResults.get(canonicalYtUrl);
+                const artistMbid = youtubeChannelUrl ? this._extractArtistMbid(mbResults.get(youtubeChannelUrl)) : null;
+
+                // ===== Run Recording Importer Logic and Playlist Logic in Parallel =====
+                const recordingPromise = this._handleRecordingImport(ytData, canonicalYtUrl, youtubeChannelUrl, mbResults, mbVideoUrlEntity, artistMbid);
+                const playlistPromise = this._handlePlaylistLogic(ytData, canonicalYtUrl);
+
+                [outcome] = await Promise.all([recordingPromise, playlistPromise]);
+
+                DOMScanner.logVideoSummary({
+                    ytData,
+                    canonicalYtUrl,
+                    urlsToQuery,
+                    mbResults,
+                    cachedUrlMap,
+                    outcome,
+                    durationMs: Math.round(performance.now() - startTime)
+                });
+            } catch (error) {
+                console.error(`[${GM.info.script.name}] Error in video update pipeline:`, error);
+                const apiName = error.apiName || 'API';
+                const errorMessage = error.status === 503 ? L10n.getString('errorApiRateLimit', { apiName }) : L10n.getString('errorProcessing');
+                RecordingButtonManager.displayError(errorMessage);
+                PlaylistButtonManager.hide();
+
+                if (ytData) {
+                    DOMScanner.logVideoSummary({
+                        ytData,
+                        canonicalYtUrl: canonicalYtUrl || `https://www.youtube.com/watch?v=${videoId}`,
+                        urlsToQuery,
+                        mbResults: mbResults || new Map(),
+                        cachedUrlMap,
+                        outcome: 'error',
+                        error: { message: error.message, status: error.status, apiName },
+                        durationMs: Math.round(performance.now() - startTime)
+                    });
+                }
             }
-
-            // ===== Run Recording Importer Logic and Playlist Logic in Parallel =====
-            const recordingPromise = this._handleRecordingImport(ytData, canonicalYtUrl, youtubeChannelUrl, mbResults, mbVideoUrlEntity, artistMbid);
-            const playlistPromise = this._handlePlaylistLogic(ytData, canonicalYtUrl);
-
-            await Promise.all([recordingPromise, playlistPromise]);
         },
 
         /**
@@ -2522,7 +3063,7 @@
          * @param {Map<string, Object|null>} mbResults - Map of MusicBrainz lookup results.
          * @param {Object|null} [mbVideoUrlEntity] - Resolved video URL entity if pre-computed.
          * @param {string|null} [artistMbid] - Resolved artist MBID if pre-computed.
-         * @returns {Promise<void>}
+         * @returns {Promise<string>} Outcome status
          */
         _handleRecordingImport: async function (ytData, canonicalYtUrl, youtubeChannelUrl, mbResults, mbVideoUrlEntity, artistMbid) {
             try {
@@ -2537,18 +3078,21 @@
                     );
 
                     if (allRelevantRecordingRelations.length > 0) {
-                        RecordingButtonManager.displayExistingButton(allRelevantRecordingRelations, videoUrlEntity.id, ytData, canonicalYtUrl);
+                        return RecordingButtonManager.displayExistingButton(allRelevantRecordingRelations, videoUrlEntity.id, ytData, canonicalYtUrl);
                     } else {
                         RecordingButtonManager.prepareAddButton(ytData, canonicalYtUrl, artistId, ytData.id);
+                        return 'unlinked_add_recording';
                     }
                 } else {
                     RecordingButtonManager.prepareAddButton(ytData, canonicalYtUrl, artistId, ytData.id);
+                    return 'unlinked_add_recording';
                 }
             } catch (error) {
                 console.error(`[${GM.info.script.name}] Error in recording import logic:`, error);
                 const apiName = error.apiName || 'API';
                 const errorMessage = error.status === 503 ? L10n.getString('errorApiRateLimit', { apiName }) : L10n.getString('errorProcessing');
                 RecordingButtonManager.displayError(errorMessage);
+                return 'error';
             }
         },
 
