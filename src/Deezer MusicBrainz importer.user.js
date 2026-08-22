@@ -94,10 +94,14 @@ class MusicBrainzAPI {
      * @summary Internal low-level fetch request runner with retry handling.
      * @param {string} endpoint - API resource endpoint.
      * @param {Object} [params={}] - Search parameters.
+     * @param {Object|null} [tracker=null] - Optional diagnostic statistics tracker.
      * @returns {Promise<Object>} The JSON parsed response body.
      * @private
      */
-    async _request(endpoint, params = {}) {
+    async _request(endpoint, params = {}, tracker = null) {
+        if (tracker) {
+            tracker.requests++;
+        }
         const url = new URL(`${this.base_url}/${endpoint}`);
         params.fmt = 'json';
         for (const [key, value] of Object.entries(params)) {
@@ -116,6 +120,7 @@ class MusicBrainzAPI {
             const now = Date.now();
             const waitTime = this.next_available_request_time - now;
             if (waitTime > 0) {
+                if (tracker) tracker.rateLimitWaitMs += waitTime;
                 await new Promise(resolve => setTimeout(resolve, waitTime));
             }
 
@@ -148,7 +153,7 @@ class MusicBrainzAPI {
                             if (res.status >= 200 && res.status < 300) {
                                 resolve(JSON.parse(res.responseText));
                             } else if (res.status === 503) {
-                                reject(new Error('Rate limit hit or server overloaded'));
+                                reject(new Error('503 Service Unavailable (rate limit or server overloaded)'));
                             } else {
                                 const isPermanent = res.status >= 400 && res.status < 500;
                                 const error = isPermanent
@@ -175,6 +180,11 @@ class MusicBrainzAPI {
                     throw error; // Stop retrying and propagate the error.
                 }
 
+                if (tracker) {
+                    tracker.retries++;
+                    tracker.errors.push(`Attempt ${i + 1}/${this.max_retries} failed: ${error.message}`);
+                }
+
                 if (!navigator.onLine) {
                     console.log(`[MusicBrainzAPI] Offline detected. Waiting for network...`);
                     await new Promise(resolve => {
@@ -190,6 +200,9 @@ class MusicBrainzAPI {
 
                 if (i === this.max_retries - 1) throw error;
                 const delay = this.rate_limit_delay * Math.pow(2, i);
+                if (tracker) {
+                    tracker.retryBackoffWaitMs += delay;
+                }
                 await new Promise(resolve => setTimeout(resolve, delay));
             }
         }
@@ -236,6 +249,14 @@ class MusicBrainzAPI {
             }
         }
 
+        const diagnostics = {
+            requests: 0,
+            retries: 0,
+            rateLimitWaitMs: 0,
+            retryBackoffWaitMs: 0,
+            errors: []
+        };
+
         if (uncachedUrls.length > 0) {
             const urlChunks = [];
             for (let i = 0; i < uncachedUrls.length; i += this.batch_size) {
@@ -246,7 +267,7 @@ class MusicBrainzAPI {
                 this._request('url', {
                     resource: chunk,
                     inc: inc.join('+')
-                })
+                }, diagnostics)
             );
 
             // Use Promise.allSettled to ensure all batches are processed, even if some fail.
@@ -293,6 +314,7 @@ class MusicBrainzAPI {
             });
         }
 
+        results.diagnostics = diagnostics;
         results.sources = new Map(
             urlArray.map(url => [url, uncachedUrls.includes(url) ? 'network' : 'cache'])
         );
