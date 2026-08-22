@@ -280,6 +280,10 @@ class MusicBrainzAPI {
             });
         }
 
+        results.sources = new Map(
+            urlArray.map(url => [url, uncachedUrls.includes(url) ? 'network' : 'cache'])
+        );
+
         return isInputArray ? results : results.get(urlArray[0]);
     }
 
