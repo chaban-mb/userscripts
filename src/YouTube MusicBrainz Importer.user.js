@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        YouTube: MusicBrainz Importer
 // @namespace   https://musicbrainz.org/user/chaban
-// @version     2.11.0
+// @version     2.12.0
 // @description Imports YouTube videos to MusicBrainz as a new standalone recording
 // @tag         ai-created
 // @author      nikki, RustyNova, chaban
@@ -42,15 +42,20 @@
                 addRecording: 'Add Recording',
                 updateLength: 'Update Length',
                 onMB: 'On MB ✓',
+                onMBArtist: 'Artist on MB ✓',
+                onMBLabel: 'Label on MB ✓',
                 onMBMulti: 'On MB (Multi) ✓',
                 addRecordingTitle: 'Add to MusicBrainz as recording',
                 updateLengthTitle: 'The linked MusicBrainz recording is missing its length. Click to update it to {length}s.',
                 linkedToRecordingTitle: 'This YouTube video is linked to MusicBrainz recording: {title}',
-                linkedToMultiTitle: 'This YouTube video is linked to multiple recordings on MusicBrainz.\nClick to view URL entity page.',
+                linkedToMultiTitle: 'This YouTube video/channel is linked to multiple entities on MusicBrainz.\nClick to view URL entity page.',
                 errorVideoNotFound: 'Video Not Found / YT API Error',
                 errorApiRateLimit: '{apiName} Rate Limit / Server Error',
                 errorApiNetwork: '{apiName} Network Error',
                 errorProcessing: 'Processing Error',
+                // Channel specific strings
+                searchAddMB: 'Add to MB',
+                searchAddMBTitle: 'Search or add {name} on MusicBrainz',
                 // Playlist specific strings
                 createPlaylist: 'Create LB Playlist',
                 syncPlaylist: 'Sync LB Playlist',
@@ -69,15 +74,20 @@
                 addRecording: 'Aufnahme hinzufügen',
                 updateLength: 'Länge aktualisieren',
                 onMB: 'Auf MB ✓',
+                onMBArtist: 'Künstler auf MB ✓',
+                onMBLabel: 'Label auf MB ✓',
                 onMBMulti: 'Auf MB (Multi) ✓',
                 addRecordingTitle: 'Als Aufnahme zu MusicBrainz hinzufügen',
                 updateLengthTitle: 'Bei der verknüpften MusicBrainz-Aufnahme fehlt die Länge. Klicken, um sie auf {length}s zu aktualisieren.',
                 linkedToRecordingTitle: 'Dieses YouTube-Video ist mit der MusicBrainz-Aufnahme verknüpft: {title}',
-                linkedToMultiTitle: 'Dieses YouTube-Video ist mit mehreren Aufnahmen auf MusicBrainz verknüpft.\nKlicken, um die URL-Entitätsseite anzuzeigen.',
+                linkedToMultiTitle: 'Dieses YouTube-Video bzw. dieser Kanal ist mit mehreren Entitäten auf MusicBrainz verknüpft.\nKlicken, um die URL-Entitätsseite anzuzeigen.',
                 errorVideoNotFound: 'Video nicht gefunden / YT API-Fehler',
                 errorApiRateLimit: '{apiName} Ratenlimit / Serverfehler',
                 errorApiNetwork: '{apiName} Netzwerkfehler',
                 errorProcessing: 'Verarbeitungsfehler',
+                // Channel specific strings
+                searchAddMB: 'Zu MB hinzufügen',
+                searchAddMBTitle: '{name} auf MusicBrainz suchen oder hinzufügen',
                 // Playlist specific strings
                 createPlaylist: 'LB-Playlist erstellen',
                 syncPlaylist: 'LB-Playlist synchronisieren',
@@ -119,6 +129,8 @@
 
         SELECTORS: {
             BUTTON_DOCK: '#top-row.ytd-watch-metadata #owner.ytd-watch-metadata',
+            BUTTON_DOCK_FALLBACK: '#top-row.ytd-watch-metadata #actions.ytd-watch-metadata',
+            CHANNEL_DOCK: 'yt-page-header-view-model yt-flexible-actions-view-model, yt-page-header-view-model subscribe-button-view-model, ytd-page-header-renderer #page-header-actions, ytd-page-header-renderer ytd-subscribe-button-renderer, ytd-c4-tabbed-header-renderer #buttons, #inner-header-container #buttons',
             MUSICBRAINZ_MAIN_VIDEO_CHECKBOX: '[name="edit-recording.video"]',
             MUSICBRAINZ_EXTERNAL_LINKS_EDITOR: '#external-links-editor',
             MUSICBRAINZ_INDIVIDUAL_VIDEO_CHECKBOX: '.relationship-item input[type="checkbox"]',
@@ -126,14 +138,7 @@
 
         CLASS_NAMES: {
             CONTAINER: 'musicbrainz-userscript-container',
-            BUTTON: 'search-button',
-            BUTTON_READY: 'mb-ready',
-            BUTTON_ADDED: 'mb-added',
-            BUTTON_ERROR: 'mb-error',
-            BUTTON_INFO: 'mb-info',
-            BUTTON_UPDATE: 'mb-update', // Class for the update button
-            PLAYLIST_BUTTON: 'playlist-button',
-            PLAYLIST_BUTTON_SYNC: 'lb-sync',
+            BUTTON_RENDERER: 'musicbrainz-button-renderer',
         },
 
         MUSICBRAINZ_FREE_STREAMING_LINK_TYPE_ID: '268',
@@ -191,6 +196,245 @@
         }
     };
 
+    const SVG_NS = 'http://www.w3.org/2000/svg';
+
+    /**
+     * Crisp, optimized inline SVG definitions for YouTube button iconography.
+     */
+    const SVGIcons = {
+        musicbrainz: {
+            viewBox: '0 0 27 30',
+            paths: ['M13 1 1 8v14l12 7V1zm1 0 12 7v14l-12 7V1z']
+        },
+        listenbrainz: {
+            viewBox: '0 0 24 24',
+            paths: ['M12 4.5a9 9 0 0 0-9 9v3a3 3 0 0 0 3 3h1v-6H5a7 7 0 1 1 14 0h-2v6h1a3 3 0 0 0 3-3v-3a9 9 0 0 0-9-9zm-4 9h2v4H8zm6 0h2v4h-2z']
+        },
+        sync: {
+            viewBox: '0 0 24 24',
+            paths: ['M12 4V1L8 5l4 4V6c3.31 0 6 2.69 6 6 0 1.01-.25 1.97-.7 2.8l1.46 1.46C19.54 15.03 20 13.57 20 12c0-4.42-3.58-8-8-8zm0 14c-3.31 0-6-2.69-6-6 0-1.01.25-1.97.7-2.8L5.24 7.74C4.46 8.97 4 10.43 4 12c0 4.42 3.58 8 8 8v3l4-4-4-4v3z']
+        },
+        clock: {
+            viewBox: '0 0 24 24',
+            paths: ['M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67z']
+        },
+        report: {
+            viewBox: '0 0 24 24',
+            paths: ['M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z']
+        },
+        alert: {
+            viewBox: '0 0 24 24',
+            paths: ['M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z']
+        },
+        spinner: {
+            viewBox: '0 0 24 24',
+            isSpinner: true,
+            circle: { cx: '12', cy: '12', r: '9', strokeOpacity: '0.25' },
+            path: { d: 'M12 3a9 9 0 0 1 9 9', strokeLinecap: 'round' }
+        },
+        // --- Reference SVG Definitions ---
+        checkmark: {
+            viewBox: '0 0 24 24',
+            paths: ['M9 16.17 4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z']
+        },
+        plus: {
+            viewBox: '0 0 24 24',
+            paths: ['M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z']
+        },
+        externalLink: {
+            viewBox: '0 0 24 24',
+            paths: ['M19 19H5V5h7V3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14c1.1 0 2-.9 2-2v-7h-2v7zM14 3v2h3.59l-9.83 9.83 1.41 1.41L19 6.41V10h2V3h-7z']
+        }
+    };
+
+    /**
+     * Builds a native SVGSVGElement without triggering TrustedHTML / DOMParser restrictions.
+     * @param {Object|null} iconDef
+     * @returns {SVGSVGElement|null}
+     */
+    function createSvgElement(iconDef) {
+        if (!iconDef) return null;
+        const svg = document.createElementNS(SVG_NS, 'svg');
+        svg.setAttribute('viewBox', iconDef.viewBox || '0 0 24 24');
+        svg.setAttribute('width', '20');
+        svg.setAttribute('height', '20');
+
+        if (iconDef.isSpinner) {
+            svg.setAttribute('fill', 'none');
+            svg.setAttribute('stroke', 'currentColor');
+            svg.setAttribute('stroke-width', '2.5');
+            svg.setAttribute('class', 'yt-spec-button-shape-next__spinner');
+
+            const circle = document.createElementNS(SVG_NS, 'circle');
+            circle.setAttribute('cx', iconDef.circle.cx);
+            circle.setAttribute('cy', iconDef.circle.cy);
+            circle.setAttribute('r', iconDef.circle.r);
+            circle.setAttribute('fill', 'none');
+            circle.setAttribute('stroke', 'currentColor');
+            circle.setAttribute('stroke-width', '2.5');
+            circle.setAttribute('stroke-opacity', iconDef.circle.strokeOpacity);
+            svg.appendChild(circle);
+
+            const path = document.createElementNS(SVG_NS, 'path');
+            path.setAttribute('d', iconDef.path.d);
+            path.setAttribute('fill', 'none');
+            path.setAttribute('stroke', 'currentColor');
+            path.setAttribute('stroke-width', '2.5');
+            path.setAttribute('stroke-linecap', iconDef.path.strokeLinecap);
+            svg.appendChild(path);
+        } else {
+            svg.setAttribute('fill', 'currentColor');
+            (iconDef.paths || []).forEach(d => {
+                const path = document.createElementNS(SVG_NS, 'path');
+                path.setAttribute('d', d);
+                svg.appendChild(path);
+            });
+        }
+        return svg;
+    }
+
+    /**
+     * Modular factory and state manager for native-styled YouTube buttons.
+     */
+    class YTButton {
+        /**
+         * @param {Object} options
+         * @param {string} [options.id]
+         * @param {'button'|'a'} [options.tag='button']
+         * @param {'button'|'submit'} [options.type='button']
+         * @param {string} [options.label='']
+         * @param {string} [options.title='']
+         * @param {Object|null} [options.icon=null] - SVG icon definition
+         * @param {string} [options.variant='tonal'] - 'tonal' | 'brand-mb' | 'brand-lb' | 'update' | 'sync' | 'report' | 'error' | 'info'
+         * @param {string} [options.href='']
+         * @param {string} [options.target='_blank']
+         * @param {boolean} [options.disabled=false]
+         * @param {Function} [options.onClick]
+         */
+        constructor(options = {}) {
+            this.container = document.createElement('div');
+            this.container.className = `musicbrainz-button-renderer ${Config.CLASS_NAMES.BUTTON_RENDERER}`;
+
+            this.tag = options.tag || (options.href ? 'a' : 'button');
+            this.element = document.createElement(this.tag);
+            this.element.className = 'ytSpecButtonShapeNextHost ytSpecButtonShapeNextSizeM ytSpecButtonShapeNextMono yt-spec-button-shape-next ytSpecButtonShapeNextEnableBackdropFilterExperiment ytSpecButtonShapeNextMainstageIconSize ytSpecButtonShapeNextMainstagePadding';
+
+            if (this.tag === 'button') {
+                this.element.type = options.type || 'button';
+            }
+
+            this._currentIcon = null;
+            this._originalIcon = null;
+
+            this.iconContainer = document.createElement('div');
+            this.iconContainer.className = 'ytSpecButtonShapeNextIcon ytSpecButtonShapeNextElevatedContent yt-spec-button-shape-next__icon';
+            this.iconContainer.setAttribute('aria-hidden', 'true');
+            this.iconContainer.style.display = 'none';
+
+            this.textContainer = document.createElement('div');
+            this.textContainer.className = 'ytSpecButtonShapeNextButtonTextContent ytSpecButtonShapeNextElevatedContent yt-spec-button-shape-next__button-text-content';
+
+            this.textSpan = document.createElement('span');
+            this.textSpan.className = 'ytAttributedStringHost ytAttributedStringWhiteSpaceNoWrap';
+            this.textSpan.setAttribute('role', 'text');
+            this.textContainer.appendChild(this.textSpan);
+
+            this.element.appendChild(this.iconContainer);
+            this.element.appendChild(this.textContainer);
+            this.container.appendChild(this.element);
+
+            this.update(options);
+        }
+
+        _renderIcon(icon) {
+            while (this.iconContainer.firstChild) {
+                this.iconContainer.removeChild(this.iconContainer.firstChild);
+            }
+            const svgNode = createSvgElement(icon);
+            if (svgNode) {
+                this.iconContainer.appendChild(svgNode);
+                this.iconContainer.style.display = 'inline-flex';
+                this.element.classList.add('ytSpecButtonShapeNextIconLeading', 'yt-spec-button-shape-next--icon-leading');
+            } else {
+                this.iconContainer.style.display = 'none';
+                this.element.classList.remove('ytSpecButtonShapeNextIconLeading', 'yt-spec-button-shape-next--icon-leading');
+            }
+        }
+
+        update({ label, title, icon, variant, href, target, disabled, onClick }) {
+            if (label !== undefined) {
+                this.textSpan.textContent = label;
+                this.element.setAttribute('aria-label', label);
+            }
+            if (title !== undefined) {
+                this.element.title = title;
+            }
+            if (icon !== undefined) {
+                this._currentIcon = icon;
+                this._originalIcon = null;
+                this._renderIcon(icon);
+            }
+            if (variant !== undefined) {
+                this.element.className = this.element.className.replace(/yt-spec-button-shape-next--(brand-mb|brand-lb|update|sync|report|error|info|tonal|mono)|ytSpecButtonShapeNext(Tonal|Filled)/g, '').trim();
+                const variantClass = variant === 'tonal'
+                    ? 'ytSpecButtonShapeNextTonal yt-spec-button-shape-next--tonal'
+                    : `ytSpecButtonShapeNextFilled yt-spec-button-shape-next--${variant}`;
+                this.element.className = `${this.element.className} ${variantClass}`.replace(/\s+/g, ' ').trim();
+            }
+            if (href !== undefined && this.tag === 'a') {
+                this.element.href = href;
+                if (target !== undefined) this.element.target = target;
+            }
+            if (disabled !== undefined) {
+                if (this.tag === 'button') {
+                    this.element.disabled = disabled;
+                } else {
+                    this.element.classList.toggle('disabled', disabled);
+                    if (disabled) {
+                        this.element.removeAttribute('href');
+                    }
+                }
+                if (!disabled) {
+                    this.setPending(false);
+                }
+            }
+            if (onClick !== undefined) {
+                if (this._clickHandler) {
+                    this.element.removeEventListener('click', this._clickHandler);
+                }
+                if (onClick) {
+                    this._clickHandler = onClick;
+                    this.element.addEventListener('click', this._clickHandler);
+                }
+            }
+        }
+
+        setPending(isPending) {
+            this.container.style.opacity = isPending ? '0.7' : '';
+            this.container.style.pointerEvents = isPending ? 'none' : '';
+            if (this.tag === 'button') {
+                this.element.disabled = isPending;
+            }
+            if (isPending) {
+                if (!this._originalIcon && this._currentIcon) {
+                    this._originalIcon = this._currentIcon;
+                }
+                this._renderIcon(SVGIcons.spinner);
+            } else if (this._originalIcon) {
+                this._renderIcon(this._originalIcon);
+                this._originalIcon = null;
+            }
+        }
+
+        show() {
+            this.container.style.display = 'inline-flex';
+        }
+
+        hide() {
+            this.container.style.display = 'none';
+        }
+    }
+
     /**
      * General utility functions.
      */
@@ -202,12 +446,9 @@
          * @returns {Promise<Element>} A promise that resolves with the element once found, or rejects on timeout.
          */
         waitForElement: function (selector, timeout = 15000) {
-            const start = performance.now();
             return new Promise((resolve, reject) => {
                 const element = document.querySelector(selector);
                 if (element) {
-                    const elapsed = (performance.now() - start).toFixed(2);
-                    console.debug(`[${GM.info.script.name}] Found element '${selector}' instantly (${elapsed}ms).`);
                     resolve(element);
                     return;
                 }
@@ -218,13 +459,11 @@
                     reject(new Error(`Timeout waiting for element with selector: ${selector}`));
                 }, timeout);
 
-                observer = new MutationObserver((mutations, obs) => {
+                observer = new MutationObserver(() => {
                     const targetElement = document.querySelector(selector);
                     if (targetElement) {
                         clearTimeout(timer);
-                        obs.disconnect();
-                        const elapsed = (performance.now() - start).toFixed(2);
-                        console.debug(`[${GM.info.script.name}] Found element '${selector}' after MutationObserver wait (${elapsed}ms).`);
+                        observer.disconnect();
                         resolve(targetElement);
                     }
                 });
@@ -233,6 +472,32 @@
                     subtree: true
                 });
             });
+        },
+
+        /**
+         * Safely extracts plain text from various YouTube internal title/text renderer object shapes.
+         * @param {*} obj - The text object, runs array, or string from YouTube renderer payloads.
+         * @returns {string}
+         */
+        extractTextFromYtObject: function (obj) {
+            if (!obj) return '';
+            if (typeof obj === 'string') return obj.trim();
+            if (typeof obj.content === 'string') return obj.content.trim();
+            if (typeof obj.text === 'string') return obj.text.trim();
+            if (typeof obj.simpleText === 'string') return obj.simpleText.trim();
+            if (Array.isArray(obj.runs)) {
+                return obj.runs.map(r => r?.text || '').join('').trim();
+            }
+            if (obj.dynamicTextViewModel) {
+                return this.extractTextFromYtObject(obj.dynamicTextViewModel.text || obj.dynamicTextViewModel);
+            }
+            if (obj.title) {
+                return this.extractTextFromYtObject(obj.title);
+            }
+            if (obj.pageTitle) {
+                return this.extractTextFromYtObject(obj.pageTitle);
+            }
+            return '';
         },
 
         /**
@@ -517,12 +782,20 @@
             // 3. Check movie_player DOM component fallback
             const moviePlayer = document.getElementById('movie_player');
             const moviePlayerData = moviePlayer?.getVideoData?.();
-
             const videoDetails = playerResponse?.videoDetails;
 
             const title = videoDetails?.title || moviePlayerData?.title || document.querySelector('h1.ytd-watch-metadata yt-formatted-string')?.innerText || '';
             const channelTitle = videoDetails?.author || moviePlayerData?.author || document.querySelector('#owner #channel-name a')?.innerText || '';
             const channelId = videoDetails?.channelId || '';
+
+            // Extract channel handle if present in owner link or player metadata
+            const channelHandle = document.querySelector('#owner a[href*="/@"]')?.getAttribute('href')?.match(/\/(@[A-Za-z0-9_.-]+)/)?.[1]
+                || playerResponse?.microformat?.playerMicroformatRenderer?.ownerProfileUrl?.match(/\/(@[A-Za-z0-9_.-]+)/)?.[1]
+                || null;
+
+            if (channelId && channelHandle) {
+                DOMScanner.cacheChannelId(channelHandle, channelId);
+            }
 
             let durationSeconds = 0;
             const microformatSec = playerResponse?.microformat?.playerMicroformatRenderer?.lengthSeconds;
@@ -561,6 +834,7 @@
                     title,
                     channelTitle,
                     channelId,
+                    channelHandle,
                     description,
                     category,
                 },
@@ -570,32 +844,6 @@
                     directMs,
                 }
             };
-        },
-
-        logExtractionSummary(domData, rawPlayerResponse, videoId) {
-            console.group(`[${GM.info.script.name}] Video ID: ${videoId}`);
-
-            if (!domData) {
-                console.warn('[In-Page Data Extraction FAIL] Could not extract video metadata from in-page sources or DOM.');
-            } else {
-                const formatMsToHms = (ms) => {
-                    if (ms === null || ms === undefined || isNaN(ms)) return 'N/A';
-                    const totalSec = Math.floor(ms / 1000);
-                    const h = Math.floor(totalSec / 3600);
-                    const m = Math.floor((totalSec % 3600) / 60);
-                    const s = totalSec % 60;
-                    const pad = (n) => String(n).padStart(2, '0');
-                    return h > 0 ? `${h}:${pad(m)}:${pad(s)}` : `${m}:${pad(s)}`;
-                };
-
-                console.log(`Title: "${domData.snippet?.title || ''}"`);
-                console.log(`Channel: "${domData.snippet?.channelTitle || ''}" (ID: "${domData.snippet?.channelId || ''}")`);
-                console.log(`Duration: ${formatMsToHms(domData.contentDetails?.durationMs)} (${domData.contentDetails?.durationMs || 0}ms)`);
-
-                console.debug('Extracted Video Metadata:', domData);
-                console.debug('Raw Video Player Response:', rawPlayerResponse);
-            }
-            console.groupEnd();
         }
     };
 
@@ -737,6 +985,140 @@
      * Scans the DOM for relevant elements and extracts information.
      */
     const DOMScanner = {
+        _channelCache: new Map(),
+
+        /**
+         * Caches a mapping from a channel handle to its canonical channel ID.
+         * @param {string} handle
+         * @param {string} channelId
+         */
+        cacheChannelId: function (handle, channelId) {
+            if (!handle || !channelId) return;
+            const cleanHandle = decodeURIComponent(handle).replace(/^@+/, '').trim();
+            if (!cleanHandle || cleanHandle.includes('/')) return;
+
+            this._channelCache.set(cleanHandle.toLowerCase(), channelId);
+        },
+
+        /**
+         * Outputs a consolidated Wide Event summary for video data extraction and MusicBrainz matching.
+         * @param {Object} ytData - Extracted video data.
+         * @param {string[]} urlsToQuery - Queried MusicBrainz URLs.
+         * @param {Map<string, Object|null>} mbResults - Map of MusicBrainz lookup results.
+         * @param {Map<string, boolean>} [cachedUrlMap=null] - Cache hit status per URL before lookup.
+         */
+        logVideoSummary: function (ytData, urlsToQuery, mbResults, cachedUrlMap = null) {
+            const formatMsToHms = (ms) => {
+                if (ms === null || ms === undefined || isNaN(ms)) return 'N/A';
+                const totalSec = Math.floor(ms / 1000);
+                const h = Math.floor(totalSec / 3600);
+                const m = Math.floor((totalSec % 3600) / 60);
+                const s = totalSec % 60;
+                const pad = (n) => String(n).padStart(2, '0');
+                return h > 0 ? `${h}:${pad(m)}:${pad(s)}` : `${m}:${pad(s)}`;
+            };
+
+            const lookups = urlsToQuery.map(url => {
+                const mbUrlEntity = mbResults.get(url);
+                const isVideo = url.includes('/watch?v=');
+                const source = mbResults.sources?.get(url) || (cachedUrlMap?.get(url) ? 'cache' : 'network');
+
+                if (isVideo) {
+                    const recordingRelations = (mbUrlEntity?.relations || []).filter(
+                        rel => rel['type-id'] === Config.MUSICBRAINZ_FREE_STREAMING_RELATION_TYPE_ID &&
+                            rel['target-type'] === 'recording' &&
+                            rel.recording && rel.recording.id
+                    );
+                    const matches = recordingRelations.map(r => ({
+                        id: r.recording.id,
+                        title: r.recording.title,
+                        length: r.recording.length
+                    }));
+                    return {
+                        url,
+                        type: 'video',
+                        source,
+                        status: matches.length > 0 ? 'linked' : 'unlinked',
+                        matches: matches.length > 0 ? matches : null
+                    };
+                }
+
+                const entities = [];
+                if (mbUrlEntity?.relations) {
+                    for (const rel of mbUrlEntity.relations) {
+                        const targetType = rel['target-type'];
+                        const targetObj = targetType ? rel[targetType] : null;
+                        if (targetObj && targetObj.id) {
+                            entities.push({
+                                targetType,
+                                id: targetObj.id,
+                                name: targetObj.name || targetObj.title || ''
+                            });
+                        }
+                    }
+                }
+                return {
+                    url,
+                    type: 'channel',
+                    source,
+                    status: entities.length > 0 ? 'linked' : 'unlinked',
+                    matches: entities.length > 0 ? entities : null
+                };
+            });
+
+            console.info(`[${GM.info.script.name}] Video: "${ytData.snippet?.title || ytData.id}"`, {
+                videoId: ytData.id,
+                title: ytData.snippet?.title || '',
+                channel: ytData.snippet?.channelTitle || '',
+                channelId: ytData.snippet?.channelId || '',
+                duration: `${formatMsToHms(ytData.contentDetails?.durationMs)} (${ytData.contentDetails?.durationMs || 0}ms)`,
+                lookups
+            });
+        },
+
+        /**
+         * Outputs a consolidated Wide Event summary for channel data extraction and MusicBrainz matching.
+         * @param {{ channelId: string|null, handle: string|null, channelTitle: string, canonicalUrl: string|null, handleUrl: string|null }} channelData
+         * @param {string[]} urlsToQuery
+         * @param {Map<string, Object|null>} mbResults - Map of MusicBrainz lookup results.
+         * @param {Map<string, boolean>} [cachedUrlMap=null] - Cache hit status per URL before lookup.
+         */
+        logChannelSummary: function (channelData, urlsToQuery, mbResults, cachedUrlMap = null) {
+            const lookups = urlsToQuery.map(url => {
+                const mbUrlEntity = mbResults.get(url);
+                const source = mbResults.sources?.get(url) || (cachedUrlMap?.get(url) ? 'cache' : 'network');
+                const entities = [];
+                if (mbUrlEntity?.relations) {
+                    for (const rel of mbUrlEntity.relations) {
+                        const targetType = rel['target-type'];
+                        const targetObj = targetType ? rel[targetType] : null;
+                        if (targetObj && targetObj.id) {
+                            entities.push({
+                                targetType,
+                                id: targetObj.id,
+                                name: targetObj.name || targetObj.title || ''
+                            });
+                        }
+                    }
+                }
+                return {
+                    url,
+                    source,
+                    status: entities.length > 0 ? 'linked' : 'unlinked',
+                    matches: entities.length > 0 ? entities : null
+                };
+            });
+
+            console.info(`[${GM.info.script.name}] Channel: "${channelData.channelTitle || channelData.handle || 'N/A'}"`, {
+                channelTitle: channelData.channelTitle || '',
+                channelId: channelData.channelId || '',
+                handle: channelData.handle || '',
+                canonicalUrl: channelData.canonicalUrl,
+                handleUrl: channelData.handleUrl,
+                lookups
+            });
+        },
+
         /**
          * Checks if the current page is a YouTube video watch page.
          * @returns {string|null} The video ID if it's a video page, otherwise null.
@@ -747,171 +1129,330 @@
         },
 
         /**
-         * Finds the DOM element where the import button should be appended.
+         * Checks if the current page is a YouTube channel or user page.
+         * @returns {boolean} True if the current page is a channel page.
+         */
+        isChannelPage: function () {
+            if (this.getVideoId()) return false;
+            const decodedPath = decodeURIComponent(location.pathname);
+            return /^\/(?:@[^\/]+|channel\/UC[\w-]+|c\/[^\/]+|user\/[^\/]+)(?:\/|$)/u.test(decodedPath);
+        },
+
+        /**
+         * Extracts channel ID, handle, and display name from navigation event, URL, and cache.
+         * @param {CustomEvent} [event] Optional navigation event detail.
+         * @returns {{ channelId: string|null, handle: string|null, channelTitle: string, canonicalUrl: string|null, handleUrl: string|null }}
+         */
+        getChannelData: function (event) {
+            // 1. Extract Handle (@...) directly from URL pathname
+            let handle = null;
+            const decodedPath = decodeURIComponent(location.pathname);
+            const handleMatch = decodedPath.match(/\/(@[^\/?#]+)/);
+            if (handleMatch) {
+                handle = handleMatch[1];
+            }
+
+            // 2. Extract Response object (SPA event response OR initial page load data)
+            const eventResponse = event?.detail?.response?.response
+                || event?.detail?.response
+                || (!event ? window.ytInitialData : null);
+
+            // 3. Extract Channel ID (UC...) from navigation event, initial data, URL, or session cache
+            let channelId = null;
+
+            // Source A: Navigation event detail
+            if (event?.detail) {
+                const browseId = event.detail.endpoint?.browseEndpoint?.browseId
+                    || event.detail.response?.endpoint?.browseEndpoint?.browseId
+                    || eventResponse?.endpoint?.browseEndpoint?.browseId;
+                if (browseId && browseId.startsWith('UC')) {
+                    channelId = browseId;
+                }
+            }
+
+            // Source B: Event response / initial data metadata
+            if (!channelId && eventResponse) {
+                const extId = eventResponse?.metadata?.channelMetadataRenderer?.externalId
+                    || eventResponse?.header?.c4TabbedHeaderRenderer?.channelId;
+                if (extId && extId.startsWith('UC')) {
+                    channelId = extId;
+                }
+            }
+
+            // Source C: Direct URL pathname (/channel/UC...)
+            if (!channelId) {
+                const pathChannelMatch = location.pathname.match(/\/channel\/(UC[A-Za-z0-9_-]+)/);
+                if (pathChannelMatch) {
+                    channelId = pathChannelMatch[1];
+                }
+            }
+
+            // Source D: Session handle-to-channelId cache
+            if (!channelId && handle) {
+                channelId = this._channelCache.get(handle.toLowerCase()) || null;
+            }
+
+            // Source E: ytcfg globals
+            if (!channelId) {
+                if (window.ytcfg?.get?.('CHANNEL_ID') && window.ytcfg.get('CHANNEL_ID').startsWith('UC')) {
+                    channelId = window.ytcfg.get('CHANNEL_ID');
+                }
+            }
+
+            // Source F: Initial page load meta tags (only when event is absent)
+            if (!channelId && !event) {
+                const channelIdMeta = document.querySelector('meta[itemprop="channelId"], meta[itemprop="identifier"]');
+                if (channelIdMeta && channelIdMeta.content && channelIdMeta.content.startsWith('UC')) {
+                    channelId = channelIdMeta.content;
+                }
+            }
+
+            // Cache discovered mapping for subsequent navigation
+            if (handle && channelId) {
+                this.cacheChannelId(handle, channelId);
+            }
+
+            // 4. Extract Channel Title directly from event payload / initial data
+            let channelTitle = '';
+            const eventTitle = Utils.extractTextFromYtObject(eventResponse?.metadata?.channelMetadataRenderer?.title)
+                || Utils.extractTextFromYtObject(eventResponse?.header?.pageHeaderRenderer?.content?.pageHeaderViewModel?.title)
+                || Utils.extractTextFromYtObject(eventResponse?.header?.pageHeaderRenderer?.pageTitle)
+                || Utils.extractTextFromYtObject(eventResponse?.header?.c4TabbedHeaderRenderer?.title)
+                || Utils.extractTextFromYtObject(eventResponse?.microformat?.microformatDataRenderer?.title);
+
+            if (eventTitle) {
+                channelTitle = eventTitle;
+            } else if (!event && document.title) {
+                channelTitle = document.title.replace(/\s*-\s*YouTube$/, '').trim();
+            }
+
+            const canonicalUrl = channelId ? `https://www.youtube.com/channel/${channelId}` : null;
+            const handleUrl = handle ? `https://www.youtube.com/${handle}` : null;
+
+            return {
+                channelId,
+                handle,
+                channelTitle,
+                canonicalUrl,
+                handleUrl
+            };
+        },
+
+        /**
+         * Checks if the current page is a YouTube channel or user page.
+         * @returns {string|null} The channel identifier or null.
+         */
+        getChannelIdOrHandle: function () {
+            const decodedPath = decodeURIComponent(location.pathname);
+            const match = decodedPath.match(/^\/(?:channel\/(UC[\w-]+)|@([^\/?#]+)|user\/([^\/?#]+)|c\/([^\/?#]+))/);
+            return match ? (match[1] || match[2] || match[3] || match[4]) : null;
+        },
+
+        /**
+         * Finds the DOM element where the watch page buttons should be appended.
          * @returns {Promise<HTMLElement|null>} A promise that resolves with the dock element, or null if not found.
          */
         getButtonAnchorElement: async function () {
             try {
-                const dock = await Utils.waitForElement(Config.SELECTORS.BUTTON_DOCK);
-                console.debug(`[${GM.info.script.name}] Found button dock:`, dock);
-                return dock;
+                return await Utils.waitForElement(Config.SELECTORS.BUTTON_DOCK, 10000)
+                    .catch(() => Utils.waitForElement(Config.SELECTORS.BUTTON_DOCK_FALLBACK, 5000));
             } catch (e) {
                 console.error(`[${GM.info.script.name}] Could not find button dock element:`, e);
+                return null;
+            }
+        },
+
+        /**
+         * Finds the DOM element where channel page buttons should be appended.
+         * @returns {Promise<HTMLElement|null>} A promise that resolves with the channel dock element, or null.
+         */
+        getChannelAnchorElement: async function () {
+            try {
+                return await Utils.waitForElement(Config.SELECTORS.CHANNEL_DOCK, 10000);
+            } catch (e) {
+                console.error(`[${GM.info.script.name}] Could not find channel dock element:`, e);
                 return null;
             }
         },
     };
 
     /**
-     * Manages the creation, display, and state of the MusicBrainz import button.
+     * Base class managing button container lifecycle, docking, and state transitions.
      */
-    const RecordingButtonManager = {
-        _form: null,
-        _submitButton: null,
-        _textElement: null,
-        _containerDiv: null,
-
+    class BaseButtonManager {
         /**
-         * Initializes the button elements and their basic structure.
+         * @param {string} [extraClass=''] - Additional CSS classes for the container.
          */
-        init: function () {
-            this._containerDiv = document.createElement("div");
-            this._containerDiv.setAttribute("class", `holder ${Config.CLASS_NAMES.CONTAINER}`);
+        constructor(extraClass = '') {
+            this._containerDiv = document.createElement('div');
+            this._containerDiv.className = `holder ${Config.CLASS_NAMES.CONTAINER} ${extraClass}`.trim();
             this._containerDiv.style.display = 'none';
+        }
 
-            this._form = document.createElement("form");
-            this._form.method = "get";
-            this._form.action = "//musicbrainz.org/recording/create";
-            this._form.acceptCharset = "UTF-8";
-            this._form.target = "_blank";
+        get container() {
+            return this._containerDiv;
+        }
 
-            this._submitButton = document.createElement("button");
-            this._submitButton.type = "submit";
-            this._submitButton.title = L10n.getString('addRecordingTitle');
-            this._submitButton.setAttribute("class", Config.CLASS_NAMES.BUTTON);
-            this._textElement = document.createElement("span");
-            this._textElement.innerText = L10n.getString('loading');
-
-            const buttonContent = document.createElement('div');
-            buttonContent.style.display = 'flex';
-            buttonContent.style.alignItems = 'center';
-            buttonContent.appendChild(this._textElement);
-            this._submitButton.appendChild(buttonContent);
-
-            this._form.appendChild(this._submitButton);
-            this._containerDiv.appendChild(this._form);
-        },
-
-        setPending: function () {
-            if (this._containerDiv.style.display === 'flex') {
-                this._containerDiv.style.opacity = '0.5';
-                this._containerDiv.style.pointerEvents = 'none';
-                if (this._submitButton) {
-                    this._submitButton.disabled = true;
-                }
-            }
-        },
-
-        hide: function () {
-            this._containerDiv.style.display = 'none';
-            this._containerDiv.style.opacity = '1';
-            this._containerDiv.style.pointerEvents = 'auto';
-        },
-
-        /**
-         * Resets the button state and clears previous form fields.
-         */
-        resetState: function () {
-            Array.from(this._form.querySelectorAll('input[type="hidden"]')).forEach(input => this._form.removeChild(input));
-            while (this._containerDiv.firstChild) {
-                this._containerDiv.removeChild(this._containerDiv.firstChild);
-            }
-            this._containerDiv.appendChild(this._form);
-
-            this._textElement.innerText = L10n.getString('loading');
-            this._submitButton.className = Config.CLASS_NAMES.BUTTON;
-            this._submitButton.disabled = true;
-            this._form.style.display = 'none';
-            this._containerDiv.style.display = 'none';
-            this._containerDiv.style.opacity = '1';
-            this._containerDiv.style.pointerEvents = 'auto';
-        },
-
-        /**
-         * Appends a hidden input field to the form.
-         * @param {string} name - The name attribute of the input field.
-         * @param {string} value - The value attribute of the input field.
-         */
-        _addField: function (name, value) {
-            if (!this._form) return;
-            const field = document.createElement("input");
-            field.type = "hidden";
-            field.name = name;
-            field.value = value;
-            this._form.insertBefore(field, this._submitButton);
-        },
+        init() {
+            // Lifecycle hook for initial setup
+        }
 
         /**
          * Appends the button container to the specified dock element.
-         * If dock is null, it appends to body as a fallback.
-         * @param {HTMLElement|null} dockElement - The element to append the button to.
+         * @param {HTMLElement|null} dockElement - Target container in DOM.
          */
-        appendToDock: function (dockElement) {
-            if (dockElement) {
-                // If it's already in the correct dock, do nothing
-                if (dockElement.contains(this._containerDiv)) {
-                    return;
-                }
-                // Clean up fallback styles if it was previously attached to body
-                this._containerDiv.style.position = '';
-                this._containerDiv.style.top = '';
-                this._containerDiv.style.right = '';
-                this._containerDiv.style.zIndex = '';
-                this._containerDiv.style.background = '';
-                this._containerDiv.style.padding = '';
-                this._containerDiv.style.borderRadius = '';
-
-                dockElement.appendChild(this._containerDiv);
-                console.debug(`[${GM.info.script.name}] Button UI appended to dock.`);
-            } else {
-                // Only fallback if it's not already attached anywhere in the document
-                if (document.body.contains(this._containerDiv)) {
-                    return;
-                }
-                console.warn(`[${GM.info.script.name}] Could not find a suitable dock element. Appending to body as last resort.`);
-                document.body.appendChild(this._containerDiv);
-                this._containerDiv.style.position = 'fixed';
-                this._containerDiv.style.top = '10px';
-                this._containerDiv.style.right = '10px';
-                this._containerDiv.style.zIndex = '9999';
-                this._containerDiv.style.background = 'rgba(0,0,0,0.7)';
-                this._containerDiv.style.padding = '5px';
-                this._containerDiv.style.borderRadius = '5px';
-            }
-        },
+        appendToDock(dockElement) {
+            if (!dockElement || dockElement.contains(this._containerDiv)) return;
+            dockElement.appendChild(this._containerDiv);
+        }
 
         /**
-         * Prepares the form with YouTube video data and displays the "Add Recording" button.
-         * @param {Object} youtubeVideoData - The minimalist YouTube video data.
-         * @param {string} canonicalYtUrl - The canonical YouTube URL.
-         * @param {string|null} artistMbid - The MusicBrainz Artist MBID if found.
-         * @param {string} videoId - The YouTube video ID.
+         * Sets pending/dimmed state during background requests.
+         * @param {boolean} [isPending=true]
          */
-        prepareAddButton: function (youtubeVideoData, canonicalYtUrl, artistMbid, videoId) {
-            // Clear any previous form fields and link elements
-            Array.from(this._form.querySelectorAll('input[type="hidden"]')).forEach(input => this._form.removeChild(input));
+        setPending(isPending = true) {
+            if (this._containerDiv.style.display !== 'none') {
+                this._containerDiv.style.opacity = isPending ? '0.5' : '1';
+                this._containerDiv.style.pointerEvents = isPending ? 'none' : 'auto';
+            }
+        }
+
+        show() {
+            this._containerDiv.style.display = 'inline-flex';
+            this._containerDiv.style.opacity = '1';
+            this._containerDiv.style.pointerEvents = 'auto';
+        }
+
+        hide() {
+            this._containerDiv.style.display = 'none';
+            this._containerDiv.style.opacity = '1';
+            this._containerDiv.style.pointerEvents = 'auto';
+        }
+
+        clear() {
             while (this._containerDiv.firstChild) {
                 this._containerDiv.removeChild(this._containerDiv.firstChild);
             }
+        }
+
+        /**
+         * Replaces container children with the provided element(s).
+         * @param {HTMLElement|YTButton|Array<HTMLElement|YTButton>} elements
+         */
+        setContent(elements) {
+            this.clear();
+            const nodes = Array.isArray(elements) ? elements : [elements];
+            nodes.forEach(node => {
+                if (node instanceof YTButton) {
+                    this._containerDiv.appendChild(node.container);
+                } else if (node) {
+                    this._containerDiv.appendChild(node);
+                }
+            });
+            this.show();
+        }
+
+        /**
+         * Displays an error button with a given message.
+         * @param {string} message - The error message to display.
+         */
+        displayError(message) {
+            this.setContent(new YTButton({
+                tag: 'button',
+                label: message,
+                title: message,
+                icon: SVGIcons.alert,
+                variant: 'error',
+                disabled: true
+            }));
+        }
+
+        /**
+         * Displays an informational button with a given message.
+         * @param {string} message - The info message to display.
+         */
+        displayInfo(message) {
+            this.setContent(new YTButton({
+                tag: 'button',
+                label: message,
+                title: message,
+                icon: SVGIcons.alert,
+                variant: 'info',
+                disabled: true
+            }));
+        }
+
+        resetState() {
+            this.clear();
+            this.hide();
+        }
+    }
+
+    /**
+     * Manages the creation, display, and state of the MusicBrainz import button.
+     */
+    class RecordingButtonManagerClass extends BaseButtonManager {
+        constructor() {
+            super();
+            this._form = document.createElement('form');
+            this._form.method = 'get';
+            this._form.action = '//musicbrainz.org/recording/create';
+            this._form.acceptCharset = 'UTF-8';
+            this._form.target = '_blank';
+            this._form.style.display = 'none';
+
+            this._submitButton = new YTButton({
+                tag: 'button',
+                type: 'submit',
+                label: L10n.getString('loading'),
+                title: L10n.getString('addRecordingTitle'),
+                icon: SVGIcons.musicbrainz,
+                variant: 'brand-mb',
+                disabled: true
+            });
+
+            this._form.appendChild(this._submitButton.container);
             this._containerDiv.appendChild(this._form);
+        }
+
+        _addField(name, value) {
+            const field = document.createElement('input');
+            field.type = 'hidden';
+            field.name = name;
+            field.value = value;
+            this._form.insertBefore(field, this._submitButton.container);
+        }
+
+        resetState() {
+            Array.from(this._form.querySelectorAll('input[type="hidden"]')).forEach(input => this._form.removeChild(input));
+            this.clear();
+            this._form.style.display = 'none';
+            this._containerDiv.appendChild(this._form);
+            this._submitButton.update({
+                label: L10n.getString('loading'),
+                title: L10n.getString('addRecordingTitle'),
+                icon: SVGIcons.musicbrainz,
+                variant: 'brand-mb',
+                disabled: true
+            });
+            this.hide();
+        }
+
+        setPending(isPending = true) {
+            super.setPending(isPending);
+            if (this._submitButton) {
+                this._submitButton.setPending(isPending);
+            }
+        }
+
+        prepareAddButton(youtubeVideoData, canonicalYtUrl, artistMbid, videoId) {
+            this.resetState();
 
             const title = youtubeVideoData.snippet.title;
             const artist = youtubeVideoData.snippet.channelTitle;
-
-            let length = 0;
-            if (youtubeVideoData.contentDetails && typeof youtubeVideoData.contentDetails.durationMs === 'number') {
-                length = youtubeVideoData.contentDetails.durationMs;
-            }
+            const length = (youtubeVideoData.contentDetails && typeof youtubeVideoData.contentDetails.durationMs === 'number')
+                ? youtubeVideoData.contentDetails.durationMs
+                : 0;
 
             this._addField('edit-recording.name', title);
             if (artistMbid) {
@@ -932,13 +1473,16 @@
             const editNote = `${canonicalYtUrl}\n—\n${scriptInfo.name} (v${scriptInfo.version})`;
             this._addField('edit-recording.edit_note', editNote);
 
-            this._textElement.innerText = L10n.getString('addRecording');
-            this._submitButton.className = `${Config.CLASS_NAMES.BUTTON} ${Config.CLASS_NAMES.BUTTON_READY}`;
-            this._submitButton.disabled = false;
-            this._form.style.display = 'flex';
-            this._containerDiv.style.display = 'flex';
-            this._containerDiv.style.opacity = '1';
-            this._containerDiv.style.pointerEvents = 'auto';
+            this._submitButton.update({
+                label: L10n.getString('addRecording'),
+                title: L10n.getString('addRecordingTitle'),
+                icon: SVGIcons.musicbrainz,
+                variant: 'brand-mb',
+                disabled: false
+            });
+
+            this._form.style.display = 'inline-flex';
+            this.show();
 
             const invalidateCacheAndPrefetch = () => {
                 console.debug(`[${GM.info.script.name}] Import button clicked. Clearing cache for video ID: ${videoId}`);
@@ -949,291 +1493,281 @@
                     YouTubeMusicBrainzImporter._mbApi.invalidateCacheForUrl(youtubeChannelUrl);
                 }
             };
-            this._submitButton.addEventListener('mousedown', invalidateCacheAndPrefetch);
-        },
+            this._submitButton.element.addEventListener('mousedown', invalidateCacheAndPrefetch, { once: true });
+        }
 
-        /**
-         * Displays the "On MB ✓" button, linking to the existing MusicBrainz entity.
-         * If the recording has no length, it provides a button to update it.
-         * @param {Array} allRelevantRecordingRelations - An array of recording relations.
-         * @param {string} urlEntityId - The MusicBrainz URL entity ID.
-         * @param {Object} youtubeVideoData - The minimalist YouTube video data.
-         * @param {string} canonicalYtUrl - The canonical YouTube URL.
-         */
-        displayExistingButton: function (allRelevantRecordingRelations, urlEntityId, youtubeVideoData, canonicalYtUrl) {
-            this._form.style.display = 'none';
-            while (this._containerDiv.firstChild) {
-                this._containerDiv.removeChild(this._containerDiv.firstChild);
-            }
+        displayExistingButton(allRelevantRecordingRelations, urlEntityId, youtubeVideoData, canonicalYtUrl) {
+            this.resetState();
 
-            const link = document.createElement('a');
-            link.style.textDecoration = 'none';
-            link.target = '_blank';
-
-            const button = document.createElement('button');
-            const span = document.createElement('span');
-            button.appendChild(span);
-            link.appendChild(button);
-
+            let button;
             if (allRelevantRecordingRelations.length === 1) {
                 const existingRecordingRelation = allRelevantRecordingRelations[0];
                 const recordingMBID = existingRecordingRelation.recording.id;
-                const recordingTitle = existingRecordingRelation.recording.title || "View Recording";
+                const recordingTitle = existingRecordingRelation.recording.title || 'View Recording';
                 const hasLength = existingRecordingRelation.recording.length != null;
                 const ytHasLength = youtubeVideoData && youtubeVideoData.contentDetails && (youtubeVideoData.contentDetails.durationMs > 0 || youtubeVideoData.contentDetails.directMs > 0);
 
-                // Check if the recording is missing the length and we have a length from YouTube
                 if (!hasLength && ytHasLength) {
                     const lengthInMs = youtubeVideoData.contentDetails.durationMs || youtubeVideoData.contentDetails.directMs;
                     const scriptInfo = GM_info.script;
                     const editNote = `${canonicalYtUrl}\n—\n${scriptInfo.name} (v${scriptInfo.version})`;
                     const encodedEditNote = encodeURIComponent(editNote);
-                    link.href = `//musicbrainz.org/recording/${recordingMBID}/edit?edit-recording.length=${lengthInMs}&edit-recording.edit_note=${encodedEditNote}`;
-                    link.title = L10n.getString('updateLengthTitle', {
-                        length: Math.round(lengthInMs / 1000)
+                    const href = `//musicbrainz.org/recording/${recordingMBID}/edit?edit-recording.length=${lengthInMs}&edit-recording.edit_note=${encodedEditNote}`;
+
+                    button = new YTButton({
+                        tag: 'a',
+                        href,
+                        target: '_blank',
+                        label: L10n.getString('updateLength'),
+                        title: L10n.getString('updateLengthTitle', { length: Math.round(lengthInMs / 1000) }),
+                        icon: SVGIcons.clock,
+                        variant: 'update'
                     });
-                    span.textContent = L10n.getString('updateLength');
-                    button.className = `${Config.CLASS_NAMES.BUTTON} ${Config.CLASS_NAMES.BUTTON_UPDATE}`;
                     console.debug(`[${GM.info.script.name}] Displaying 'Update Length' button for recording ${recordingMBID}.`);
                 } else {
-                    // Default behavior: link to the recording page
-                    link.href = `//musicbrainz.org/recording/${recordingMBID}`;
-                    link.title = L10n.getString('linkedToRecordingTitle', {
-                        title: recordingTitle
+                    button = new YTButton({
+                        tag: 'a',
+                        href: `//musicbrainz.org/recording/${recordingMBID}`,
+                        target: '_blank',
+                        label: L10n.getString('onMB'),
+                        title: L10n.getString('linkedToRecordingTitle', { title: recordingTitle }),
+                        icon: SVGIcons.musicbrainz,
+                        variant: 'tonal'
                     });
-                    span.textContent = L10n.getString('onMB');
-                    button.className = `${Config.CLASS_NAMES.BUTTON} ${Config.CLASS_NAMES.BUTTON_ADDED}`;
                 }
             } else {
                 console.debug(`[${GM.info.script.name}] Multiple recording relations found. Linking to URL entity page.`);
-                link.href = `//musicbrainz.org/url/${urlEntityId}`;
-                link.title = L10n.getString('linkedToMultiTitle');
-                span.textContent = L10n.getString('onMBMulti');
-                button.className = `${Config.CLASS_NAMES.BUTTON} ${Config.CLASS_NAMES.BUTTON_ADDED}`;
+                button = new YTButton({
+                    tag: 'a',
+                    href: `//musicbrainz.org/url/${urlEntityId}`,
+                    target: '_blank',
+                    label: L10n.getString('onMBMulti'),
+                    title: L10n.getString('linkedToMultiTitle'),
+                    icon: SVGIcons.musicbrainz,
+                    variant: 'tonal'
+                });
             }
-            this._containerDiv.appendChild(link);
-            this._containerDiv.style.display = 'flex';
-            this._containerDiv.style.opacity = '1';
-            this._containerDiv.style.pointerEvents = 'auto';
+
+            this.setContent(button);
             console.debug(`[${GM.info.script.name}] Displaying existing link button.`);
-        },
-
-        /**
-         * Displays an error button with a given message.
-         * @param {string} message - The error message to display.
-         */
-        displayError: function (message) {
-            this.resetState();
-            this._textElement.innerText = message;
-            this._submitButton.className = `${Config.CLASS_NAMES.BUTTON} ${Config.CLASS_NAMES.BUTTON_ERROR}`;
-            this._submitButton.disabled = true;
-            this._containerDiv.style.display = 'flex';
-        },
-
-        /**
-         * Displays an informational button with a given message.
-         * @param {string} message - The info message to display.
-         */
-        displayInfo: function (message) {
-            this.resetState();
-            this._textElement.innerText = message;
-            this._submitButton.className = `${Config.CLASS_NAMES.BUTTON} ${Config.CLASS_NAMES.BUTTON_INFO}`;
-            this._submitButton.disabled = true;
-            this._containerDiv.style.display = 'flex';
         }
-    };
+    }
+    const RecordingButtonManager = new RecordingButtonManagerClass();
 
     /**
      * Manages the UI for the ListenBrainz playlist button.
      */
-    const PlaylistButtonManager = {
-        _containerDiv: null,
-        _currentButton: null,
-
-        _clearContainer: function () {
-            const element = this._containerDiv;
-            while (element && element.firstChild) {
-                element.removeChild(element.firstChild);
-            }
-        },
-
-        init: function () {
-            this._containerDiv = document.createElement("div");
-            this._containerDiv.setAttribute("class", `holder ${Config.CLASS_NAMES.CONTAINER}`);
-            this._containerDiv.style.display = 'none';
-        },
-
-        appendToDock: function (dockElement) {
-            if (dockElement) {
-                // If it's already in the correct dock, do nothing
-                if (dockElement.contains(this._containerDiv)) {
-                    return;
-                }
-
-                // Clear any potential fallback layout styles if moving out of body
-                this._containerDiv.style.position = '';
-                this._containerDiv.style.top = '';
-                this._containerDiv.style.right = '';
-                this._containerDiv.style.zIndex = '';
-                this._containerDiv.style.background = '';
-                this._containerDiv.style.padding = '';
-                this._containerDiv.style.borderRadius = '';
-
-                dockElement.appendChild(this._containerDiv);
-                console.debug(`[${GM.info.script.name}] Playlist UI appended to dock.`);
-            } else {
-                // Only fallback to body if it's not already attached anywhere in the DOM
-                if (document.body.contains(this._containerDiv)) {
-                    return;
-                }
-
-                console.warn(`[${GM.info.script.name}] Could not find a suitable dock element for Playlist UI. Appending to body.`);
-                document.body.appendChild(this._containerDiv);
-
-                // Mirror the RecordingButton fixed layout so they line up neatly if both fallback
-                this._containerDiv.style.position = 'fixed';
-                this._containerDiv.style.top = '56px'; // Shifted down slightly so it sits right underneath the Recording Button fallback
-                this._containerDiv.style.right = '10px';
-                this._containerDiv.style.zIndex = '9999';
-                this._containerDiv.style.background = 'rgba(0,0,0,0.7)';
-                this._containerDiv.style.padding = '5px';
-                this._containerDiv.style.borderRadius = '5px';
-            }
-        },
-
-        _createButton(text, title, className, onClick) {
-            const button = document.createElement("button");
-            button.type = "button";
-            button.title = title;
-            button.className = `${Config.CLASS_NAMES.BUTTON} ${Config.CLASS_NAMES.PLAYLIST_BUTTON} ${className || ''}`;
-
-            const span = document.createElement('span');
-            span.innerText = text;
-            button.appendChild(span);
-
-            if (onClick) {
-                button.addEventListener('click', onClick);
-            }
-            return button;
-        },
-
-        _replaceButton(newButton) {
-            this._clearContainer();
-            this._currentButton = newButton;
-            this._containerDiv.appendChild(this._currentButton);
-            this._containerDiv.style.display = 'flex';
-            this._containerDiv.style.opacity = '1';
-            this._containerDiv.style.pointerEvents = 'auto';
-        },
-
-        setPending: function () {
-            if (this._containerDiv.style.display === 'flex') {
-                this._containerDiv.style.opacity = '0.5';
-                this._containerDiv.style.pointerEvents = 'none';
-                if (this._currentButton) {
-                    this._currentButton.disabled = true;
-                }
-            }
-        },
-
-        hide: function () {
-            this._containerDiv.style.display = 'none';
-            this._containerDiv.style.opacity = '1';
-            this._containerDiv.style.pointerEvents = 'auto';
-        },
-
-        resetState: function () {
-            this._clearContainer();
-            this._containerDiv.style.display = 'none';
-            this._containerDiv.style.opacity = '1';
-            this._containerDiv.style.pointerEvents = 'auto';
-        },
-
-        setStateTokenNeeded: function (onSuccessCallback) {
-            const button = this._createButton(
-                L10n.getString('tokenMissing'),
-                L10n.getString('tokenMissingTitle'),
-                Config.CLASS_NAMES.BUTTON_ERROR,
-                async () => {
+    class PlaylistButtonManagerClass extends BaseButtonManager {
+        setStateTokenNeeded(onSuccessCallback) {
+            this.setContent(new YTButton({
+                tag: 'button',
+                label: L10n.getString('tokenMissing'),
+                title: L10n.getString('tokenMissingTitle'),
+                icon: SVGIcons.alert,
+                variant: 'error',
+                onClick: async () => {
                     const token = await TokenManager.getToken(true);
                     if (token) {
                         onSuccessCallback();
                     }
                 }
-            );
-            this._replaceButton(button);
-        },
+            }));
+        }
 
-        setStateCreate: function (onClick) {
-            const button = this._createButton(L10n.getString('createPlaylist'), L10n.getString('createPlaylistTitle'), '', onClick);
-            this._replaceButton(button);
-        },
+        setStateCreate(onClick) {
+            this.setContent(new YTButton({
+                tag: 'button',
+                label: L10n.getString('createPlaylist'),
+                title: L10n.getString('createPlaylistTitle'),
+                icon: SVGIcons.listenbrainz,
+                variant: 'brand-lb',
+                onClick
+            }));
+        }
 
-        setStateSync: function (title, mbid, onClick) {
-            const link = document.createElement('a');
-            link.href = `//listenbrainz.org/playlist/${mbid}`;
-            link.title = L10n.getString('linkedToPlaylistTitle', { title });
-            link.target = '_blank';
-            link.style.textDecoration = 'none';
-            const buttonExists = this._createButton(L10n.getString('onLB'), L10n.getString('linkedToPlaylistTitle', { title }), Config.CLASS_NAMES.BUTTON_ADDED, null);
-            link.appendChild(buttonExists);
+        setStateSync(title, mbid, onClick) {
+            const linkBtn = new YTButton({
+                tag: 'a',
+                href: `//listenbrainz.org/playlist/${mbid}`,
+                target: '_blank',
+                label: L10n.getString('onLB'),
+                title: L10n.getString('linkedToPlaylistTitle', { title }),
+                icon: SVGIcons.listenbrainz,
+                variant: 'tonal'
+            });
 
-            const syncButton = this._createButton(L10n.getString('syncPlaylist'), L10n.getString('syncPlaylistTitle'), Config.CLASS_NAMES.PLAYLIST_BUTTON_SYNC, onClick);
+            const syncBtn = new YTButton({
+                tag: 'button',
+                label: L10n.getString('syncPlaylist'),
+                title: L10n.getString('syncPlaylistTitle'),
+                icon: SVGIcons.sync,
+                variant: 'sync',
+                onClick
+            });
 
-            this._clearContainer();
-            this._containerDiv.appendChild(link);
-            this._containerDiv.appendChild(syncButton);
-            this._containerDiv.style.display = 'flex';
-        },
+            this.setContent([linkBtn, syncBtn]);
+        }
 
-        setStateExists: function (title, targetUrl) {
-            const link = document.createElement('a');
+        setStateExists(title, targetUrl) {
             const uuidRegex = /^[a-f\d]{8}-[a-f\d]{4}-[a-f\d]{4}-[a-f\d]{4}-[a-f\d]{12}$/i;
-            if (uuidRegex.test(targetUrl)) {
-                link.href = `//listenbrainz.org/playlist/${targetUrl}`;
-            } else {
-                link.href = targetUrl.startsWith('http') ? targetUrl : `//${targetUrl}`;
-            }
-
-            link.title = L10n.getString('linkedToPlaylistTitle', { title });
-            link.target = '_blank';
-            link.style.textDecoration = 'none';
+            const href = uuidRegex.test(targetUrl)
+                ? `//listenbrainz.org/playlist/${targetUrl}`
+                : (targetUrl.startsWith('http') ? targetUrl : `//${targetUrl}`);
 
             const text = title === 'On LB (Multi)' ? 'On LB (Multi) ✓' : L10n.getString('onLB');
-            const button = this._createButton(text, link.title, Config.CLASS_NAMES.BUTTON_ADDED, null);
-            link.appendChild(button);
-            this._replaceButton(link);
-        },
-
-        setStateReport: function (title, mbid, openReportCallback) {
-            const link = document.createElement('a');
-            link.href = `//listenbrainz.org/playlist/${mbid}`;
-            link.title = L10n.getString('linkedToPlaylistTitle', { title });
-            link.target = '_blank';
-            link.style.textDecoration = 'none';
-            const buttonExists = this._createButton(L10n.getString('onLB'), L10n.getString('linkedToPlaylistTitle', { title }), Config.CLASS_NAMES.BUTTON_ADDED, null);
-            link.appendChild(buttonExists);
-
-            const reportButton = this._createButton(L10n.getString('viewReport'), L10n.getString('viewReportTitle'), 'lb-report-button', openReportCallback);
-
-            this._clearContainer();
-            this._containerDiv.appendChild(link);
-            this._containerDiv.appendChild(reportButton);
-            this._containerDiv.style.display = 'flex';
-        },
-
-        setStateInProgress: function (message) {
-            const button = this._createButton(message, '', '', null);
-            button.disabled = true;
-            this._replaceButton(button);
-        },
-
-        displayError: function (message) {
-            const button = this._createButton(message, '', Config.CLASS_NAMES.BUTTON_ERROR, null);
-            button.disabled = true;
-            this._replaceButton(button);
+            this.setContent(new YTButton({
+                tag: 'a',
+                href,
+                target: '_blank',
+                label: text,
+                title: L10n.getString('linkedToPlaylistTitle', { title }),
+                icon: SVGIcons.listenbrainz,
+                variant: 'tonal'
+            }));
         }
-    };
+
+        setStateReport(title, mbid, openReportCallback) {
+            const linkBtn = new YTButton({
+                tag: 'a',
+                href: `//listenbrainz.org/playlist/${mbid}`,
+                target: '_blank',
+                label: L10n.getString('onLB'),
+                title: L10n.getString('linkedToPlaylistTitle', { title }),
+                icon: SVGIcons.listenbrainz,
+                variant: 'tonal'
+            });
+
+            const reportBtn = new YTButton({
+                tag: 'button',
+                label: L10n.getString('viewReport'),
+                title: L10n.getString('viewReportTitle'),
+                icon: SVGIcons.report,
+                variant: 'report',
+                onClick: openReportCallback
+            });
+
+            this.setContent([linkBtn, reportBtn]);
+        }
+
+        setStateInProgress(message) {
+            this.setContent(new YTButton({
+                tag: 'button',
+                label: message,
+                title: message,
+                icon: SVGIcons.spinner,
+                variant: 'tonal',
+                disabled: true
+            }));
+        }
+    }
+    const PlaylistButtonManager = new PlaylistButtonManagerClass();
+
+    /**
+     * Manages the creation, display, and state of the MusicBrainz channel page button.
+     */
+    class ChannelButtonManagerClass extends BaseButtonManager {
+        constructor() {
+            super('ytFlexibleActionsViewModelAction channel-mb-holder');
+            this._button = new YTButton({
+                tag: 'a',
+                label: L10n.getString('loading'),
+                title: L10n.getString('loading'),
+                icon: SVGIcons.musicbrainz,
+                variant: 'tonal',
+                disabled: true
+            });
+            this._containerDiv.appendChild(this._button.container);
+        }
+
+        setPending(isPending = true) {
+            super.setPending(isPending);
+            if (this._button) {
+                this._button.setPending(isPending);
+            }
+            if (isPending) {
+                this.show();
+            }
+        }
+
+        displayLinkedEntity(targetType, entityId, entityName) {
+            const formattedType = targetType.charAt(0).toUpperCase() + targetType.slice(1);
+            let label = L10n.getString('onMB');
+            if (targetType === 'artist') {
+                label = L10n.getString('onMBArtist') || 'Artist on MB ✓';
+            } else if (targetType === 'label') {
+                label = L10n.getString('onMBLabel') || 'Label on MB ✓';
+            } else {
+                label = `${formattedType} on MB ✓`;
+            }
+
+            const title = `Linked to ${formattedType}: ${entityName || entityId}`;
+
+            this._button.update({
+                tag: 'a',
+                href: `//musicbrainz.org/${targetType}/${entityId}`,
+                target: '_blank',
+                label: label,
+                title: title,
+                icon: SVGIcons.musicbrainz,
+                variant: 'tonal',
+                disabled: false
+            });
+            this.show();
+        }
+
+        displayMultiLinked(urlEntityId) {
+            this._button.update({
+                tag: 'a',
+                href: `//musicbrainz.org/url/${urlEntityId}`,
+                target: '_blank',
+                label: L10n.getString('onMBMulti'),
+                title: L10n.getString('linkedToMultiTitle'),
+                icon: SVGIcons.musicbrainz,
+                variant: 'tonal',
+                disabled: false
+            });
+            this.show();
+        }
+
+        displaySearchOrAdd(channelTitle, targetUrl, urlsToInvalidate = []) {
+            const cleanUrl = targetUrl || location.href.split('?')[0];
+            const createUrl = `//musicbrainz.org/artist/create?edit-artist.name=${encodeURIComponent(channelTitle)}&edit-artist.url.0.text=${encodeURIComponent(cleanUrl)}`;
+
+            this._button.update({
+                tag: 'a',
+                href: createUrl,
+                target: '_blank',
+                label: L10n.getString('searchAddMB') || 'Add to MB',
+                title: L10n.getString('searchAddMBTitle', { name: channelTitle }),
+                icon: SVGIcons.musicbrainz,
+                variant: 'brand-mb',
+                disabled: false
+            });
+
+            if (urlsToInvalidate && urlsToInvalidate.length > 0) {
+                const invalidateCache = () => {
+                    console.debug(`[${GM.info.script.name}] Channel 'Add to MB' clicked. Invalidate cache:`, urlsToInvalidate);
+                    YouTubeMusicBrainzImporter._mbApi.invalidateCacheForUrl(urlsToInvalidate);
+                };
+                this._button.element.addEventListener('mousedown', invalidateCache, { once: true });
+            }
+
+            this.show();
+        }
+
+        displayError(message) {
+            this._button.update({
+                tag: 'button',
+                label: message,
+                title: message,
+                icon: SVGIcons.alert,
+                variant: 'error',
+                disabled: true
+            });
+            this.show();
+        }
+    }
+    const ChannelButtonManager = new ChannelButtonManagerClass();
 
     /**
      * High-level logic for creating and syncing ListenBrainz playlists.
@@ -1453,7 +1987,7 @@
 
             } catch (error) {
                 PlaylistButtonManager.displayError('Creation Failed');
-                console.error("Error creating playlist:", error);
+                console.error(`[${GM.info.script.name}] Error creating playlist:`, error);
             }
         },
 
@@ -1553,7 +2087,7 @@
 
             } catch (error) {
                 PlaylistButtonManager.displayError('Sync Failed');
-                console.error("Error syncing playlist:", error);
+                console.error(`[${GM.info.script.name}] Error syncing playlist:`, error);
             }
         },
     };
@@ -1564,11 +2098,20 @@
     const YouTubeMusicBrainzImporter = {
         _processingVideoId: null,
         _currentProcessingPromise: null,
+        _processingChannelKey: null,
+        _currentChannelProcessingPromise: null,
         _mbApi: null,
 
         lookupMbUrls: async function (canonicalUrls) {
             try {
-                return await this._mbApi.lookupUrl(canonicalUrls, ['recording-rels', 'artist-rels']);
+                return await this._mbApi.lookupUrl(canonicalUrls, [
+                    'recording-rels',
+                    'artist-rels',
+                    'label-rels',
+                    'place-rels',
+                    'event-rels',
+                    'series-rels'
+                ]);
             } catch (error) {
                 if (error.name === 'PermanentError') {
                     console.debug(`[${GM.info.script.name}] A URL was not found in MusicBrainz (404), which is expected.`);
@@ -1591,7 +2134,7 @@
 
 
         /**
-         * Initializes the application: injects CSS and sets up observers.
+         * Initializes the application: injects CSS, initializes managers, and sets up observers.
          */
         init: function () {
             this._mbApi = new MusicBrainzAPI({ user_agent: USER_AGENT });
@@ -1600,9 +2143,10 @@
             TokenManager.init(); // Initialize token manager
             RecordingButtonManager.init();
             PlaylistButtonManager.init(); // Initialize playlist button manager
+            ChannelButtonManager.init(); // Initialize channel button manager
             this._setupObservers();
 
-            this.triggerUpdate(DOMScanner.getVideoId());
+            this._routePage();
         },
 
         /**
@@ -1615,96 +2159,144 @@
                 style.setAttribute('type', 'text/css');
                 style.textContent = `
                     .${Config.CLASS_NAMES.CONTAINER} {
-                        /* Add any container specific styles here if needed */
+                        display: inline-flex;
+                        align-items: center;
+                        align-self: center;
+                        gap: 8px;
+                        margin-left: 8px;
                     }
-                    .dashbox {
-                        padding-bottom: 4px;
+                    yt-flexible-actions-view-model .${Config.CLASS_NAMES.CONTAINER},
+                    .ytFlexibleActionsViewModelAction.${Config.CLASS_NAMES.CONTAINER} {
+                        margin-left: 0;
                     }
-                    .button-area {
-                        display: flex;
-                        padding: 5px;
+                    .${Config.CLASS_NAMES.BUTTON_RENDERER} {
+                        display: inline-flex;
+                        align-items: center;
+                        align-self: center;
                     }
-                    .button-favicon {
-                        height: 1.25em;
-                        margin-left: 5px;
+                    .musicbrainz-button-renderer .yt-spec-button-shape-next,
+                    .musicbrainz-button-renderer .ytSpecButtonShapeNextHost {
+                        align-self: center;
                     }
                     .holder {
                         height: 100%;
-                        display: flex;
+                        display: inline-flex;
                         align-items: center;
-                        transition: opacity 0.15s ease;
                     }
-                    .${Config.CLASS_NAMES.BUTTON} {
-                        border-radius: 18px;
-                        border: none;
-                        padding: 0px 10px;
-                        font-size: 14px;
-                        height: 36px;
-                        color: white;
-                        cursor: pointer;
-                        display: flex;
+                    .musicbrainz-userscript-container form {
+                        display: inline-flex;
                         align-items: center;
-                        text-decoration: none;
-                        margin: 0px 0 0 8px;
-                        background-color: #f8f8f8;
-                        color: #0f0f0f;
-                        transition: background-color .3s;
+                        align-self: center;
+                        margin: 0;
+                        padding: 0;
                     }
-                    .${Config.CLASS_NAMES.BUTTON}:hover {
-                        background-color: #e0e0e0;
+
+                    /* Ensure SVG icons scale cleanly inside YouTube icon slot */
+                    .musicbrainz-button-renderer .yt-spec-button-shape-next__icon svg,
+                    .musicbrainz-button-renderer .ytSpecButtonShapeNextIcon svg {
+                        width: 100%;
+                        height: 100%;
+                        max-width: 20px;
+                        max-height: 20px;
+                        display: block;
                     }
-                    .${Config.CLASS_NAMES.BUTTON}[disabled] {
-                        opacity: 0.7;
-                        cursor: not-allowed;
+
+                    /* Brand Modifiers */
+                    .musicbrainz-button-renderer .yt-spec-button-shape-next--brand-mb,
+                    .musicbrainz-button-renderer .ytSpecButtonShapeNextFilled.yt-spec-button-shape-next--brand-mb {
+                        background-color: #BA478F !important;
+                        color: #ffffff !important;
                     }
-                    .${Config.CLASS_NAMES.BUTTON}.${Config.CLASS_NAMES.BUTTON_READY} {
-                        background-color: #BA478F;
-                        color: white;
+                    .musicbrainz-button-renderer .yt-spec-button-shape-next--brand-mb:hover,
+                    .musicbrainz-button-renderer .ytSpecButtonShapeNextFilled.yt-spec-button-shape-next--brand-mb:hover {
+                        background-color: #a53f7c !important;
                     }
-                    .${Config.CLASS_NAMES.BUTTON}.${Config.CLASS_NAMES.BUTTON_READY}:hover {
-                        background-color: #a53f7c;
+
+                    .musicbrainz-button-renderer .yt-spec-button-shape-next--brand-lb,
+                    .musicbrainz-button-renderer .ytSpecButtonShapeNextFilled.yt-spec-button-shape-next--brand-lb {
+                        background-color: #EB743B !important;
+                        color: #ffffff !important;
                     }
-                    .${Config.CLASS_NAMES.BUTTON}.${Config.CLASS_NAMES.BUTTON_ADDED} {
-                        background-color: #a4a4a4;
-                        color: white;
+                    .musicbrainz-button-renderer .yt-spec-button-shape-next--brand-lb:hover,
+                    .musicbrainz-button-renderer .ytSpecButtonShapeNextFilled.yt-spec-button-shape-next--brand-lb:hover {
+                        background-color: #d16631 !important;
                     }
-                    .${Config.CLASS_NAMES.BUTTON}.${Config.CLASS_NAMES.BUTTON_ADDED}:hover {
-                        background-color: #8c8c8c;
+
+                    .musicbrainz-button-renderer .yt-spec-button-shape-next--update,
+                    .musicbrainz-button-renderer .ytSpecButtonShapeNextFilled.yt-spec-button-shape-next--update {
+                        background-color: #065fd4 !important;
+                        color: #ffffff !important;
                     }
-                    .${Config.CLASS_NAMES.BUTTON}.${Config.CLASS_NAMES.BUTTON_UPDATE} {
-                        background-color: #3ea6ff; /* A different color to stand out */
-                        color: white;
+                    html[dark] .musicbrainz-button-renderer .yt-spec-button-shape-next--update,
+                    [dark] .musicbrainz-button-renderer .yt-spec-button-shape-next--update {
+                        background-color: #3ea6ff !important;
+                        color: #0f0f0f !important;
                     }
-                    .${Config.CLASS_NAMES.BUTTON}.${Config.CLASS_NAMES.BUTTON_UPDATE}:hover {
-                        background-color: #3593e0;
+                    .musicbrainz-button-renderer .yt-spec-button-shape-next--update:hover {
+                        background-color: #004fc4 !important;
                     }
-                    .${Config.CLASS_NAMES.BUTTON}.${Config.CLASS_NAMES.BUTTON_ERROR} {
-                        background-color: #cc0000;
-                        color: white;
+                    html[dark] .musicbrainz-button-renderer .yt-spec-button-shape-next--update:hover,
+                    [dark] .musicbrainz-button-renderer .yt-spec-button-shape-next--update:hover {
+                        background-color: #65b8ff !important;
                     }
-                    .${Config.CLASS_NAMES.BUTTON}.${Config.CLASS_NAMES.BUTTON_INFO} {
-                        background-color: #3ea6ff;
-                        color: white;
+
+                    .musicbrainz-button-renderer .yt-spec-button-shape-next--sync,
+                    .musicbrainz-button-renderer .ytSpecButtonShapeNextFilled.yt-spec-button-shape-next--sync {
+                        background-color: #007bff !important;
+                        color: #ffffff !important;
                     }
-                    .${Config.CLASS_NAMES.PLAYLIST_BUTTON} {
-                        background-color: #eb743b;
-                        color: white;
+                    .musicbrainz-button-renderer .yt-spec-button-shape-next--sync:hover {
+                        background-color: #0069d9 !important;
                     }
-                    .${Config.CLASS_NAMES.PLAYLIST_BUTTON}:hover {
-                        background-color: #d16631;
+
+                    .musicbrainz-button-renderer .yt-spec-button-shape-next--report,
+                    .musicbrainz-button-renderer .ytSpecButtonShapeNextFilled.yt-spec-button-shape-next--report {
+                        background-color: #f59e0b !important;
+                        color: #111827 !important;
                     }
-                    .${Config.CLASS_NAMES.PLAYLIST_BUTTON}.${Config.CLASS_NAMES.PLAYLIST_BUTTON_SYNC} {
-                        background-color: #007bff;
+                    .musicbrainz-button-renderer .yt-spec-button-shape-next--report:hover {
+                        background-color: #d97706 !important;
                     }
-                    .${Config.CLASS_NAMES.PLAYLIST_BUTTON}.${Config.CLASS_NAMES.PLAYLIST_BUTTON_SYNC}:hover {
-                        background-color: #0069d9;
+
+                    .musicbrainz-button-renderer .yt-spec-button-shape-next--error,
+                    .musicbrainz-button-renderer .ytSpecButtonShapeNextFilled.yt-spec-button-shape-next--error {
+                        background-color: #cc0000 !important;
+                        color: #ffffff !important;
                     }
-                    .lb-report-button {
-                        background-color: #ffc107 !important;
-                        color: black !important;
+                    .musicbrainz-button-renderer .yt-spec-button-shape-next--error:hover {
+                        background-color: #b30000 !important;
                     }
-                    .lb-report-button:hover {
-                        background-color: #e0a800 !important;
+
+                    .musicbrainz-button-renderer .yt-spec-button-shape-next--info {
+                        background-color: #3ea6ff !important;
+                        color: #0f0f0f !important;
+                    }
+
+                    .musicbrainz-button-renderer .yt-spec-button-shape-next__icon svg:not(.yt-spec-button-shape-next__spinner),
+                    .musicbrainz-button-renderer .ytSpecButtonShapeNextIcon svg:not(.yt-spec-button-shape-next__spinner) {
+                        fill: currentColor;
+                    }
+
+                    .musicbrainz-button-renderer .yt-spec-button-shape-next__spinner,
+                    .musicbrainz-button-renderer svg.yt-spec-button-shape-next__spinner,
+                    .musicbrainz-button-renderer .yt-spec-button-shape-next__spinner circle,
+                    .musicbrainz-button-renderer .yt-spec-button-shape-next__spinner path {
+                        fill: none !important;
+                    }
+
+                    .musicbrainz-button-renderer [disabled],
+                    .musicbrainz-button-renderer .disabled {
+                        opacity: 0.6 !important;
+                        cursor: not-allowed !important;
+                        pointer-events: none !important;
+                    }
+                    @keyframes yt-btn-spin {
+                        0% { transform: rotate(0deg); }
+                        100% { transform: rotate(360deg); }
+                    }
+                    .yt-spec-button-shape-next__spinner {
+                        animation: yt-btn-spin 0.8s linear infinite;
+                        transform-origin: center center;
                     }
                 `;
                 head.appendChild(style);
@@ -1715,11 +2307,130 @@
          * Sets up observers for YouTube's SPA navigation.
          */
         _setupObservers: function () {
-            document.addEventListener('yt-navigate-finish', () => {
-                console.debug(`[${GM.info.script.name}] 'yt-navigate-finish' event detected.`);
-                const currentVideoId = DOMScanner.getVideoId();
-                this.triggerUpdate(currentVideoId);
+            document.addEventListener('yt-navigate-finish', (event) => {
+                this._routePage(event);
             });
+        },
+
+        /**
+         * Evaluates current URL and coordinates page-specific logic.
+         * @param {CustomEvent} [event]
+         */
+        _routePage: function (event) {
+            const currentVideoId = DOMScanner.getVideoId();
+            if (currentVideoId) {
+                ChannelButtonManager.hide();
+                this.triggerUpdate(currentVideoId);
+            } else if (DOMScanner.isChannelPage()) {
+                RecordingButtonManager.hide();
+                PlaylistButtonManager.hide();
+                ChannelButtonManager.hide();
+                this.triggerChannelUpdate(event);
+            } else {
+                RecordingButtonManager.hide();
+                PlaylistButtonManager.hide();
+                ChannelButtonManager.hide();
+                this._processingVideoId = null;
+                this._processingChannelKey = null;
+            }
+        },
+
+        /**
+         * Triggers the channel lookup and UI update.
+         * @param {CustomEvent} [event]
+         */
+        triggerChannelUpdate: function (event) {
+            const channelData = DOMScanner.getChannelData(event);
+            const channelKey = channelData.channelId || channelData.handle || location.pathname;
+
+            if (this._processingChannelKey === channelKey && this._currentChannelProcessingPromise) {
+                return;
+            }
+
+            this._processingChannelKey = channelKey;
+
+            this._currentChannelProcessingPromise = this._performChannelUpdate(channelData)
+                .finally(() => {
+                    if (this._processingChannelKey === channelKey) {
+                        this._processingChannelKey = null;
+                        this._currentChannelProcessingPromise = null;
+                    }
+                });
+        },
+
+        /**
+         * Performs the channel lookup and renders the appropriate MusicBrainz channel action.
+         * @param {{ channelId: string|null, handle: string|null, channelTitle: string, canonicalUrl: string|null, handleUrl: string|null }} channelData
+         */
+        _performChannelUpdate: async function (channelData) {
+            const dockElement = await DOMScanner.getChannelAnchorElement();
+            ChannelButtonManager.appendToDock(dockElement);
+
+            const urlsToQuery = [];
+            if (channelData.canonicalUrl) urlsToQuery.push(channelData.canonicalUrl);
+            if (channelData.handleUrl && !urlsToQuery.includes(channelData.handleUrl)) {
+                urlsToQuery.push(channelData.handleUrl);
+            }
+
+            // Also fallback to cleaned current URL if not already present
+            const cleanPath = location.pathname.replace(/\/videos$|\/featured$|\/playlists$|\/community$|\/about$|\/shorts$|\/streams$/, '');
+            const cleanLocationUrl = `${location.origin}${cleanPath}`;
+            if (!urlsToQuery.includes(cleanLocationUrl) && cleanLocationUrl.includes('youtube.com')) {
+                urlsToQuery.push(cleanLocationUrl);
+            }
+
+            if (urlsToQuery.length === 0) {
+                ChannelButtonManager.hide();
+                return;
+            }
+
+            const cachedUrlMap = new Map(urlsToQuery.map(u => [u, this._mbApi.cache.has(u)]));
+            const isAllCached = urlsToQuery.every(u => cachedUrlMap.get(u));
+            if (!isAllCached) {
+                ChannelButtonManager.setPending();
+            }
+
+            try {
+                const mbResults = await this.lookupMbUrls(urlsToQuery);
+
+                // Collect all matched entities across queried URLs
+                const foundEntities = [];
+                let urlEntityId = null;
+
+                for (const url of urlsToQuery) {
+                    const mbUrlEntity = mbResults.get(url);
+                    if (mbUrlEntity) {
+                        if (!urlEntityId) urlEntityId = mbUrlEntity.id;
+                        for (const rel of (mbUrlEntity.relations || [])) {
+                            const targetType = rel['target-type'];
+                            const targetObj = targetType ? rel[targetType] : null;
+                            if (targetObj && targetObj.id) {
+                                const id = targetObj.id;
+                                const name = targetObj.name || targetObj.title || '';
+                                if (!foundEntities.some(e => e.id === id)) {
+                                    foundEntities.push({ targetType, id, name });
+                                }
+                            }
+                        }
+                    }
+                }
+
+                DOMScanner.logChannelSummary(channelData, urlsToQuery, mbResults, cachedUrlMap);
+
+                if (foundEntities.length === 1) {
+                    const { targetType, id, name } = foundEntities[0];
+                    ChannelButtonManager.displayLinkedEntity(targetType, id, name);
+                } else if (foundEntities.length > 1) {
+                    ChannelButtonManager.displayMultiLinked(urlEntityId);
+                } else {
+                    ChannelButtonManager.displaySearchOrAdd(channelData.channelTitle, channelData.canonicalUrl || channelData.handleUrl, urlsToQuery);
+                }
+            } catch (error) {
+                console.error(`[${GM.info.script.name}] Error in channel lookup:`, error);
+                const apiName = error.apiName || 'API';
+                const errorMessage = error.status === 503 ? L10n.getString('errorApiRateLimit', { apiName }) : L10n.getString('errorProcessing');
+                ChannelButtonManager.displayError(errorMessage);
+            }
         },
 
         /**
@@ -1729,7 +2440,6 @@
          */
         triggerUpdate: function (videoId) {
             if (this._processingVideoId === videoId && this._currentProcessingPromise) {
-                console.debug(`[${GM.info.script.name}] Already processing video ID: ${videoId}. Skipping trigger.`);
                 return;
             }
 
@@ -1738,12 +2448,10 @@
                 PlaylistButtonManager.hide();
                 this._processingVideoId = null;
                 this._currentProcessingPromise = null;
-                console.debug(`[${GM.info.script.name}] Not a YouTube video page. Hiding button.`);
                 return;
             }
 
             this._processingVideoId = videoId;
-            console.debug(`[${GM.info.script.name}] Triggering update for video ID: ${videoId}`);
 
             this._currentProcessingPromise = this._performUpdate(videoId)
                 .finally(() => {
@@ -1774,19 +2482,18 @@
                 return;
             }
 
-            try {
-                const rawPlayerResponse = InPageDataExtractor.getRawPlayerResponse();
-                InPageDataExtractor.logExtractionSummary(ytData, rawPlayerResponse, videoId);
-            } catch (diagError) {
-                console.error(`[${GM.info.script.name}] Error logging extraction summary:`, diagError);
-            }
-
             const canonicalYtUrl = new URL(`https://www.youtube.com/watch?v=${videoId}`).toString();
             const youtubeChannelUrl = ytData.snippet.channelId ? new URL(`https://www.youtube.com/channel/${ytData.snippet.channelId}`).toString() : null;
+            const cleanHandle = ytData.snippet.channelHandle ? (ytData.snippet.channelHandle.startsWith('@') ? ytData.snippet.channelHandle : `@${ytData.snippet.channelHandle}`) : null;
+            const youtubeHandleUrl = cleanHandle ? new URL(`https://www.youtube.com/${cleanHandle}`).toString() : null;
 
-            const isVideoCached = this._mbApi.cache.has(canonicalYtUrl);
-            const isChannelCached = youtubeChannelUrl ? this._mbApi.cache.has(youtubeChannelUrl) : true;
-            const isFullyCached = isVideoCached && isChannelCached;
+            // Prepare Single Query Array (Batched lookup)
+            const urlsToQuery = [canonicalYtUrl];
+            if (youtubeChannelUrl) urlsToQuery.push(youtubeChannelUrl);
+            if (youtubeHandleUrl && !urlsToQuery.includes(youtubeHandleUrl)) urlsToQuery.push(youtubeHandleUrl);
+
+            const cachedUrlMap = new Map(urlsToQuery.map(u => [u, this._mbApi.cache.has(u)]));
+            const isFullyCached = urlsToQuery.every(u => cachedUrlMap.get(u));
 
             // If uncached, set pending dimmed state while querying to avoid layout jump
             if (!isFullyCached) {
@@ -1794,15 +2501,20 @@
                 PlaylistButtonManager.setPending();
             }
 
-            // Prepare Single Query Array (Batched lookup)
-            const urlsToQuery = [canonicalYtUrl];
-            if (youtubeChannelUrl) urlsToQuery.push(youtubeChannelUrl);
-
             // Fetch MusicBrainz Data (single batched HTTP request for both video and channel)
             const mbResults = await this.lookupMbUrls(urlsToQuery);
 
+            const mbVideoUrlEntity = mbResults.get(canonicalYtUrl);
+            const artistMbid = youtubeChannelUrl ? this._extractArtistMbid(mbResults.get(youtubeChannelUrl)) : null;
+
+            try {
+                DOMScanner.logVideoSummary(ytData, urlsToQuery, mbResults, cachedUrlMap);
+            } catch (diagError) {
+                console.error(`[${GM.info.script.name}] Error logging video summary:`, diagError);
+            }
+
             // ===== Run Recording Importer Logic and Playlist Logic in Parallel =====
-            const recordingPromise = this._handleRecordingImport(ytData, canonicalYtUrl, youtubeChannelUrl, mbResults);
+            const recordingPromise = this._handleRecordingImport(ytData, canonicalYtUrl, youtubeChannelUrl, mbResults, mbVideoUrlEntity, artistMbid);
             const playlistPromise = this._handlePlaylistLogic(ytData, canonicalYtUrl);
 
             await Promise.all([recordingPromise, playlistPromise]);
@@ -1815,27 +2527,29 @@
          * @param {string} canonicalYtUrl - Canonical watch URL.
          * @param {string|null} youtubeChannelUrl - Canonical channel URL if available.
          * @param {Map<string, Object|null>} mbResults - Map of MusicBrainz lookup results.
+         * @param {Object|null} [mbVideoUrlEntity] - Resolved video URL entity if pre-computed.
+         * @param {string|null} [artistMbid] - Resolved artist MBID if pre-computed.
          * @returns {Promise<void>}
          */
-        _handleRecordingImport: async function (ytData, canonicalYtUrl, youtubeChannelUrl, mbResults) {
+        _handleRecordingImport: async function (ytData, canonicalYtUrl, youtubeChannelUrl, mbResults, mbVideoUrlEntity, artistMbid) {
             try {
-                const mbVideoUrlEntity = mbResults.get(canonicalYtUrl);
-                const artistMbid = youtubeChannelUrl ? this._extractArtistMbid(mbResults.get(youtubeChannelUrl)) : null;
+                const videoUrlEntity = mbVideoUrlEntity !== undefined ? mbVideoUrlEntity : mbResults.get(canonicalYtUrl);
+                const artistId = artistMbid !== undefined ? artistMbid : (youtubeChannelUrl ? this._extractArtistMbid(mbResults.get(youtubeChannelUrl)) : null);
 
-                if (mbVideoUrlEntity) {
-                    const allRelevantRecordingRelations = (mbVideoUrlEntity.relations || []).filter(
+                if (videoUrlEntity) {
+                    const allRelevantRecordingRelations = (videoUrlEntity.relations || []).filter(
                         rel => rel['type-id'] === Config.MUSICBRAINZ_FREE_STREAMING_RELATION_TYPE_ID &&
                             rel['target-type'] === "recording" &&
                             rel.recording && rel.recording.id
                     );
 
                     if (allRelevantRecordingRelations.length > 0) {
-                        RecordingButtonManager.displayExistingButton(allRelevantRecordingRelations, mbVideoUrlEntity.id, ytData, canonicalYtUrl);
+                        RecordingButtonManager.displayExistingButton(allRelevantRecordingRelations, videoUrlEntity.id, ytData, canonicalYtUrl);
                     } else {
-                        RecordingButtonManager.prepareAddButton(ytData, canonicalYtUrl, artistMbid, ytData.id);
+                        RecordingButtonManager.prepareAddButton(ytData, canonicalYtUrl, artistId, ytData.id);
                     }
                 } else {
-                    RecordingButtonManager.prepareAddButton(ytData, canonicalYtUrl, artistMbid, ytData.id);
+                    RecordingButtonManager.prepareAddButton(ytData, canonicalYtUrl, artistId, ytData.id);
                 }
             } catch (error) {
                 console.error(`[${GM.info.script.name}] Error in recording import logic:`, error);
