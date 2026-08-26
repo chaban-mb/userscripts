@@ -182,7 +182,7 @@
      * @param {string} rawText - The raw original string being evaluated.
      * @returns {number} The resolved index of the artist part, or -1 if unresolvable.
      */
-    function resolveArtistPartIndex(parts, pristineLower, editorLower, structure, rawText) {
+    function resolveArtistPartIndex(parts, pristineLower, editorLower, structure, rawText, currentAC = null) {
         let idx = findArtistPartIndex(parts, pristineLower, editorLower);
         if (idx !== -1) {
             const artistPartLower = parts[idx].toLowerCase();
@@ -195,6 +195,20 @@
             }
         }
         if (idx !== -1) return idx;
+
+        // Fallback 1: If currentAC has no primary artist remaining (e.g. all seeded artists were removed as remixers,
+        // or currentAC only contains the guest artist that native MB just appended), and title is 2-part "Artist - Title",
+        // resolve parts[0] as the primary artist.
+        if (parts.length === 2 && currentAC) {
+            const featNames = structure.featured.map(f => cleanStringForComparison(f.name));
+            const remainingNonFeatAC = currentAC.filter(n => {
+                const cleanN = cleanStringForComparison(n.name);
+                return !featNames.includes(cleanN) && !structure.featured.some(f => isPrefixWithSeparator(n.name, f.name));
+            });
+            if (remainingNonFeatAC.length === 0) {
+                return 0;
+            }
+        }
 
         if (parts.length === 2 && structure.joinPhrase) {
             const joinPhraseStr = structure.joinPhrase.trim();
@@ -224,7 +238,12 @@
                     lowerRaw.includes(parts[1].toLowerCase() + structure.joinPhrase.toLowerCase());
 
                 if (part1HasFeat && !part0HasFeat) {
-                    return 1;
+                    const part1IsKnown = pristineLower.some(a => cleanStringForComparison(a) === cleanStringForComparison(parts[1])) ||
+                        editorLower.some(a => cleanStringForComparison(a) === cleanStringForComparison(parts[1]));
+                    if (part1IsKnown) {
+                        return 1;
+                    }
+                    return -1;
                 }
 
                 if (part0HasFeat) {
@@ -505,7 +524,8 @@
                 const cleanSort = n.artist?.sort_name ? cleanStringForComparison(n.artist.sort_name) : '';
                 return !titleNamesLower.includes(cleanN) &&
                     (!cleanArt || !titleNamesLower.includes(cleanArt)) &&
-                    (!cleanSort || !titleNamesLower.includes(cleanSort));
+                    (!cleanSort || !titleNamesLower.includes(cleanSort)) &&
+                    !parsedTitleArtists.some(ta => isPrefixWithSeparator(n.name, ta.name) || isPrefixWithSeparator(n.artist?.name, ta.name));
             });
 
             const orderedTitleArtists = parsedTitleArtists.map(ta => mapParsedToCurrentArtist(ta, currentNames));
@@ -583,7 +603,8 @@
         const parts = title.split(separatorPattern).map(p => p.trim()).filter(Boolean);
         if (parts.length > 1) {
             for (let i = 1; i < parts.length; i++) {
-                const candidates = extractRemixerCandidates(parts[i]);
+                const unbracketed = parts[i].replace(/\([^)]+\)|\[[^\]]+\]|【[^】]+】/g, '').trim();
+                const candidates = extractRemixerCandidates(unbracketed);
                 if (candidates.some(matchesRemixer)) {
                     return true;
                 }
@@ -687,6 +708,10 @@
                     setInputValue(acInputEl, node.name);
                 }
             });
+            const singleArtistInput = document.getElementById('ac-source-single-artist');
+            if (singleArtistInput && artistNodes.length === 1 && singleArtistInput.value !== artistNodes[0].name) {
+                setInputValue(singleArtistInput, artistNodes[0].name);
+            }
         }, 60);
     }
 
@@ -698,7 +723,8 @@
     }
 
     function getBooleanCookie(name) {
-        const value = document.cookie.split('; ').find(row => row.startsWith(name + '='))?.split('=')[1];
+        if (typeof document === 'undefined' || !document.cookie) return false;
+        const value = document.cookie.split(/;\s*/).find(row => row.startsWith(name + '='))?.split('=')[1]?.replace(/;$/, '');
         return value === 'true';
     }
 
@@ -956,7 +982,12 @@
                 if (seen.keys.some(k => keys.includes(k))) return true;
                 if (!names[i].artist?.gid && !names[i].artist?.id) {
                     const entryName = names[i].name;
-                    if (isPrefixWithSeparator(entryName, seen.name) || isPrefixWithSeparator(entryName, seen.artistName)) {
+                    if (isPrefixWithSeparator(entryName, seen.name) || isPrefixWithSeparator(entryName, seen.artistName) ||
+                        isPrefixWithSeparator(seen.name, entryName) || isPrefixWithSeparator(seen.artistName, entryName)) {
+                        return true;
+                    }
+                } else if (seen.name && names[i].name) {
+                    if (isPrefixWithSeparator(seen.name, names[i].name) || isPrefixWithSeparator(names[i].name, seen.name)) {
                         return true;
                     }
                 }
@@ -978,7 +1009,9 @@
                 const isDuplicateFeatured = firstFeatJoinIdx !== -1 && i > firstFeatJoinIdx;
 
                 const isMisparsedSuffix = isPrefixWithSeparator(names[i].name, dedupedNames[survivorIdx].name) ||
-                    isPrefixWithSeparator(names[i].name, dedupedNames[survivorIdx].artist?.name);
+                    isPrefixWithSeparator(names[i].name, dedupedNames[survivorIdx].artist?.name) ||
+                    isPrefixWithSeparator(dedupedNames[survivorIdx].name, names[i].name) ||
+                    isPrefixWithSeparator(dedupedNames[survivorIdx].artist?.name, names[i].name);
                 const keepDuplicate = isDuplicateFeatured && !isMisparsedSuffix;
 
                 if (keepDuplicate) {
@@ -1365,13 +1398,14 @@
                         originalArtists,
                         input
                     });
-                }
-
-                if (input) {
+                    if (input) {
+                        pristineValues.set(input, input.value);
+                        pristineArtistNames.set(input, getCurrentArtistNames(button));
+                    }
+                } else if (input) {
                     removeArtistFromTitle(input, button);
                     pristineValues.set(input, input.value);
                     pristineArtistNames.set(input, getCurrentArtistNames(button));
-
                 }
             }, 100);
         }, true);
@@ -1564,7 +1598,7 @@
             const editorLower = editorArtists.map(a => a.toLowerCase());
 
             const artistPartIndex = parts.length > 1
-                ? resolveArtistPartIndex(parts, pristineLower, editorLower, structure, title)
+                ? resolveArtistPartIndex(parts, pristineLower, editorLower, structure, title, currentAC)
                 : -1;
 
             if (artistPartIndex !== -1) {
@@ -1583,6 +1617,8 @@
 
                 if (currentAC?.length) {
                     currentAC = mergeArtistCredits(currentAC, parsedTitleArtists, pristineArtists);
+                } else {
+                    currentAC = parsedTitleArtists.map(a => ({ ...a, artist: null }));
                 }
 
                 finalTitle = newCoreTitle;
@@ -1608,6 +1644,8 @@
                         return n;
                     });
                     currentAC = mergeArtistCredits(preppedACNames, structure.featured, pristineArtists);
+                } else {
+                    currentAC = structure.featured.map(f => ({ ...f, artist: null }));
                 }
 
                 finalTitle = structure.core;

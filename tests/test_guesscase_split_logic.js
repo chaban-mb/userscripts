@@ -95,10 +95,7 @@ const testConsole = {
 
 const context = {
     window: windowMock,
-    document: {
-        ...domMock,
-        cookie: ''
-    },
+    document: domMock,
     navigator: windowMock.navigator,
     MutationObserver: MutationObserverMock,
     Event: EventMock,
@@ -1737,6 +1734,81 @@ runTestCase('53. [Synthetic] Guardrail: Does NOT sync when release primary artis
     assert.strictEqual(release.artistCredit().names[0].name, 'Remixer Guy');
 }, () => {});
 
+// Case 54
+runTestCase('54. [Synthetic] Standalone recording remix layout with seeded uploader AC: "Zynthesiren - Ragebait ft. Kasane Teto (Levia Remix)"', () => {
+    domMock.cookie = 'guesscase_remove_remixers=true;';
+    const postNativeAC = [
+        { name: 'Levia', joinPhrase: ' ft. ', artist: null },
+        { name: 'Kasane Teto (Levia Remix)', joinPhrase: '', artist: null }
+    ];
+    const model = {
+        name: makeObservable('Zynthesiren - Ragebait'),
+        artistCredit: makeObservable({ names: postNativeAC })
+    };
+    lib.cleanEntityModel({
+        model,
+        originalTitle: 'Zynthesiren - Ragebait ft. Kasane Teto (Levia Remix)',
+        originalArtists: ['Levia'],
+        input: { value: 'Zynthesiren - Ragebait', dispatchEvent: () => {} }
+    });
+    const ac = model.artistCredit().names;
+    assert.strictEqual(model.name(), 'Ragebait (Levia Remix)', 'Title should be Ragebait (Levia Remix)');
+    assert.strictEqual(ac.length, 2, 'AC should have 2 artists (Zynthesiren feat. Kasane Teto)');
+    assert.strictEqual(ac[0].name, 'Zynthesiren');
+    assert.strictEqual(ac[0].joinPhrase, ' ft. ');
+    assert.strictEqual(ac[1].name, 'Kasane Teto');
+    assert.strictEqual(ac[1].joinPhrase, '');
+}, () => {});
+
+// Case 55
+runTestCase('55. [Synthetic] Standalone recording remix layout with linked uploader GID: "NOS - SINCERE SERENITY ft. Kasane Teto (Levia Remix)"', () => {
+    domMock.cookie = 'guesscase_remove_remixers=true;';
+    const postNativeAC = [
+        { name: 'Levia', joinPhrase: ' ft. ', artist: { id: 2815802, gid: 'b2188184-40ca-4b1b-890c-a70680c3deb5', name: 'Levia' } },
+        { name: 'Kasane Teto (Levia Remix)', joinPhrase: '', artist: null }
+    ];
+    const model = {
+        name: makeObservable('NOS - SINCERE SERENITY'),
+        artistCredit: makeObservable({ names: postNativeAC })
+    };
+    lib.cleanEntityModel({
+        model,
+        originalTitle: 'NOS - SINCERE SERENITY ft. Kasane Teto (Levia Remix)',
+        originalArtists: ['Levia'],
+        input: { value: 'NOS - SINCERE SERENITY', dispatchEvent: () => {} }
+    });
+    const ac = model.artistCredit().names;
+    assert.strictEqual(model.name(), 'SINCERE SERENITY (Levia Remix)', 'Title should be SINCERE SERENITY (Levia Remix)');
+    assert.strictEqual(ac.length, 2, 'AC should have 2 artists (NOS feat. Kasane Teto)');
+    assert.strictEqual(ac[0].name, 'NOS');
+    assert.strictEqual(ac[0].joinPhrase, ' ft. ');
+    assert.strictEqual(ac[1].name, 'Kasane Teto');
+    assert.strictEqual(ac[1].joinPhrase, '');
+}, () => {});
+
+// Case 56
+runTestCase('56. [Synthetic] Standalone recording remix without featured artist: "Zynthesiren - Ragebait (Levia Remix)" with seeded uploader AC', () => {
+    domMock.cookie = 'guesscase_remove_remixers=true;';
+    const postNativeAC = [
+        { name: 'Levia', joinPhrase: '', artist: null }
+    ];
+    const model = {
+        name: makeObservable('Zynthesiren - Ragebait (Levia Remix)'),
+        artistCredit: makeObservable({ names: postNativeAC })
+    };
+    lib.cleanEntityModel({
+        model,
+        originalTitle: 'Zynthesiren - Ragebait (Levia Remix)',
+        originalArtists: ['Levia'],
+        input: { value: 'Zynthesiren - Ragebait (Levia Remix)', dispatchEvent: () => {} }
+    });
+    const ac = model.artistCredit().names;
+    assert.strictEqual(model.name(), 'Ragebait (Levia Remix)', 'Title should be Ragebait (Levia Remix)');
+    assert.strictEqual(ac.length, 1, 'AC should have 1 artist (Zynthesiren)');
+    assert.strictEqual(ac[0].name, 'Zynthesiren');
+    assert.strictEqual(ac[0].joinPhrase, '');
+}, () => {});
+
 console.log('\n--- Scenario B: Knockout Observable is Unavailable (DOM Fallback) ---');
 
 
@@ -1948,6 +2020,60 @@ if (mbServerAvailable) {
             featBoundary.joinPhrase.toLowerCase().includes('feat') || featBoundary.joinPhrase.includes('&'),
             `Join phrase at feat boundary is correct (got: "${featBoundary.joinPhrase}")`
         );
+    });
+
+    // Case 57
+    runTestCase('57. [E2E] Standalone recording remix E2E with native guessFeat simulation: "Zynthesiren - Ragebait ft. Kasane Teto (Levia Remix)"', () => {
+        domMock.cookie = 'guesscase_remove_remixers=true';
+        const rawTitle = 'Zynthesiren - Ragebait ft. Kasane Teto (Levia Remix)';
+        const initialACNames = [
+            { name: 'Levia', joinPhrase: '', artist: null }
+        ];
+
+        const postNativeEntity = buildPostGuessFeatEntity(rawTitle, initialACNames);
+
+        lib.cleanEntityModel({
+            model: postNativeEntity,
+            originalTitle: rawTitle,
+            originalArtists: ['Levia'],
+            input: { value: postNativeEntity.name(), dispatchEvent: () => {} }
+        });
+        this.entity = postNativeEntity;
+    }, () => {
+        const ac = this.entity.artistCredit().names;
+        assert.strictEqual(this.entity.name(), 'Ragebait (Levia Remix)', 'Title cleaned to Ragebait (Levia Remix)');
+        assert.strictEqual(ac.length, 2, 'AC contains 2 artists');
+        assert.strictEqual(ac[0].name, 'Zynthesiren');
+        assert.strictEqual(ac[0].joinPhrase.trim(), 'ft.');
+        assert.strictEqual(ac[1].name, 'Kasane Teto');
+        assert.strictEqual(ac[1].joinPhrase, '');
+    });
+
+    // Case 58
+    runTestCase('58. [E2E] Standalone recording remix E2E with linked GID & native guessFeat simulation: "NOS - SINCERE SERENITY ft. Kasane Teto (Levia Remix)"', () => {
+        domMock.cookie = 'guesscase_remove_remixers=true';
+        const rawTitle = 'NOS - SINCERE SERENITY ft. Kasane Teto (Levia Remix)';
+        const initialACNames = [
+            { name: 'Levia', joinPhrase: '', artist: { id: 2815802, gid: 'b2188184-40ca-4b1b-890c-a70680c3deb5', name: 'Levia' } }
+        ];
+
+        const postNativeEntity = buildPostGuessFeatEntity(rawTitle, initialACNames);
+
+        lib.cleanEntityModel({
+            model: postNativeEntity,
+            originalTitle: rawTitle,
+            originalArtists: ['Levia'],
+            input: { value: postNativeEntity.name(), dispatchEvent: () => {} }
+        });
+        this.entity = postNativeEntity;
+    }, () => {
+        const ac = this.entity.artistCredit().names;
+        assert.strictEqual(this.entity.name(), 'SINCERE SERENITY (Levia Remix)', 'Title cleaned to SINCERE SERENITY (Levia Remix)');
+        assert.strictEqual(ac.length, 2, 'AC contains 2 artists');
+        assert.strictEqual(ac[0].name, 'NOS');
+        assert.strictEqual(ac[0].joinPhrase.trim(), 'ft.');
+        assert.strictEqual(ac[1].name, 'Kasane Teto');
+        assert.strictEqual(ac[1].joinPhrase, '');
     });
 
 } else {
