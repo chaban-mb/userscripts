@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        YouTube: MusicBrainz Importer
 // @namespace   https://musicbrainz.org/user/chaban
-// @version     2.12.0
+// @version     2.12.1
 // @description Imports YouTube videos to MusicBrainz as a new standalone recording
 // @tag         ai-created
 // @author      nikki, RustyNova, chaban
@@ -916,7 +916,7 @@
                 return null;
             }
 
-            const { parsedTracks } = Utils.parseTracklist(description);
+            const { parsedTracks } = Utils.parseTracklist(description, channelTitle);
 
             // Synthesize YouTube API shape for compatibility and validation
             return {
@@ -2391,7 +2391,7 @@
             return html;
         },
 
-        async _processTracklist(description, progressCallback) {
+        async _processTracklist(description, fallbackArtist = '', progressCallback = null) {
             const { parsedTracks, unparsedLines } = Utils.parseTracklist(description, fallbackArtist);
             if (parsedTracks.length === 0) {
                 return { foundTracks: [], notFoundTracks: [], unparsedLines };
@@ -3268,18 +3268,19 @@
         },
 
         _handlePlaylistLogic: async function (ytData, canonicalYtUrl) {
-            const { parsedTracks } = Utils.parseTracklist(ytData.snippet.description);
-            if (parsedTracks.length === 0) {
-                PlaylistButtonManager.hide();
-                return;
-            }
-
-            if (!TokenManager.getTokenValue()) {
-                PlaylistButtonManager.hide();
-                return;
-            }
-
             try {
+                if (!TokenManager.getTokenValue()) {
+                    PlaylistButtonManager.hide();
+                    return;
+                }
+
+                const fallbackArtist = typeof ytData?.snippet?.channelTitle === 'string' ? ytData.snippet.channelTitle : '';
+                const { parsedTracks } = Utils.parseTracklist(ytData.snippet.description, fallbackArtist);
+                if (parsedTracks.length === 0) {
+                    PlaylistButtonManager.hide();
+                    return;
+                }
+
                 const searchResults = await ListenBrainzAPI.searchPlaylists(ytData.id);
                 const perfectMatches = (searchResults.playlists || []).filter(p => p.playlist.annotation && p.playlist.annotation.includes(canonicalYtUrl));
 
@@ -3308,7 +3309,10 @@
                 console.error(`[${GM.info.script.name}] Error in playlist logic:`, error);
                 const apiName = error.apiName || 'API';
                 const errorMessage = error.status === 503 ? L10n.getString('errorApiRateLimit', { apiName }) : L10n.getString('errorProcessing');
-                PlaylistButtonManager.displayError(errorMessage);
+                PlaylistButtonManager.hide();
+                if (error?.message && !error.message.includes('token not set')) {
+                    PlaylistButtonManager.displayError(errorMessage);
+                }
             }
         },
     };
