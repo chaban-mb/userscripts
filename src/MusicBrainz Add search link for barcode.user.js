@@ -1,0 +1,603 @@
+// ==UserScript==
+// @name        MusicBrainz: Add search link for barcode
+// @namespace   https://musicbrainz.org/user/chaban
+// @version     3.2.5
+// @description Searches for existing releases in "Add release" edits by barcode, highlights and adds a search link on match
+// @tag         ai-created
+// @author      chaban
+// @license     MIT
+// @match       *://*.musicbrainz.org/edit/*
+// @match       *://*.musicbrainz.org/search/edits*
+// @match       *://*.musicbrainz.org/*/*/edits
+// @match       *://*.musicbrainz.org/*/*/open_edits
+// @match       *://*.musicbrainz.org/user/*/edits*
+// @match       *://*.musicbrainz.eu/edit/*
+// @match       *://*.musicbrainz.eu/search/edits*
+// @match       *://*.musicbrainz.eu/*/*/edits
+// @match       *://*.musicbrainz.eu/*/*/open_edits
+// @match       *://*.musicbrainz.eu/user/*/edits*
+// @connect     self
+
+// @icon        https://musicbrainz.org/static/images/favicons/android-chrome-512x512.png
+// @grant       GM_xmlhttpRequest
+// @updateURL   https://github.com/chaban-mb/userscripts/raw/dist/src/MusicBrainz%20Add%20search%20link%20for%20barcode.user.js
+// @downloadURL https://github.com/chaban-mb/userscripts/raw/dist/src/MusicBrainz%20Add%20search%20link%20for%20barcode.user.js
+// ==/UserScript==
+
+/**
+ * @file This script scans MusicBrainz edit pages for barcodes within "add-release" edits.
+ * If a barcode is found to be associated with multiple releases on MusicBrainz,
+ * the script highlights it and adds a convenient link to search for that barcode.
+ */
+
+(function() {
+    'use strict';
+
+    // --- Inlined Library: lib/MusicBrainzAPI.js ---
+/**
+ * @typedef {Object} MbEntity
+ * @property {string} id - The MusicBrainz ID (UUID) of the entity.
+ * @property {string} [name] - The name of the entity (e.g. for artists or labels).
+ * @property {string} [title] - The title of the entity (e.g. for releases or works).
+ */
+
+/**
+ * @typedef {Object} MbRelation
+ * @property {string} type - The relationship type name (e.g., 'purchase for download').
+ * @property {string} type-id - The relationship type UUID.
+ * @property {string} direction - The orientation of the relationship ('forward' or 'backward').
+ * @property {string} target-type - Target entity type name ('artist', 'label', 'release', etc).
+ * @property {MbEntity} [artist] - Artist details if target-type is 'artist'.
+ * @property {MbEntity} [label] - Label details if target-type is 'label'.
+ * @property {MbEntity} [release] - Release details if target-type is 'release'.
+ * @property {MbEntity} [recording] - Recording details if target-type is 'recording'.
+ * @property {MbEntity} [url] - URL details if target-type is 'url'.
+ */
+
+/**
+ * @typedef {Object} MbUrlLookupResponse
+ * @property {string} id - The entity MBID.
+ * @property {string} resource - The lookup URL resource string.
+ * @property {MbRelation[]} relations - Array of relationships resolved for the URL.
+ */
+
+class MusicBrainzAPI {
+    /**
+     * @summary Creates an instance of the MusicBrainz API client.
+     * @param {Object} [options={}] - Custom options for configuration.
+     * @param {string} [options.base_url] - Alternate base endpoint for the Web Service.
+     * @param {string} [options.user_agent] - User Agent header identification string.
+     * @param {number} [options.max_retries=5] - Maximum retry attempts for failed requests.
+     * @param {number} [options.batch_size=100] - URL batch chunk size.
+     * @param {number} [options.timeout=15000] - Timeout per network request in milliseconds.
+     */
+    constructor(options = {}) {
+        let defaultOrigin = 'https://musicbrainz.org';
+
+        if (/(musicbrainz\.(org|eu))$/i.test(window.location.hostname)) {
+            defaultOrigin = window.location.origin;
+        }
+
+        this.base_url = options.base_url || `${defaultOrigin}/ws/2`;
+        this.user_agent = options.user_agent || `UserJS.MusicBrainzAPI/0.2.2 ( https://musicbrainz.org/user/chaban )`;
+        this.rate_limit_delay = 1000;
+        this.max_retries = options.max_retries || 5;
+        this.batch_size = options.batch_size || 100;
+        this.timeout = options.timeout || 15000;
+        this.cache = new Map();
+        this.next_available_request_time = 0;
+    }
+
+    _parseHeaders(headerStr) {
+        const headers = {};
+        if (!headerStr) {
+            return headers;
+        }
+        const headerPairs = headerStr.split('\u000d\u000a');
+        for (const headerPair of headerPairs) {
+            const index = headerPair.indexOf('\u003a\u0020');
+            if (index > 0) {
+                const key = headerPair.substring(0, index).toLowerCase();
+                const value = headerPair.substring(index + 2);
+                headers[key] = value;
+            }
+        }
+        return headers;
+    }
+
+    /**
+     * @summary Internal low-level fetch request runner with retry handling.
+     * @param {string} endpoint - API resource endpoint.
+     * @param {Object} [params={}] - Search parameters.
+     * @param {Object|null} [tracker=null] - Optional diagnostic statistics tracker.
+     * @returns {Promise<Object>} The JSON parsed response body.
+     * @private
+     */
+    async _request(endpoint, params = {}, tracker = null) {
+        if (tracker) {
+            tracker.requests++;
+        }
+        const url = new URL(`${this.base_url}/${endpoint}`);
+        params.fmt = 'json';
+        for (const [key, value] of Object.entries(params)) {
+            if (Array.isArray(value)) {
+                for (const v of value) {
+                    if (v !== undefined && v !== '') {
+                        url.searchParams.append(key, v);
+                    }
+                }
+            } else if (value !== undefined && value !== '') {
+                url.searchParams.append(key, value);
+            }
+        }
+
+        for (let i = 0; i < this.max_retries; i++) {
+            const now = Date.now();
+            const waitTime = this.next_available_request_time - now;
+            if (waitTime > 0) {
+                if (tracker) tracker.rateLimitWaitMs += waitTime;
+                await new Promise(resolve => setTimeout(resolve, waitTime));
+            }
+
+            const reqStartTime = Date.now();
+            try {
+                const response = await new Promise((resolve, reject) => {
+                    GM.xmlHttpRequest({
+                        method: 'GET',
+                        url: url.toString(),
+                        timeout: this.timeout,
+                        headers: {
+                            'User-Agent': this.user_agent,
+                            'Accept': 'application/json',
+                            'Origin': location.origin,
+                        },
+                        anonymous: true,
+                        onload: (res) => {
+                            if (tracker) {
+                                tracker.networkDurationMs += (Date.now() - reqStartTime);
+                            }
+                            const responseTime = Date.now();
+                            const headers = this._parseHeaders(res.responseHeaders);
+                            const rateLimitReset = parseInt(headers['x-ratelimit-reset'], 10) * 1000;
+                            const rateLimitRemaining = parseInt(headers['x-ratelimit-remaining'], 10);
+                            const retryAfterSeconds = parseInt(headers['retry-after'], 10);
+
+                            if (!isNaN(retryAfterSeconds) && retryAfterSeconds > 0) {
+                                this.next_available_request_time = responseTime + (retryAfterSeconds * 1000);
+                            } else if (!isNaN(rateLimitReset) && rateLimitRemaining === 0) {
+                                this.next_available_request_time = rateLimitReset;
+                            } else {
+                                this.next_available_request_time = responseTime + this.rate_limit_delay;
+                            }
+
+                            if (res.status >= 200 && res.status < 300) {
+                                resolve(JSON.parse(res.responseText));
+                            } else if (res.status === 503) {
+                                reject(new Error('503 Service Unavailable (rate limit or server overloaded)'));
+                            } else {
+                                const isPermanent = res.status >= 400 && res.status < 500;
+                                const error = isPermanent
+                                    ? new PermanentError(`HTTP Error ${res.status}: ${res.statusText}`, res.status)
+                                    : new Error(`HTTP Error ${res.status}: ${res.statusText}`);
+                                error.status = res.status;
+                                reject(error);
+                            }
+                        },
+                        onerror: (err) => {
+                            if (tracker) {
+                                tracker.networkDurationMs += (Date.now() - reqStartTime);
+                            }
+                            this.next_available_request_time = Date.now() + 5000;
+                            reject(new Error('Network error'));
+                        },
+                        ontimeout: () => {
+                            if (tracker) {
+                                tracker.networkDurationMs += (Date.now() - reqStartTime);
+                            }
+                            this.next_available_request_time = Date.now() + 5000;
+                            reject(new Error('Request timed out'));
+                        },
+                    });
+                });
+
+                return response;
+            } catch (error) {
+                if (error instanceof PermanentError) {
+                    throw error; // Stop retrying and propagate the error.
+                }
+
+                if (tracker) {
+                    tracker.retries++;
+                    tracker.errors.push(`Attempt ${i + 1}/${this.max_retries} failed: ${error.message}`);
+                }
+
+                if (!navigator.onLine) {
+                    console.log(`[MusicBrainzAPI] Offline detected. Waiting for network...`);
+                    await new Promise(resolve => {
+                        const handler = () => {
+                            window.removeEventListener('online', handler);
+                            resolve();
+                        };
+                        window.addEventListener('online', handler);
+                    });
+                    i--; // Don't count this attempt
+                    continue;
+                }
+
+                if (i === this.max_retries - 1) throw error;
+                const delay = this.rate_limit_delay * Math.pow(2, i);
+                if (tracker) {
+                    tracker.retryBackoffWaitMs += delay;
+                }
+                await new Promise(resolve => setTimeout(resolve, delay));
+            }
+        }
+    }
+
+    /**
+     * @summary Normalizes a URL string to its canonical WHATWG/RFC 3986 format.
+     * @param {string} url - The URL string to normalize.
+     * @returns {string} The normalized URL string.
+     */
+    static normalizeUrl(url) {
+        if (!url) return url;
+        try {
+            return new URL(url).href;
+        } catch {
+            return url;
+        }
+    }
+
+    /**
+     * @summary Looks up MBIDs for MusicBrainz resource URLs. Supports batching.
+     * @param {string|string[]} urls - A single URL or an array of URLs to resolve.
+     * @param {string[]} [inc=[]] - Relationships to include in the lookup query.
+     * @returns {Promise<Map<string, MbUrlLookupResponse|null>|MbUrlLookupResponse|null>} A Map mapping URLs to relationship response objects if urls was an array, or the relationship response object if urls was a string.
+     */
+    async lookupUrl(urls, inc = []) {
+        const isInputArray = Array.isArray(urls);
+        const rawUrls = isInputArray ? urls : [urls];
+        const normalizedUrls = rawUrls.map(u => MusicBrainzAPI.normalizeUrl(u));
+        const urlArray = isInputArray ? [...new Set(normalizedUrls)] : normalizedUrls;
+
+        if (urlArray.length === 0) {
+            return isInputArray ? {} : null;
+        }
+
+        const results = new Map();
+        const uncachedUrls = [];
+
+        for (const url of urlArray) {
+            if (this.cache.has(url)) {
+                results.set(url, this.cache.get(url));
+            } else {
+                uncachedUrls.push(url);
+            }
+        }
+
+        const diagnostics = {
+            requests: 0,
+            retries: 0,
+            rateLimitWaitMs: 0,
+            retryBackoffWaitMs: 0,
+            networkDurationMs: 0,
+            errors: []
+        };
+
+        if (uncachedUrls.length > 0) {
+            const urlChunks = [];
+            for (let i = 0; i < uncachedUrls.length; i += this.batch_size) {
+                urlChunks.push(uncachedUrls.slice(i, i + this.batch_size));
+            }
+
+            const promises = urlChunks.map(chunk =>
+                this._request('url', {
+                    resource: chunk,
+                    inc: inc.join('+')
+                }, diagnostics)
+            );
+
+            // Use Promise.allSettled to ensure all batches are processed, even if some fail.
+            const settledResults = await Promise.allSettled(promises);
+
+            settledResults.forEach((result, index) => {
+                const chunk = urlChunks[index]; // Get the corresponding chunk of URLs for this result.
+
+                if (result.status === 'fulfilled') {
+                    const response = result.value;
+
+                    // The API returns a single object for a 1-item request, and an object with a `urls` array for multi-item requests.
+                    if (chunk.length === 1) {
+                        const url = chunk[0];
+                        const mbData = response && MusicBrainzAPI.normalizeUrl(response.resource) === url ? response : null;
+                        this.cache.set(url, mbData);
+                        results.set(url, mbData);
+                    } else {
+                        const responseMap = new Map(response.urls?.map(u => [MusicBrainzAPI.normalizeUrl(u.resource), u]) || []);
+                        for (const url of chunk) {
+                            const mbData = responseMap.get(url) || null;
+                            this.cache.set(url, mbData);
+                            results.set(url, mbData);
+                        }
+                    }
+                } else { // status === 'rejected'
+                    const is404 = result.reason && result.reason.status === 404;
+                    if (!is404) {
+                        console.error(`MusicBrainz API batch lookup failed for chunk starting with ${chunk[0]}`, result.reason);
+                    }
+
+                    // Only cache as null if it's a permanent error (like 404), not for network errors
+                    const isPermanent = result.reason && result.reason.name === 'PermanentError';
+
+                    for (const url of chunk) {
+                        if (isPermanent) {
+                            this.cache.set(url, null);
+                        }
+                        results.set(url, null);
+                    }
+                }
+            });
+        }
+
+        results.diagnostics = diagnostics;
+        results.sources = new Map(
+            urlArray.map(url => [url, uncachedUrls.includes(url) ? 'network' : 'cache'])
+        );
+
+        return isInputArray ? results : results.get(urlArray[0]);
+    }
+
+    /**
+     * @summary Searches the MusicBrainz database for matching entities.
+     * @param {string} entity - Entity type (artist, release, recording, etc).
+     * @param {string} query - The search query parameter.
+     * @param {number} [limit=100] - Result page chunk limit.
+     * @param {string[]} [inc=[]] - Relationships to include in each search.
+     * @param {boolean} [fetch_all=false] - Whether to fetch all pages sequentially.
+     * @returns {Promise<Object|MbEntity[]>} Parsed query result object (or list of entities if fetch_all is true).
+     */
+    async search(entity, query, limit = 100, inc = [], fetch_all = false) {
+        if (!fetch_all) {
+            return this._request(entity, { query, limit, inc: inc.join('+') });
+        }
+
+        let results = [];
+        let offset = 0;
+        let total;
+
+        do {
+            const data = await this._request(entity, { query, limit, offset, inc: inc.join('+') });
+            const entities = data[entity + 's'] || [];
+            results.push(...entities);
+            total = data.count;
+            offset += entities.length;
+            if (entities.length === 0) break;
+        } while (offset < total);
+
+        return results;
+    }
+
+    /**
+     * Fetches details for a specific MusicBrainz entity by its MBID.
+     * @param {string} entity - The entity type (e.g., 'release', 'artist', 'recording').
+     * @param {string} mbid - The MusicBrainz Identifier (MBID) of the entity.
+     * @param {string[]} [inc=[]] - Array of sub-queries/relationships to include (e.g., ['recordings', 'artists', 'url-rels']).
+     * @returns {Promise<object>} A promise that resolves to the entity details object.
+     */
+    get(entity, mbid, inc = []) {
+        return this._request(`${entity}/${mbid}`, { inc: inc.join('+') });
+    }
+
+    clearCache() {
+        this.cache.clear();
+    }
+
+    invalidateCacheForUrl(url) {
+        const urls = Array.isArray(url) ? url : [url];
+        urls.forEach(u => this.cache.delete(MusicBrainzAPI.normalizeUrl(u)));
+    }
+
+    /**
+     * Synchronously retrieves a value from the cache if available.
+     * @param {string} url - The URL to check.
+     * @returns {object|undefined} The cached response or undefined if not cached.
+     */
+    getFromCache(url) {
+        return this.cache.get(MusicBrainzAPI.normalizeUrl(url));
+    }
+}
+
+class PermanentError extends Error {
+    constructor(message, status) {
+        super(message);
+        this.name = 'PermanentError';
+        this.status = status;
+    }
+}
+    // --- End Inlined Library ---
+
+
+    /**
+     * Removes leading zeros from a barcode string.
+     * @param {string} barcode - The barcode string.
+     * @returns {string} The normalized barcode string.
+     */
+    function removeLeadingZeros(barcode) {
+        return barcode.replace(/^0+/, '') || barcode;
+    }
+
+    /**
+     * Configuration object to centralize all constants.
+     * @readonly
+     * @namespace
+     * @property {RegExp} BARCODE_REGEX - Regular expression to identify barcodes in text.
+     * @property {string} TARGET_SELECTOR - CSS selector for the tables containing release information.
+     * @property {string} USER_AGENT - The base user agent string for API requests.
+     * @property {string} SEARCH_LINK_CLASS - CSS class for the generated search links.
+     * @property {string} PROCESSED_BARCODE_SPAN_CLASS - CSS class for the spans that wrap found barcodes.
+     */
+    const Config = {
+        BARCODE_REGEX: /(\b\d{8,14}\b)/g,
+        TARGET_SELECTOR: '.add-release',
+        USER_AGENT: 'UserJS.BarcodeLink',
+        SEARCH_LINK_CLASS: 'mb-barcode-search-link',
+        PROCESSED_BARCODE_SPAN_CLASS: 'mb-barcode-processed',
+    };
+
+    /**
+     * Scans the DOM for barcode elements, wraps them in spans, and stores their references.
+     * @namespace
+     */
+    const DOMScanner = {
+        /**
+         * A map where keys are barcode strings and values are arrays of the span elements that contain them.
+         * @private
+         * @type {Map<string, HTMLSpanElement[]>}
+         */
+        _barcodeToSpansMap: new Map(),
+
+        /**
+         * A set of all unique barcode strings found on the page.
+         * @private
+         * @type {Set<string>}
+         */
+        _uniqueBarcodes: new Set(),
+
+        /**
+         * Recursively finds barcodes in text nodes within a given node,
+         * wraps them in spans, and stores references for later use.
+         * @param {Node} node - The DOM node to process.
+         */
+        collectBarcodesAndCreateSpans: function(node) {
+            if (node.nodeType === Node.TEXT_NODE) {
+                // Skip nodes that are already part of a processed span
+                if (node.parentNode?.classList.contains(Config.PROCESSED_BARCODE_SPAN_CLASS)) return;
+
+                const originalText = node.textContent;
+                const matches = [...originalText.matchAll(Config.BARCODE_REGEX)];
+                if (matches.length === 0) return;
+
+                const fragment = document.createDocumentFragment();
+                let lastIndex = 0;
+
+                for (const match of matches) {
+                    const barcode = match[0];
+                    // Append any text that came before the barcode match
+                    if (match.index > lastIndex) {
+                        fragment.appendChild(document.createTextNode(originalText.substring(lastIndex, match.index)));
+                    }
+
+                    // Create a span for the barcode
+                    const barcodeSpan = document.createElement('span');
+                    barcodeSpan.textContent = barcode;
+                    barcodeSpan.classList.add(Config.PROCESSED_BARCODE_SPAN_CLASS);
+
+                    const normalized = removeLeadingZeros(barcode);
+                    // Store a reference to the span for this barcode
+                    this._barcodeToSpansMap.has(normalized) ? this._barcodeToSpansMap.get(normalized).push(barcodeSpan) : this._barcodeToSpansMap.set(normalized, [barcodeSpan]);
+                    this._uniqueBarcodes.add(barcode);
+
+                    fragment.appendChild(barcodeSpan);
+                    lastIndex = match.index + barcode.length;
+                }
+
+                // Append any remaining text after the last barcode match
+                if (lastIndex < originalText.length) {
+                    fragment.appendChild(document.createTextNode(originalText.substring(lastIndex)));
+                }
+                // Replace the original text node with the new fragment
+                node.parentNode.replaceChild(fragment, node);
+
+            } else if (node.nodeType === Node.ELEMENT_NODE && !['SCRIPT', 'STYLE'].includes(node.tagName)) {
+                // Recursively process child nodes
+                Array.from(node.childNodes).forEach(child => this.collectBarcodesAndCreateSpans(child));
+            }
+        },
+
+        /**
+         * Returns the set of unique barcodes found on the page.
+         * @returns {Set<string>} A set of unique barcode strings.
+         */
+        getUniqueBarcodes: function() { return this._uniqueBarcodes; },
+
+        /**
+         * Returns a map of barcodes to their corresponding span elements.
+         * @returns {Map<string, HTMLSpanElement[]>}
+         */
+        getBarcodeSpansMap: function() { return this._barcodeToSpansMap; }
+    };
+
+    /**
+     * Main application logic for the userscript.
+     * @namespace
+     */
+    const BarcodeLinkerApp = {
+        /**
+         * Initializes the application by starting the main processing function.
+         */
+        init: function() {
+            this.processAddReleaseTables();
+        },
+
+        /**
+         * Scans all "Add release" tables, finds barcodes, queries the MusicBrainz API,
+         * and updates the DOM to highlight duplicates and add search links.
+         */
+        processAddReleaseTables: async function() {
+            // 1. Scan the DOM for barcodes
+            document.querySelectorAll(Config.TARGET_SELECTOR).forEach(table => DOMScanner.collectBarcodesAndCreateSpans(table));
+
+            const uniqueBarcodes = DOMScanner.getUniqueBarcodes();
+            if (uniqueBarcodes.size === 0) return;
+
+            // 2. Prepare and execute the API search
+            const mbApi = new MusicBrainzAPI({
+                user_agent: `${Config.USER_AGENT}/${GM.info.script.version} ( ${GM.info.script.namespace} )`
+            });
+            const combinedQuery = Array.from(uniqueBarcodes).map(b => `barcode:${b}`).join(' OR ');
+
+            try {
+                // Fetch all matching releases in a single, paginated request
+                const allReleases = await mbApi.search('release', combinedQuery, 100, [], true);
+
+                if (allReleases.length > 0) {
+                    // 3. Group the API results by barcode
+                    const releasesByBarcode = new Map();
+                    allReleases.forEach(release => {
+                        if (release.barcode) {
+                            const normalized = removeLeadingZeros(release.barcode);
+                            releasesByBarcode.has(normalized) ? releasesByBarcode.get(normalized).push(release) : releasesByBarcode.set(normalized, [release]);
+                        }
+                    });
+
+                    // 4. Update the DOM for barcodes with multiple releases
+                    for (const [barcode, releases] of releasesByBarcode.entries()) {
+                        if (releases.length > 1) {
+                            const spans = DOMScanner.getBarcodeSpansMap().get(barcode);
+                            if (spans) {
+                                const searchUrl = `//musicbrainz.org/search?type=release&method=advanced&query=barcode:${barcode}`;
+                                spans.forEach(span => {
+                                    span.style.backgroundColor = 'yellow';
+                                    span.title = `Multiple MusicBrainz releases found for barcode: ${span.textContent}`;
+                                    const link = document.createElement('a');
+                                    link.href = searchUrl;
+                                    link.target = '_blank';
+                                    link.textContent = 'Search';
+                                    link.className = Config.SEARCH_LINK_CLASS;
+                                    // Append the link in parentheses after the barcode text
+                                    span.append(' (', link, ')');
+                                });
+                            }
+                        }
+                    }
+                }
+            } catch (error) {
+                console.error(`[${GM.info.script.name}] Failed to fetch barcode data:`, error);
+            }
+        }
+    };
+
+    // Run the script
+    BarcodeLinkerApp.init();
+
+})();
