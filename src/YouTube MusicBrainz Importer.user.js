@@ -1054,10 +1054,11 @@ class PermanentError extends Error {
          * @param {string} text The raw text (e.g., YouTube description).
          * @returns {{parsedTracks: Array<Object>, unparsedLines: Array<string>}}
          */
-        parseTracklist: function (text) {
+        parseTracklist: function (text, fallbackArtist = '') {
             if (!text) {
                 return { parsedTracks: [], unparsedLines: [] };
             }
+            const safeFallbackArtist = typeof fallbackArtist === 'string' ? fallbackArtist.trim() : '';
             const tracklistPatterns = [
                 { // Format: StartTime - EndTime Artist - Title
                     regex: /^((?:\d+:)?\d+:\d+)\s*[-–—]\s*(?:\d+:)?\d+\s+(.+?)\s*[-–—]\s*(.+)$/,
@@ -1108,7 +1109,7 @@ class PermanentError extends Error {
                         }
 
                         // Use the matched artist, or the fallback channel name if missing
-                        const finalArtist = artist ? artist.trim() : fallbackArtist.trim();
+                        const finalArtist = artist ? artist.trim() : safeFallbackArtist;
 
                         parsedTracks.push({
                             artist: finalArtist,
