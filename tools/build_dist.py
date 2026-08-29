@@ -26,9 +26,6 @@ def inline_script_content(script_text, repo_root=REPO_ROOT):
     removes the @require line from metadata, and inlines the library code into the script.
     """
     matches = list(REQUIRE_RE.finditer(script_text))
-    if not matches:
-        return script_text, []
-
     inlined_libs = []
     lib_codes = []
 
@@ -46,38 +43,39 @@ def inline_script_content(script_text, repo_root=REPO_ROOT):
         lib_codes.append(f"    // --- Inlined Library: lib/{lib_filename} ---\n{cleaned_lib}\n    // --- End Inlined Library ---")
         inlined_libs.append(lib_filename)
 
-    if not lib_codes:
-        return script_text, []
+    # Always update @updateURL and @downloadURL to point to dist branch
+    transformed_text = re.sub(r'(/raw/)main(/src/)', r'\g<1>dist\g<2>', script_text)
 
     # Remove all relative lib @require directives
-    transformed_text = REQUIRE_RE.sub('', script_text)
+    transformed_text = REQUIRE_RE.sub('', transformed_text)
     # Clean any potential extra blank lines left in header
     transformed_text = re.sub(r'(\r?\n){3,}', r'\n\n', transformed_text)
 
-    combined_lib_code = "\n\n".join(lib_codes)
+    combined_lib_code = "\n\n".join(lib_codes) if lib_codes else ""
 
-    # Check if there is an IIFE closure (e.g. (function () { 'use strict'; ...)
-    closure_match = CLOSURE_START_RE.search(transformed_text)
-    if closure_match:
-        idx = closure_match.end()
-        # Check if 'use strict' immediately follows
-        use_strict_match = re.match(r"\s*('use strict'|\"use strict\");?", transformed_text[idx:])
-        if use_strict_match:
-            insert_pos = idx + use_strict_match.end()
-            transformed_text = transformed_text[:insert_pos] + "\n\n" + combined_lib_code + "\n" + transformed_text[insert_pos:]
-        else:
-            transformed_text = transformed_text[:idx] + "\n" + combined_lib_code + "\n" + transformed_text[idx:]
-    else:
-        # Append after the UserScript header
-        header_end = transformed_text.find('// ==/UserScript==')
-        if header_end != -1:
-            line_end = transformed_text.find('\n', header_end)
-            if line_end != -1:
-                transformed_text = transformed_text[:line_end + 1] + "\n" + combined_lib_code + "\n\n" + transformed_text[line_end + 1:]
+    if combined_lib_code:
+        # Check if there is an IIFE closure (e.g. (function () { 'use strict'; ...)
+        closure_match = CLOSURE_START_RE.search(transformed_text)
+        if closure_match:
+            idx = closure_match.end()
+            # Check if 'use strict' immediately follows
+            use_strict_match = re.match(r"\s*('use strict'|\"use strict\");?", transformed_text[idx:])
+            if use_strict_match:
+                insert_pos = idx + use_strict_match.end()
+                transformed_text = transformed_text[:insert_pos] + "\n\n" + combined_lib_code + "\n" + transformed_text[insert_pos:]
             else:
-                transformed_text = transformed_text + "\n\n" + combined_lib_code
+                transformed_text = transformed_text[:idx] + "\n" + combined_lib_code + "\n" + transformed_text[idx:]
         else:
-            transformed_text = combined_lib_code + "\n\n" + transformed_text
+            # Append after the UserScript header
+            header_end = transformed_text.find('// ==/UserScript==')
+            if header_end != -1:
+                line_end = transformed_text.find('\n', header_end)
+                if line_end != -1:
+                    transformed_text = transformed_text[:line_end + 1] + "\n" + combined_lib_code + "\n\n" + transformed_text[line_end + 1:]
+                else:
+                    transformed_text = transformed_text + "\n\n" + combined_lib_code
+            else:
+                transformed_text = combined_lib_code + "\n\n" + transformed_text
 
     return transformed_text, inlined_libs
 
