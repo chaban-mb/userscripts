@@ -2,3 +2,6 @@
 AGENTS.md
 .agents/
 .brain/
+__pycache__/
+*.py[cod]
+skills-lock.json
