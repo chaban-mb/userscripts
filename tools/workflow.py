@@ -142,15 +142,212 @@ def update_version_in_file(file_path, new_version):
         print(f"Error updating file {file_path}: {e}")
         return False
 
-def do_check(json_format=False, concise=False):
-    script_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'check_unreleased.py')
-    cmd = [sys.executable, script_path]
+def get_unreleased_userscripts(repo_root=None, main_branch="main", check_workspace=True):
+    """
+    Unified discovery engine: finds all modified, new, and deleted userscripts/libraries
+    relative to main_branch, and automatically cascades changes from lib/ to dependent scripts.
+    """
+    if repo_root is None:
+        repo_root = Path(__file__).resolve().parent.parent
+    else:
+        repo_root = Path(repo_root)
+
+    diff_files = get_git_stdout(['git', 'diff', '--name-only', main_branch, '--', 'src/', 'lib/']).splitlines()
+    untracked_files = get_git_stdout(['git', 'ls-files', '--others', '--exclude-standard', '--', 'src/', 'lib/']).splitlines()
+    modified_files = run_cmd("git diff --name-only HEAD -- src/ lib/").splitlines() if check_workspace else []
+
+    all_files = sorted(list(set(diff_files + untracked_files + modified_files)))
+    userscripts = [f for f in all_files if f.endswith('.user.js') or (f.startswith('lib/') and f.endswith('.js'))]
+
+    # Cascading library dependencies
+    modified_libs = {f for f in userscripts if f.startswith('lib/')}
+    if modified_libs:
+        src_dir = repo_root / "src"
+        if src_dir.exists():
+            for script_path in src_dir.glob("*.user.js"):
+                rel_script = str(script_path.relative_to(repo_root)).replace('\\', '/')
+                if rel_script in userscripts:
+                    continue
+                try:
+                    text = script_path.read_text(encoding='utf-8')
+                    for mod_lib in modified_libs:
+                        lib_name = Path(mod_lib).name
+                        if f"lib/{lib_name}" in text:
+                            userscripts.append(rel_script)
+                            break
+                except Exception:
+                    pass
+
+    return sorted(list(set(userscripts)))
+
+def do_check(json_format=False, concise=False, main_branch=None):
+    """
+    Checks unreleased scripts, detects version bumps relative to main,
+    flags missing descriptions, and outputs human or JSON diagnostics.
+    """
+    repo_root = Path(__file__).resolve().parent.parent
+    if main_branch is None:
+        main_branch = get_main_branch_name()
+
+    userscripts = get_unreleased_userscripts(repo_root=repo_root, main_branch=main_branch, check_workspace=True)
+
+    # Detect non-userscript files
+    diff_all = get_git_stdout(['git', 'diff', '--name-only', main_branch]).splitlines()
+    untracked_all = get_git_stdout(['git', 'ls-files', '--others', '--exclude-standard']).splitlines()
+    all_repo_files = sorted(list(set(diff_all + untracked_all)))
+
+    script_basenames = {Path(u).name.replace('.user.js', '') for u in userscripts}
+    non_userscript_files = []
+    for f in all_repo_files:
+        if f in userscripts or f == 'docs/USERSCRIPTS.md':
+            continue
+        if f.startswith('docs/descriptions/') and f.endswith('.md'):
+            base = Path(f).name.replace('.md', '')
+            if base in script_basenames:
+                continue
+        non_userscript_files.append(f)
+
+    if not userscripts and not non_userscript_files:
+        if json_format:
+            print(json.dumps({"unreleased_count": 0, "bump_needed_count": 0, "scripts": [], "infrastructure_files": []}))
+        else:
+            print(f"No unreleased changes found compared to {main_branch}.")
+        return 0
+
+    if not json_format and not concise:
+        if userscripts:
+            print(f"Found {len(userscripts)} modified/new userscript(s) or library file(s) relative to {main_branch}:\n")
+        else:
+            print(f"No unreleased userscripts found relative to {main_branch}.\n")
+
+    bump_needed_count = 0
+    script_data = []
+
+    for rel_path_str in userscripts:
+        full_path = repo_root / rel_path_str
+
+        if not full_path.exists():
+            if not json_format:
+                print(f"[-] [DELETED] {rel_path_str}")
+            script_data.append({"rel_path": rel_path_str, "status": "DELETED", "needs_bump": False})
+            continue
+
+        try:
+            current_content = full_path.read_text(encoding='utf-8')
+        except Exception as e:
+            if not json_format:
+                print(f"[!] [READ ERROR] {rel_path_str}: {e}")
+            continue
+
+        curr_ver, curr_name = extract_version_and_name(current_content)
+        display_name = curr_name or full_path.name
+        if rel_path_str.startswith('lib/'):
+            display_name = f"[LIB] {display_name}"
+
+        main_content = get_main_file_content(rel_path_str, main_branch)
+        git_path = rel_path_str.replace('\\', '/')
+        commits = get_git_stdout(['git', 'log', f'{main_branch}..HEAD', '--oneline', '--', git_path]).splitlines()
+        has_uncommitted = bool(get_git_stdout(['git', 'status', '--porcelain', '--', git_path]).strip())
+
+        has_desc = True
+        if not rel_path_str.startswith('lib/'):
+            script_base_name = full_path.name.replace('.user.js', '')
+            desc_full_path = repo_root / f"docs/descriptions/{script_base_name}.md"
+            has_desc = desc_full_path.exists()
+
+        if main_content is None:
+            needs_bump = not bool(curr_ver)
+            status = "NEW"
+            if needs_bump:
+                bump_needed_count += 1
+            script_data.append({
+                "rel_path": rel_path_str,
+                "name": display_name,
+                "curr_version": curr_ver,
+                "main_version": None,
+                "status": status,
+                "needs_bump": needs_bump,
+                "has_description": has_desc,
+                "changes_count": len(commits) + (1 if has_uncommitted else 0)
+            })
+            if not json_format:
+                if concise:
+                    bump_str = " [BUMP NEEDED]" if needs_bump else ""
+                    print(f"[+] [NEW]{bump_str} {display_name} ({rel_path_str}) v{curr_ver}")
+                else:
+                    print(f"[+] [NEW SCRIPT] {display_name} ({rel_path_str})")
+                    if curr_ver:
+                        print(f"   Version: {curr_ver} (Ready)")
+                    else:
+                        print(f"   [!] [BUMP NEEDED] No @version header found!")
+                        bump_needed_count += 1
+        else:
+            main_ver, _ = extract_version_and_name(main_content)
+            needs_bump = (curr_ver == main_ver)
+            if needs_bump:
+                bump_needed_count += 1
+                status = "BUMP_NEEDED"
+            else:
+                status = "BUMPED"
+
+            script_data.append({
+                "rel_path": rel_path_str,
+                "name": display_name,
+                "curr_version": curr_ver,
+                "main_version": main_ver,
+                "status": status,
+                "needs_bump": needs_bump,
+                "has_description": has_desc,
+                "changes_count": len(commits) + (1 if has_uncommitted else 0)
+            })
+
+            if not json_format:
+                if concise:
+                    st_icon = "[!]" if needs_bump else "[*]"
+                    print(f"{st_icon} [{status}] {display_name} ({rel_path_str}) v{main_ver} -> v{curr_ver}")
+                else:
+                    if needs_bump:
+                        print(f"[!] [BUMP NEEDED] {display_name} ({rel_path_str})")
+                        print(f"   Current version: {curr_ver} (Same as {main_branch})")
+                    else:
+                        print(f"[*] [BUMPED]      {display_name} ({rel_path_str})")
+                        print(f"   Version: {main_ver} -> {curr_ver}")
+
+        if not json_format and not concise:
+            if not has_desc:
+                print(f"   [!] [MISSING DESCRIPTION] Description file is missing")
+            if commits or has_uncommitted:
+                print(f"   Changes since {main_branch}:")
+                for c in commits:
+                    print(f"     * {c}")
+                if has_uncommitted:
+                    print("     * [Uncommitted changes in workspace]")
+            print()
+
+    if non_userscript_files:
+        if not json_format:
+            if concise:
+                print(f"[#] [INFRASTRUCTURE] {len(non_userscript_files)} non-userscript file(s) modified: {', '.join(non_userscript_files)}")
+            else:
+                print(f"[#] Infrastructure / Non-Userscript Changes ({len(non_userscript_files)} file(s)):")
+                for f in non_userscript_files:
+                    print(f"     * {f}")
+                print()
+
     if json_format:
-        cmd.append('--json')
-    if concise:
-        cmd.append('--concise')
-    res = subprocess.run(cmd)
-    return res.returncode
+        print(json.dumps({
+            "unreleased_count": len(script_data),
+            "bump_needed_count": bump_needed_count,
+            "scripts": script_data,
+            "infrastructure_files": non_userscript_files
+        }, indent=2))
+    elif not concise:
+        if bump_needed_count > 0:
+            print(f"[!] Action required: {bump_needed_count} script(s) need a version bump before release.")
+        else:
+            print("[*] All modified/new scripts have version bumps.")
+
+    return 1 if bump_needed_count > 0 else 0
 
 def do_build():
     script_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'build_list.py')
@@ -248,9 +445,14 @@ def do_release(non_interactive=False, json_output=False, bump_strategy="auto", s
             print(f"\n{COLOR_CYAN}Checking out dev...{COLOR_RESET}")
             subprocess.run(['git', 'checkout', 'dev'], check=True)
             print(f"{COLOR_CYAN}Merging '{curr_branch}' into dev...{COLOR_RESET}")
-            subprocess.run(['git', 'merge', curr_branch], check=True)
-            release_branch = "dev"
+            merge_res = subprocess.run(['git', 'merge', curr_branch], capture_output=True, text=True)
+            if merge_res.returncode != 0:
+                print(f"{COLOR_RED}Merge conflict occurred merging '{curr_branch}' into dev! Aborting.{COLOR_RESET}")
+                subprocess.run(['git', 'merge', '--abort'], capture_output=True)
+                subprocess.run(['git', 'checkout', curr_branch], capture_output=True)
+                return
             merged_feature_branch = curr_branch
+            release_branch = "dev"
         elif choice == '2':
             pass
         else:
@@ -258,12 +460,7 @@ def do_release(non_interactive=False, json_output=False, bump_strategy="auto", s
             return
 
     repo_root = Path(__file__).resolve().parent.parent
-
-    diff_files = get_git_stdout(['git', 'diff', '--name-only', main_branch, '--', 'src/', 'lib/']).splitlines()
-    untracked_files = get_git_stdout(['git', 'ls-files', '--others', '--exclude-standard', '--', 'src/', 'lib/']).splitlines()
-
-    all_files = sorted(list(set(diff_files + untracked_files)))
-    userscripts = [f for f in all_files if f.endswith('.user.js') or (f.startswith('lib/') and f.endswith('.js'))]
+    userscripts = get_unreleased_userscripts(repo_root=repo_root, main_branch=main_branch, check_workspace=True)
 
     if not userscripts:
         print(f"\n{COLOR_CYAN}No unreleased changes found in src/ or lib/ compared to {main_branch}.{COLOR_RESET}\n")
@@ -272,7 +469,6 @@ def do_release(non_interactive=False, json_output=False, bump_strategy="auto", s
     print("Checking unreleased userscripts...")
     unreleased_info = []
     deleted_scripts = []
-
     mapping = parse_commit_scopes()
 
     for rel_path_str in userscripts:
@@ -399,54 +595,36 @@ def do_release(non_interactive=False, json_output=False, bump_strategy="auto", s
             print("  4) Manual (custom version)")
             print("  5) Skip bump (release as-is)")
 
-            auto_b = '1'
-            if bump_strategy == 'minor': auto_b = '2'
-            elif bump_strategy == 'major': auto_b = '3'
-            elif bump_strategy == 'none': auto_b = '5'
+            if non_interactive:
+                if bump_strategy in ["patch", "minor", "major"]:
+                    bump_choice = {"patch": "1", "minor": "2", "major": "3"}[bump_strategy]
+                elif bump_strategy == "none":
+                    bump_choice = "5"
+                else:
+                    bump_choice = "1"
+            else:
+                bump_choice = prompt_user("Choice (default: 1): ", default='1', non_interactive=non_interactive, auto_choice='1')
 
-            bump_choice = prompt_user("Bump type (default: 1): ", default='1', non_interactive=non_interactive, auto_choice=auto_b).strip()
             new_version = None
-            if bump_choice == '1':
+            if bump_choice in ['1', 'patch']:
                 new_version = bump_version(current_version, 'patch')
-            elif bump_choice == '2':
+            elif bump_choice in ['2', 'minor']:
                 new_version = bump_version(current_version, 'minor')
-            elif bump_choice == '3':
+            elif bump_choice in ['3', 'major']:
                 new_version = bump_version(current_version, 'major')
             elif bump_choice == '4':
-                new_version = prompt_user("Enter new version: ", default=current_version, non_interactive=non_interactive, auto_choice=current_version).strip()
+                new_version = prompt_user("Enter new version: ", non_interactive=non_interactive, auto_choice=current_version)
             elif bump_choice == '5':
                 new_version = current_version
-
-            if not new_version:
-                print("Could not bump version. Skipping.")
-                continue
-        else:
-            new_version = current_version
-            if script['main_version'] is None:
-                print(f"New script: releasing initial version {new_version}")
             else:
-                print(f"Version is already bumped relative to main: {script['main_version']} -> {new_version}")
+                print(f"{COLOR_YELLOW}Invalid choice, skipping bump.{COLOR_RESET}")
+                new_version = current_version
+        else:
+            print(f"Script already has bumped version: {current_version}")
+            new_version = current_version
 
-            print("Select action:")
-            print("  k) Keep current version")
-            print("  1) Patch (bug fix/minor tweaks)")
-            print("  2) Minor (backwards-compatible enhancements)")
-            print("  3) Major (incompatible UI/behavior changes)")
-            print("  4) Custom version")
-
-            confirm = prompt_user("Choice (default: k): ", default='k', non_interactive=non_interactive, auto_choice='k').lower()
-            if confirm == '1':
-                new_version = bump_version(new_version, 'patch')
-            elif confirm == '2':
-                new_version = bump_version(new_version, 'minor')
-            elif confirm == '3':
-                new_version = bump_version(new_version, 'major')
-            elif confirm == '4':
-                new_version = prompt_user("Enter new version: ", default=new_version, non_interactive=non_interactive, auto_choice=new_version).strip()
-
-        # Update version in file if changed
         version_updated = False
-        if new_version != current_version:
+        if new_version and new_version != script['curr_version']:
             if dry_run:
                 print(f"[DRY-RUN] Would update version in file {script['rel_path']} to {new_version}")
                 version_updated = True
@@ -706,6 +884,13 @@ def do_release(non_interactive=False, json_output=False, bump_strategy="auto", s
             else:
                 subprocess.run(['git', 'push', remote, release_branch], check=True)
 
+        # Sync inlined dist branch for GreasyFork webhook support
+        print(f"\n{COLOR_CYAN}Syncing inlined userscripts to 'dist' branch for GreasyFork...{COLOR_RESET}")
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        build_dist_path = os.path.join(script_dir, "build_dist.py")
+        subprocess.run([sys.executable, build_dist_path, "--sync-branch", "--main-branch", main_branch], check=True)
+        subprocess.run(['git', 'push', remote, 'dist'], check=True)
+
         print(f"\n{COLOR_GREEN}{COLOR_BOLD}Release completed successfully!{COLOR_RESET}\n")
 
         if merged_feature_branch:
@@ -732,12 +917,7 @@ def do_bump(bump_type="patch", scripts_filter="all", json_output=False):
     repo_root = Path(__file__).resolve().parent.parent
     main_branch = get_main_branch_name()
 
-    diff_files = get_git_stdout(['git', 'diff', '--name-only', main_branch, '--', 'src/', 'lib/']).splitlines()
-    untracked_files = get_git_stdout(['git', 'ls-files', '--others', '--exclude-standard', '--', 'src/', 'lib/']).splitlines()
-    modified_files = run_cmd("git diff --name-only HEAD -- src/ lib/").splitlines()
-
-    all_files = sorted(list(set(diff_files + untracked_files + modified_files)))
-    userscripts = [f for f in all_files if f.endswith('.user.js') or (f.startswith('lib/') and f.endswith('.js'))]
+    userscripts = get_unreleased_userscripts(repo_root=repo_root, main_branch=main_branch, check_workspace=True)
 
     if not userscripts:
         print(f"\n{COLOR_CYAN}No modified or unreleased scripts found in src/ or lib/.{COLOR_RESET}\n")
@@ -766,31 +946,33 @@ def do_bump(bump_type="patch", scripts_filter="all", json_output=False):
         # Determine target version
         base_ver = main_ver or curr_ver
         if curr_ver != main_ver:
-            base_ver = curr_ver
+            new_ver = bump_version(curr_ver, bump_type)
+        else:
+            new_ver = bump_version(base_ver, bump_type)
 
-        new_ver = bump_version(base_ver, bump_type)
+        if not new_ver:
+            continue
 
-        if new_ver and new_ver != curr_ver:
-            if update_version_in_file(full_path, new_ver):
-                bumped_results.append({
-                    'rel_path': rel_path_str,
-                    'name': curr_name or full_path.name,
-                    'old_version': curr_ver,
-                    'new_version': new_ver,
-                    'main_version': main_ver
-                })
+        if update_version_in_file(full_path, new_ver):
+            bumped_results.append({
+                'rel_path': rel_path_str,
+                'name': curr_name or full_path.name,
+                'old_version': curr_ver,
+                'new_version': new_ver
+            })
 
     if json_output:
-        print(json.dumps({'bumped': bumped_results}, indent=2))
+        print(json.dumps(bumped_results, indent=2))
     else:
         print(f"\n{COLOR_CYAN}{COLOR_BOLD}Batch {bump_type.upper()} Version Bump Results ({len(bumped_results)} scripts bumped):{COLOR_RESET}")
-        for r in bumped_results:
-            print(f"  * {r['name']} ({r['old_version']} -> {COLOR_GREEN}{COLOR_BOLD}{r['new_version']}{COLOR_RESET})")
+        for res in bumped_results:
+            print(f"  * {res['name']} ({res['old_version']} -> {res['new_version']})")
         print()
+
     return 0
 
 def resolve_command(arg):
-    commands = ['check', 'cleanup', 'release', 'build', 'bump']
+    commands = ['check', 'cleanup', 'release', 'build', 'bump', 'build-dist']
     if arg in commands:
         return arg
 
@@ -806,13 +988,25 @@ def main():
     if len(sys.argv) > 1 and not sys.argv[1].startswith('-'):
         sys.argv[1] = resolve_command(sys.argv[1])
 
-    parser = argparse.ArgumentParser(description="Git helper for MusicBrainz userscripts repository.")
-    subparsers = parser.add_subparsers(dest="command", help="Command to run")
+    parser = argparse.ArgumentParser(
+        description="Unified git workflow and release assistant for MusicBrainz userscripts.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  python tools/workflow.py check --json             # Fast diagnostic check for LLM / agents
+  python tools/workflow.py check --concise          # Human-readable concise status
+  python tools/workflow.py bump --bump-type patch   # Batch bump modified scripts & dependent libs
+  python tools/workflow.py release --non-interactive -y -p  # Automated release to main & dist
+  python tools/workflow.py build-dist --sync-branch # Synchronize standalone inlined scripts to dist
+"""
+    )
+    subparsers = parser.add_subparsers(dest="command", help="Command to run", metavar="{check,release,bump,build,build-dist,cleanup}")
 
     # Subcommand: check
-    check_parser = subparsers.add_parser("check", help="Check unreleased scripts and version bumps relative to main")
-    check_parser.add_argument("--json", action="store_true", help="Output token-efficient JSON format")
-    check_parser.add_argument("--concise", "-c", action="store_true", help="Output concise summary")
+    check_parser = subparsers.add_parser("check", help="Check unreleased scripts, cascading dependency bumps, and docs")
+    check_parser.add_argument("--json", action="store_true", help="Output token-efficient JSON format for automated LLM/agent usage")
+    check_parser.add_argument("--concise", "-c", action="store_true", help="Output concise summary without commit logs")
+    check_parser.add_argument("--main-branch", default=None, help="The repository main branch to compare against (default: auto-detected)")
 
     # Subcommand: cleanup
     cleanup_parser = subparsers.add_parser("cleanup", help="Clean up local/remote branches merged on GitHub")
@@ -820,9 +1014,9 @@ def main():
     cleanup_parser.add_argument("--main-branch", default="main", help="The repository main branch (default: main)")
 
     # Subcommand: release
-    release_parser = subparsers.add_parser("release", help="Release assistant for version bumping, list rebuilding and branch syncing")
-    release_parser.add_argument("--non-interactive", "-y", "--auto", action="store_true", help="Automated non-interactive mode for LLM execution")
-    release_parser.add_argument("--push", "--apply", "-p", action="store_true", help="Automatically apply git merge/rebase and push operations to remote")
+    release_parser = subparsers.add_parser("release", help="Interactive or automated release assistant with dist sync")
+    release_parser.add_argument("--non-interactive", "-y", "--auto", action="store_true", help="Automated non-interactive mode for LLM/agent execution")
+    release_parser.add_argument("--push", "--apply", "-p", action="store_true", help="Apply git merge/rebase and push operations to remote")
     release_parser.add_argument("--dry-run", "-n", action="store_true", help="Simulate release workflow without creating commits or modifying files")
     release_parser.add_argument("--json", action="store_true", help="Output JSON results")
     release_parser.add_argument("--bump-type", choices=["patch", "minor", "major", "none", "auto"], default="auto", help="Bump strategy in automated mode (default: auto)")
@@ -831,7 +1025,7 @@ def main():
     release_parser.add_argument("--commit-msg", "-m", default=None, help="Custom commit description override for new commits")
 
     # Subcommand: bump
-    bump_cmd_parser = subparsers.add_parser("bump", help="Batch bump version tags for modified/unreleased userscripts")
+    bump_cmd_parser = subparsers.add_parser("bump", help="Batch bump version tags for modified/unreleased userscripts and dependent libs")
     bump_cmd_parser.add_argument("--bump-type", choices=["patch", "minor", "major"], default="patch", help="Bump strategy (default: patch)")
     bump_cmd_parser.add_argument("--scripts", default="all", help="Comma-separated script paths or 'all' (default: all)")
     bump_cmd_parser.add_argument("--json", action="store_true", help="Output JSON results")
@@ -839,13 +1033,19 @@ def main():
     # Subcommand: build
     subparsers.add_parser("build", help="Rebuild docs/USERSCRIPTS.md markdown listing")
 
+    # Subcommand: build-dist
+    dist_parser = subparsers.add_parser("build-dist", help="Build standalone inlined scripts and sync to dist branch")
+    dist_parser.add_argument("--sync-branch", action="store_true", help="Sync inlined scripts directly to dist branch")
+    dist_parser.add_argument("--main-branch", default="main", help="Main branch name (default: main)")
+
     args = parser.parse_args()
 
     try:
         if not args.command or args.command == "check":
             json_flag = getattr(args, 'json', False)
             concise_flag = getattr(args, 'concise', False)
-            sys.exit(do_check(json_format=json_flag, concise=concise_flag))
+            main_branch_arg = getattr(args, 'main_branch', None)
+            sys.exit(do_check(json_format=json_flag, concise=concise_flag, main_branch=main_branch_arg))
         elif args.command == "cleanup":
             do_cleanup(args.branch, args.main_branch)
         elif args.command == "bump":
@@ -863,6 +1063,20 @@ def main():
             )
         elif args.command == "build":
             do_build()
+        elif args.command == "build-dist":
+            from build_dist import sync_dist_branch, build_all_inlined_scripts
+            if getattr(args, 'sync_branch', False):
+                sync_dist_branch(main_branch=args.main_branch)
+            else:
+                import tempfile
+                with tempfile.TemporaryDirectory() as tmpdir:
+                    res = build_all_inlined_scripts(tmpdir)
+                    print("Build dry-run complete. Inlined dependencies summary:")
+                    for script, libs in res.items():
+                        if libs:
+                            print(f"  * {script}: inlined {libs}")
+                        else:
+                            print(f"  * {script}: standalone (no local libs)")
     except KeyboardInterrupt:
         print(f"\n{COLOR_YELLOW}Aborted.{COLOR_RESET}\n")
         sys.exit(1)
