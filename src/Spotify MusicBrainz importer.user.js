@@ -439,6 +439,7 @@ class PermanentError extends Error {
 
     class main {
         static SCRIPT_NAME = GM.info.script.name;
+        static USER_AGENT = `${main.SCRIPT_NAME}/${GM.info.script.version} ( ${GM.info.script.namespace} )`;
         static SELECTORS = {
             ACTION_BAR: [
                 '[data-testid="action-bar-row"]'
@@ -656,7 +657,7 @@ class PermanentError extends Error {
 
         constructor() {
             TokenManager.init();
-            this.#mbApi = new MusicBrainzAPI({ user_agent: `${main.SCRIPT_NAME}/${GM.info.script.version} ( ${GM.info.script.namespace} )` });
+            this.#mbApi = new MusicBrainzAPI({ user_agent: main.USER_AGENT });
             this.#addStyles();
             this.#currentUrl = location.href;
             this.#initializeObserver();
@@ -1081,7 +1082,11 @@ class PermanentError extends Error {
         }
 
         static gmXmlHttpRequest(options) {
-            return new Promise((resolve, reject) => GM.xmlHttpRequest({ ...options, onload: resolve, onerror: reject, onabort: reject }));
+            const headers = {
+                'User-Agent': main.USER_AGENT,
+                ...options.headers
+            };
+            return new Promise((resolve, reject) => GM.xmlHttpRequest({ ...options, headers, onload: resolve, onerror: reject, onabort: reject }));
         }
 
         static generateDynamicStyles() {
