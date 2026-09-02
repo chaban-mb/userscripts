@@ -564,6 +564,7 @@ def do_release(non_interactive=False, json_output=False, bump_strategy="auto", s
             print(f"{COLOR_YELLOW}No scripts selected.{COLOR_RESET}\n")
             return
 
+    valid_scripts = []
     for script in selected_scripts:
         print(f"\n{COLOR_CYAN}{COLOR_BOLD}Processing release for:{COLOR_RESET} {script['name']}")
 
@@ -589,17 +590,14 @@ def do_release(non_interactive=False, json_output=False, bump_strategy="auto", s
         if script['needs_bump']:
             print(f"Version bump required. Current version is {current_version}.")
             print("Select version bump type:")
-            print("  1) Patch (bug fix/minor tweaks)")
+            print("  1) Patch (bug fix/minor tweaks) [Default]")
             print("  2) Minor (backwards-compatible enhancements)")
             print("  3) Major (incompatible UI/behavior changes)")
             print("  4) Manual (custom version)")
-            print("  5) Skip bump (release as-is)")
 
             if non_interactive:
                 if bump_strategy in ["patch", "minor", "major"]:
                     bump_choice = {"patch": "1", "minor": "2", "major": "3"}[bump_strategy]
-                elif bump_strategy == "none":
-                    bump_choice = "5"
                 else:
                     bump_choice = "1"
             else:
@@ -613,12 +611,19 @@ def do_release(non_interactive=False, json_output=False, bump_strategy="auto", s
             elif bump_choice in ['3', 'major']:
                 new_version = bump_version(current_version, 'major')
             elif bump_choice == '4':
-                new_version = prompt_user("Enter new version: ", non_interactive=non_interactive, auto_choice=current_version)
-            elif bump_choice == '5':
-                new_version = current_version
+                manual_ver = prompt_user("Enter new version: ", non_interactive=non_interactive, auto_choice="")
+                if manual_ver and parse_semver(manual_ver) and manual_ver != current_version:
+                    new_version = manual_ver
+                else:
+                    print(f"{COLOR_RED}Invalid or unchanged version '{manual_ver}'. Releases must include an incremented version.{COLOR_RESET}")
+                    continue
             else:
-                print(f"{COLOR_YELLOW}Invalid choice, skipping bump.{COLOR_RESET}")
-                new_version = current_version
+                print(f"{COLOR_YELLOW}Invalid choice. Defaulting to patch bump.{COLOR_RESET}")
+                new_version = bump_version(current_version, 'patch')
+
+            if not new_version or new_version == current_version:
+                print(f"{COLOR_RED}Error: Cannot release {script['name']} without a version bump. Aborting release for this script.{COLOR_RESET}")
+                continue
         else:
             print(f"Script already has bumped version: {current_version}")
             new_version = current_version
@@ -639,96 +644,118 @@ def do_release(non_interactive=False, json_output=False, bump_strategy="auto", s
 
         script['version_updated'] = version_updated
 
-        if dry_run:
-            print(f"[DRY-RUN] Skipping git add and git commit for {script['name']}.")
-            continue
+        script['target_version'] = new_version
+        valid_scripts.append(script)
 
-        # Automatically stage the script file and its description
-        subprocess.run(['git', 'add', str(script['rel_path'])], check=True)
+    selected_scripts = valid_scripts
+    if not selected_scripts:
+        print(f"\n{COLOR_RED}No scripts were successfully prepared or bumped for release. Aborting release workflow.{COLOR_RESET}\n")
+        return
 
-        if not script['rel_path'].startswith('lib/'):
-            script_base_name = script['full_path'].name.replace('.user.js', '')
-            desc_rel_path = f"docs/descriptions/{script_base_name}.md"
-            desc_full_path = repo_root / desc_rel_path
-            if desc_full_path.exists():
-                subprocess.run(['git', 'add', desc_rel_path], check=True)
+    if not dry_run:
+        # Phase 2 & 3: Stage and fold version bumps into unreleased commits
+        fixup_targets = []
+        has_amended_head = False
 
-        # Check if there are staged changes for this script or its description
-        desc_rel_path_to_check = f"docs/descriptions/{script['full_path'].name.replace('.user.js', '')}.md" if not script['rel_path'].startswith('lib/') else ""
-        res = subprocess.run(['git', 'diff', '--cached', '--name-only', '--', str(script['rel_path'])] + ([desc_rel_path_to_check] if desc_rel_path_to_check else []), capture_output=True, text=True)
-        staged_changes = res.stdout.strip()
-        if staged_changes:
-            slug = script['slug']
+        # Fast path: single script whose latest unreleased commit is HEAD
+        can_fast_amend = (
+            len(selected_scripts) == 1 and
+            selected_scripts[0].get('version_updated')
+        )
+        if can_fast_amend:
+            script = selected_scripts[0]
+            subprocess.run(['git', 'add', str(script['rel_path'])], check=True)
+            if not script['rel_path'].startswith('lib/'):
+                script_base_name = script['full_path'].name.replace('.user.js', '')
+                desc_rel_path = f"docs/descriptions/{script_base_name}.md"
+                if (repo_root / desc_rel_path).exists():
+                    subprocess.run(['git', 'add', desc_rel_path], check=True)
 
-            if script['main_version'] is None:
-                default_type = "feat"
-                default_desc = f"add {script['name']} userscript"
-            elif version_updated:
-                default_type = "fix"
-                default_desc = f"bump version to {new_version}"
-            else:
-                default_type = "feat"
-                default_desc = f"release version {new_version}"
-
-            # Find the latest unreleased commit touching this script file
             file_commits_out = get_git_stdout([
-                'git', 'log', f'{remote}/{main_branch}..HEAD',
+                'git', 'log', f'{main_branch}..HEAD',
                 '--format=%H %s', '--', str(script['rel_path'])
             ]).strip()
             file_commits = [l.strip() for l in file_commits_out.splitlines() if l.strip()]
-
             head_hash = run_cmd("git rev-parse HEAD").strip()
-            target_line = file_commits[0] if file_commits else None
-            target_hash = target_line.split(' ', 1)[0] if target_line else None
-            target_subject = (target_line.split(' ', 1)[1] if target_line and ' ' in target_line else '')
+            target_hash = file_commits[0].split(' ', 1)[0] if file_commits else None
+            target_subject = (file_commits[0].split(' ', 1)[1] if file_commits and ' ' in file_commits[0] else '')
 
-            committed = False
-            if target_hash == head_hash:
-                # HEAD is the latest commit for this script — standard amend
-                amend_choice = prompt_user(f"Last commit matches this script's slug. Amend version bump into '{target_subject}'? (Y/n): ", default='y', non_interactive=non_interactive, auto_choice='y').lower()
-                if amend_choice == 'y':
-                    print("Amending last commit to include version bump...")
-                    subprocess.run(['git', 'commit', '--amend', '--no-edit'], check=True)
-                    committed = True
-            elif target_hash:
-                # Non-HEAD unpushed commit exists — fold via fixup rebase
-                print(f"Found unpushed commit for this script:\n  {target_subject}")
-                fixup_choice = prompt_user("Fold version bump into it via fixup rebase? (Y/n): ", default='y', non_interactive=non_interactive, auto_choice='y').lower()
-                if fixup_choice == 'y':
-                    print(f"Creating fixup commit and squashing into '{target_subject}'...")
+            if target_hash and target_hash == head_hash:
+                print(f"\nAmending last commit '{target_subject}' to include version bump...")
+                subprocess.run(['git', 'commit', '--amend', '--no-edit'], check=True)
+                has_amended_head = True
+
+        if not has_amended_head:
+            for script in selected_scripts:
+                if not script.get('version_updated') and script['main_version'] is not None:
+                    continue
+
+                subprocess.run(['git', 'add', str(script['rel_path'])], check=True)
+                if not script['rel_path'].startswith('lib/'):
+                    script_base_name = script['full_path'].name.replace('.user.js', '')
+                    desc_rel_path = f"docs/descriptions/{script_base_name}.md"
+                    if (repo_root / desc_rel_path).exists():
+                        subprocess.run(['git', 'add', desc_rel_path], check=True)
+
+                res = subprocess.run(['git', 'diff', '--cached', '--name-only', '--', str(script['rel_path'])], capture_output=True, text=True)
+                if not res.stdout.strip():
+                    continue
+
+                slug = script['slug']
+                new_ver = script.get('target_version', script['curr_version'])
+
+                file_commits_out = get_git_stdout([
+                    'git', 'log', f'{main_branch}..HEAD',
+                    '--format=%H %s', '--', str(script['rel_path'])
+                ]).strip()
+                file_commits = [l.strip() for l in file_commits_out.splitlines() if l.strip()]
+
+                if file_commits:
+                    target_line = file_commits[0]
+                    target_hash = target_line.split(' ', 1)[0]
+                    target_subject = target_line.split(' ', 1)[1] if ' ' in target_line else ''
+                    print(f"Creating fixup for '{target_subject}' to fold {script['name']} version bump...")
                     subprocess.run(['git', 'commit', '--fixup', target_hash], check=True)
-                    env = os.environ.copy()
-                    env['GIT_SEQUENCE_EDITOR'] = 'true'
-                    subprocess.run(['git', 'rebase', '-i', '--autosquash', '--autostash', f'{target_hash}^'], env=env, check=True)
-                    committed = True
+                    fixup_targets.append(target_hash)
+                else:
+                    if script['main_version'] is None:
+                        default_type = "feat"
+                        default_desc = f"add {script['name']} userscript"
+                    else:
+                        default_type = "chore"
+                        default_desc = f"bump version to {new_ver}"
 
-            if not committed:
-                print(f"\nEnter commit message details for {script['name']}.")
-                print(f"Format: <type>({slug}): <description>")
-                if non_interactive:
                     commit_type = custom_commit_type or default_type
                     commit_desc = custom_commit_msg or default_desc
-                else:
-                    commit_type = custom_commit_type or (input(f"Commit type (fix/feat/chore/refactor/style, default: {default_type}): ").strip().lower() or default_type)
-                    commit_desc = custom_commit_msg or (input(f"Description (default: {default_desc}): ").strip() or default_desc)
-                commit_msg = f"{commit_type}({slug}): {commit_desc}"
-                print(f"Committing changes: '{commit_msg}'")
-                subprocess.run(['git', 'commit', '-m', commit_msg], check=True)
-                commits_created += 1
-        else:
-            print(f"No changes to commit for {script['name']}.")
+                    commit_msg = f"{commit_type}({slug}): {commit_desc}"
+                    print(f"Committing new changes: '{commit_msg}'")
+                    subprocess.run(['git', 'commit', '-m', commit_msg], check=True)
+                    commits_created += 1
+
+            if fixup_targets:
+                print(f"\n{COLOR_CYAN}Folding version bumps into unreleased commits via atomic autosquash rebase...{COLOR_RESET}")
+                subprocess.run([
+                    'git', '-c', 'sequence.editor=true', 'rebase', '-i',
+                    '--autosquash', '--autostash', main_branch
+                ], check=True)
+                print(f"{COLOR_GREEN}Version bumps successfully folded into commits (0 extra bump commits).{COLOR_RESET}")
+    else:
+        for script in selected_scripts:
+            print(f"[DRY-RUN] Would fold version bump into unreleased commits for {script['name']}.")
 
     # Rebuild Markdown list of userscripts and commit it if changed
     print("\nRebuilding userscripts list (docs/USERSCRIPTS.md)...")
     do_build()
 
-    # Check if docs/USERSCRIPTS.md is modified
-    list_changed = run_cmd("git status --porcelain docs/USERSCRIPTS.md")
-    if list_changed:
-        print("Staging and committing updated USERSCRIPTS.md...")
-        subprocess.run(['git', 'add', 'docs/USERSCRIPTS.md'], check=True)
-        subprocess.run(['git', 'commit', '-m', "chore(docs): update userscripts list"], check=True)
-        commits_created += 1
+    list_changed = False
+    if not dry_run:
+        # Check if docs/USERSCRIPTS.md is modified
+        list_changed = bool(run_cmd("git status --porcelain docs/USERSCRIPTS.md"))
+        if list_changed:
+            print("Staging and committing updated USERSCRIPTS.md...")
+            subprocess.run(['git', 'add', 'docs/USERSCRIPTS.md'], check=True)
+            subprocess.run(['git', 'commit', '-m', "chore(docs): update userscripts list"], check=True)
+            commits_created += 1
 
     # Detect all changed files between main and HEAD
     all_changed_files = [f.strip() for f in get_git_stdout(['git', 'diff', '--name-only', f'{main_branch}..HEAD']).splitlines() if f.strip()]
@@ -812,6 +839,10 @@ def do_release(non_interactive=False, json_output=False, bump_strategy="auto", s
         print(f"      {COLOR_CYAN}git rebase {main_branch}{COLOR_RESET}")
         print(f"      {COLOR_CYAN}git push {remote} {release_branch} --force-with-lease{COLOR_RESET}\n")
 
+    if dry_run:
+        print(f"\n{COLOR_GREEN}[DRY-RUN] Release workflow preview completed. No git branches were modified or pushed.{COLOR_RESET}\n")
+        return
+
     auto_apply = 'y' if apply_push else ('n' if non_interactive else 'y')
     confirm = prompt_user(f"{COLOR_BOLD}Do you want to apply these operations and push changes? (y/N):{COLOR_RESET} ", default='y', non_interactive=non_interactive, auto_choice=auto_apply).lower()
     if confirm != 'y':
@@ -874,7 +905,7 @@ def do_release(non_interactive=False, json_output=False, bump_strategy="auto", s
 
         print(f"\n{COLOR_CYAN}Syncing {release_branch} with {main_branch}...{COLOR_RESET}")
         if is_full_release:
-            subprocess.run(['git', 'push', remote, release_branch], check=True)
+            subprocess.run(['git', 'push', remote, release_branch, '--force-with-lease'], check=True)
         else:
             ff_res = subprocess.run(['git', 'merge', '--ff-only', main_branch], capture_output=True, text=True)
             if ff_res.returncode != 0:
