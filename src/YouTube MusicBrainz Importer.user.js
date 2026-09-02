@@ -968,6 +968,7 @@ class PermanentError extends Error {
          */
         gmXmlHttpRequest: function (details, apiName, currentRetry = 0) {
             const headers = {
+                "User-Agent": USER_AGENT,
                 "Referer": location.origin,
                 "Origin": location.origin,
                 ...details.headers
@@ -994,9 +995,7 @@ class PermanentError extends Error {
                                         .catch(reject);
                                 }, delay);
                             } else {
-                                if (!(response.status === 404 && apiName === 'MusicBrainz API')) {
-                                    console.error(`[${GM.info.script.name}] ${apiName} request failed with status ${response.status}.`);
-                                }
+                                console.error(`[${GM.info.script.name}] ${apiName} request failed with status ${response.status}.`);
                                 const error = new Error(`Request to ${apiName} failed with status ${response.status}: ${response.responseText}`);
                                 error.status = response.status;
                                 error.apiName = apiName;
@@ -1350,17 +1349,15 @@ class PermanentError extends Error {
             }
             rateLimitState.isBlocked = false;
             const url = Config.LISTENBRAINZ_API_ROOT + endpoint;
-            const headers = new Headers();
-
-            // This is where the Authorization header is constructed
-            if (token) headers.append('Authorization', `Token ${token}`);
-
-            if (body) headers.append('Content-Type', 'application/json');
+            const headers = {
+                ...(token ? { 'Authorization': `Token ${token}` } : {}),
+                ...(body ? { 'Content-Type': 'application/json' } : {})
+            };
             try {
                 const response = await Utils.gmXmlHttpRequest({
                     method,
                     url,
-                    headers: Object.fromEntries(headers.entries()),
+                    headers,
                     data: body ? JSON.stringify(body) : null,
                 }, 'ListenBrainz API');
                 const remaining = response.responseHeaders.match(/x-ratelimit-remaining:\s*(\d+)/i);
