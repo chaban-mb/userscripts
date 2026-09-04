@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        Harmony: Enhancements
 // @namespace   https://musicbrainz.org/user/chaban
-// @version     1.27.10
+// @version     1.27.11
 // @description Adds some convenience features, various UI and behavior settings, as well as an improved language detection to Harmony.
 // @tag         ai-created
 // @author      chaban
@@ -1708,20 +1708,9 @@
             }
             createAndInsertMessage('he-language-analysis', messageContent);
 
-            // --- Update the UI and Seeder ---
-            const updateSeeder = (lang, script) => {
-                if (lang) {
-                    AppState.data.release.language = { code: lang };
-                }
-
-                if (script) {
-                    AppState.data.release.script = { code: script };
-                } else if (lang === 'zxx') {
-                    AppState.data.release.script = null;
-                }
-            };
-
             if (isZxx) {
+                AppState.data.release.language = { code: 'zxx' };
+                AppState.data.release.script = null;
                 if (langRow) {
                     langRow.querySelector('td').textContent = '[No linguistic content]';
                 } else {
@@ -1729,7 +1718,6 @@
                     newRow.id = 'he-language-row';
                     newRow.innerHTML = `<th>Language</th><td>[No linguistic content]</td>`;
                 }
-                updateSeeder('zxx', null);
                 return;
             }
 
@@ -1738,17 +1726,17 @@
             // Update Language
             const newLangContent = `${languageName} (${confidence}% confidence)`;
             if (langRow) {
-                if (shouldOverwrite) {
-                    if (originalLang.toLowerCase() !== languageName.toLowerCase()) {
-                        const cell = langRow.querySelector('td');
-                        cell.textContent = '';
-                        cell.append(newLangContent, ' ');
-                        const overwrittenSpan = UI_UTILS.createIndicatorSpan('overwritten', originalText, { tooltipPrefix: "Harmony's original guess:" });
-                        cell.append(overwrittenSpan);
-                        cell.setAttribute(DATA_ATTRIBUTE_APPLIED, 'true');
-                    }
+                if (shouldOverwrite && originalLang.toLowerCase() !== languageName.toLowerCase()) {
+                    AppState.data.release.language = { code: languageCode3 };
+                    const cell = langRow.querySelector('td');
+                    cell.textContent = '';
+                    cell.append(newLangContent, ' ');
+                    const overwrittenSpan = UI_UTILS.createIndicatorSpan('overwritten', originalText, { tooltipPrefix: "Harmony's original guess:" });
+                    cell.append(overwrittenSpan);
+                    cell.setAttribute(DATA_ATTRIBUTE_APPLIED, 'true');
                 }
             } else {
+                AppState.data.release.language = { code: languageCode3 };
                 const newRow = releaseInfoTable.insertRow(scriptRow ? scriptRow.rowIndex : -1);
                 newRow.id = 'he-language-row';
                 const th = document.createElement('th');
@@ -1772,7 +1760,8 @@
                     const originalScriptText = scriptRow.querySelector('td').textContent.trim();
                     const originalScript = originalScriptText.replace(/\s*\(.*\)/, '').trim();
 
-                    if (originalScript.toLowerCase() !== newScript.toLowerCase()) {
+                    if (shouldOverwrite && originalScript.toLowerCase() !== newScript.toLowerCase()) {
+                        AppState.data.release.script = { code: scriptCode };
                         const cell = scriptRow.querySelector('td');
                         cell.textContent = '';
                         cell.append(newScript, ' ');
@@ -1781,6 +1770,7 @@
                         cell.setAttribute(DATA_ATTRIBUTE_APPLIED, 'true');
                     }
                 } else {
+                    AppState.data.release.script = { code: scriptCode };
                     const newRow = releaseInfoTable.insertRow(langRow ? langRow.rowIndex + 1 : -1);
                     const th = document.createElement('th');
                     th.textContent = 'Script';
@@ -1795,8 +1785,6 @@
                     newRow.append(th, td);
                 }
             }
-
-            updateSeeder(languageCode3, scriptCode);
         },
 
         improveReleaseTypeDetection: () => {
