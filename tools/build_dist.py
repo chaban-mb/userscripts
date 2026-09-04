@@ -113,7 +113,7 @@ def sync_dist_branch(main_branch="main", dist_branch="dist"):
     main_date = subprocess.run(["git", "log", "-1", "--format=%ad", main_branch], capture_output=True, text=True, check=True).stdout.strip()
 
     # 1. Build inlined files into a temporary directory from main/src state
-    with tempfile.TemporaryDirectory() as build_tmpdir:
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as build_tmpdir:
         print(f"Inlining userscript libraries for '{dist_branch}' branch...")
         build_all_inlined_scripts(build_tmpdir)
 
@@ -124,7 +124,7 @@ def sync_dist_branch(main_branch="main", dist_branch="dist"):
         if not dist_exists:
             # Create a true orphan root commit containing only inlined scripts + LICENSE
             print(f"Creating true orphan '{dist_branch}' branch with initial standalone userscripts...")
-            with tempfile.TemporaryDirectory() as init_wt_dir:
+            with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as init_wt_dir:
                 author_name = subprocess.run(["git", "log", "-1", "--format=%an", main_branch], capture_output=True, text=True, check=True).stdout.strip()
                 author_email = subprocess.run(["git", "log", "-1", "--format=%ae", main_branch], capture_output=True, text=True, check=True).stdout.strip()
                 env = os.environ.copy()
@@ -160,8 +160,9 @@ def sync_dist_branch(main_branch="main", dist_branch="dist"):
                     return True
                 finally:
                     subprocess.run(["git", "worktree", "remove", "--force", init_wt_dir], capture_output=True)
+                    subprocess.run(["git", "worktree", "prune"], capture_output=True)
 
-        with tempfile.TemporaryDirectory() as worktree_dir:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as worktree_dir:
             # Add worktree for dist branch
             subprocess.run(["git", "worktree", "add", worktree_dir, dist_branch], check=True)
             try:
@@ -197,6 +198,7 @@ def sync_dist_branch(main_branch="main", dist_branch="dist"):
                 return True
             finally:
                 subprocess.run(["git", "worktree", "remove", "--force", worktree_dir], capture_output=True)
+                subprocess.run(["git", "worktree", "prune"], capture_output=True)
 
 if __name__ == "__main__":
     import argparse
@@ -210,7 +212,7 @@ if __name__ == "__main__":
         sync_dist_branch(args.main_branch, args.dist_branch)
     else:
         import tempfile
-        with tempfile.TemporaryDirectory() as tmpdir:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmpdir:
             res = build_all_inlined_scripts(tmpdir)
             print("Build dry-run complete. Inlined dependencies summary:")
             for script, libs in res.items():

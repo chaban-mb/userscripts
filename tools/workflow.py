@@ -1100,7 +1100,7 @@ Examples:
                 sync_dist_branch(main_branch=args.main_branch)
             else:
                 import tempfile
-                with tempfile.TemporaryDirectory() as tmpdir:
+                with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmpdir:
                     res = build_all_inlined_scripts(tmpdir)
                     print("Build dry-run complete. Inlined dependencies summary:")
                     for script, libs in res.items():
