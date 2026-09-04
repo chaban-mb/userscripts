@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        Harmony: Enhancements
 // @namespace   https://musicbrainz.org/user/chaban
-// @version     1.27.12
+// @version     1.28.0
 // @description Adds some convenience features, various UI and behavior settings, as well as an improved language detection to Harmony.
 // @tag         ai-created
 // @author      chaban
@@ -166,6 +166,8 @@
             label: 'Map label names to MBIDs',
             description: 'Automatically assigns a Label MBID based on a list of mappings if Harmony couldn\'t find one. Can also overwrite existing labels, e.g to "[no label]". Uses case-sensitive matching.<br>Format: <code>Exact Label Name=Label MBID</code> or <code>Exact Label Name=Label URL</code> (one per line).',
             defaultValue: [
+                // Harmony remaps DistroKid natively on load, but companion scripts (e.g. HBR) can inject raw 'DistroKid' labels without Harmony's awareness
+                'DistroKid=https://musicbrainz.org/label/157afde4-4bf5-4039-8ad2-5a15acc85176',
                 'igroovemusic.com=https://musicbrainz.org/label/157afde4-4bf5-4039-8ad2-5a15acc85176',
                 'recordJet=https://musicbrainz.org/label/157afde4-4bf5-4039-8ad2-5a15acc85176'
             ],
@@ -329,131 +331,376 @@
     };
 
     /**
-    * A map of functions that generate the required form parameters from the release data object.
-    * Each function takes the corresponding value from the release data and a setter function
-    * to add key-value pairs to our desired state map.
-    *
-    * Simple fields can specify `paramName` directly, which maps 1:1.
-    * Complex fields can provide a custom `generator` function.
-    */
-    const PARAMETER_GENERATORS = {
-        'title': {
-            cleanupPrefix: 'name',
-            paramName: 'name',
-        },
-        'comment': {
-            cleanupPrefix: 'comment',
-            paramName: 'comment',
-        },
-        'annotation': {
-            cleanupPrefix: 'annotation',
-            paramName: 'annotation',
-        },
-        'gtin': {
-            cleanupPrefix: 'barcode',
-            paramName: 'barcode',
-        },
-        'status': {
-            cleanupPrefix: 'status',
-            paramName: 'status',
-        },
-        'packaging': {
-            cleanupPrefix: 'packaging',
-            paramName: 'packaging',
-        },
-        'script.code': {
-            cleanupPrefix: 'script',
-            paramName: 'script',
-        },
-        'types': {
-            cleanupPrefix: 'type.',
-            generator: (value, set) => {
-                value?.forEach((type, index) => {
-                    set(`type.${index}`, type);
-                });
-            },
-        },
-        'labels': {
-            cleanupPrefix: 'labels.',
-            generator: (value, set) => {
-                const uniqueLabels = getUniqueLabels(value);
+     * Helper to read a value from an object using dot notation.
+     * @param {object} obj - The source object.
+     * @param {string} path - The dot-separated property path.
+     * @returns {any}
+     */
+    function getDeepProperty(obj, path) {
+        if (!obj || !path) return undefined;
+        return path.split('.').reduce((acc, part) => acc?.[part], obj);
+    }
 
-                uniqueLabels.forEach((label, index) => {
-                    const prefix = `labels.${index}`;
-                    set(`${prefix}.name`, label.name);
-                    if (label.mbid) {
-                        set(`${prefix}.mbid`, label.mbid);
+    /**
+     * Helper to assign a value along a dot-separated path, creating parent objects if necessary.
+     * @param {object} target - Target object.
+     * @param {string} path - Dot-separated path (e.g. "date.year", "recording.mbid").
+     * @param {any} value - New value.
+     * @returns {boolean} True if the value changed.
+     */
+    function setDeepPropertyIfChanged(target, path, value) {
+        if (!target || !path || value === undefined || value === null) return false;
+        const parts = path.split('.');
+        const leaf = parts.pop();
+        const parent = parts.reduce((acc, part) => (acc[part] ??= {}), target);
+
+        if (parent[leaf] !== value) {
+            parent[leaf] = value;
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * Generic array reconciliation helper that finds, creates, or updates items in a collection.
+     * @param {Array} targetArr - Target collection to mutate.
+     * @param {Array} incomingArr - Incoming items.
+     * @param {object} options
+     * @param {Function} [options.findExisting] - Matcher: (current, incoming, index) => boolean.
+     * @param {Function} options.createNew - Factory: (incoming, index) => newObject.
+     * @param {Function} [options.updateExisting] - Updater: (current, incoming, index) => boolean (true if changed).
+     * @returns {boolean} True if targetArr was mutated.
+     */
+    function reconcileArray(targetArr, incomingArr, { findExisting, createNew, updateExisting }) {
+        let changed = false;
+        incomingArr.filter(Boolean).forEach((inc, index) => {
+            const existing = findExisting ? targetArr.find((curr, i) => findExisting(curr, inc, index, i)) : null;
+            if (!existing) {
+                targetArr.push(createNew(inc, index));
+                changed = true;
+            } else if (updateExisting) {
+                if (updateExisting(existing, inc, index)) {
+                    changed = true;
+                }
+            }
+        });
+        return changed;
+    }
+
+    /**
+     * @summary Recursive Codec Engine for bidirectional transformation between AppData and MB form parameters.
+     */
+    const CodecEngine = {
+        serialize(entityDef, data, setParam, currentPrefix = '') {
+            if (!data) return;
+
+            if (entityDef.type === 'primitive_list') {
+                if (Array.isArray(data)) {
+                    data.forEach((val, idx) => setParam(`${currentPrefix}${idx}`, val));
+                }
+                return;
+            }
+
+            if (entityDef.fields) {
+                for (const [appKey, formParam] of Object.entries(entityDef.fields)) {
+                    const val = getDeepProperty(data, appKey);
+                    if (val !== undefined && val !== null) {
+                        setParam(`${currentPrefix}${formParam}`, val);
                     }
-                    if (label.catalogNumber) {
-                        set(`${prefix}.catalog_number`, label.catalogNumber);
+                }
+            }
+
+            if (typeof entityDef.onSerialize === 'function') {
+                entityDef.onSerialize(data, setParam, currentPrefix);
+            }
+
+            if (entityDef.nested) {
+                for (const [childKey, childDef] of Object.entries(entityDef.nested)) {
+                    const childData = data[childKey];
+                    const paramPrefix = childDef.paramPrefix || `${childDef.paramKey || childKey}.`;
+                    if (Array.isArray(childData)) {
+                        if (typeof childDef.onSerialize === 'function') {
+                            childDef.onSerialize(childData, setParam, `${currentPrefix}${paramPrefix}`);
+                        } else {
+                            childData.forEach((item, idx) => {
+                                const nextPrefix = `${currentPrefix}${paramPrefix}${idx}.`;
+                                this.serialize(childDef, item, setParam, nextPrefix);
+                            });
+                        }
+                    } else if (childData) {
+                        const nextPrefix = `${currentPrefix}${paramPrefix}`;
+                        this.serialize(childDef, childData, setParam, nextPrefix);
                     }
-                });
-            },
+                }
+            }
         },
-        'artists': {
-            cleanupPrefix: 'artist_credit.names.',
-            generator: (value, set) => {
-                value?.forEach((artist, index) => {
-                    const prefix = `artist_credit.names.${index}`;
-                    set(`${prefix}.name`, artist.name);
-                    if (artist.mbid) {
-                        set(`${prefix}.mbid`, artist.mbid);
-                    } else {
-                        set(`${prefix}.artist.name`, artist.name);
+
+        deserialize(entityDef, incoming, targetObj) {
+            if (!incoming || !targetObj) return false;
+            let changed = false;
+
+            if (entityDef.fields) {
+                for (const [appKey, formParam] of Object.entries(entityDef.fields)) {
+                    const incVal = getDeepProperty(incoming, formParam);
+                    if (incVal !== undefined && incVal !== null) {
+                        const cleanVal = typeof incVal === 'string' ? incVal.trim() : incVal;
+                        if (setDeepPropertyIfChanged(targetObj, appKey, cleanVal)) {
+                            changed = true;
+                        }
                     }
-                    if (index < value.length - 1) {
-                        const joinPhrase = (index === value.length - 2) ? ' & ' : ', ';
-                        set(`${prefix}.join_phrase`, joinPhrase);
+                }
+            }
+
+            if (typeof entityDef.onDeserialize === 'function') {
+                if (entityDef.onDeserialize(targetObj, incoming)) {
+                    changed = true;
+                }
+            }
+
+            if (entityDef.nested) {
+                for (const [childKey, childDef] of Object.entries(entityDef.nested)) {
+                    const incomingChild = getDeepProperty(incoming, childDef.paramKey || childKey);
+                    if (Array.isArray(incomingChild)) {
+                        targetObj[childKey] ??= [];
+                        const childChanged = reconcileArray(targetObj[childKey], incomingChild, {
+                            findExisting: (curr, inc, incIdx, currIdx) => {
+                                if (childDef.identity) {
+                                    const currId = childDef.identity(curr);
+                                    const incId = childDef.identity(inc);
+                                    if (currId && incId) return currId === incId;
+                                }
+                                return incIdx === currIdx;
+                            },
+                            createNew: (inc, idx) => {
+                                const newChild = childDef.factory ? childDef.factory(inc, idx) : {};
+                                this.deserialize(childDef, inc, newChild);
+                                return newChild;
+                            },
+                            updateExisting: (curr, inc) => this.deserialize(childDef, inc, curr),
+                        });
+                        if (childChanged) changed = true;
                     }
-                });
-            },
+                }
+            }
+
+            return changed;
+        }
+    };
+
+    const getScalarParam = (def) => (typeof def === 'string' ? def : def.param);
+    const isScalarManaged = (def) => (typeof def === 'string' || def.managed !== false);
+
+    /**
+     * Declarative MusicBrainz / Harmony Release Schema Definition (Approach B).
+     */
+    const ReleaseSchema = {
+        scalars: {
+            'title': 'name',
+            'comment': 'comment',
+            'gtin': 'barcode',
+            'status': 'status',
+            'packaging': 'packaging',
+            'script.code': 'script',
+            'language.code': 'language',
+            'annotation': { param: 'annotation', managed: false },
+            'editNote': { param: 'edit_note', managed: false },
         },
-        'language': {
-            cleanupPrefix: 'language',
-            generator: (value, set) => {
-                if (value?.code) {
-                    set('language', value.code);
+        collections: {
+            'types': {
+                cleanupPrefix: 'type.',
+                type: 'primitive_list',
+                deserialize(parsed, target) {
+                    if (!parsed.type) return false;
+                    target.types ??= [];
+                    const incoming = (Array.isArray(parsed.type) ? parsed.type : [parsed.type]).map(t => String(t).trim()).filter(Boolean);
+                    return reconcileArray(target.types, incoming, {
+                        findExisting: (curr, inc) => curr === inc,
+                        createNew: (inc) => inc,
+                    });
                 }
             },
-        },
-        'media': {
-            cleanupPrefix: 'mediums.',
-            generator: (value, set) => {
-                value?.forEach((medium, mediumIndex) => {
-                    const prefix = `mediums.${mediumIndex}`;
-                    if (medium.format) {
-                        set(`${prefix}.format`, medium.format);
-                    }
-                    if (medium.name) {
-                        set(`${prefix}.name`, medium.name);
-                    }
-                    medium.tracklist?.forEach((track, trackIndex) => {
-                        const trackPrefix = `${prefix}.track.${trackIndex}`;
-                        set(`${trackPrefix}.name`, track.title);
-                        set(`${trackPrefix}.number`, track.number);
-                        set(`${trackPrefix}.length`, track.length);
-                        if (track.recording?.mbid) {
-                            set(`${trackPrefix}.recording`, track.recording.mbid);
-                        }
-
-                        track.artists?.forEach((artist, artistIndex) => {
-                            const artistPrefix = `${trackPrefix}.artist_credit.names.${artistIndex}`;
-                            set(`${artistPrefix}.name`, artist.name);
-                            if (artist.mbid) {
-                                set(`${artistPrefix}.mbid`, artist.mbid);
-                            } else {
-                                set(`${artistPrefix}.artist.name`, artist.name);
-                            }
-                            if (artistIndex < track.artists.length - 1) {
-                                const joinPhrase = (artistIndex === track.artists.length - 2) ? ' & ' : ', ';
-                                set(`${artistPrefix}.join_phrase`, joinPhrase);
-                            }
-                        });
-                    });
-                });
+            'events': {
+                cleanupPrefix: 'events.',
+                paramPrefix: 'events.',
+                fields: {
+                    'date.year': 'date.year',
+                    'date.month': 'date.month',
+                    'date.day': 'date.day',
+                    'country': 'country'
+                },
+                deserialize(parsed, target) {
+                    const firstEvent = parsed.events?.find(Boolean);
+                    if (!firstEvent?.date) return false;
+                    target.releaseDate ??= { date: {} };
+                    const { year, month, day } = firstEvent.date;
+                    let changed = false;
+                    if (year && setDeepPropertyIfChanged(target.releaseDate, 'date.year', Number.parseInt(year, 10))) changed = true;
+                    if (month && setDeepPropertyIfChanged(target.releaseDate, 'date.month', Number.parseInt(month, 10))) changed = true;
+                    if (day && setDeepPropertyIfChanged(target.releaseDate, 'date.day', Number.parseInt(day, 10))) changed = true;
+                    return changed;
+                }
             },
+            'labels': {
+                cleanupPrefix: 'labels.',
+                paramPrefix: 'labels.',
+                identity: (l) => (l.name ?? l._injectedOriginalName ?? '').toLowerCase(),
+                fields: {
+                    'name': 'name',
+                    'mbid': 'mbid',
+                    'catalogNumber': 'catalog_number'
+                },
+                onSerialize(labels, set) {
+                    getUniqueLabels(labels).forEach((label, index) => {
+                        const prefix = `labels.${index}.`;
+                        set(`${prefix}name`, label.name);
+                        if (label.mbid) set(`${prefix}mbid`, label.mbid);
+                        if (label.catalogNumber) set(`${prefix}catalog_number`, label.catalogNumber);
+                    });
+                },
+                onDeserialize(targetItem) {
+                    targetItem._injectedOriginalName ??= targetItem.name;
+                    targetItem.externalIds ??= [];
+                }
+            },
+            'artists': {
+                cleanupPrefix: 'artist_credit.names.',
+                paramPrefix: 'artist_credit.names.',
+                paramKey: 'artist_credit.names',
+                fields: {
+                    'name': 'name',
+                    'mbid': 'mbid',
+                    'joinPhrase': 'join_phrase'
+                },
+                onSerialize(artists, set) {
+                    artists?.forEach((artist, index) => {
+                        const prefix = `artist_credit.names.${index}.`;
+                        set(`${prefix}name`, artist.name);
+                        if (artist.mbid) {
+                            set(`${prefix}mbid`, artist.mbid);
+                        } else {
+                            set(`${prefix}artist.name`, artist.name);
+                        }
+                        if (index < artists.length - 1) {
+                            const joinPhrase = (index === artists.length - 2) ? ' & ' : ', ';
+                            set(`${prefix}join_phrase`, joinPhrase);
+                        }
+                    });
+                },
+                factory(inc) {
+                    const name = (inc.name ?? inc.artist?.name ?? '').trim();
+                    return { name, creditedName: name, mbid: inc.mbid?.trim() ?? null, joinPhrase: inc.join_phrase ?? '', externalIds: [] };
+                }
+            },
+            'urls': {
+                cleanupPrefix: 'urls.',
+                paramPrefix: 'urls.',
+                identity: (u) => {
+                    const rawUrl = (typeof u === 'string' ? u : (u.url ?? '')).trim().toLowerCase();
+                    const linkType = String(u.linkType ?? u.link_type ?? '').trim();
+                    return `${rawUrl}|${linkType}`;
+                },
+                fields: {
+                    'url': 'url',
+                    'linkType': 'link_type'
+                },
+                factory(inc) {
+                    return { url: (inc.url ?? inc).trim(), linkType: inc.link_type ? String(inc.link_type).trim() : (inc.linkType ? String(inc.linkType).trim() : null) };
+                }
+            },
+            'media': {
+                cleanupPrefix: 'mediums.',
+                paramPrefix: 'mediums.',
+                fields: {
+                    'format': 'format',
+                    'name': 'name'
+                },
+                factory(inc, idx) {
+                    return { number: idx + 1, format: inc.format ?? 'Digital Media', name: inc.name ?? null, tracklist: [] };
+                },
+                nested: {
+                    tracklist: {
+                        paramKey: 'track',
+                        paramPrefix: 'track.',
+                        fields: {
+                            'title': 'name',
+                            'number': 'number',
+                            'length': 'length',
+                            'recording.mbid': 'recording',
+                        },
+                        factory(inc, idx) {
+                            return {
+                                number: inc.number ? Number.parseInt(inc.number, 10) : idx + 1,
+                                title: (inc.name ?? inc.title ?? '').trim(),
+                                length: inc.length ? Number.parseInt(inc.length, 10) : null,
+                                isrc: inc.isrc ?? null,
+                                recording: inc.recording ? { mbid: inc.recording } : null,
+                                artists: []
+                            };
+                        },
+                        nested: {
+                            artists: {
+                                paramKey: 'artist_credit.names',
+                                paramPrefix: 'artist_credit.names.',
+                                fields: {
+                                    'name': 'name',
+                                    'mbid': 'mbid',
+                                    'joinPhrase': 'join_phrase'
+                                },
+                                onSerialize(artists, set, prefix) {
+                                    artists?.forEach((artist, index) => {
+                                        const itemPrefix = `${prefix}${index}.`;
+                                        set(`${itemPrefix}name`, artist.name);
+                                        if (artist.mbid) {
+                                            set(`${itemPrefix}mbid`, artist.mbid);
+                                        } else {
+                                            set(`${itemPrefix}artist.name`, artist.name);
+                                        }
+                                        if (index < artists.length - 1) {
+                                            const joinPhrase = (index === artists.length - 2) ? ' & ' : ', ';
+                                            set(`${itemPrefix}join_phrase`, joinPhrase);
+                                        }
+                                    });
+                                },
+                                factory(inc) {
+                                    const name = (inc.name ?? inc.artist?.name ?? '').trim();
+                                    return { name, mbid: inc.mbid?.trim() ?? null, joinPhrase: inc.join_phrase ?? '' };
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    };
+
+    /**
+     * Known third-party companion userscript indicators (selectors and identifiers).
+     */
+    const THIRD_PARTY_SCRIPTS = {
+        hbr: {
+            name: 'Harmony Beatport Recovery',
+            selectors: [
+                '[id^="hbr-"]',
+                '[data-hbr-beatport]',
+            ],
         },
     };
+
+    /**
+     * Tests whether a DOM element was injected or tagged by a known third-party script.
+     * @param {Element} element - The DOM element to test.
+     * @returns {boolean} True if the element matches any third-party indicator.
+     */
+    function isThirdPartyElement(element) {
+        if (!element || typeof element.matches !== 'function') return false;
+        for (const script of Object.values(THIRD_PARTY_SCRIPTS)) {
+            if (script.selectors.some(sel => element.matches(sel) || element.closest?.(sel))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
 
     const ISO_639_1_TO_3_MAP = { 'aa': 'aar', 'ab': 'abk', 'ae': 'ave', 'af': 'afr', 'ak': 'aka', 'am': 'amh', 'an': 'arg', 'ar': 'ara', 'as': 'asm', 'av': 'ava', 'ay': 'aym', 'az': 'aze', 'ba': 'bak', 'be': 'bel', 'bg': 'bul', 'bi': 'bis', 'bm': 'bam', 'bn': 'ben', 'bo': 'bod', 'br': 'bre', 'bs': 'bos', 'ca': 'cat', 'ce': 'che', 'ch': 'cha', 'co': 'cos', 'cr': 'cre', 'cs': 'ces', 'cu': 'chu', 'cv': 'chv', 'cy': 'cym', 'da': 'dan', 'de': 'deu', 'dv': 'div', 'dz': 'dzo', 'ee': 'ewe', 'el': 'ell', 'en': 'eng', 'eo': 'epo', 'es': 'spa', 'et': 'est', 'eu': 'eus', 'fa': 'fas', 'ff': 'ful', 'fi': 'fin', 'fj': 'fij', 'fo': 'fao', 'fr': 'fra', 'fy': 'fry', 'ga': 'gle', 'gd': 'gla', 'gl': 'glg', 'gn': 'grn', 'gu': 'guj', 'gv': 'glv', 'ha': 'hau', 'he': 'heb', 'hi': 'hin', 'ho': 'hmo', 'hr': 'hrv', 'ht': 'hat', 'hu': 'hun', 'hy': 'hye', 'hz': 'her', 'ia': 'ina', 'id': 'ind', 'ie': 'ile', 'ig': 'ibo', 'ii': 'iii', 'ik': 'ipk', 'io': 'ido', 'is': 'isl', 'it': 'ita', 'iu': 'iku', 'ja': 'jpn', 'jv': 'jav', 'ka': 'kat', 'kg': 'kon', 'ki': 'kik', 'kj': 'kua', 'kk': 'kaz', 'kl': 'kal', 'km': 'khm', 'kn': 'kan', 'ko': 'kor', 'kr': 'kau', 'ks': 'kas', 'ku': 'kur', 'kv': 'kom', 'kw': 'cor', 'ky': 'kir', 'la': 'lat', 'lb': 'ltz', 'lg': 'lug', 'li': 'lim', 'ln': 'lin', 'lo': 'lao', 'lt': 'lit', 'lu': 'lub', 'lv': 'lav', 'mg': 'mlg', 'mh': 'mah', 'mi': 'mri', 'mk': 'mkd', 'ml': 'mal', 'mn': 'mon', 'mr': 'mar', 'ms': 'msa', 'mt': 'mlt', 'my': 'mya', 'na': 'nau', 'nb': 'nob', 'nd': 'nde', 'ne': 'nep', 'ng': 'ndo', 'nl': 'nld', 'nn': 'nno', 'no': 'nor', 'nr': 'nbl', 'nv': 'nav', 'ny': 'nya', 'oc': 'oci', 'oj': 'oji', 'om': 'orm', 'or': 'ori', 'os': 'oss', 'pa': 'pan', 'pi': 'pli', 'pl': 'pol', 'ps': 'pus', 'pt': 'por', 'qu': 'que', 'rm': 'roh', 'rn': 'run', 'ro': 'ron', 'ru': 'rus', 'rw': 'kin', 'sa': 'san', 'sc': 'srd', 'sd': 'snd', 'se': 'sme', 'sg': 'sag', 'si': 'sin', 'sk': 'slv', 'sl': 'slv', 'sm': 'smo', 'sn': 'sna', 'so': 'som', 'sq': 'sqi', 'sr': 'srp', 'ss': 'ssw', 'st': 'sot', 'su': 'sun', 'sv': 'swe', 'sw': 'swa', 'ta': 'tam', 'te': 'tel', 'tg': 'tgk', 'th': 'tha', 'ti': 'tir', 'tk': 'tuk', 'tl': 'tgl', 'tn': 'tsn', 'to': 'ton', 'tr': 'tur', 'ts': 'tso', 'tt': 'tat', 'tw': 'twi', 'ty': 'tah', 'ug': 'uig', 'uk': 'ukr', 'ur': 'urd', 'uz': 'uzb', 've': 'ven', 'vi': 'vie', 'vo': 'vol', 'wa': 'wln', 'wo': 'wol', 'xh': 'xho', 'yi': 'yid', 'yo': 'yor', 'za': 'zha', 'zh': 'zho', 'zu': 'zul' };
     const getISO639_3_Code = (code) => ISO_639_1_TO_3_MAP[code] || null;
@@ -464,6 +711,10 @@
         data: {
             release: undefined,
             originalRelease: null,
+            injected: {
+                raw: [],     // All raw injected inputs and attributes: [{ name, value, dataset }]
+                parsed: {},  // Open-ended unflattened object tree from form inputs
+            },
         },
         lang: {
             code: null,
@@ -562,7 +813,36 @@
     }
 
     /**
-     * @summary Extracts the release data from the Next.js '__FRSH_STATE__' script tag JSON payload.
+     * @summary Hydrates server-rendered form baselines (e.g. streaming/purchase URLs)
+     * that Harmony excludes from the '__FRSH_STATE__' JSON payload.
+     * @param {object} releaseObj - The parsed release data object to augment.
+     */
+    function hydrateServerFormBaselines(releaseObj) {
+        const seederForm = document.querySelector('form[name="release-seeder"], form[name="release-update-seeder"]');
+        if (!seederForm || !releaseObj) return;
+
+        // Ingest native streaming/purchase URLs if absent from JSON
+        if (!releaseObj.urls) {
+            const initialUrls = [];
+            seederForm.querySelectorAll('input[name^="urls."][name$=".url"]').forEach(urlInput => {
+                const match = urlInput.name.match(/^urls\.(\d+)\.url$/);
+                if (match) {
+                    const idx = Number.parseInt(match[1], 10);
+                    const linkTypeInput = seederForm.querySelector(`input[name="urls.${idx}.link_type"]`);
+                    initialUrls[idx] = {
+                        url: urlInput.value,
+                        linkType: linkTypeInput ? linkTypeInput.value : null,
+                    };
+                }
+            });
+            if (initialUrls.length > 0) {
+                releaseObj.urls = initialUrls.filter(Boolean);
+            }
+        }
+    }
+
+    /**
+     * @summary Extracts the release data from the Deno Fresh '__FRSH_STATE__' script tag JSON payload.
      * @returns {object|null} The parsed release data object, or null if not found.
      */
     function getReleaseDataFromJSON() {
@@ -606,6 +886,9 @@
                     }
                 }
             }
+
+            hydrateServerFormBaselines(releaseObj);
+
             if (AppState.debug) {
                 log('Final processed release object:', structuredClone(releaseObj));
             }
@@ -766,11 +1049,30 @@
         },
 
         /**
-            * Replaces the content of the main label element with a new name and an optional MB link.
-            * @param {HTMLElement} labelListElement - The <span> element containing the label (e.g., element from AppState.dom.labelListElements).
-            * @param {string} newLabelName - The new text for the label.
-            * @param {string | null} [newMbid] - The optional MBID to link to.
-            */
+         * Finds active release label DOM elements, structurally excluding
+         * unselected alternative provider values (.alt-value).
+         * @param {number} [index] - The release label index (0, 1, ...).
+         * @returns {HTMLElement[]}
+         */
+        findLabelElements: (index = null) => {
+            const labelsRow = UI_UTILS.findReleaseInfoRow('Labels');
+            if (!labelsRow) return [];
+
+            const activeSpans = Array.from(labelsRow.querySelectorAll('.entity-links'))
+                .filter(span => !span.closest('.alt-value'));
+
+            if (index !== null) {
+                return activeSpans[index] ? [activeSpans[index]] : [];
+            }
+            return activeSpans;
+        },
+
+        /**
+         * Replaces the content of the main label element with a new name and an optional MB link.
+         * @param {HTMLElement} labelListElement - The <span> element containing the label.
+         * @param {string} newLabelName - The new text for the label.
+         * @param {string | null} [newMbid] - The optional MBID to link to.
+         */
         updateLabelLink: (labelListElement, newLabelName, newMbid) => {
             if (!labelListElement) return;
 
@@ -2030,8 +2332,8 @@
                     const { originalLabel, index } = item;
                     AppState.data.release.labels[index] = { ...originalLabel, ...NO_LABEL };
 
-                    const labelListElement = labelListElements[index];
-                    if (labelListElement) {
+                    const targetLabelElements = UI_UTILS.findLabelElements(index);
+                    for (const labelListElement of targetLabelElements) {
                         UI_UTILS.updateLabelLink(labelListElement, NO_LABEL.name, NO_LABEL.mbid);
 
                         const overwrittenSpan = UI_UTILS.createIndicatorSpan('overwritten', originalLabel.name, {
@@ -2133,14 +2435,7 @@
             if (!releaseData) return;
 
             const { gtin, labels } = releaseData;
-
             if (!gtin || !labels || labels.length === 0) return;
-
-            const firstLabelSpan = AppState.dom.labelListElements?.[0];
-            if (!firstLabelSpan) return;
-
-            const labelListItems = firstLabelSpan.closest('ul')?.querySelectorAll('li');
-            if (!labelListItems) return;
 
             let changesMade = false;
             const removedLogs = [];
@@ -2154,11 +2449,12 @@
                     changesMade = true;
                     removedLogs.push(label.name);
 
-                    if (labelListItems[index]) {
-                        const li = labelListItems[index];
+                    const targetLabelElements = UI_UTILS.findLabelElements(index);
+                    for (const labelSpan of targetLabelElements) {
+                        const li = labelSpan.closest('li');
+                        if (!li) continue;
 
                         let textNodeToReplace = null;
-
                         for (const node of li.childNodes) {
                             if (node.nodeType === Node.TEXT_NODE && node.textContent.includes(cleanGtin)) {
                                 textNodeToReplace = node;
@@ -2175,13 +2471,8 @@
                                 standalone: true
                             });
 
-                            const labelLinkSpan = li.querySelector('.entity-links');
-                            if (labelLinkSpan) {
-                                labelLinkSpan.after(removedSpan);
-                                labelLinkSpan.after(' ');
-                            } else {
-                                li.append(removedSpan);
-                            }
+                            labelSpan.after(' ');
+                            labelSpan.after(removedSpan);
                         }
                     }
                 }
@@ -2204,16 +2495,16 @@
 
             if (labelMap.size === 0) return;
 
-            const { labelListElements } = AppState.dom;
-            if (!labelListElements) return;
-
-            labelListElements.forEach((labelListElement, index) => {
-                const originalLabel = releaseData.labels[index];
-                if (!originalLabel) return;
+            releaseData.labels.forEach((originalLabel, index) => {
+                if (!originalLabel || !originalLabel.name) return;
 
                 const currentLabelName = originalLabel.name.trim();
+                const isPrimaryLabel = index === 0;
 
-                const namesToTry = [currentLabelName, ...(AppState.dom.labelAltNames || [])];
+                // For primary label, we can check alt names if no direct mapping
+                const namesToTry = isPrimaryLabel
+                    ? [currentLabelName, ...(AppState.dom.labelAltNames || [])]
+                    : [currentLabelName];
 
                 let matchedName = null;
                 let matchedUrl = null;
@@ -2252,43 +2543,47 @@
                     AppState.data.release.labels[index].name = matchedName;
                     AppState.data.release.labels[index].mbid = mbid;
 
-                    // Update UI
-                    UI_UTILS.updateLabelLink(labelListElement, matchedName, mbid);
+                    // Update UI via UI_UTILS
+                    const targetLabelElements = UI_UTILS.findLabelElements(index);
 
-                    const isOverwriting = !!oldMbid || oldName !== matchedName;
-                    let indicatorText = isOverwriting ? 'overwritten' : 'added';
-                    let type = isOverwriting ? 'overwritten' : 'added';
-                    let tooltip;
+                    for (const labelListElement of targetLabelElements) {
+                        UI_UTILS.updateLabelLink(labelListElement, matchedName, mbid);
 
-                    if (isNoLabel) {
-                        indicatorText = 'overwritten';
-                        type = 'overwritten';
-                        tooltip = `Original label: ${oldName}`;
-                    } else if (oldName !== matchedName) {
-                        tooltip = `Original label "${oldName}" replaced by user mapping for "${matchedName}".`;
-                    } else if (oldMbid) {
-                        tooltip = `Original MBID (${oldMbid}) overwritten via user mapping.`;
-                    } else {
-                        tooltip = `MBID ${mbid} added via user mapping.`;
+                        const isOverwriting = !!oldMbid || oldName !== matchedName;
+                        let indicatorText = isOverwriting ? 'overwritten' : 'added';
+                        let type = isOverwriting ? 'overwritten' : 'added';
+                        let tooltip;
+
+                        if (isNoLabel) {
+                            indicatorText = 'overwritten';
+                            type = 'overwritten';
+                            tooltip = `Original label: ${oldName}`;
+                        } else if (oldName !== matchedName) {
+                            tooltip = `Original label "${oldName}" replaced by user mapping for "${matchedName}".`;
+                        } else if (oldMbid) {
+                            tooltip = `Original MBID (${oldMbid}) overwritten via user mapping.`;
+                        } else {
+                            tooltip = `MBID ${mbid} added via user mapping.`;
+                        }
+
+                        const indicatorSpan = UI_UTILS.createIndicatorSpan(indicatorText, null, {
+                            type,
+                            tooltip,
+                        });
+
+                        // Remove existing HE indicators on this element if present (to avoid stacking)
+                        const existingIndicator = labelListElement.nextElementSibling;
+                        if (existingIndicator?.classList.contains('he-added-label') || existingIndicator?.classList.contains('he-overwritten-label')) {
+                            existingIndicator.remove();
+                        }
+
+                        labelListElement.parentNode.insertBefore(indicatorSpan, labelListElement.nextSibling);
                     }
-
-                    const indicatorSpan = UI_UTILS.createIndicatorSpan(indicatorText, null, {
-                        type,
-                        tooltip,
-                    });
-
-                    // Remove existing HE indicators if present (to avoid stacking)
-                    const existingIndicator = labelListElement.nextElementSibling;
-                    if (existingIndicator?.classList.contains('he-added-label') || existingIndicator?.classList.contains('he-overwritten-label')) {
-                        existingIndicator.remove();
-                    }
-
-                    labelListElement.parentNode.insertBefore(indicatorSpan, labelListElement.nextSibling);
 
                     const messageContent = (oldName !== matchedName)
                         ? `Promoted label "${matchedName}" (MBID: ${mbid}) over original "${oldName}" via user mapping.`
                         : `Mapped label "${matchedName}" to MBID: ${mbid}`;
-                    createAndInsertMessage('he-label-map-success', messageContent, 'debug');
+                    createAndInsertMessage(`he-label-map-success-${index}`, messageContent, 'debug');
                 }
             });
         },
@@ -2464,6 +2759,279 @@
     };
 
     /**
+     * @summary Unflattens a dot-notated/indexed form name (e.g. "labels.0.name") into an object/array tree.
+     * @param {object} root - The target object to write into.
+     * @param {string} path - Dot-separated path (e.g. "labels.0.name", "mediums.0.track.0.name").
+     * @param {any} value - The value to assign.
+     */
+    function setDeepProperty(root, path, value) {
+        const parts = path.split('.');
+        let current = root;
+
+        for (let i = 0; i < parts.length; i++) {
+            const part = parts[i];
+            if (i === parts.length - 1) {
+                current[part] = value;
+                return;
+            }
+
+            const isNextNumeric = /^\d+$/.test(parts[i + 1]);
+            current[part] ??= isNextNumeric ? [] : {};
+            current = current[part];
+        }
+    }
+
+    /**
+     * @summary Generically merges an unflattened parsed form tree into the Harmony release data model
+     * using the declarative ReleaseSchema and CodecEngine.
+     * @param {object} releaseData - Target AppState.data.release object.
+     * @param {object} parsed - Unflattened parsed data tree.
+     * @returns {boolean} True if any field was newly added or modified.
+     */
+    function mergeInjectedIntoRelease(releaseData, parsed) {
+        if (!releaseData || !parsed) return false;
+        let changesDetected = false;
+
+        // 1. Merge scalar fields
+        for (const [appKey, def] of Object.entries(ReleaseSchema.scalars)) {
+            if (!isScalarManaged(def)) continue;
+            const formParam = getScalarParam(def);
+            const incVal = getDeepProperty(parsed, formParam);
+            if (incVal !== undefined && incVal !== null) {
+                const cleanVal = typeof incVal === 'string' ? incVal.trim() : incVal;
+                if (setDeepPropertyIfChanged(releaseData, appKey, cleanVal)) {
+                    changesDetected = true;
+                }
+            }
+        }
+
+        // 2. Merge collections
+        for (const [key, collDef] of Object.entries(ReleaseSchema.collections)) {
+            if (typeof collDef.deserialize === 'function') {
+                if (collDef.deserialize(parsed, releaseData)) {
+                    changesDetected = true;
+                }
+            } else {
+                const incomingColl = getDeepProperty(parsed, collDef.paramKey || key);
+                if (Array.isArray(incomingColl)) {
+                    releaseData[key] ??= [];
+                    const collChanged = reconcileArray(releaseData[key], incomingColl, {
+                        findExisting: (curr, inc, incIdx, currIdx) => {
+                            if (collDef.identity) {
+                                const currId = collDef.identity(curr);
+                                const incId = collDef.identity(inc);
+                                if (currId && incId) return currId === incId;
+                            }
+                            return incIdx === currIdx;
+                        },
+                        createNew: (inc, idx) => {
+                            const newChild = collDef.factory ? collDef.factory(inc, idx) : {};
+                            CodecEngine.deserialize(collDef, inc, newChild);
+                            return newChild;
+                        },
+                        updateExisting: (curr, inc) => CodecEngine.deserialize(collDef, inc, curr),
+                    });
+                    if (collChanged) changesDetected = true;
+                }
+            }
+        }
+
+        return changesDetected;
+    }
+
+    /**
+     * Checks if a form input value represents a modified scalar relative to original release baseline.
+     * @param {string} formParam - Form field name (e.g. "edit_note", "name", "barcode").
+     * @param {string} value - Current value in the form input.
+     * @param {object} originalRelease - Baseline AppState.data.originalRelease.
+     * @returns {boolean}
+     */
+    function isScalarModified(formParam, value, originalRelease) {
+        if (!originalRelease) return false;
+        for (const [appKey, def] of Object.entries(ReleaseSchema.scalars)) {
+            if (isScalarManaged(def) && getScalarParam(def) === formParam) {
+                const originalVal = String(getDeepProperty(originalRelease, appKey) ?? '');
+                return String(value ?? '') !== originalVal;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * @summary Universally ingests third-party injected form inputs (from any companion script)
+     * and merges them into AppState.data.release and AppState.data.injected.
+     * @param {HTMLFormElement} [targetForm] - Optional form to inspect (defaults to seeder form).
+     * @returns {boolean} True if new/changed data was detected and merged.
+     */
+    function ingestExternalFormData(targetForm = null) {
+        const forms = targetForm
+            ? [targetForm]
+            : Array.from(document.querySelectorAll('form[name="release-seeder"], form[name="release-update-seeder"]'));
+        if (forms.length === 0 || !AppState.data.release) return false;
+
+        const originalRelease = AppState.data.originalRelease;
+        const raw = [];
+        const parsed = {};
+
+        // Ingest all form inputs, textareas, and selects across seeder forms that are third-party or modified scalars
+        for (const form of forms) {
+            const formElements = Array.from(form.querySelectorAll('input, textarea, select'));
+            for (const el of formElements) {
+                if (el.hasAttribute('data-he-managed')) continue;
+
+                const name = el.name;
+                const value = el.value;
+                if (!name) continue;
+
+                const isExplicitThirdParty = isThirdPartyElement(el);
+                const isModifiedScalar = !isExplicitThirdParty && isScalarModified(name, value, originalRelease);
+
+                if (!isExplicitThirdParty && !isModifiedScalar) {
+                    continue;
+                }
+
+                raw.push({
+                    name,
+                    value,
+                    tagName: el.tagName,
+                    dataset: { ...el.dataset }
+                });
+                setDeepProperty(parsed, name, value);
+            }
+        }
+
+        // Store open-ended copy in AppState.data.injected for debug & reference
+        AppState.data.injected.raw = raw;
+        AppState.data.injected.parsed = parsed;
+
+        if (raw.length === 0) return false;
+
+        // Perform universal merge into AppState.data.release
+        const changesDetected = mergeInjectedIntoRelease(AppState.data.release, parsed);
+        if (changesDetected && AppState.debug) {
+            log('Ingested third-party injected data:', structuredClone(AppState.data.injected));
+            log('Updated release object after third-party merge:', structuredClone(AppState.data.release));
+        }
+
+        return changesDetected;
+    }
+
+    /**
+     * @summary Runs all active enhancement modules matching the current page and user settings.
+     * Can be executed both on initial page load and on-demand (e.g. after third-party form data ingestion).
+     * @param {object} [options]
+     * @param {'load'|'mutation'} [options.trigger='load'] - The trigger source.
+     */
+    function runActiveEnhancements({ trigger = 'load' } = {}) {
+        const { path } = AppState;
+
+        // 1. Language detection mode actions (only on initial load)
+        if (trigger === 'load') {
+            const loadTimeActionMap = {
+                browser: 'runLanguageDetection',
+                none: 'updateUIAfterLanguageDisable',
+            };
+            const mode = AppState.settings[SETTINGS_CONFIG.languageDetectionMode.key];
+            const langModuleName = loadTimeActionMap[mode];
+
+            if (langModuleName) {
+                const config = SETTINGS_CONFIG[langModuleName];
+                const moduleFunc = enhancements[langModuleName];
+                if (config?.paths?.some(p => p.test(path)) && moduleFunc) {
+                    if (AppState.debug) {
+                        log(`Running mode-dependent module: ${langModuleName}...`);
+                        console.time(`[${SCRIPT_NAME}] ${langModuleName} execution time`);
+                    }
+                    moduleFunc();
+                    if (AppState.debug) {
+                        console.timeEnd(`[${SCRIPT_NAME}] ${langModuleName} execution time`);
+                    }
+                }
+            }
+        }
+
+        // 2. Standard configurable enhancement modules (runAt: 'load')
+        const modeDependentModules = ['runLanguageDetection', 'updateUIAfterLanguageDisable', 'unsetLanguageData'];
+
+        for (const [funcName, config] of Object.entries(SETTINGS_CONFIG)) {
+            if (modeDependentModules.includes(funcName) || config.runAt !== 'load') continue;
+
+            const isEnabled = AppState.settings[config.key];
+            const matchesPath = !config.paths || config.paths.some(p => p.test(path));
+            const moduleFunc = enhancements[funcName];
+
+            if (isEnabled && matchesPath && typeof moduleFunc === 'function') {
+                if (AppState.debug) {
+                    log(`Running enhancement module (${trigger}): ${funcName}...`);
+                    console.time(`[${SCRIPT_NAME}] ${funcName} execution time`);
+                }
+                moduleFunc();
+                if (AppState.debug) {
+                    console.timeEnd(`[${SCRIPT_NAME}] ${funcName} execution time`);
+                }
+            }
+        }
+    }
+
+    let formObserverDebounceTimer = null;
+
+    /**
+     * @summary Ingests any external data from the form, re-runs active enhancements on the merged data,
+     * and logs the structured changes if Debug mode is ON.
+     */
+    function ingestAndReprocessExternalData() {
+        const changes = ingestExternalFormData();
+        if (changes) {
+            runActiveEnhancements({ trigger: 'mutation' });
+            if (AppState.debug) {
+                log('Ingested third-party injected data:', structuredClone(AppState.data.injected));
+                log('Updated release object after third-party merge:', structuredClone(AppState.data.release));
+            }
+        }
+    }
+
+    /**
+     * @summary Sets up a MutationObserver on the release seeder forms to detect third-party injections.
+     */
+    function setupFormMutationObserver() {
+        // Run an immediate ingestion pass in case third-party scripts already injected inputs prior to observer attach
+        ingestAndReprocessExternalData();
+
+        const observer = new MutationObserver((mutations) => {
+            let hasExternalAddition = false;
+
+            for (const m of mutations) {
+                for (const node of m.addedNodes) {
+                    if (node.nodeType !== Node.ELEMENT_NODE) continue;
+
+                    // Check if node is an input added inside seeder form or is a seeder form itself
+                    const isInput = node.tagName === 'INPUT' || node.tagName === 'TEXTAREA';
+                    const isInsideForm = node.closest?.('form[name="release-seeder"], form[name="release-update-seeder"]');
+
+                    if (isInsideForm && isInput && !node.hasAttribute('data-he-managed')) {
+                        hasExternalAddition = true;
+                        break;
+                    }
+                    if (node.querySelector?.('input:not([data-he-managed]), textarea:not([data-he-managed])')) {
+                        hasExternalAddition = true;
+                        break;
+                    }
+                }
+                if (hasExternalAddition) break;
+            }
+
+            if (!hasExternalAddition) return;
+
+            clearTimeout(formObserverDebounceTimer);
+            formObserverDebounceTimer = setTimeout(() => {
+                ingestAndReprocessExternalData();
+            }, 50);
+        });
+
+        observer.observe(document.body, { childList: true, subtree: true });
+    }
+
+    /**
     * Builds or augments a seeder form with parameters from the release data.
     * This function operates in a "patch" mode by comparing the current
     * release data to the original data snapshot.
@@ -2482,43 +3050,71 @@
                 desiredInputs.set(name, String(value));
             }
         };
-        const getValueFromPath = (obj, path) => path.split('.').reduce((acc, part) => acc?.[part], obj);
 
         const pathsToBuild = new Set(paramsToBuild || []);
 
         if (!paramsToBuild) {
-            for (const key of Object.keys(PARAMETER_GENERATORS)) {
-                const newValue = getValueFromPath(releaseData, key);
-                const oldValue = getValueFromPath(originalReleaseData, key);
-
-                if (JSON.stringify(newValue) !== JSON.stringify(oldValue)) {
+            // Check scalars
+            for (const [appKey, def] of Object.entries(ReleaseSchema.scalars)) {
+                if (!isScalarManaged(def)) continue;
+                const newVal = getDeepProperty(releaseData, appKey);
+                const oldVal = getDeepProperty(originalReleaseData, appKey);
+                if (newVal !== oldVal) {
+                    pathsToBuild.add(appKey);
+                }
+            }
+            // Check collections
+            for (const key of Object.keys(ReleaseSchema.collections)) {
+                const newVal = releaseData[key];
+                const oldVal = originalReleaseData?.[key];
+                if (JSON.stringify(newVal) !== JSON.stringify(oldVal)) {
                     pathsToBuild.add(key);
                 }
             }
         }
 
-        const generatorsToRun = [];
-        for (const [key, config] of Object.entries(PARAMETER_GENERATORS)) {
-            if (pathsToBuild.has(key)) {
-                generatorsToRun.push([key, config]);
+        // Clean up affected prefixes
+        const prefixesToClear = [];
+        for (const [appKey, def] of Object.entries(ReleaseSchema.scalars)) {
+            if (pathsToBuild.has(appKey)) {
+                const formParam = getScalarParam(def);
+                if (formParam) prefixesToClear.push(formParam);
             }
         }
+        for (const [key, collDef] of Object.entries(ReleaseSchema.collections)) {
+            if (pathsToBuild.has(key) && collDef.cleanupPrefix) prefixesToClear.push(collDef.cleanupPrefix);
+        }
 
-        const prefixesToClear = generatorsToRun.map(([, config]) => config.cleanupPrefix);
         form.querySelectorAll('input[type="hidden"]').forEach(input => {
-            if (prefixesToClear.some(prefix => input.name.startsWith(prefix))) {
+            if (prefixesToClear.some(prefix => input.name === prefix || input.name.startsWith(prefix))) {
                 input.remove();
             }
         });
 
-        for (const [key, config] of generatorsToRun) {
-            const value = getValueFromPath(releaseData, key);
+        // Serialize scalars
+        for (const [appKey, def] of Object.entries(ReleaseSchema.scalars)) {
+            if (pathsToBuild.has(appKey)) {
+                const formParam = getScalarParam(def);
+                const val = getDeepProperty(releaseData, appKey);
+                if (formParam && val !== undefined && val !== null) {
+                    set(formParam, val);
+                }
+            }
+        }
 
-            if ((value != null) || config.generator || config.paramName) {
-                if (config.generator) {
-                    config.generator(value, set);
-                } else if (config.paramName) {
-                    set(config.paramName, value);
+        // Serialize collections via CodecEngine
+        for (const [key, collDef] of Object.entries(ReleaseSchema.collections)) {
+            if (pathsToBuild.has(key)) {
+                const collData = releaseData[key];
+                if (collDef.type === 'primitive_list') {
+                    collData?.forEach((t, i) => set(`${collDef.cleanupPrefix}${i}`, t));
+                } else if (typeof collDef.onSerialize === 'function') {
+                    collDef.onSerialize(collData, set, collDef.paramPrefix || '');
+                } else if (Array.isArray(collData)) {
+                    collData.forEach((item, i) => {
+                        const prefix = `${collDef.paramPrefix || `${key}.`}${i}.`;
+                        CodecEngine.serialize(collDef, item, set, prefix);
+                    });
                 }
             }
         }
@@ -2529,11 +3125,13 @@
                 if (input.value !== value) {
                     input.value = value;
                 }
+                input.setAttribute('data-he-managed', 'true');
             } else {
                 input = document.createElement('input');
                 input.type = 'hidden';
                 input.name = name;
                 input.value = value;
+                input.setAttribute('data-he-managed', 'true');
                 form.appendChild(input);
             }
         }
@@ -2548,6 +3146,9 @@
     function handleSeederFormSubmit(event) {
         const form = event.target.closest('form');
         if (!form) return;
+
+        clearTimeout(formObserverDebounceTimer);
+        ingestAndReprocessExternalData();
 
         const formName = form.getAttribute('name');
 
@@ -2601,9 +3202,9 @@
                 }
             });
 
-            // Cache alt label names
-            AppState.dom.labelAltNames = Array.from(document.querySelectorAll('ul.release-labels ~ ul.alt-values .entity-links'))
-                .map(span => span.textContent.trim());
+            // Cache native alt label elements (excluding third-party injected rows)
+            const altSpans = Array.from(document.querySelectorAll('ul.release-labels ~ ul.alt-values .entity-links'));
+            AppState.dom.labelAltElements = altSpans.filter(span => !isThirdPartyElement(span));
         }
 
         AppState.dom.labelListElements = document.querySelectorAll('ul.release-labels:not(.inline) li span.entity-links');
@@ -2862,6 +3463,7 @@
         } else if (path.startsWith('/release') && !path.startsWith('/release/actions')) {
             cacheReleaseLookupPageDOM();
             getReleaseDataFromJSON();
+            setupFormMutationObserver();
         } else if (path.startsWith('/release/actions')) {
             cacheReleaseActionsPageDOM();
         } else if (path.startsWith('/settings')) {
@@ -2870,45 +3472,8 @@
             return;
         }
 
-        const loadTimeActionMap = {
-            browser: 'runLanguageDetection',
-            none: 'updateUIAfterLanguageDisable',
-        };
-        const mode = AppState.settings[SETTINGS_CONFIG.languageDetectionMode.key];
-        const moduleName = loadTimeActionMap[mode];
-
-        if (moduleName) {
-            const config = SETTINGS_CONFIG[moduleName];
-            const moduleFunc = enhancements[moduleName];
-            if (config?.paths.some(p => p.test(AppState.path))) {
-                if (AppState.debug) {
-                    log(`Running mode-dependent module: ${moduleName}...`);
-                    console.time(`[${SCRIPT_NAME}] ${moduleName} execution time`);
-                }
-                moduleFunc();
-                if (AppState.debug) {
-                    console.timeEnd(`[${SCRIPT_NAME}] ${moduleName} execution time`);
-                }
-            }
-        }
-
-        const modeDependentModules = ['runLanguageDetection', 'updateUIAfterLanguageDisable', 'unsetLanguageData'];
-        for (const [funcName, config] of Object.entries(SETTINGS_CONFIG)) {
-            if (modeDependentModules.includes(funcName) || !config.runAt) continue;
-
-            if ((config.runAt ?? 'load') === 'load' && AppState.settings[config.key] && config.paths && enhancements[funcName]) {
-                if (config.paths.some(p => p.test(AppState.path))) {
-                    if (AppState.debug) {
-                        log(`Running standard module: ${funcName}...`);
-                        console.time(`[${SCRIPT_NAME}] ${funcName} execution time`);
-                    }
-                    enhancements[funcName]();
-                    if (AppState.debug) {
-                        console.timeEnd(`[${SCRIPT_NAME}] ${funcName} execution time`);
-                    }
-                }
-            }
-        }
+        // Execute all active enhancement modules for the current page
+        runActiveEnhancements({ trigger: 'load' });
     }
 
     main().catch(e => error(`An unhandled error occurred in main execution:`, e));
