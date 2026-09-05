@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        Harmony: Enhancements
 // @namespace   https://musicbrainz.org/user/chaban
-// @version     1.27.11
+// @version     1.27.12
 // @description Adds some convenience features, various UI and behavior settings, as well as an improved language detection to Harmony.
 // @tag         ai-created
 // @author      chaban
@@ -1681,8 +1681,9 @@
             let originalText = '';
             if (langRow) {
                 originalText = langRow.querySelector('td').textContent.trim();
-                originalLang = originalText.replace(/\s*\(.*\)/, '').trim();
-                harmonyConfidence = parseInt((originalText.match(/\((\d+)%\sconfidence\)/) || [])[1] || '0', 10);
+                originalLang = originalText.replace(/\s*\(.*?\)/g, '').trim();
+                const match = originalText.match(/\((\d+)%\s*confidence\)/i);
+                harmonyConfidence = match ? parseInt(match[1], 10) : (originalText ? 100 : 0);
             }
 
             const shouldOverwrite = AppState.settings[SETTINGS_CONFIG.ignoreHarmony.key] || harmonyConfidence < conflictThreshold;
