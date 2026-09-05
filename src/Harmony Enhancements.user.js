@@ -2344,6 +2344,12 @@
                 const labelName = originalLabel.name.trim();
                 if (!labelName || originalLabel.mbid) return { isSelf: false, originalLabel, index };
 
+                // Catalog Number Guard: Assume releases with catalog numbers are imprints/formal releases, not self-releases
+                const catNum = String(originalLabel.catalogNumber || releaseData.catalogNumber || '').trim();
+                if (catNum) {
+                    return { isSelf: false, originalLabel, index };
+                }
+
                 let remainingLabel = labelName;
                 for (const artistName of sortedArtists) {
                     const escapedName = artistName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
