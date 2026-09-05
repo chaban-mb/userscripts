@@ -1359,7 +1359,8 @@
 
                     if (rels.length > 0) {
                         const firstRel = rels[0];
-                        const info = extractRelationInfo(firstRel, session.telemetry);
+                        // Secondary resolution is a WS/2 entity lookup, not Solr search - omit telemetry to avoid false positives
+                        const info = extractRelationInfo(firstRel);
                         const newId = `${item.urlMbid}-${info.entityType}-${info.entityId || 'no-target'}-0`;
                         this.store.updateItem(item.id, {
                             id:                newId,
@@ -1372,7 +1373,7 @@
                             isLoading:         false,
                         });
                         for (let i = 1; i < rels.length; i++) {
-                            const extraInfo = extractRelationInfo(rels[i], session.telemetry);
+                            const extraInfo = extractRelationInfo(rels[i]);
                             this.store.addItem({
                                 id:                `${item.urlMbid}-${extraInfo.entityType}-${extraInfo.entityId || 'no-target'}-${i}`,
                                 urlMbid:           item.urlMbid,
@@ -1951,7 +1952,7 @@
         }
     }
 
-    document.addEventListener('DOMContentLoaded', () => new App());
+    document.addEventListener('DOMContentLoaded', () => { window.app = new App(); });
     </script>
 </body>
 </html>
