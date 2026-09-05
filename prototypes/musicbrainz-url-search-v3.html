@@ -575,20 +575,23 @@
     // ════════════════════════════════════════════════════════════════════════
     // ENTITY_TYPES & RELATION EXTRACTION
     // ════════════════════════════════════════════════════════════════════════
-    const ENTITY_TYPES = ['artist','release','release-group','recording','work','label','area','event','instrument','place','series','genre','url'];
+    const ENTITY_TYPES = ['artist','release','release-group','release_group','recording','work','label','area','event','instrument','place','series','genre','url'];
 
     function extractRelationInfo(rel, telemetry = null) {
         if (!rel) return { entityType: 'N/A', entityName: 'N/A', entityId: null, relationType: 'N/A', isLinked: false };
 
         // SEARCH-753: In Solr 10, 'target-type' is natively present in URL & area relationship JSON.
-        let eType = rel['target-type'] || null;
-        if (eType) {
+        let rawType = rel['target-type'] || null;
+        let eType = null;
+        if (rawType) {
             telemetry?.recordTargetTypeDirect();
+            eType = rawType.replace(/_/g, '-');
         } else {
             // TODO(solr10-cleanup): Remove fallback entity scan once Solr 10 is verified in production (post-2026-11-30).
-            eType = ENTITY_TYPES.find(t => rel[t] !== undefined) || null;
-            if (eType) {
+            const foundKey = ENTITY_TYPES.find(t => rel[t] !== undefined) || null;
+            if (foundKey) {
                 telemetry?.recordFallbackTypeScan();
+                eType = foundKey.replace(/_/g, '-');
             }
         }
 
@@ -598,7 +601,7 @@
             telemetry?.recordDeprecatedTarget();
         }
 
-        const eObj = eType ? rel[eType] : null;
+        const eObj = eType ? (rel[eType] || rel[eType.replace(/-/g, '_')]) : null;
 
         let entityName = 'N/A';
         const entityId = eObj?.id || null;
@@ -1099,9 +1102,14 @@
                         await new Promise(r => setTimeout(r, delayMs * 1.5 ** attempt));
                         lastErr = new Error(`HTTP ${res.status}`); continue;
                     }
+                    if (res.status === 404) {
+                        const notFoundErr = new Error('HTTP 404 Not Found');
+                        notFoundErr.status = 404;
+                        throw notFoundErr;
+                    }
                     throw new Error(`HTTP ${res.status}`);
                 } catch (err) {
-                    if (err.name === 'AbortError') throw err;
+                    if (err.name === 'AbortError' || err.status === 404) throw err;
                     if (!navigator.onLine) {
                         this._status('Offline', 'error');
                         const offErr = new Error('Network connection lost.');
@@ -1162,8 +1170,13 @@
         async fetchUrlEntityRelationships(mbid, signal) {
             // SEARCH-680 / SEARCH-681: include genre-rels alongside all other entity relationship families
             const inc = 'artist-rels+release-rels+release-group-rels+recording-rels+work-rels+label-rels+area-rels+event-rels+place-rels+series-rels+instrument-rels+genre-rels+url-rels';
-            const res = await this.fetchWithRetry(`https://musicbrainz.org/ws/2/url/${mbid}?inc=${inc}&fmt=json`, { signal }, 2, 1500);
-            return (await res.json()).relations || [];
+            try {
+                const res = await this.fetchWithRetry(`https://musicbrainz.org/ws/2/url/${mbid}?inc=${inc}&fmt=json`, { signal }, 2, 1500);
+                return (await res.json()).relations || [];
+            } catch (err) {
+                if (err.status === 404) return [];
+                throw err;
+            }
         }
 
         async _loadRelationshipTypes() {
