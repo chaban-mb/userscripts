@@ -97,6 +97,22 @@
         .btn-theme:hover { color:var(--text-main);background:var(--bg-card-hover);border-color:var(--accent-primary); }
         .api-badge { display:flex;align-items:center;gap:8px;background:var(--bg-card);border:1px solid var(--border-color);padding:6px 14px;border-radius:30px;font-size:12px;font-weight:500;color:var(--text-muted); }
         .status-dot { width:8px;height:8px;background-color:var(--accent-success);border-radius:50%;box-shadow:0 0 8px var(--accent-success);transition:var(--transition-fast); }
+        .solr-badge { position:relative;display:inline-flex;align-items:center;gap:8px;background:var(--bg-card);border:1px solid var(--border-color);padding:6px 14px;border-radius:30px;font-size:12px;font-weight:500;color:var(--text-muted);cursor:pointer;user-select:none;transition:var(--transition-fast); }
+        .solr-badge:hover { color:var(--text-main);background:var(--bg-card-hover);border-color:var(--accent-primary); }
+        .solr-dot { width:8px;height:8px;background-color:var(--text-subtle);border-radius:50%;transition:var(--transition-fast); }
+        .solr-dot.solr10 { background-color:var(--accent-success);box-shadow:0 0 8px var(--accent-success); }
+        .solr-dot.solr9  { background-color:var(--accent-warning);box-shadow:0 0 8px var(--accent-warning); }
+        .solr-dot.mixed  { background-color:var(--accent-primary);box-shadow:0 0 8px var(--accent-primary); }
+        .solr-telemetry-popover { position:absolute;top:calc(100% + 8px);right:0;width:330px;background:var(--bg-glass);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);border:1px solid var(--border-color);border-radius:var(--radius-md);box-shadow:var(--shadow-card);padding:14px 16px;z-index:2000;display:none;font-size:12px;color:var(--text-main);text-align:left;line-height:1.5; }
+        .solr-badge:hover .solr-telemetry-popover, .solr-badge:focus-within .solr-telemetry-popover { display:block; }
+        .telemetry-title { font-weight:700;margin-bottom:8px;color:var(--text-title);display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border-color);padding-bottom:6px;font-size:13px; }
+        .telemetry-row { display:flex;justify-content:space-between;align-items:center;padding:3px 0; }
+        .telemetry-row strong { color:var(--accent-primary); }
+        .query-preview-container { margin-top:14px;margin-bottom:6px;background:var(--bg-kpi);border:1px solid var(--border-color);border-radius:var(--radius-md);padding:8px 14px;display:flex;align-items:center;justify-content:space-between;gap:12px;font-size:12px; }
+        .query-preview-text-wrapper { flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:flex;align-items:center;gap:8px; }
+        .query-preview-text-wrapper code { font-family:ui-monospace,SFMono-Regular,Consolas,monospace;color:var(--accent-primary);font-size:12px; }
+        .btn-copy-query { background:var(--bg-card);border:1px solid var(--border-color);border-radius:var(--radius-sm);padding:4px 10px;font-size:11px;font-weight:600;color:var(--text-main);cursor:pointer;flex-shrink:0;transition:var(--transition-fast); }
+        .btn-copy-query:hover { background:var(--bg-card-hover);color:var(--accent-primary);border-color:var(--accent-primary); }
 
         .card-container { background-color:var(--bg-card);border:1px solid var(--border-color);border-radius:var(--radius-lg);box-shadow:var(--shadow-card);padding:24px;width:100%;max-width:1720px;margin-bottom:24px; }
 
@@ -241,6 +257,23 @@
             </div>
         </div>
         <div class="header-actions">
+            <div class="solr-badge" id="solrEngineBadge" tabindex="0" role="button" aria-label="Solr Search Engine Detection & Telemetry">
+                <span class="solr-dot" id="solrStatusDot"></span>
+                <span id="solrBadgeText">Solr: Standby</span>
+                <div class="solr-telemetry-popover" id="solrTelemetryPopover">
+                    <div class="telemetry-title">
+                        <span>Solr Ingestion Telemetry</span>
+                        <span id="telemSessionBadge" style="font-size:10px;font-weight:normal;opacity:0.8;">Idle</span>
+                    </div>
+                    <div class="telemetry-row"><span>Engine Mode:</span><strong id="telemVersion">Awaiting Search</strong></div>
+                    <div class="telemetry-row"><span>Direct target-type (SEARCH-753):</span><span id="telemTargetType">0</span></div>
+                    <div class="telemetry-row"><span>Fallback Type Scans (Solr 9):</span><span id="telemFallbackScan">0</span></div>
+                    <div class="telemetry-row"><span>Deprecated target seen (SEARCH-752):</span><span id="telemDeprecatedTarget">0</span></div>
+                    <div class="telemetry-row"><span>Modern relations array (SEARCH-444):</span><span id="telemFlatRelations">0</span></div>
+                    <div class="telemetry-row"><span>Legacy relation-list (SEARCH-444):</span><span id="telemLegacyRelationList">0</span></div>
+                    <div class="telemetry-row"><span>Non-Artist/Release Indexed (SEARCH-452):</span><span id="telemNonArtistRelease">0</span></div>
+                </div>
+            </div>
             <button id="themeToggleBtn" type="button" class="btn-theme">&#127763; Theme: Auto</button>
             <div class="api-badge">
                 <div class="status-dot" id="statusDot"></div>
@@ -302,6 +335,13 @@
                 <label for="autoPaginationLimit"><span>Max Results (<code>limit</code> &mdash; 0: all)</span></label>
                 <input type="number" id="autoPaginationLimit" value="100" min="0" max="10000" step="25" placeholder="0 = all">
             </div>
+        </div>
+        <div class="query-preview-container" id="queryPreviewContainer">
+            <div class="query-preview-text-wrapper">
+                <strong>Solr API Query:</strong>
+                <code id="queryPreviewText">https://musicbrainz.org/ws/2/url/?query=url:*&amp;fmt=json&amp;limit=100&amp;offset=0</code>
+            </div>
+            <button type="button" class="btn-copy-query" id="copyQueryBtn" title="Copy raw API query URL">&#128203; Copy URL</button>
         </div>
         <div>
             <label class="toggle-row">
@@ -462,17 +502,102 @@
     ];
 
     // ════════════════════════════════════════════════════════════════════════
+    // SolrTelemetryTracker — Canonical Path Logging for Solr 9 vs 10
+    // ════════════════════════════════════════════════════════════════════════
+    class SolrTelemetryTracker {
+        constructor() {
+            this.reset();
+        }
+
+        reset() {
+            this.targetTypeDirectCount = 0;       // SEARCH-753 (Solr 10 native target-type)
+            this.fallbackTypeScanCount = 0;       // Solr 9 fallback entity key scan
+            this.deprecatedTargetSeenCount = 0;   // SEARCH-752 (Solr 9 legacy target property)
+            this.flatRelationsCount = 0;          // SEARCH-444 (Solr 10 flat relations array)
+            this.legacyRelationListCount = 0;     // SEARCH-444 (Solr 9 legacy relation-list)
+            this.nonArtistReleaseIndexedCount = 0;// SEARCH-452 (Solr 10 indexed rels to work/event/genre/etc)
+            this.totalRelsEvaluated = 0;
+            this.startTime = Date.now();
+        }
+
+        recordTargetTypeDirect() { this.targetTypeDirectCount++; this.totalRelsEvaluated++; }
+        recordFallbackTypeScan() { this.fallbackTypeScanCount++; this.totalRelsEvaluated++; }
+        recordDeprecatedTarget() { this.deprecatedTargetSeenCount++; }
+        recordFlatRelations(count = 1) { this.flatRelationsCount += count; }
+        recordLegacyRelationList(count = 1) { this.legacyRelationListCount += count; }
+        recordNonArtistReleaseIndexed() { this.nonArtistReleaseIndexedCount++; }
+
+        getSummary() {
+            let versionMode = 'idle';
+            const hasActivity = (this.totalRelsEvaluated > 0 || this.flatRelationsCount > 0 || this.legacyRelationListCount > 0);
+            if (hasActivity) {
+                if (this.fallbackTypeScanCount === 0 && this.legacyRelationListCount === 0 && this.deprecatedTargetSeenCount === 0) {
+                    versionMode = 'solr10';
+                } else if (this.targetTypeDirectCount === 0 && this.flatRelationsCount === 0) {
+                    versionMode = 'solr9';
+                } else {
+                    versionMode = 'mixed';
+                }
+            }
+            return {
+                versionMode,
+                targetTypeDirectCount: this.targetTypeDirectCount,
+                fallbackTypeScanCount: this.fallbackTypeScanCount,
+                deprecatedTargetSeenCount: this.deprecatedTargetSeenCount,
+                flatRelationsCount: this.flatRelationsCount,
+                legacyRelationListCount: this.legacyRelationListCount,
+                nonArtistReleaseIndexedCount: this.nonArtistReleaseIndexedCount,
+                totalRelsEvaluated: this.totalRelsEvaluated
+            };
+        }
+
+        emitWideEvent(sessionId) {
+            const summary = this.getSummary();
+            const durationMs = Date.now() - this.startTime;
+            console.info('[SolrTelemetry]', {
+                timestamp: new Date().toISOString(),
+                sessionId,
+                versionDetected: summary.versionMode,
+                metrics: {
+                    totalRelsEvaluated: summary.totalRelsEvaluated,
+                    solr10_targetTypeDirect: summary.targetTypeDirectCount,
+                    solr9_fallbackTypeScan: summary.fallbackTypeScanCount,
+                    solr9_deprecatedTargetPresent: summary.deprecatedTargetSeenCount,
+                    solr444_flatRelations: summary.flatRelationsCount,
+                    solr444_legacyRelationList: summary.legacyRelationListCount,
+                    solr452_nativeNonArtistRelease: summary.nonArtistReleaseIndexedCount
+                },
+                durationMs
+            });
+        }
+    }
+
+    // ════════════════════════════════════════════════════════════════════════
     // ENTITY_TYPES & RELATION EXTRACTION
     // ════════════════════════════════════════════════════════════════════════
     const ENTITY_TYPES = ['artist','release','release-group','recording','work','label','area','event','instrument','place','series','genre','url'];
 
-    function extractRelationInfo(rel) {
+    function extractRelationInfo(rel, telemetry = null) {
         if (!rel) return { entityType: 'N/A', entityName: 'N/A', entityId: null, relationType: 'N/A', isLinked: false };
 
+        // SEARCH-753: In Solr 10, 'target-type' is natively present in URL & area relationship JSON.
         let eType = rel['target-type'] || null;
-        if (!eType) {
+        if (eType) {
+            telemetry?.recordTargetTypeDirect();
+        } else {
+            // TODO(solr10-cleanup): Remove fallback entity scan once Solr 10 is verified in production (post-2026-11-30).
             eType = ENTITY_TYPES.find(t => rel[t] !== undefined) || null;
+            if (eType) {
+                telemetry?.recordFallbackTypeScan();
+            }
         }
+
+        // SEARCH-752: Redundant 'target' property will be dropped in Solr 10.
+        // We observe its presence for telemetry only, never relying on it for extraction.
+        if (rel.target !== undefined) {
+            telemetry?.recordDeprecatedTarget();
+        }
+
         const eObj = eType ? rel[eType] : null;
 
         let entityName = 'N/A';
@@ -480,6 +605,7 @@
 
         if (eObj) {
             entityName = eObj.name || eObj.title || eObj.resource || eObj['sort-name'] || 'N/A';
+            // SEARCH-677: Include disambiguation comment if present (e.g. event place or work recording)
             if (eObj.disambiguation) {
                 entityName += ` (${eObj.disambiguation})`;
             }
@@ -510,6 +636,7 @@
             this.userLimit   = userLimit;
             this.batchSize   = batchSize;
             this.resolveAfterFetch = resolveAfterFetch;
+            this.telemetry            = new SolrTelemetryTracker();
             this.offset               = 0;
             this.completedBatches     = 0;
             this.totalExpectedBatches = 0;
@@ -764,11 +891,48 @@
             this.el.exportToolbar.style.display = visible ? 'flex' : 'none';
         }
 
+        _renderSolrTelemetry(session) {
+            if (!this.el.solrBadgeText || !this.el.solrStatusDot) return;
+            const telem = session?.telemetry;
+            if (!telem || telem.totalRelsEvaluated === 0) {
+                this.el.solrBadgeText.textContent = 'Solr: Standby';
+                this.el.solrStatusDot.className = 'solr-dot';
+                if (this.el.telemVersion) this.el.telemVersion.textContent = 'Awaiting Search';
+                if (this.el.telemSessionBadge) this.el.telemSessionBadge.textContent = 'Idle';
+                return;
+            }
+
+            const summary = telem.getSummary();
+            const modeLabels = {
+                solr10: 'Solr 10 (Native)',
+                solr9:  'Solr 9 (Compat)',
+                mixed:  'Solr Mixed'
+            };
+            const modeDotClasses = {
+                solr10: 'solr-dot solr10',
+                solr9:  'solr-dot solr9',
+                mixed:  'solr-dot mixed'
+            };
+
+            this.el.solrBadgeText.textContent = `Solr: ${modeLabels[summary.versionMode] || 'Unknown'}`;
+            this.el.solrStatusDot.className = modeDotClasses[summary.versionMode] || 'solr-dot';
+
+            if (this.el.telemVersion) this.el.telemVersion.textContent = modeLabels[summary.versionMode] || summary.versionMode;
+            if (this.el.telemSessionBadge) this.el.telemSessionBadge.textContent = `Session #${session.id}`;
+            if (this.el.telemTargetType) this.el.telemTargetType.textContent = summary.targetTypeDirectCount.toLocaleString();
+            if (this.el.telemFallbackScan) this.el.telemFallbackScan.textContent = summary.fallbackTypeScanCount.toLocaleString();
+            if (this.el.telemDeprecatedTarget) this.el.telemDeprecatedTarget.textContent = summary.deprecatedTargetSeenCount.toLocaleString();
+            if (this.el.telemFlatRelations) this.el.telemFlatRelations.textContent = summary.flatRelationsCount.toLocaleString();
+            if (this.el.telemLegacyRelationList) this.el.telemLegacyRelationList.textContent = summary.legacyRelationListCount.toLocaleString();
+            if (this.el.telemNonArtistRelease) this.el.telemNonArtistRelease.textContent = summary.nonArtistReleaseIndexedCount.toLocaleString();
+        }
+
         _renderControls() {
             const s = this._session;
             this._renderProgress(s);
             this._renderActionButtons(s, this._store);
             this._renderExportToolbar(s);
+            this._renderSolrTelemetry(s);
         }
 
         // ── KPI ───────────────────────────────────────────────────────────
@@ -963,16 +1127,41 @@
             throw lastErr || new Error('Request failed after retries.');
         }
 
-        buildApiUrl({ url, entityType, relationType, targetId }, limit, offset) {
-            let q = `url:${encodeURIComponent(url)}`;
-            if (entityType)   q += ` AND targettype:(${encodeURIComponent(entityType)})`;
-            if (relationType) q += ` AND relationtype:(${encodeURIComponent(relationType)})`;
-            if (targetId)     q += ` AND targetid:${encodeURIComponent(targetId)}`;
-            return `https://musicbrainz.org/ws/2/url/?query=${q}&fmt=json&limit=${limit}&offset=${offset}`;
+        formatUrlQuery(rawUrl) {
+            if (!rawUrl) return '*';
+            const trimmed = rawUrl.trim();
+            // If already quoted or parenthesized, preserve
+            if ((trimmed.startsWith('"') && trimmed.endsWith('"')) || (trimmed.startsWith('(') && trimmed.endsWith(')'))) {
+                return trimmed;
+            }
+            // If it contains URL path separators or protocol scheme but no wildcards, quote as phrase
+            if (/[/:]/.test(trimmed) && !/[*?]/.test(trimmed)) {
+                return `"${trimmed}"`;
+            }
+            // If wildcards are present alongside / or :, escape reserved Lucene characters
+            if (/[/:]/.test(trimmed)) {
+                return trimmed.replace(/([/:])/g, '\\$1');
+            }
+            return trimmed;
+        }
+
+        buildRawQuery({ url, entityType, relationType, targetId }) {
+            const formattedUrl = this.formatUrlQuery(url);
+            let q = `url:${formattedUrl}`;
+            if (entityType)   q += ` AND targettype:(${entityType})`;
+            if (relationType) q += ` AND relationtype:(${relationType.includes(' ') ? `"${relationType}"` : relationType})`;
+            if (targetId)     q += ` AND targetid:${targetId}`;
+            return q;
+        }
+
+        buildApiUrl(params, limit, offset) {
+            const q = this.buildRawQuery(params);
+            return `https://musicbrainz.org/ws/2/url/?query=${encodeURIComponent(q)}&fmt=json&limit=${limit}&offset=${offset}`;
         }
 
         async fetchUrlEntityRelationships(mbid, signal) {
-            const inc = 'artist-rels+release-rels+release-group-rels+recording-rels+work-rels+label-rels+area-rels+event-rels+place-rels+series-rels+instrument-rels+url-rels';
+            // SEARCH-680 / SEARCH-681: include genre-rels alongside all other entity relationship families
+            const inc = 'artist-rels+release-rels+release-group-rels+recording-rels+work-rels+label-rels+area-rels+event-rels+place-rels+series-rels+instrument-rels+genre-rels+url-rels';
             const res = await this.fetchWithRetry(`https://musicbrainz.org/ws/2/url/${mbid}?inc=${inc}&fmt=json`, { signal }, 2, 1500);
             return (await res.json()).relations || [];
         }
@@ -1064,6 +1253,7 @@
                     this.toast.show(`Error: ${err.message}`, 'error', 5000);
                 }
             } finally {
+                session.telemetry?.emitWideEvent(session.id);
                 this.ui.setSession(session);
                 this.ui.renderAll();
             }
@@ -1082,10 +1272,26 @@
 
         _processPage(urls, session) {
             urls.forEach(urlEntity => {
-                const rels = urlEntity.relations || urlEntity['relation-list']?.flatMap(rl => rl.relations || []) || [];
+                // SEARCH-444: Solr 10 standardizes relations output to a flat array.
+                // Solr 9 / legacy responses may use an improper nested 'relation-list' structure.
+                let rels = [];
+                if (Array.isArray(urlEntity.relations)) {
+                    rels = urlEntity.relations;
+                    session.telemetry?.recordFlatRelations(rels.length);
+                } else if (urlEntity['relation-list']) {
+                    // TODO(solr10-cleanup): Remove legacy relation-list unpacking once Solr 10 is verified (post-2026-11-30).
+                    const rawList = Array.isArray(urlEntity['relation-list']) ? urlEntity['relation-list'] : [urlEntity['relation-list']];
+                    rels = rawList.flatMap(rl => rl.relations || []);
+                    session.telemetry?.recordLegacyRelationList(rels.length);
+                }
+
                 if (rels.length > 0) {
                     rels.forEach((rel, idx) => {
-                        const info = extractRelationInfo(rel);
+                        const info = extractRelationInfo(rel, session.telemetry);
+                        // SEARCH-452: Track if non-artist/release entity relations arrived pre-indexed directly from Solr
+                        if (info.isLinked && !['artist', 'release'].includes(info.entityType)) {
+                            session.telemetry?.recordNonArtistReleaseIndexed();
+                        }
                         this.store.addItem({
                             id:                `${urlEntity.id}-${info.entityType}-${info.entityId || 'no-target'}-${idx}`,
                             urlMbid:           urlEntity.id,
@@ -1153,7 +1359,7 @@
 
                     if (rels.length > 0) {
                         const firstRel = rels[0];
-                        const info = extractRelationInfo(firstRel);
+                        const info = extractRelationInfo(firstRel, session.telemetry);
                         const newId = `${item.urlMbid}-${info.entityType}-${info.entityId || 'no-target'}-0`;
                         this.store.updateItem(item.id, {
                             id:                newId,
@@ -1166,7 +1372,7 @@
                             isLoading:         false,
                         });
                         for (let i = 1; i < rels.length; i++) {
-                            const extraInfo = extractRelationInfo(rels[i]);
+                            const extraInfo = extractRelationInfo(rels[i], session.telemetry);
                             this.store.addItem({
                                 id:                `${item.urlMbid}-${extraInfo.entityType}-${extraInfo.entityId || 'no-target'}-${i}`,
                                 urlMbid:           item.urlMbid,
@@ -1218,6 +1424,7 @@
 
             if (!session.signal.aborted && !session.isPaused() && session.isResolving()) {
                 session.state = FetchSession.State.COMPLETE;
+                session.telemetry?.emitWideEvent(session.id);
                 this.toast.show('Relationship resolution complete.', 'success');
             }
         }
@@ -1420,6 +1627,20 @@
                 clearTargetIdBtn:     $('clearTargetIdBtn'),
                 apiBadgeText:         q('.api-badge span'),
                 statusDot:            q('.status-dot'),
+                solrEngineBadge:        $('solrEngineBadge'),
+                solrStatusDot:          $('solrStatusDot'),
+                solrBadgeText:          $('solrBadgeText'),
+                telemSessionBadge:      $('telemSessionBadge'),
+                telemVersion:           $('telemVersion'),
+                telemTargetType:        $('telemTargetType'),
+                telemFallbackScan:      $('telemFallbackScan'),
+                telemDeprecatedTarget:  $('telemDeprecatedTarget'),
+                telemFlatRelations:     $('telemFlatRelations'),
+                telemLegacyRelationList:$('telemLegacyRelationList'),
+                telemNonArtistRelease:  $('telemNonArtistRelease'),
+                queryPreviewContainer:  $('queryPreviewContainer'),
+                queryPreviewText:       $('queryPreviewText'),
+                copyQueryBtn:           $('copyQueryBtn'),
             };
         }
 
@@ -1475,11 +1696,43 @@
                 this.ui.renderAll();
             });
 
+            // Live Query Preview updater
+            const updatePreview = () => {
+                if (!this.el.queryPreviewText) return;
+                const rawUrl = this.el.urlInput.value.trim() || '*';
+                const entityType = this.el.entityTypeInput.value.trim();
+                const relationType = this.el.relationTypeInput.value.trim();
+                const targetId = this.el.targetIdInput.value.trim();
+                const rawLimit = parseInt(this.el.autoPaginationLimit.value, 10);
+                const limit = (!rawLimit || rawLimit <= 0) ? 100 : Math.min(100, rawLimit);
+                const queryUrl = this.api.buildApiUrl({ url: rawUrl, entityType, relationType, targetId }, limit, 0);
+                this.el.queryPreviewText.textContent = queryUrl;
+            };
+
+            [this.el.urlInput, this.el.entityTypeInput, this.el.relationTypeInput, this.el.targetIdInput, this.el.autoPaginationLimit]
+                .forEach(inp => inp?.addEventListener('input', updatePreview));
+
+            this.el.copyQueryBtn?.addEventListener('click', async () => {
+                const text = this.el.queryPreviewText?.textContent;
+                if (!text) return;
+                try {
+                    await navigator.clipboard.writeText(text);
+                    this.toast.show('API Query URL copied to clipboard!', 'success');
+                } catch {
+                    this.toast.show('Failed to copy to clipboard.', 'warning');
+                }
+            });
+
+            updatePreview();
+
             this.el.searchButton.addEventListener('click', () => this._startSearch());
             this.el.abortButton.addEventListener('click',  () => this._abort());
             this.el.topResumeButton.addEventListener('click',    () => this._resume());
             this.el.bottomResumeButton.addEventListener('click', () => this._resume());
-            this.el.clearAllButton.addEventListener('click',     () => this._clearAll());
+            this.el.clearAllButton.addEventListener('click',     () => {
+                this._clearAll();
+                updatePreview();
+            });
 
             this.el.urlInput.addEventListener('input', () => this.el.urlInput.classList.remove('input-invalid'));
 
@@ -1619,6 +1872,7 @@
             this.store.reset();
             this.el.resultsTableBody.innerHTML = '<tr class="status-row"><td colspan="6">No results yet. Enter a URL pattern and click Search.</td></tr>';
             this.ui._tableRows = [];
+            this.ui.setSession(null);
             this._initUIState();
             [this.el.clearUrlBtn, this.el.clearEntityTypeBtn, this.el.clearRelationTypeBtn, this.el.clearTargetIdBtn].forEach(b => { if (b) b.style.display = 'none'; });
         }
