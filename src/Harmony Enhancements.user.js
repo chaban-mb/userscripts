@@ -3074,16 +3074,26 @@
                     if (node.nodeType !== Node.ELEMENT_NODE) continue;
 
                     // Check if node is an input added inside seeder form or is a seeder form itself
+                    const formSelector = 'form[name="release-seeder"], form[name="release-update-seeder"]';
                     const isInput = node.tagName === 'INPUT' || node.tagName === 'TEXTAREA';
-                    const isInsideForm = node.closest?.('form[name="release-seeder"], form[name="release-update-seeder"]');
+                    const isInsideForm = node.closest?.(formSelector);
+                    const isForm = node.matches?.(formSelector);
 
-                    if (isInsideForm && isInput && !node.hasAttribute('data-he-managed')) {
-                        hasExternalAddition = true;
-                        break;
-                    }
-                    if (node.querySelector?.('input:not([data-he-managed]), textarea:not([data-he-managed])')) {
-                        hasExternalAddition = true;
-                        break;
+                    if (isInsideForm || isForm) {
+                        if (isInput && !node.hasAttribute('data-he-managed')) {
+                            hasExternalAddition = true;
+                            break;
+                        }
+                        if (node.querySelector?.('input:not([data-he-managed]), textarea:not([data-he-managed])')) {
+                            hasExternalAddition = true;
+                            break;
+                        }
+                    } else if (node.querySelector?.(formSelector)) {
+                        const form = node.querySelector(formSelector);
+                        if (form.querySelector('input:not([data-he-managed]), textarea:not([data-he-managed])')) {
+                            hasExternalAddition = true;
+                            break;
+                        }
                     }
                 }
                 if (hasExternalAddition) break;
