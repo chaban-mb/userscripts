@@ -2551,8 +2551,11 @@
                 const isPrimaryLabel = index === 0;
 
                 // For primary label, we can check alt names if no direct mapping
+                const altLabelNames = (AppState.dom.labelAltElements || [])
+                    .map(span => span.textContent.trim())
+                    .filter(Boolean);
                 const namesToTry = isPrimaryLabel
-                    ? [currentLabelName, ...(AppState.dom.labelAltNames || [])]
+                    ? [currentLabelName, ...altLabelNames]
                     : [currentLabelName];
 
                 let matchedName = null;
@@ -3241,8 +3244,9 @@
             });
 
             // Cache native alt label elements (excluding third-party injected rows)
-            const altSpans = Array.from(document.querySelectorAll('ul.release-labels ~ ul.alt-values .entity-links'));
-            AppState.dom.labelAltElements = altSpans.filter(span => !isThirdPartyElement(span));
+            const altSpans = Array.from(document.querySelectorAll('ul.release-labels ~ ul.alt-values .entity-links'))
+                .filter(span => !isThirdPartyElement(span));
+            AppState.dom.labelAltElements = altSpans;
         }
 
         AppState.dom.labelListElements = document.querySelectorAll('ul.release-labels:not(.inline) li span.entity-links');
