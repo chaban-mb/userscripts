@@ -530,14 +530,42 @@
                 },
                 deserialize(parsed, target) {
                     const firstEvent = parsed.events?.find(Boolean);
-                    if (!firstEvent?.date) return false;
-                    target.releaseDate ??= { date: {} };
-                    const { year, month, day } = firstEvent.date;
+                    if (!firstEvent) return false;
                     let changed = false;
-                    if (year && setDeepPropertyIfChanged(target.releaseDate, 'date.year', Number.parseInt(year, 10))) changed = true;
-                    if (month && setDeepPropertyIfChanged(target.releaseDate, 'date.month', Number.parseInt(month, 10))) changed = true;
-                    if (day && setDeepPropertyIfChanged(target.releaseDate, 'date.day', Number.parseInt(day, 10))) changed = true;
+                    if (firstEvent.date) {
+                        target.releaseDate ??= { date: {} };
+                        const { year, month, day } = firstEvent.date;
+                        if (year && setDeepPropertyIfChanged(target.releaseDate, 'date.year', Number.parseInt(year, 10))) changed = true;
+                        if (month && setDeepPropertyIfChanged(target.releaseDate, 'date.month', Number.parseInt(month, 10))) changed = true;
+                        if (day && setDeepPropertyIfChanged(target.releaseDate, 'date.day', Number.parseInt(day, 10))) changed = true;
+                    }
+                    if (firstEvent.country && setDeepPropertyIfChanged(target, 'country', String(firstEvent.country).trim())) {
+                        changed = true;
+                    }
                     return changed;
+                },
+                onSerialize(events, set, prefix = 'events.', rootData = null) {
+                    if (Array.isArray(events) && events.length > 0) {
+                        events.forEach((event, index) => {
+                            const p = `${prefix}${index}.`;
+                            if (event.date?.year) set(`${p}date.year`, event.date.year);
+                            if (event.date?.month) set(`${p}date.month`, event.date.month);
+                            if (event.date?.day) set(`${p}date.day`, event.date.day);
+                            if (event.country) set(`${p}country`, event.country);
+                        });
+                        return;
+                    }
+
+                    const rel = rootData || AppState.data.release;
+                    const dateObj = rel?.releaseDate?.date;
+                    const country = rel?.country || rel?.releaseDate?.country;
+                    if (dateObj?.year || country) {
+                        const p = `${prefix}0.`;
+                        if (dateObj?.year) set(`${p}date.year`, dateObj.year);
+                        if (dateObj?.month) set(`${p}date.month`, dateObj.month);
+                        if (dateObj?.day) set(`${p}date.day`, dateObj.day);
+                        if (country) set(`${p}country`, country);
+                    }
                 }
             },
             'labels': {
@@ -3106,6 +3134,18 @@
             }
             // Check collections
             for (const key of Object.keys(ReleaseSchema.collections)) {
+                if (key === 'events') {
+                    const newDate = JSON.stringify(releaseData?.releaseDate?.date);
+                    const oldDate = JSON.stringify(originalReleaseData?.releaseDate?.date);
+                    const newCountry = releaseData?.country || releaseData?.releaseDate?.country;
+                    const oldCountry = originalReleaseData?.country || originalReleaseData?.releaseDate?.country;
+                    const newEvents = JSON.stringify(releaseData?.events);
+                    const oldEvents = JSON.stringify(originalReleaseData?.events);
+                    if (newDate !== oldDate || newCountry !== oldCountry || newEvents !== oldEvents) {
+                        pathsToBuild.add('events');
+                    }
+                    continue;
+                }
                 const newVal = releaseData[key];
                 const oldVal = originalReleaseData?.[key];
                 if (JSON.stringify(newVal) !== JSON.stringify(oldVal)) {
@@ -3150,7 +3190,7 @@
                 if (collDef.type === 'primitive_list') {
                     collData?.forEach((t, i) => set(`${collDef.cleanupPrefix}${i}`, t));
                 } else if (typeof collDef.onSerialize === 'function') {
-                    collDef.onSerialize(collData, set, collDef.paramPrefix || '');
+                    collDef.onSerialize(collData, set, collDef.paramPrefix || '', releaseData);
                 } else if (Array.isArray(collData)) {
                     collData.forEach((item, i) => {
                         const prefix = `${collDef.paramPrefix || `${key}.`}${i}.`;
