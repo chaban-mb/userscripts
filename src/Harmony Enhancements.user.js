@@ -1978,10 +1978,19 @@
             if (!AppState.lang.detector && !AppState.lang.apiFailed) {
                 if ('LanguageDetector' in window) {
                     try {
-                        const nativeDetector = await window.LanguageDetector.create();
-                        AppState.lang.detector = (text) => nativeDetector.detect(text);
-                    } catch (error) {
-                        error('LanguageDetector API failed to initialize.', error);
+                        if (typeof window.LanguageDetector.availability === 'function') {
+                            const availability = await window.LanguageDetector.availability();
+                            if (!availability || availability === 'unavailable') {
+                                warn('LanguageDetector API is not available on this device.');
+                                AppState.lang.apiFailed = true;
+                            }
+                        }
+                        if (!AppState.lang.apiFailed) {
+                            const nativeDetector = await window.LanguageDetector.create();
+                            AppState.lang.detector = (text) => nativeDetector.detect(text);
+                        }
+                    } catch (err) {
+                        error('LanguageDetector API failed to initialize.', err);
                         AppState.lang.apiFailed = true;
                     }
                 } else {
