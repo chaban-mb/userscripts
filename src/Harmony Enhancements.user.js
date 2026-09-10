@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        Harmony: Enhancements
 // @namespace   https://musicbrainz.org/user/chaban
-// @version     1.27.12
+// @version     1.28.0
 // @description Adds some convenience features, various UI and behavior settings, as well as an improved language detection to Harmony.
 // @tag         ai-created
 // @author      chaban
@@ -395,15 +395,20 @@
             generator: (value, set) => {
                 value?.forEach((artist, index) => {
                     const prefix = `artist_credit.names.${index}`;
-                    set(`${prefix}.name`, artist.name);
+                    const artistName = artist.creditedName || artist.name;
+                    if (artistName) {
+                        set(`${prefix}.name`, artistName);
+                    }
                     if (artist.mbid) {
                         set(`${prefix}.mbid`, artist.mbid);
-                    } else {
-                        set(`${prefix}.artist.name`, artist.name);
+                    } else if (artistName) {
+                        set(`${prefix}.artist.name`, artistName);
                     }
-                    if (index < value.length - 1) {
-                        const joinPhrase = (index === value.length - 2) ? ' & ' : ', ';
-                        set(`${prefix}.join_phrase`, joinPhrase);
+                    if (artist.joinPhrase !== undefined) {
+                        set(`${prefix}.join_phrase`, artist.joinPhrase);
+                    } else if (index < value.length - 1) {
+                        const defaultJoinPhrase = (index === value.length - 2) ? ' & ' : ', ';
+                        set(`${prefix}.join_phrase`, defaultJoinPhrase);
                     }
                 });
             },
@@ -424,8 +429,8 @@
                     if (medium.format) {
                         set(`${prefix}.format`, medium.format);
                     }
-                    if (medium.name) {
-                        set(`${prefix}.name`, medium.name);
+                    if (medium.title || medium.name) {
+                        set(`${prefix}.name`, medium.title || medium.name);
                     }
                     medium.tracklist?.forEach((track, trackIndex) => {
                         const trackPrefix = `${prefix}.track.${trackIndex}`;
@@ -438,15 +443,20 @@
 
                         track.artists?.forEach((artist, artistIndex) => {
                             const artistPrefix = `${trackPrefix}.artist_credit.names.${artistIndex}`;
-                            set(`${artistPrefix}.name`, artist.name);
+                            const artistName = artist.creditedName || artist.name;
+                            if (artistName) {
+                                set(`${artistPrefix}.name`, artistName);
+                            }
                             if (artist.mbid) {
                                 set(`${artistPrefix}.mbid`, artist.mbid);
-                            } else {
-                                set(`${artistPrefix}.artist.name`, artist.name);
+                            } else if (artistName) {
+                                set(`${artistPrefix}.artist.name`, artistName);
                             }
-                            if (artistIndex < track.artists.length - 1) {
-                                const joinPhrase = (artistIndex === track.artists.length - 2) ? ' & ' : ', ';
-                                set(`${artistPrefix}.join_phrase`, joinPhrase);
+                            if (artist.joinPhrase !== undefined) {
+                                set(`${artistPrefix}.join_phrase`, artist.joinPhrase);
+                            } else if (artistIndex < track.artists.length - 1) {
+                                const defaultJoinPhrase = (artistIndex === track.artists.length - 2) ? ' & ' : ', ';
+                                set(`${artistPrefix}.join_phrase`, defaultJoinPhrase);
                             }
                         });
                     });
@@ -464,6 +474,7 @@
         data: {
             release: undefined,
             originalRelease: null,
+            injected: { raw: [] },
         },
         lang: {
             code: null,
@@ -2276,13 +2287,10 @@
 
             if (labelMap.size === 0) return;
 
-            const { labelListElements } = AppState.dom;
-            if (!labelListElements) return;
+            releaseData.labels.forEach((originalLabel, index) => {
+                if (!originalLabel?.name) return;
 
-            labelListElements.forEach((labelListElement, index) => {
-                const originalLabel = releaseData.labels[index];
-                if (!originalLabel) return;
-
+                const currentLabelName = originalLabel.name.trim();
                 const isPrimaryLabel = index === 0;
 
                 // For primary label, we can check alt names if no direct mapping
@@ -2320,13 +2328,13 @@
                     const oldMbid = originalLabel.mbid;
                     const oldName = originalLabel.name;
 
-                    if (oldMbid === mbid && oldName === matchedName) return;
-
                     // Special handling for mapping to [no label]
                     const isNoLabel = mbid === NO_LABEL.mbid;
                     if (isNoLabel) {
                         matchedName = NO_LABEL.name;
                     }
+
+                    if (oldMbid === mbid && oldName === matchedName) return;
 
                     // Update State
                     AppState.data.release.labels[index].name = matchedName;
@@ -2421,6 +2429,7 @@
                 artists.forEach(artist => {
                     if (artist.mbid) {
                         artist.name = null;
+                        artist.creditedName = null;
                     }
                 });
             };
@@ -2609,6 +2618,7 @@
                 input.value = value;
                 form.appendChild(input);
             }
+            input.setAttribute('data-he-managed', 'true');
         }
     }
 
@@ -2621,6 +2631,9 @@
     function handleSeederFormSubmit(event) {
         const form = event.target.closest('form');
         if (!form) return;
+
+        clearTimeout(formObserverDebounceTimer);
+        ingestAndReprocessExternalData();
 
         const formName = form.getAttribute('name');
 
@@ -2643,6 +2656,306 @@
         }
 
         form.target = getSeederTarget();
+    }
+
+    /**
+     * @summary Ingests unmanaged external form inputs (from companion scripts like HBR or other extensions)
+     * and synchronizes them into AppState.data.release.
+     * @param {HTMLFormElement} [targetForm] - Optional form to inspect.
+     * @returns {boolean} True if new or modified data was detected and merged.
+     */
+    function ingestExternalFormData(targetForm = null) {
+        const forms = targetForm
+            ? [targetForm]
+            : Array.from(document.querySelectorAll('form[name="release-seeder"], form[name="release-update-seeder"]'));
+        if (forms.length === 0 || !AppState.data.release) return false;
+
+        const release = AppState.data.release;
+        let changesDetected = false;
+        const raw = [];
+
+        for (const form of forms) {
+            const formElements = form.querySelectorAll('input, textarea, select');
+            for (const el of formElements) {
+                if (el.hasAttribute('data-he-managed')) continue;
+
+                const name = el.name;
+                const value = el.value;
+                if (!name) continue;
+
+                raw.push({
+                    name,
+                    value,
+                    tagName: el.tagName,
+                    dataset: { ...el.dataset }
+                });
+
+                // 1. Labels: labels.N.name, labels.N.catalog_number, labels.N.mbid
+                const labelMatch = name.match(/^labels\.(\d+)\.(name|catalog_number|mbid)$/);
+                if (labelMatch) {
+                    const index = parseInt(labelMatch[1], 10);
+                    const field = labelMatch[2];
+                    release.labels ??= [];
+                    release.labels[index] ??= {};
+                    const prop = field === 'catalog_number' ? 'catalogNumber' : field;
+                    if (release.labels[index][prop] !== value) {
+                        release.labels[index][prop] = value;
+                        changesDetected = true;
+                    }
+                    continue;
+                }
+
+                // 2. Barcode: barcode -> gtin
+                if (name === 'barcode') {
+                    if (release.gtin !== value) {
+                        release.gtin = value;
+                        changesDetected = true;
+                    }
+                    continue;
+                }
+
+                // 3. Release Title: name -> title
+                if (name === 'name') {
+                    if (release.title !== value) {
+                        release.title = value;
+                        changesDetected = true;
+                    }
+                    continue;
+                }
+
+                // 4. Comment: comment -> comment
+                if (name === 'comment') {
+                    if (release.comment !== value) {
+                        release.comment = value;
+                        changesDetected = true;
+                    }
+                    continue;
+                }
+
+                // 5. Annotation: annotation -> annotation
+                if (name === 'annotation') {
+                    if (release.annotation !== value) {
+                        release.annotation = value;
+                        changesDetected = true;
+                    }
+                    continue;
+                }
+
+                // 6. Release status / packaging
+                if (name === 'status') {
+                    if (release.status !== value) {
+                        release.status = value;
+                        changesDetected = true;
+                    }
+                    continue;
+                }
+                if (name === 'packaging') {
+                    if (release.packaging !== value) {
+                        release.packaging = value;
+                        changesDetected = true;
+                    }
+                    continue;
+                }
+
+                // 7. Artists: artist_credit.names.N.(name|mbid|artist.name|join_phrase)
+                const artistMatch = name.match(/^artist_credit\.names\.(\d+)\.(name|mbid|artist\.name|join_phrase)$/);
+                if (artistMatch) {
+                    const index = parseInt(artistMatch[1], 10);
+                    const field = artistMatch[2];
+                    release.artists ??= [];
+                    release.artists[index] ??= {};
+                    if (field === 'name') {
+                        if (release.artists[index].creditedName !== value && release.artists[index].name !== value) {
+                            release.artists[index].name = value;
+                            changesDetected = true;
+                        }
+                    } else if (field === 'mbid') {
+                        if (release.artists[index].mbid !== value) {
+                            release.artists[index].mbid = value;
+                            changesDetected = true;
+                        }
+                    } else if (field === 'artist.name') {
+                        if (release.artists[index].name !== value) {
+                            release.artists[index].name = value;
+                            changesDetected = true;
+                        }
+                    } else if (field === 'join_phrase') {
+                        if (release.artists[index].joinPhrase !== value) {
+                            release.artists[index].joinPhrase = value;
+                            changesDetected = true;
+                        }
+                    }
+                    continue;
+                }
+
+                // 8. Tracklist: mediums.M.track.T.(name|number|length|recording)
+                const trackMatch = name.match(/^mediums\.(\d+)\.track\.(\d+)\.(name|number|length|recording)$/);
+                if (trackMatch) {
+                    const mIdx = parseInt(trackMatch[1], 10);
+                    const tIdx = parseInt(trackMatch[2], 10);
+                    const field = trackMatch[3];
+                    release.media ??= [];
+                    release.media[mIdx] ??= { tracklist: [] };
+                    release.media[mIdx].tracklist ??= [];
+                    release.media[mIdx].tracklist[tIdx] ??= {};
+                    const track = release.media[mIdx].tracklist[tIdx];
+                    if (field === 'name' && track.title !== value) {
+                        track.title = value;
+                        changesDetected = true;
+                    } else if (field === 'number' && track.number !== value) {
+                        track.number = value;
+                        changesDetected = true;
+                    } else if (field === 'length' && track.length !== value) {
+                        track.length = value;
+                        changesDetected = true;
+                    } else if (field === 'recording') {
+                        track.recording ??= {};
+                        if (track.recording.mbid !== value) {
+                            track.recording.mbid = value;
+                            changesDetected = true;
+                        }
+                    }
+                    continue;
+                }
+
+                // 9. Mediums: mediums.M.(format|name)
+                const mediumMatch = name.match(/^mediums\.(\d+)\.(format|name)$/);
+                if (mediumMatch) {
+                    const mIdx = parseInt(mediumMatch[1], 10);
+                    const field = mediumMatch[2];
+                    release.media ??= [];
+                    release.media[mIdx] ??= {};
+                    const prop = field === 'name' ? 'title' : field;
+                    if (release.media[mIdx][prop] !== value) {
+                        release.media[mIdx][prop] = value;
+                        changesDetected = true;
+                    }
+                    continue;
+                }
+            }
+        }
+
+        AppState.data.injected = { raw };
+
+        if (changesDetected && AppState.debug) {
+            log('Ingested external form data:', structuredClone(AppState.data.injected));
+            log('Updated release object after external form merge:', structuredClone(AppState.data.release));
+        }
+
+        return changesDetected;
+    }
+
+    /**
+     * @summary Runs all active enhancement modules matching the current page and user settings.
+     * Can be executed both on initial page load and on-demand (e.g. after third-party form data ingestion).
+     * @param {object} [options]
+     * @param {'load'|'mutation'} [options.trigger='load'] - The trigger source.
+     */
+    function runActiveEnhancements({ trigger = 'load' } = {}) {
+        const { path } = AppState;
+
+        // 1. Language detection mode actions (only on initial load)
+        if (trigger === 'load') {
+            const loadTimeActionMap = {
+                browser: 'runLanguageDetection',
+                none: 'updateUIAfterLanguageDisable',
+            };
+            const mode = AppState.settings[SETTINGS_CONFIG.languageDetectionMode.key];
+            const langModuleName = loadTimeActionMap[mode];
+
+            if (langModuleName) {
+                const config = SETTINGS_CONFIG[langModuleName];
+                const moduleFunc = enhancements[langModuleName];
+                if (config?.paths?.some(p => p.test(path)) && moduleFunc) {
+                    if (AppState.debug) {
+                        log(`Running mode-dependent module (${trigger}): ${langModuleName}...`);
+                        console.time(`[${SCRIPT_NAME}] ${langModuleName} execution time`);
+                    }
+                    moduleFunc();
+                    if (AppState.debug) {
+                        console.timeEnd(`[${SCRIPT_NAME}] ${langModuleName} execution time`);
+                    }
+                }
+            }
+        }
+
+        // 2. Standard enhancement modules
+        const modeDependentModules = ['runLanguageDetection', 'updateUIAfterLanguageDisable', 'unsetLanguageData'];
+        for (const [funcName, config] of Object.entries(SETTINGS_CONFIG)) {
+            if (modeDependentModules.includes(funcName) || !config.runAt) continue;
+
+            const isEnabled = (config.runAt ?? 'load') === 'load' && AppState.settings[config.key];
+            const matchesPath = config.paths?.some(p => p.test(path));
+            const moduleFunc = enhancements[funcName];
+
+            if (isEnabled && matchesPath && typeof moduleFunc === 'function') {
+                if (AppState.debug) {
+                    log(`Running enhancement module (${trigger}): ${funcName}...`);
+                    console.time(`[${SCRIPT_NAME}] ${funcName} execution time`);
+                }
+                moduleFunc();
+                if (AppState.debug) {
+                    console.timeEnd(`[${SCRIPT_NAME}] ${funcName} execution time`);
+                }
+            }
+        }
+    }
+
+    let formObserverDebounceTimer = null;
+
+    /**
+     * @summary Ingests any external data from the form and re-runs active enhancements on the merged data.
+     */
+    function ingestAndReprocessExternalData() {
+        const changes = ingestExternalFormData();
+        if (changes) {
+            runActiveEnhancements({ trigger: 'mutation' });
+            const form = document.querySelector('form[name="release-seeder"]');
+            if (form) {
+                buildSeederParameters(form, AppState.data.release, AppState.data.originalRelease, null);
+            }
+        }
+    }
+
+    /**
+     * @summary Sets up a MutationObserver on the release seeder forms to detect third-party injections.
+     */
+    function setupFormMutationObserver() {
+        // Run an immediate ingestion pass in case third-party scripts already injected inputs prior to observer attach
+        ingestAndReprocessExternalData();
+
+        const forms = document.querySelectorAll('form[name="release-seeder"], form[name="release-update-seeder"]');
+        if (forms.length === 0) return;
+
+        const observer = new MutationObserver((mutations) => {
+            let hasExternalAddition = false;
+
+            for (const m of mutations) {
+                for (const node of m.addedNodes) {
+                    if (node.nodeType !== Node.ELEMENT_NODE) continue;
+
+                    const isInput = node.tagName === 'INPUT' || node.tagName === 'TEXTAREA' || node.tagName === 'SELECT';
+                    if (isInput && !node.hasAttribute('data-he-managed')) {
+                        hasExternalAddition = true;
+                        break;
+                    }
+                    if (node.querySelector?.('input:not([data-he-managed]), textarea:not([data-he-managed]), select:not([data-he-managed])')) {
+                        hasExternalAddition = true;
+                        break;
+                    }
+                }
+                if (hasExternalAddition) break;
+            }
+
+            if (!hasExternalAddition) return;
+
+            clearTimeout(formObserverDebounceTimer);
+            formObserverDebounceTimer = setTimeout(() => {
+                ingestAndReprocessExternalData();
+            }, 50);
+        });
+
+        forms.forEach(form => observer.observe(form, { childList: true, subtree: true }));
     }
 
     // --- INITIALIZATION AND ROUTING ---
@@ -2940,6 +3253,7 @@
         } else if (path.startsWith('/release') && !path.startsWith('/release/actions')) {
             cacheReleaseLookupPageDOM();
             getReleaseDataFromJSON();
+            setupFormMutationObserver();
         } else if (path.startsWith('/release/actions')) {
             cacheReleaseActionsPageDOM();
         } else if (path.startsWith('/settings')) {
@@ -2948,44 +3262,10 @@
             return;
         }
 
-        const loadTimeActionMap = {
-            browser: 'runLanguageDetection',
-            none: 'updateUIAfterLanguageDisable',
-        };
-        const mode = AppState.settings[SETTINGS_CONFIG.languageDetectionMode.key];
-        const moduleName = loadTimeActionMap[mode];
-
-        if (moduleName) {
-            const config = SETTINGS_CONFIG[moduleName];
-            const moduleFunc = enhancements[moduleName];
-            if (config?.paths.some(p => p.test(AppState.path))) {
-                if (AppState.debug) {
-                    log(`Running mode-dependent module: ${moduleName}...`);
-                    console.time(`[${SCRIPT_NAME}] ${moduleName} execution time`);
-                }
-                moduleFunc();
-                if (AppState.debug) {
-                    console.timeEnd(`[${SCRIPT_NAME}] ${moduleName} execution time`);
-                }
-            }
-        }
-
-        const modeDependentModules = ['runLanguageDetection', 'updateUIAfterLanguageDisable', 'unsetLanguageData'];
-        for (const [funcName, config] of Object.entries(SETTINGS_CONFIG)) {
-            if (modeDependentModules.includes(funcName) || !config.runAt) continue;
-
-            if ((config.runAt ?? 'load') === 'load' && AppState.settings[config.key] && config.paths && enhancements[funcName]) {
-                if (config.paths.some(p => p.test(AppState.path))) {
-                    if (AppState.debug) {
-                        log(`Running standard module: ${funcName}...`);
-                        console.time(`[${SCRIPT_NAME}] ${funcName} execution time`);
-                    }
-                    enhancements[funcName]();
-                    if (AppState.debug) {
-                        console.timeEnd(`[${SCRIPT_NAME}] ${funcName} execution time`);
-                    }
-                }
-            }
+        runActiveEnhancements({ trigger: 'load' });
+        const releaseForm = document.querySelector('form[name="release-seeder"]');
+        if (releaseForm) {
+            buildSeederParameters(releaseForm, AppState.data.release, AppState.data.originalRelease, null);
         }
     }
 
