@@ -1123,6 +1123,10 @@
         /**
          * Finds active release label DOM elements, structurally excluding
          * unselected alternative provider values (.alt-value).
+         * NOTE: Native Harmony comparison labels are wrapped in <span class="alt-value">,
+         * whereas companion scripts (e.g. Harmony Beatport Recovery) inject active seeded
+         * labels into the DOM without .alt-value. Filtering by !span.closest('.alt-value')
+         * intentionally matches both native primary labels and companion-seeded labels.
          * @param {number} [index] - The release label index (0, 1, ...).
          * @returns {HTMLElement[]}
          */
@@ -2588,6 +2592,8 @@
                 const isPrimaryLabel = index === 0;
 
                 // For primary label, we can check alt names if no direct mapping
+                // NOTE: When multiple alternative labels have user mappings, the first in DOM order
+                // currently takes precedence. Future consideration: multi-label seeding vs [no label] resolution.
                 const altLabelNames = (AppState.dom.labelAltElements || [])
                     .map(span => span.textContent.trim())
                     .filter(Boolean);
