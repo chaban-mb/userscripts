@@ -729,6 +729,75 @@
         },
 
         /**
+         * Returns a host manager for indicator badges attached to an anchor element.
+         * Enforces a consolidated single badge (.he-badge) with key-based slot management.
+         * @param {HTMLElement} anchorElement - The element to host the badge after.
+         * @returns {{ set: (key: string, options?: object) => HTMLElement | null, remove: (key: string) => HTMLElement | null }}
+         */
+        badgeHost: (anchorElement) => {
+            if (!anchorElement) return { set: () => null, remove: () => null };
+
+            let badge = anchorElement.nextElementSibling;
+            if (!badge || !badge.classList.contains('he-badge')) {
+                badge = document.createElement('span');
+                badge.className = 'he-badge';
+                anchorElement.after(badge);
+            }
+
+            const entries = badge._badgeEntries || (badge._badgeEntries = new Map());
+
+            const render = () => {
+                if (entries.size === 0) {
+                    badge.remove();
+                    return null;
+                }
+                const types = Array.from(entries.values()).map(e => e.type);
+                const primaryType = types.includes('overwritten') ? 'overwritten' : types[0];
+                badge.className = `he-badge he-badge--${primaryType}`;
+                badge.dataset.badgeType = primaryType;
+                badge.textContent = `(${primaryType})`;
+                badge.title = Array.from(entries.values())
+                    .map(e => e.tooltip || `${e.tooltipPrefix} ${e.originalValue || e.text}`)
+                    .join('\n');
+                return badge;
+            };
+
+            return {
+                set(key, { type = 'overwritten', text = type, tooltip = '', tooltipPrefix = 'Original value:', originalValue = '' } = {}) {
+                    entries.set(key, { type, text, tooltip, tooltipPrefix, originalValue });
+                    return render();
+                },
+                remove(key) {
+                    entries.delete(key);
+                    return render();
+                }
+            };
+        },
+
+        /**
+         * Finds active release label DOM elements, structurally excluding
+         * unselected alternative provider values (.alt-value).
+         * NOTE: Native Harmony comparison labels are wrapped in <span class="alt-value">,
+         * whereas companion scripts (e.g. Harmony Beatport Recovery) inject active seeded
+         * labels into the DOM without .alt-value. Filtering by !span.closest('.alt-value')
+         * intentionally matches both native primary labels and companion-seeded labels.
+         * @param {number} [index] - The release label index (0, 1, ...).
+         * @returns {HTMLElement[]}
+         */
+        findLabelElements: (index = null) => {
+            const labelsRow = UI_UTILS.findReleaseInfoRow('Labels');
+            if (!labelsRow) return [];
+
+            const activeSpans = Array.from(labelsRow.querySelectorAll('.entity-links'))
+                .filter(span => !span.closest('.alt-value'));
+
+            if (index !== null) {
+                return activeSpans[index] ? [activeSpans[index]] : [];
+            }
+            return activeSpans;
+        },
+
+        /**
         * Hides debug messages whose text content includes any of the given substrings.
         * @param {string[]} substrings - An array of strings to search for in debug messages.
         */
@@ -866,10 +935,10 @@
             labelsUl.appendChild(li);
 
             UI_UTILS.updateLabelLink(span, newLabelName, newMbid);
-            const indicator = UI_UTILS.createIndicatorSpan('overwritten', originalNames, {
+            UI_UTILS.badgeHost(span).set('label', {
                 tooltipPrefix: 'Original labels:',
+                originalValue: originalNames,
             });
-            li.appendChild(indicator);
         },
     };
 
@@ -2040,16 +2109,13 @@
                     const { originalLabel, index } = item;
                     AppState.data.release.labels[index] = { ...originalLabel, ...NO_LABEL };
 
-                    const labelListElement = labelListElements[index];
-                    if (labelListElement) {
+                    const targetLabelElements = UI_UTILS.findLabelElements(index);
+                    for (const labelListElement of targetLabelElements) {
                         UI_UTILS.updateLabelLink(labelListElement, NO_LABEL.name, NO_LABEL.mbid);
-
-                        const overwrittenSpan = UI_UTILS.createIndicatorSpan('overwritten', originalLabel.name, {
+                        UI_UTILS.badgeHost(labelListElement).set('label', {
                             tooltipPrefix: 'Original label:',
+                            originalValue: originalLabel.name,
                         });
-                        if (!labelListElement.nextElementSibling || !labelListElement.nextElementSibling.classList.contains('he-overwritten-label')) {
-                            labelListElement.parentNode.insertBefore(overwrittenSpan, labelListElement.nextSibling);
-                        }
                     }
                 });
             }
@@ -2146,12 +2212,6 @@
 
             if (!gtin || !labels || labels.length === 0) return;
 
-            const firstLabelSpan = AppState.dom.labelListElements?.[0];
-            if (!firstLabelSpan) return;
-
-            const labelListItems = firstLabelSpan.closest('ul')?.querySelectorAll('li');
-            if (!labelListItems) return;
-
             let changesMade = false;
             const removedLogs = [];
 
@@ -2164,11 +2224,12 @@
                     changesMade = true;
                     removedLogs.push(label.name);
 
-                    if (labelListItems[index]) {
-                        const li = labelListItems[index];
+                    const targetLabelElements = UI_UTILS.findLabelElements(index);
+                    for (const labelSpan of targetLabelElements) {
+                        const li = labelSpan.closest('li');
+                        if (!li) continue;
 
                         let textNodeToReplace = null;
-
                         for (const node of li.childNodes) {
                             if (node.nodeType === Node.TEXT_NODE && node.textContent.includes(cleanGtin)) {
                                 textNodeToReplace = node;
@@ -2177,21 +2238,18 @@
                         }
 
                         if (textNodeToReplace) {
-                            textNodeToReplace.textContent = textNodeToReplace.textContent.replace(cleanGtin, '');
+                            const updatedText = textNodeToReplace.textContent.replace(cleanGtin, '').trim();
+                            if (updatedText) {
+                                textNodeToReplace.textContent = ` ${updatedText}`;
+                            } else {
+                                textNodeToReplace.remove();
+                            }
 
-                            const removedSpan = UI_UTILS.createIndicatorSpan('removed', cleanGtin, {
+                            UI_UTILS.badgeHost(labelSpan).set('catalog', {
                                 type: 'removed',
                                 tooltipPrefix: 'Removed catalog number (matches barcode):',
-                                standalone: true
+                                originalValue: cleanGtin,
                             });
-
-                            const labelLinkSpan = li.querySelector('.entity-links');
-                            if (labelLinkSpan) {
-                                labelLinkSpan.after(removedSpan);
-                                labelLinkSpan.after(' ');
-                            } else {
-                                li.append(removedSpan);
-                            }
                         }
                     }
                 }
@@ -2221,9 +2279,17 @@
                 const originalLabel = releaseData.labels[index];
                 if (!originalLabel) return;
 
-                const currentLabelName = originalLabel.name.trim();
+                const isPrimaryLabel = index === 0;
 
-                const namesToTry = [currentLabelName, ...(AppState.dom.labelAltNames || [])];
+                // For primary label, we can check alt names if no direct mapping
+                // NOTE: When multiple alternative labels have user mappings, the first in DOM order
+                // currently takes precedence. Future consideration: multi-label seeding vs [no label] resolution.
+                const altLabelNames = (AppState.dom.labelAltElements || [])
+                    .map(span => span.textContent.trim())
+                    .filter(Boolean);
+                const namesToTry = isPrimaryLabel
+                    ? [currentLabelName, ...altLabelNames]
+                    : [currentLabelName];
 
                 let matchedName = null;
                 let matchedUrl = null;
@@ -2262,38 +2328,31 @@
                     AppState.data.release.labels[index].name = matchedName;
                     AppState.data.release.labels[index].mbid = mbid;
 
-                    // Update UI
-                    UI_UTILS.updateLabelLink(labelListElement, matchedName, mbid);
+                    // Update UI via UI_UTILS
+                    const targetLabelElements = UI_UTILS.findLabelElements(index);
 
-                    const isOverwriting = !!oldMbid || oldName !== matchedName;
-                    let indicatorText = isOverwriting ? 'overwritten' : 'added';
-                    let type = isOverwriting ? 'overwritten' : 'added';
-                    let tooltip;
+                    for (const labelListElement of targetLabelElements) {
+                        UI_UTILS.updateLabelLink(labelListElement, matchedName, mbid);
 
-                    if (isNoLabel) {
-                        indicatorText = 'overwritten';
-                        type = 'overwritten';
-                        tooltip = `Original label: ${oldName}`;
-                    } else if (oldName !== matchedName) {
-                        tooltip = `Original label "${oldName}" replaced by user mapping for "${matchedName}".`;
-                    } else if (oldMbid) {
-                        tooltip = `Original MBID (${oldMbid}) overwritten via user mapping.`;
-                    } else {
-                        tooltip = `MBID ${mbid} added via user mapping.`;
+                        let type = 'added';
+                        let tooltip = '';
+
+                        if (isNoLabel) {
+                            type = 'overwritten';
+                            tooltip = `Original label: ${oldName}`;
+                        } else if (oldName !== matchedName) {
+                            tooltip = `Original label "${oldName}" replaced by user mapping for "${matchedName}".`;
+                        } else if (oldMbid) {
+                            tooltip = `Original MBID (${oldMbid}) overwritten via user mapping.`;
+                        } else {
+                            tooltip = `MBID ${mbid} added via user mapping.`;
+                        }
+
+                        UI_UTILS.badgeHost(labelListElement).set('label', {
+                            type,
+                            tooltip,
+                        });
                     }
-
-                    const indicatorSpan = UI_UTILS.createIndicatorSpan(indicatorText, null, {
-                        type,
-                        tooltip,
-                    });
-
-                    // Remove existing HE indicators if present (to avoid stacking)
-                    const existingIndicator = labelListElement.nextElementSibling;
-                    if (existingIndicator?.classList.contains('he-added-label') || existingIndicator?.classList.contains('he-overwritten-label')) {
-                        existingIndicator.remove();
-                    }
-
-                    labelListElement.parentNode.insertBefore(indicatorSpan, labelListElement.nextSibling);
 
                     const messageContent = (oldName !== matchedName)
                         ? `Promoted label "${matchedName}" (MBID: ${mbid}) over original "${oldName}" via user mapping.`
@@ -2611,9 +2670,8 @@
                 }
             });
 
-            // Cache alt label names
-            AppState.dom.labelAltNames = Array.from(document.querySelectorAll('ul.release-labels ~ ul.alt-values .entity-links'))
-                .map(span => span.textContent.trim());
+            // Cache native alt label elements
+            AppState.dom.labelAltElements = Array.from(document.querySelectorAll('ul.release-labels ~ ul.alt-values .entity-links'));
         }
 
         AppState.dom.labelListElements = document.querySelectorAll('ul.release-labels:not(.inline) li span.entity-links');
@@ -2645,18 +2703,24 @@
             .release-artist::before { content: "by "; }
             .release-artist > :first-child { margin-left: 0.25em; }
             ${AppState.settings[SETTINGS_CONFIG.hideDebugMessages.key] ? '.message.debug { display: none !important; }' : ''}
-            .he-overwritten-label,.he-added-label {
+            .he-badge {
                 font-size: 0.8em;
                 font-weight: bold;
                 cursor: help;
+                margin-left: 0.5em;
+                white-space: nowrap;
             }
-            .he-overwritten-label {
+            .he-badge--overwritten,
+            .he-badge--removed {
                 color: #d9534f;
                 border-bottom: 1px dotted #d9534f;
             }
-            .he-added-label {
+            .he-badge--added {
                 color: #4CAF50;
                 border-bottom: 1px dotted #4CAF50;
+            }
+            .he-badge--standalone {
+                margin-left: 0;
             }
             .he-reset-button, .he-tidy-button {
                 padding: 4px 8px;
