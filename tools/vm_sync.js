@@ -103,11 +103,15 @@ async function getInstalledScriptsMap() {
     const scriptMap = await evalInTab(newTab.webSocketDebuggerUrl, `
       (() => {
         const map = {};
-        document.querySelectorAll("a.script-name").forEach(a => {
-          const href = a.getAttribute("href") || "";
-          const match = href.match(/#scripts\\/(\\d+)/);
-          if (match) {
-            map[a.textContent.trim()] = match[1];
+        document.querySelectorAll(".script").forEach(el => {
+          const nameEl = el.querySelector(".script-name");
+          const editLink = el.querySelector('a[href*="#scripts/"]');
+          if (nameEl && editLink) {
+            const href = editLink.getAttribute("href") || "";
+            const match = href.match(/#scripts\/(\d+)/);
+            if (match) {
+              map[nameEl.textContent.trim()] = match[1];
+            }
           }
         });
         return map;
