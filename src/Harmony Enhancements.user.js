@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        Harmony: Enhancements
 // @namespace   https://musicbrainz.org/user/chaban
-// @version     1.27.13
+// @version     1.27.14
 // @description Adds some convenience features, various UI and behavior settings, as well as an improved language detection to Harmony.
 // @tag         ai-created
 // @author      chaban
@@ -395,20 +395,15 @@
             generator: (value, set) => {
                 value?.forEach((artist, index) => {
                     const prefix = `artist_credit.names.${index}`;
-                    const artistName = artist.creditedName || artist.name;
-                    if (artistName) {
-                        set(`${prefix}.name`, artistName);
-                    }
+                    set(`${prefix}.name`, artist.name);
                     if (artist.mbid) {
                         set(`${prefix}.mbid`, artist.mbid);
-                    } else if (artistName) {
-                        set(`${prefix}.artist.name`, artistName);
+                    } else {
+                        set(`${prefix}.artist.name`, artist.name);
                     }
-                    if (artist.joinPhrase !== undefined) {
-                        set(`${prefix}.join_phrase`, artist.joinPhrase);
-                    } else if (index < value.length - 1) {
-                        const defaultJoinPhrase = (index === value.length - 2) ? ' & ' : ', ';
-                        set(`${prefix}.join_phrase`, defaultJoinPhrase);
+                    if (index < value.length - 1) {
+                        const joinPhrase = (index === value.length - 2) ? ' & ' : ', ';
+                        set(`${prefix}.join_phrase`, joinPhrase);
                     }
                 });
             },
@@ -429,8 +424,8 @@
                     if (medium.format) {
                         set(`${prefix}.format`, medium.format);
                     }
-                    if (medium.title || medium.name) {
-                        set(`${prefix}.name`, medium.title || medium.name);
+                    if (medium.name) {
+                        set(`${prefix}.name`, medium.name);
                     }
                     medium.tracklist?.forEach((track, trackIndex) => {
                         const trackPrefix = `${prefix}.track.${trackIndex}`;
@@ -443,20 +438,15 @@
 
                         track.artists?.forEach((artist, artistIndex) => {
                             const artistPrefix = `${trackPrefix}.artist_credit.names.${artistIndex}`;
-                            const artistName = artist.creditedName || artist.name;
-                            if (artistName) {
-                                set(`${artistPrefix}.name`, artistName);
-                            }
+                            set(`${artistPrefix}.name`, artist.name);
                             if (artist.mbid) {
                                 set(`${artistPrefix}.mbid`, artist.mbid);
-                            } else if (artistName) {
-                                set(`${artistPrefix}.artist.name`, artistName);
+                            } else {
+                                set(`${artistPrefix}.artist.name`, artist.name);
                             }
-                            if (artist.joinPhrase !== undefined) {
-                                set(`${artistPrefix}.join_phrase`, artist.joinPhrase);
-                            } else if (artistIndex < track.artists.length - 1) {
-                                const defaultJoinPhrase = (artistIndex === track.artists.length - 2) ? ' & ' : ', ';
-                                set(`${artistPrefix}.join_phrase`, defaultJoinPhrase);
+                            if (artistIndex < track.artists.length - 1) {
+                                const joinPhrase = (artistIndex === track.artists.length - 2) ? ' & ' : ', ';
+                                set(`${artistPrefix}.join_phrase`, joinPhrase);
                             }
                         });
                     });
@@ -474,7 +464,6 @@
         data: {
             release: undefined,
             originalRelease: null,
-            injected: { raw: [] },
         },
         lang: {
             code: null,
@@ -740,75 +729,6 @@
         },
 
         /**
-         * Returns a host manager for indicator badges attached to an anchor element.
-         * Enforces a consolidated single badge (.he-badge) with key-based slot management.
-         * @param {HTMLElement} anchorElement - The element to host the badge after.
-         * @returns {{ set: (key: string, options?: object) => HTMLElement | null, remove: (key: string) => HTMLElement | null }}
-         */
-        badgeHost: (anchorElement) => {
-            if (!anchorElement) return { set: () => null, remove: () => null };
-
-            let badge = anchorElement.nextElementSibling;
-            if (!badge || !badge.classList.contains('he-badge')) {
-                badge = document.createElement('span');
-                badge.className = 'he-badge';
-                anchorElement.after(badge);
-            }
-
-            const entries = badge._badgeEntries || (badge._badgeEntries = new Map());
-
-            const render = () => {
-                if (entries.size === 0) {
-                    badge.remove();
-                    return null;
-                }
-                const types = Array.from(entries.values()).map(e => e.type);
-                const primaryType = types.includes('overwritten') ? 'overwritten' : types[0];
-                badge.className = `he-badge he-badge--${primaryType}`;
-                badge.dataset.badgeType = primaryType;
-                badge.textContent = `(${primaryType})`;
-                badge.title = Array.from(entries.values())
-                    .map(e => e.tooltip || `${e.tooltipPrefix} ${e.originalValue || e.text}`)
-                    .join('\n');
-                return badge;
-            };
-
-            return {
-                set(key, { type = 'overwritten', text = type, tooltip = '', tooltipPrefix = 'Original value:', originalValue = '' } = {}) {
-                    entries.set(key, { type, text, tooltip, tooltipPrefix, originalValue });
-                    return render();
-                },
-                remove(key) {
-                    entries.delete(key);
-                    return render();
-                }
-            };
-        },
-
-        /**
-         * Finds active release label DOM elements, structurally excluding
-         * unselected alternative provider values (.alt-value).
-         * NOTE: Native Harmony comparison labels are wrapped in <span class="alt-value">,
-         * whereas companion scripts (e.g. Harmony Beatport Recovery) inject active seeded
-         * labels into the DOM without .alt-value. Filtering by !span.closest('.alt-value')
-         * intentionally matches both native primary labels and companion-seeded labels.
-         * @param {number} [index] - The release label index (0, 1, ...).
-         * @returns {HTMLElement[]}
-         */
-        findLabelElements: (index = null) => {
-            const labelsRow = UI_UTILS.findReleaseInfoRow('Labels');
-            if (!labelsRow) return [];
-
-            const activeSpans = Array.from(labelsRow.querySelectorAll('.entity-links'))
-                .filter(span => !span.closest('.alt-value'));
-
-            if (index !== null) {
-                return activeSpans[index] ? [activeSpans[index]] : [];
-            }
-            return activeSpans;
-        },
-
-        /**
         * Hides debug messages whose text content includes any of the given substrings.
         * @param {string[]} substrings - An array of strings to search for in debug messages.
         */
@@ -946,10 +866,10 @@
             labelsUl.appendChild(li);
 
             UI_UTILS.updateLabelLink(span, newLabelName, newMbid);
-            UI_UTILS.badgeHost(span).set('label', {
+            const indicator = UI_UTILS.createIndicatorSpan('overwritten', originalNames, {
                 tooltipPrefix: 'Original labels:',
-                originalValue: originalNames,
             });
+            li.appendChild(indicator);
         },
     };
 
@@ -1680,19 +1600,10 @@
             if (!AppState.lang.detector && !AppState.lang.apiFailed) {
                 if ('LanguageDetector' in window) {
                     try {
-                        if (typeof window.LanguageDetector.availability === 'function') {
-                            const availability = await window.LanguageDetector.availability();
-                            if (!availability || availability === 'unavailable') {
-                                warn('LanguageDetector API is not available on this device.');
-                                AppState.lang.apiFailed = true;
-                            }
-                        }
-                        if (!AppState.lang.apiFailed) {
-                            const nativeDetector = await window.LanguageDetector.create();
-                            AppState.lang.detector = (text) => nativeDetector.detect(text);
-                        }
-                    } catch (err) {
-                        error('LanguageDetector API failed to initialize.', err);
+                        const nativeDetector = await window.LanguageDetector.create();
+                        AppState.lang.detector = (text) => nativeDetector.detect(text);
+                    } catch (error) {
+                        error('LanguageDetector API failed to initialize.', error);
                         AppState.lang.apiFailed = true;
                     }
                 } else {
@@ -2082,12 +1993,6 @@
                 const labelName = originalLabel.name.trim();
                 if (!labelName || originalLabel.mbid) return { isSelf: false, originalLabel, index };
 
-                // Catalog Number Guard: Assume releases with catalog numbers are imprints/formal releases, not self-releases
-                const catNum = String(originalLabel.catalogNumber || releaseData.catalogNumber || '').trim();
-                if (catNum) {
-                    return { isSelf: false, originalLabel, index };
-                }
-
                 let remainingLabel = labelName;
                 for (const artistName of sortedArtists) {
                     const escapedName = artistName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -2120,13 +2025,16 @@
                     const { originalLabel, index } = item;
                     AppState.data.release.labels[index] = { ...originalLabel, ...NO_LABEL };
 
-                    const targetLabelElements = UI_UTILS.findLabelElements(index);
-                    for (const labelListElement of targetLabelElements) {
+                    const labelListElement = labelListElements[index];
+                    if (labelListElement) {
                         UI_UTILS.updateLabelLink(labelListElement, NO_LABEL.name, NO_LABEL.mbid);
-                        UI_UTILS.badgeHost(labelListElement).set('label', {
+
+                        const overwrittenSpan = UI_UTILS.createIndicatorSpan('overwritten', originalLabel.name, {
                             tooltipPrefix: 'Original label:',
-                            originalValue: originalLabel.name,
                         });
+                        if (!labelListElement.nextElementSibling || !labelListElement.nextElementSibling.classList.contains('he-overwritten-label')) {
+                            labelListElement.parentNode.insertBefore(overwrittenSpan, labelListElement.nextSibling);
+                        }
                     }
                 });
             }
@@ -2223,6 +2131,12 @@
 
             if (!gtin || !labels || labels.length === 0) return;
 
+            const firstLabelSpan = AppState.dom.labelListElements?.[0];
+            if (!firstLabelSpan) return;
+
+            const labelListItems = firstLabelSpan.closest('ul')?.querySelectorAll('li');
+            if (!labelListItems) return;
+
             let changesMade = false;
             const removedLogs = [];
 
@@ -2235,12 +2149,11 @@
                     changesMade = true;
                     removedLogs.push(label.name);
 
-                    const targetLabelElements = UI_UTILS.findLabelElements(index);
-                    for (const labelSpan of targetLabelElements) {
-                        const li = labelSpan.closest('li');
-                        if (!li) continue;
+                    if (labelListItems[index]) {
+                        const li = labelListItems[index];
 
                         let textNodeToReplace = null;
+
                         for (const node of li.childNodes) {
                             if (node.nodeType === Node.TEXT_NODE && node.textContent.includes(cleanGtin)) {
                                 textNodeToReplace = node;
@@ -2249,18 +2162,21 @@
                         }
 
                         if (textNodeToReplace) {
-                            const updatedText = textNodeToReplace.textContent.replace(cleanGtin, '').trim();
-                            if (updatedText) {
-                                textNodeToReplace.textContent = ` ${updatedText}`;
-                            } else {
-                                textNodeToReplace.remove();
-                            }
+                            textNodeToReplace.textContent = textNodeToReplace.textContent.replace(cleanGtin, '');
 
-                            UI_UTILS.badgeHost(labelSpan).set('catalog', {
+                            const removedSpan = UI_UTILS.createIndicatorSpan('removed', cleanGtin, {
                                 type: 'removed',
                                 tooltipPrefix: 'Removed catalog number (matches barcode):',
-                                originalValue: cleanGtin,
+                                standalone: true
                             });
+
+                            const labelLinkSpan = li.querySelector('.entity-links');
+                            if (labelLinkSpan) {
+                                labelLinkSpan.after(removedSpan);
+                                labelLinkSpan.after(' ');
+                            } else {
+                                li.append(removedSpan);
+                            }
                         }
                     }
                 }
@@ -2283,21 +2199,16 @@
 
             if (labelMap.size === 0) return;
 
-            releaseData.labels.forEach((originalLabel, index) => {
-                if (!originalLabel?.name) return;
+            const { labelListElements } = AppState.dom;
+            if (!labelListElements) return;
+
+            labelListElements.forEach((labelListElement, index) => {
+                const originalLabel = releaseData.labels[index];
+                if (!originalLabel) return;
 
                 const currentLabelName = originalLabel.name.trim();
-                const isPrimaryLabel = index === 0;
 
-                // For primary label, we can check alt names if no direct mapping
-                // NOTE: When multiple alternative labels have user mappings, the first in DOM order
-                // currently takes precedence. Future consideration: multi-label seeding vs [no label] resolution.
-                const altLabelNames = (AppState.dom.labelAltElements || [])
-                    .map(span => span.textContent.trim())
-                    .filter(Boolean);
-                const namesToTry = isPrimaryLabel
-                    ? [currentLabelName, ...altLabelNames]
-                    : [currentLabelName];
+                const namesToTry = [currentLabelName, ...(AppState.dom.labelAltNames || [])];
 
                 let matchedName = null;
                 let matchedUrl = null;
@@ -2324,43 +2235,50 @@
                     const oldMbid = originalLabel.mbid;
                     const oldName = originalLabel.name;
 
+                    if (oldMbid === mbid && oldName === matchedName) return;
+
                     // Special handling for mapping to [no label]
                     const isNoLabel = mbid === NO_LABEL.mbid;
                     if (isNoLabel) {
                         matchedName = NO_LABEL.name;
                     }
 
-                    if (oldMbid === mbid && oldName === matchedName) return;
-
                     // Update State
                     AppState.data.release.labels[index].name = matchedName;
                     AppState.data.release.labels[index].mbid = mbid;
 
-                    // Update UI via UI_UTILS
-                    const targetLabelElements = UI_UTILS.findLabelElements(index);
+                    // Update UI
+                    UI_UTILS.updateLabelLink(labelListElement, matchedName, mbid);
 
-                    for (const labelListElement of targetLabelElements) {
-                        UI_UTILS.updateLabelLink(labelListElement, matchedName, mbid);
+                    const isOverwriting = !!oldMbid || oldName !== matchedName;
+                    let indicatorText = isOverwriting ? 'overwritten' : 'added';
+                    let type = isOverwriting ? 'overwritten' : 'added';
+                    let tooltip;
 
-                        let type = 'added';
-                        let tooltip = '';
-
-                        if (isNoLabel) {
-                            type = 'overwritten';
-                            tooltip = `Original label: ${oldName}`;
-                        } else if (oldName !== matchedName) {
-                            tooltip = `Original label "${oldName}" replaced by user mapping for "${matchedName}".`;
-                        } else if (oldMbid) {
-                            tooltip = `Original MBID (${oldMbid}) overwritten via user mapping.`;
-                        } else {
-                            tooltip = `MBID ${mbid} added via user mapping.`;
-                        }
-
-                        UI_UTILS.badgeHost(labelListElement).set('label', {
-                            type,
-                            tooltip,
-                        });
+                    if (isNoLabel) {
+                        indicatorText = 'overwritten';
+                        type = 'overwritten';
+                        tooltip = `Original label: ${oldName}`;
+                    } else if (oldName !== matchedName) {
+                        tooltip = `Original label "${oldName}" replaced by user mapping for "${matchedName}".`;
+                    } else if (oldMbid) {
+                        tooltip = `Original MBID (${oldMbid}) overwritten via user mapping.`;
+                    } else {
+                        tooltip = `MBID ${mbid} added via user mapping.`;
                     }
+
+                    const indicatorSpan = UI_UTILS.createIndicatorSpan(indicatorText, null, {
+                        type,
+                        tooltip,
+                    });
+
+                    // Remove existing HE indicators if present (to avoid stacking)
+                    const existingIndicator = labelListElement.nextElementSibling;
+                    if (existingIndicator?.classList.contains('he-added-label') || existingIndicator?.classList.contains('he-overwritten-label')) {
+                        existingIndicator.remove();
+                    }
+
+                    labelListElement.parentNode.insertBefore(indicatorSpan, labelListElement.nextSibling);
 
                     const messageContent = (oldName !== matchedName)
                         ? `Promoted label "${matchedName}" (MBID: ${mbid}) over original "${oldName}" via user mapping.`
@@ -2425,7 +2343,6 @@
                 artists.forEach(artist => {
                     if (artist.mbid) {
                         artist.name = null;
-                        delete artist.creditedName;
                     }
                 });
             };
@@ -2614,7 +2531,6 @@
                 input.value = value;
                 form.appendChild(input);
             }
-            input.setAttribute('data-he-managed', 'true');
         }
     }
 
@@ -2627,9 +2543,6 @@
     function handleSeederFormSubmit(event) {
         const form = event.target.closest('form');
         if (!form) return;
-
-        clearTimeout(formObserverDebounceTimer);
-        ingestAndReprocessExternalData();
 
         const formName = form.getAttribute('name');
 
@@ -2652,306 +2565,6 @@
         }
 
         form.target = getSeederTarget();
-    }
-
-    /**
-     * @summary Ingests unmanaged external form inputs (from companion scripts like HBR or other extensions)
-     * and synchronizes them into AppState.data.release.
-     * @param {HTMLFormElement} [targetForm] - Optional form to inspect.
-     * @returns {boolean} True if new or modified data was detected and merged.
-     */
-    function ingestExternalFormData(targetForm = null) {
-        const forms = targetForm
-            ? [targetForm]
-            : Array.from(document.querySelectorAll('form[name="release-seeder"], form[name="release-update-seeder"]'));
-        if (forms.length === 0 || !AppState.data.release) return false;
-
-        const release = AppState.data.release;
-        let changesDetected = false;
-        const raw = [];
-
-        for (const form of forms) {
-            const formElements = form.querySelectorAll('input, textarea, select');
-            for (const el of formElements) {
-                if (el.hasAttribute('data-he-managed')) continue;
-
-                const name = el.name;
-                const value = el.value;
-                if (!name) continue;
-
-                raw.push({
-                    name,
-                    value,
-                    tagName: el.tagName,
-                    dataset: { ...el.dataset }
-                });
-
-                // 1. Labels: labels.N.name, labels.N.catalog_number, labels.N.mbid
-                const labelMatch = name.match(/^labels\.(\d+)\.(name|catalog_number|mbid)$/);
-                if (labelMatch) {
-                    const index = parseInt(labelMatch[1], 10);
-                    const field = labelMatch[2];
-                    release.labels ??= [];
-                    release.labels[index] ??= {};
-                    const prop = field === 'catalog_number' ? 'catalogNumber' : field;
-                    if (release.labels[index][prop] !== value) {
-                        release.labels[index][prop] = value;
-                        changesDetected = true;
-                    }
-                    continue;
-                }
-
-                // 2. Barcode: barcode -> gtin
-                if (name === 'barcode') {
-                    if (release.gtin !== value) {
-                        release.gtin = value;
-                        changesDetected = true;
-                    }
-                    continue;
-                }
-
-                // 3. Release Title: name -> title
-                if (name === 'name') {
-                    if (release.title !== value) {
-                        release.title = value;
-                        changesDetected = true;
-                    }
-                    continue;
-                }
-
-                // 4. Comment: comment -> comment
-                if (name === 'comment') {
-                    if (release.comment !== value) {
-                        release.comment = value;
-                        changesDetected = true;
-                    }
-                    continue;
-                }
-
-                // 5. Annotation: annotation -> annotation
-                if (name === 'annotation') {
-                    if (release.annotation !== value) {
-                        release.annotation = value;
-                        changesDetected = true;
-                    }
-                    continue;
-                }
-
-                // 6. Release status / packaging
-                if (name === 'status') {
-                    if (release.status !== value) {
-                        release.status = value;
-                        changesDetected = true;
-                    }
-                    continue;
-                }
-                if (name === 'packaging') {
-                    if (release.packaging !== value) {
-                        release.packaging = value;
-                        changesDetected = true;
-                    }
-                    continue;
-                }
-
-                // 7. Artists: artist_credit.names.N.(name|mbid|artist.name|join_phrase)
-                const artistMatch = name.match(/^artist_credit\.names\.(\d+)\.(name|mbid|artist\.name|join_phrase)$/);
-                if (artistMatch) {
-                    const index = parseInt(artistMatch[1], 10);
-                    const field = artistMatch[2];
-                    release.artists ??= [];
-                    release.artists[index] ??= {};
-                    if (field === 'name') {
-                        if (release.artists[index].creditedName !== value && release.artists[index].name !== value) {
-                            release.artists[index].name = value;
-                            changesDetected = true;
-                        }
-                    } else if (field === 'mbid') {
-                        if (release.artists[index].mbid !== value) {
-                            release.artists[index].mbid = value;
-                            changesDetected = true;
-                        }
-                    } else if (field === 'artist.name') {
-                        if (release.artists[index].name !== value) {
-                            release.artists[index].name = value;
-                            changesDetected = true;
-                        }
-                    } else if (field === 'join_phrase') {
-                        if (release.artists[index].joinPhrase !== value) {
-                            release.artists[index].joinPhrase = value;
-                            changesDetected = true;
-                        }
-                    }
-                    continue;
-                }
-
-                // 8. Tracklist: mediums.M.track.T.(name|number|length|recording)
-                const trackMatch = name.match(/^mediums\.(\d+)\.track\.(\d+)\.(name|number|length|recording)$/);
-                if (trackMatch) {
-                    const mIdx = parseInt(trackMatch[1], 10);
-                    const tIdx = parseInt(trackMatch[2], 10);
-                    const field = trackMatch[3];
-                    release.media ??= [];
-                    release.media[mIdx] ??= { tracklist: [] };
-                    release.media[mIdx].tracklist ??= [];
-                    release.media[mIdx].tracklist[tIdx] ??= {};
-                    const track = release.media[mIdx].tracklist[tIdx];
-                    if (field === 'name' && track.title !== value) {
-                        track.title = value;
-                        changesDetected = true;
-                    } else if (field === 'number' && track.number !== value) {
-                        track.number = value;
-                        changesDetected = true;
-                    } else if (field === 'length' && track.length !== value) {
-                        track.length = value;
-                        changesDetected = true;
-                    } else if (field === 'recording') {
-                        track.recording ??= {};
-                        if (track.recording.mbid !== value) {
-                            track.recording.mbid = value;
-                            changesDetected = true;
-                        }
-                    }
-                    continue;
-                }
-
-                // 9. Mediums: mediums.M.(format|name)
-                const mediumMatch = name.match(/^mediums\.(\d+)\.(format|name)$/);
-                if (mediumMatch) {
-                    const mIdx = parseInt(mediumMatch[1], 10);
-                    const field = mediumMatch[2];
-                    release.media ??= [];
-                    release.media[mIdx] ??= {};
-                    const prop = field === 'name' ? 'title' : field;
-                    if (release.media[mIdx][prop] !== value) {
-                        release.media[mIdx][prop] = value;
-                        changesDetected = true;
-                    }
-                    continue;
-                }
-            }
-        }
-
-        AppState.data.injected = { raw };
-
-        if (changesDetected && AppState.debug) {
-            log('Ingested external form data:', structuredClone(AppState.data.injected));
-            log('Updated release object after external form merge:', structuredClone(AppState.data.release));
-        }
-
-        return changesDetected;
-    }
-
-    /**
-     * @summary Runs all active enhancement modules matching the current page and user settings.
-     * Can be executed both on initial page load and on-demand (e.g. after third-party form data ingestion).
-     * @param {object} [options]
-     * @param {'load'|'mutation'} [options.trigger='load'] - The trigger source.
-     */
-    function runActiveEnhancements({ trigger = 'load' } = {}) {
-        const { path } = AppState;
-
-        // 1. Language detection mode actions (only on initial load)
-        if (trigger === 'load') {
-            const loadTimeActionMap = {
-                browser: 'runLanguageDetection',
-                none: 'updateUIAfterLanguageDisable',
-            };
-            const mode = AppState.settings[SETTINGS_CONFIG.languageDetectionMode.key];
-            const langModuleName = loadTimeActionMap[mode];
-
-            if (langModuleName) {
-                const config = SETTINGS_CONFIG[langModuleName];
-                const moduleFunc = enhancements[langModuleName];
-                if (config?.paths?.some(p => p.test(path)) && moduleFunc) {
-                    if (AppState.debug) {
-                        log(`Running mode-dependent module (${trigger}): ${langModuleName}...`);
-                        console.time(`[${SCRIPT_NAME}] ${langModuleName} execution time`);
-                    }
-                    moduleFunc();
-                    if (AppState.debug) {
-                        console.timeEnd(`[${SCRIPT_NAME}] ${langModuleName} execution time`);
-                    }
-                }
-            }
-        }
-
-        // 2. Standard enhancement modules
-        const modeDependentModules = ['runLanguageDetection', 'updateUIAfterLanguageDisable', 'unsetLanguageData'];
-        for (const [funcName, config] of Object.entries(SETTINGS_CONFIG)) {
-            if (modeDependentModules.includes(funcName) || !config.runAt) continue;
-
-            const isEnabled = (config.runAt ?? 'load') === 'load' && AppState.settings[config.key];
-            const matchesPath = config.paths?.some(p => p.test(path));
-            const moduleFunc = enhancements[funcName];
-
-            if (isEnabled && matchesPath && typeof moduleFunc === 'function') {
-                if (AppState.debug) {
-                    log(`Running enhancement module (${trigger}): ${funcName}...`);
-                    console.time(`[${SCRIPT_NAME}] ${funcName} execution time`);
-                }
-                moduleFunc();
-                if (AppState.debug) {
-                    console.timeEnd(`[${SCRIPT_NAME}] ${funcName} execution time`);
-                }
-            }
-        }
-    }
-
-    let formObserverDebounceTimer = null;
-
-    /**
-     * @summary Ingests any external data from the form and re-runs active enhancements on the merged data.
-     */
-    function ingestAndReprocessExternalData() {
-        const changes = ingestExternalFormData();
-        if (changes) {
-            runActiveEnhancements({ trigger: 'mutation' });
-            const form = document.querySelector('form[name="release-seeder"]');
-            if (form) {
-                buildSeederParameters(form, AppState.data.release, AppState.data.originalRelease, null);
-            }
-        }
-    }
-
-    /**
-     * @summary Sets up a MutationObserver on the release seeder forms to detect third-party injections.
-     */
-    function setupFormMutationObserver() {
-        // Run an immediate ingestion pass in case third-party scripts already injected inputs prior to observer attach
-        ingestAndReprocessExternalData();
-
-        const forms = document.querySelectorAll('form[name="release-seeder"], form[name="release-update-seeder"]');
-        if (forms.length === 0) return;
-
-        const observer = new MutationObserver((mutations) => {
-            let hasExternalAddition = false;
-
-            for (const m of mutations) {
-                for (const node of m.addedNodes) {
-                    if (node.nodeType !== Node.ELEMENT_NODE) continue;
-
-                    const isInput = node.tagName === 'INPUT' || node.tagName === 'TEXTAREA' || node.tagName === 'SELECT';
-                    if (isInput && !node.hasAttribute('data-he-managed')) {
-                        hasExternalAddition = true;
-                        break;
-                    }
-                    if (node.querySelector?.('input:not([data-he-managed]), textarea:not([data-he-managed]), select:not([data-he-managed])')) {
-                        hasExternalAddition = true;
-                        break;
-                    }
-                }
-                if (hasExternalAddition) break;
-            }
-
-            if (!hasExternalAddition) return;
-
-            clearTimeout(formObserverDebounceTimer);
-            formObserverDebounceTimer = setTimeout(() => {
-                ingestAndReprocessExternalData();
-            }, 50);
-        });
-
-        forms.forEach(form => observer.observe(form, { childList: true, subtree: true }));
     }
 
     // --- INITIALIZATION AND ROUTING ---
@@ -2983,8 +2596,9 @@
                 }
             });
 
-            // Cache native alt label elements
-            AppState.dom.labelAltElements = Array.from(document.querySelectorAll('ul.release-labels ~ ul.alt-values .entity-links'));
+            // Cache alt label names
+            AppState.dom.labelAltNames = Array.from(document.querySelectorAll('ul.release-labels ~ ul.alt-values .entity-links'))
+                .map(span => span.textContent.trim());
         }
 
         AppState.dom.labelListElements = document.querySelectorAll('ul.release-labels:not(.inline) li span.entity-links');
@@ -3016,24 +2630,18 @@
             .release-artist::before { content: "by "; }
             .release-artist > :first-child { margin-left: 0.25em; }
             ${AppState.settings[SETTINGS_CONFIG.hideDebugMessages.key] ? '.message.debug { display: none !important; }' : ''}
-            .he-badge {
+            .he-overwritten-label,.he-added-label {
                 font-size: 0.8em;
                 font-weight: bold;
                 cursor: help;
-                margin-left: 0.5em;
-                white-space: nowrap;
             }
-            .he-badge--overwritten,
-            .he-badge--removed {
+            .he-overwritten-label {
                 color: #d9534f;
                 border-bottom: 1px dotted #d9534f;
             }
-            .he-badge--added {
+            .he-added-label {
                 color: #4CAF50;
                 border-bottom: 1px dotted #4CAF50;
-            }
-            .he-badge--standalone {
-                margin-left: 0;
             }
             .he-reset-button, .he-tidy-button {
                 padding: 4px 8px;
@@ -3249,7 +2857,6 @@
         } else if (path.startsWith('/release') && !path.startsWith('/release/actions')) {
             cacheReleaseLookupPageDOM();
             getReleaseDataFromJSON();
-            setupFormMutationObserver();
         } else if (path.startsWith('/release/actions')) {
             cacheReleaseActionsPageDOM();
         } else if (path.startsWith('/settings')) {
@@ -3258,10 +2865,44 @@
             return;
         }
 
-        runActiveEnhancements({ trigger: 'load' });
-        const releaseForm = document.querySelector('form[name="release-seeder"]');
-        if (releaseForm) {
-            buildSeederParameters(releaseForm, AppState.data.release, AppState.data.originalRelease, null);
+        const loadTimeActionMap = {
+            browser: 'runLanguageDetection',
+            none: 'updateUIAfterLanguageDisable',
+        };
+        const mode = AppState.settings[SETTINGS_CONFIG.languageDetectionMode.key];
+        const moduleName = loadTimeActionMap[mode];
+
+        if (moduleName) {
+            const config = SETTINGS_CONFIG[moduleName];
+            const moduleFunc = enhancements[moduleName];
+            if (config?.paths.some(p => p.test(AppState.path))) {
+                if (AppState.debug) {
+                    log(`Running mode-dependent module: ${moduleName}...`);
+                    console.time(`[${SCRIPT_NAME}] ${moduleName} execution time`);
+                }
+                moduleFunc();
+                if (AppState.debug) {
+                    console.timeEnd(`[${SCRIPT_NAME}] ${moduleName} execution time`);
+                }
+            }
+        }
+
+        const modeDependentModules = ['runLanguageDetection', 'updateUIAfterLanguageDisable', 'unsetLanguageData'];
+        for (const [funcName, config] of Object.entries(SETTINGS_CONFIG)) {
+            if (modeDependentModules.includes(funcName) || !config.runAt) continue;
+
+            if ((config.runAt ?? 'load') === 'load' && AppState.settings[config.key] && config.paths && enhancements[funcName]) {
+                if (config.paths.some(p => p.test(AppState.path))) {
+                    if (AppState.debug) {
+                        log(`Running standard module: ${funcName}...`);
+                        console.time(`[${SCRIPT_NAME}] ${funcName} execution time`);
+                    }
+                    enhancements[funcName]();
+                    if (AppState.debug) {
+                        console.timeEnd(`[${SCRIPT_NAME}] ${funcName} execution time`);
+                    }
+                }
+            }
         }
     }
 
