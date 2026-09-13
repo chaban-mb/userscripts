@@ -3016,9 +3016,6 @@
      * @summary Sets up a MutationObserver on the release seeder forms to detect third-party injections.
      */
     function setupFormMutationObserver() {
-        // Run an immediate ingestion pass in case third-party scripts already injected inputs prior to observer attach
-        ingestAndReprocessExternalData();
-
         const forms = document.querySelectorAll('form[name="release-seeder"], form[name="release-update-seeder"]');
         if (forms.length === 0) return;
 
@@ -3385,7 +3382,6 @@
         } else if (path.startsWith('/release') && !path.startsWith('/release/actions')) {
             cacheReleaseLookupPageDOM();
             getReleaseDataFromJSON();
-            setupFormMutationObserver();
         } else if (path.startsWith('/release/actions')) {
             cacheReleaseActionsPageDOM();
         } else if (path.startsWith('/settings')) {
@@ -3398,6 +3394,7 @@
         const releaseForm = document.querySelector('form[name="release-seeder"]');
         if (releaseForm) {
             buildSeederParameters(releaseForm, AppState.data.release, AppState.data.originalRelease, null);
+            setupFormMutationObserver();
         }
     }
 
