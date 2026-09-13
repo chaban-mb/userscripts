@@ -2805,7 +2805,7 @@
                     continue;
                 }
 
-                // 7. Artists: artist_credit.names.N.(name|mbid|artist.name|join_phrase)
+                // 7. Release Artists: artist_credit.names.N.(name|mbid|artist.name|join_phrase)
                 const artistMatch = name.match(/^artist_credit\.names\.(\d+)\.(name|mbid|artist\.name|join_phrase)$/);
                 if (artistMatch) {
                     const index = parseInt(artistMatch[1], 10);
@@ -2813,8 +2813,10 @@
                     release.artists ??= [];
                     release.artists[index] ??= {};
                     if (field === 'name') {
-                        if (release.artists[index].creditedName !== value && release.artists[index].name !== value) {
-                            release.artists[index].name = value;
+                        const current = release.artists[index].creditedName ?? release.artists[index].name;
+                        release.artists[index].name ??= value;
+                        if (current !== value) {
+                            release.artists[index].creditedName = value;
                             changesDetected = true;
                         }
                     } else if (field === 'mbid') {
@@ -2850,10 +2852,10 @@
                     if (field === 'name' && track.title !== value) {
                         track.title = value;
                         changesDetected = true;
-                    } else if (field === 'number' && track.number !== value) {
+                    } else if (field === 'number' && String(track.number) !== value) {
                         track.number = value;
                         changesDetected = true;
-                    } else if (field === 'length' && track.length !== value) {
+                    } else if (field === 'length' && String(track.length) !== value) {
                         track.length = value;
                         changesDetected = true;
                     } else if (field === 'recording') {
@@ -2866,7 +2868,48 @@
                     continue;
                 }
 
-                // 9. Mediums: mediums.M.(format|name)
+                // 9. Track Artists: mediums.M.track.T.artist_credit.names.A.(name|mbid|artist.name|join_phrase)
+                const trackArtistMatch = name.match(/^mediums\.(\d+)\.track\.(\d+)\.artist_credit\.names\.(\d+)\.(name|mbid|artist\.name|join_phrase)$/);
+                if (trackArtistMatch) {
+                    const mIdx = parseInt(trackArtistMatch[1], 10);
+                    const tIdx = parseInt(trackArtistMatch[2], 10);
+                    const aIdx = parseInt(trackArtistMatch[3], 10);
+                    const field = trackArtistMatch[4];
+                    release.media ??= [];
+                    release.media[mIdx] ??= { tracklist: [] };
+                    release.media[mIdx].tracklist ??= [];
+                    release.media[mIdx].tracklist[tIdx] ??= {};
+                    const track = release.media[mIdx].tracklist[tIdx];
+                    track.artists ??= [];
+                    track.artists[aIdx] ??= {};
+                    const artist = track.artists[aIdx];
+                    if (field === 'name') {
+                        const current = artist.creditedName ?? artist.name;
+                        artist.name ??= value;
+                        if (current !== value) {
+                            artist.creditedName = value;
+                            changesDetected = true;
+                        }
+                    } else if (field === 'mbid') {
+                        if (artist.mbid !== value) {
+                            artist.mbid = value;
+                            changesDetected = true;
+                        }
+                    } else if (field === 'artist.name') {
+                        if (artist.name !== value) {
+                            artist.name = value;
+                            changesDetected = true;
+                        }
+                    } else if (field === 'join_phrase') {
+                        if (artist.joinPhrase !== value) {
+                            artist.joinPhrase = value;
+                            changesDetected = true;
+                        }
+                    }
+                    continue;
+                }
+
+                // 10. Mediums: mediums.M.(format|name)
                 const mediumMatch = name.match(/^mediums\.(\d+)\.(format|name)$/);
                 if (mediumMatch) {
                     const mIdx = parseInt(mediumMatch[1], 10);
@@ -2880,6 +2923,10 @@
                     }
                     continue;
                 }
+
+                // NOTE: Passthrough parameters (type.N, events.*, urls.*, edit_note, redirect_uri) are preserved
+                // untouched in the DOM form. If any future enhancement module modifies release.types or other
+                // fields, add corresponding ingestion mapping here.
             }
         }
 
