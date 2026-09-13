@@ -148,121 +148,82 @@
   }
 
   /**
-   * Manages the creation and appending of status icons to the DOM.
+   * Manages the creation and in-place updating of status icons in the DOM.
    */
   const IconManager = {
     /**
-     * Creates and appends a "missing" icon (linking to Beatport release page or Harmony) to the given container.
-     * @param {HTMLElement} container - The container element to which the icon will be appended.
-     * @param {string} releaseUrl - The Beatport release URL.
-     */
-    addMissingIcon: function (container, releaseUrl) {
-      const iconLink = document.createElement('a');
-      iconLink.className = `${Config.CLASS_NAMES.STATUS_ICON} ${Config.CLASS_NAMES.HARMONY_ICON}`;
-      iconLink.href = getMissingReleaseUrl(releaseUrl);
-      iconLink.target = '_blank';
-      iconLink.rel = 'noopener noreferrer';
-      iconLink.title = getMissingReleaseTitle();
-      iconLink.onclick = function () {
-        BeatportMusicBrainzImporter._mbApi.invalidateCacheForUrl(releaseUrl);
-      };
-      container.appendChild(iconLink);
-    },
-
-    /**
-     * Creates and appends a "release" icon (linking to MusicBrainz) to the given container.
-     * @param {HTMLElement} container - The container element to which the icon will be appended.
-     * @param {string} type - The MusicBrainz entity type (e.g., "release", "release-group").
-     * @param {string} mbid - The MusicBrainz ID of the entity.
-     */
-    addReleaseIcon: function (container, type, mbid) {
-      const iconLink = document.createElement('a');
-      iconLink.className = `${Config.CLASS_NAMES.STATUS_ICON} ${Config.CLASS_NAMES.RELEASE_ICON}`;
-      iconLink.href = getMusicBrainzReleaseUrl(type, mbid);
-      iconLink.target = '_blank';
-      iconLink.rel = 'noopener noreferrer';
-      iconLink.title = 'Open in MusicBrainz';
-      container.appendChild(iconLink);
-    },
-
-    /**
-     * Processes a single release row to add MusicBrainz status icons based on lookup results.
-     * @param {HTMLElement} rowElement - The DOM element representing a single release row.
-     * @param {string} releaseUrl - The Beatport URL of the release.
-     * @param {[string, string]|null} mbStatus - The MusicBrainz status ([targetType, mbid]) or null if not found.
+     * Processes a single release row to add or update MusicBrainz status icons.
+     * In-place mutation guarantees zero layout shift or visual flicker.
+     * @param {HTMLElement} rowElement - Release row DOM element.
+     * @param {string} releaseUrl - Normalized Beatport release URL.
+     * @param {[string, string]|null} mbStatus - Status ([targetType, mbid]) or null if missing.
      */
     updateReleaseRow: function (rowElement, releaseUrl, mbStatus) {
       const dateDiv = rowElement.querySelector(Config.SELECTORS.ANCHOR);
-      if (!dateDiv) {
+      if (!dateDiv) return;
+
+      const isFound = mbStatus !== null;
+      const statusKey = isFound ? `${mbStatus[0]}:${mbStatus[1]}` : `missing:${getEffectiveMissingProvider()}`;
+
+      let container = dateDiv.querySelector(`.${Config.CLASS_NAMES.ICONS_CONTAINER}`);
+      if (container?.dataset.statusKey === statusKey && container.dataset.url === releaseUrl) {
         return;
       }
 
-      const existingIconsContainer = dateDiv.querySelector(`.${Config.CLASS_NAMES.ICONS_CONTAINER}`);
-      if (existingIconsContainer) {
-        existingIconsContainer.remove();
+      if (!container) {
+        container = document.createElement('div');
+        container.className = Config.CLASS_NAMES.ICONS_CONTAINER;
+        dateDiv.appendChild(container);
       }
 
-      const iconsContainer = document.createElement('div');
-      iconsContainer.className = Config.CLASS_NAMES.ICONS_CONTAINER;
+      container.dataset.statusKey = statusKey;
+      container.dataset.url = releaseUrl;
 
-      if (mbStatus !== null) {
-        this.addReleaseIcon(iconsContainer, mbStatus[0], mbStatus[1]);
+      let link = container.firstElementChild;
+      if (!link) {
+        link = document.createElement('a');
+        link.target = '_blank';
+        link.rel = 'noopener noreferrer';
+        container.appendChild(link);
+      }
+
+      if (isFound) {
+        link.className = `${Config.CLASS_NAMES.STATUS_ICON} ${Config.CLASS_NAMES.RELEASE_ICON}`;
+        link.href = getMusicBrainzReleaseUrl(mbStatus[0], mbStatus[1]);
+        link.title = 'Open in MusicBrainz';
+        link.onclick = null;
       } else {
-        this.addMissingIcon(iconsContainer, releaseUrl);
+        link.className = `${Config.CLASS_NAMES.STATUS_ICON} ${Config.CLASS_NAMES.HARMONY_ICON}`;
+        link.href = getMissingReleaseUrl(releaseUrl);
+        link.title = getMissingReleaseTitle();
+        link.onclick = () => BeatportMusicBrainzImporter._mbApi.invalidateCacheForUrl(releaseUrl);
       }
-
-      dateDiv.appendChild(iconsContainer);
-
-      // Mark row as processed for this specific URL to handle React DOM recycling
-      BeatportMusicBrainzImporter._processedRows.set(rowElement, releaseUrl);
     }
   };
 
   /**
-   * Scans the DOM for release rows and extracts relevant information.
+   * Scans the DOM for release rows.
    */
   const DOMScanner = {
-    /**
-     * Checks if the current page URL matches any of the supported patterns.
-     * @returns {boolean} True if the current page is supported, false otherwise.
-     */
     isSupportedPage: function () {
-      const pathname = window.location.pathname;
-      const basePathname = Utils._getBasePathname(pathname);
+      const basePathname = Utils._getBasePathname(window.location.pathname);
       return Config.SUPPORTED_PATHS.some(path => basePathname.startsWith(path));
     },
 
-    /**
-     * Finds all unprocessed release rows and extracts their URLs and corresponding DOM elements.
-     * @returns {Array<{url: string, element: HTMLElement}>} An array of objects, each containing
-     * a release URL and its DOM element.
-     */
-    getReleasesToProcess: function () {
-      const releases = document.querySelectorAll(Config.SELECTORS.RELEASE_ROW);
-      const unprocessedReleases = [];
-
-      for (const releaseRow of releases) {
-        const releaseLinkElement = releaseRow.querySelector(Config.SELECTORS.RELEASE_LINK);
-        if (releaseLinkElement && releaseLinkElement.href) {
-          const url = releaseLinkElement.href;
-
-          // Normalize the URL before checking the Map
-          const parsedUrl = new URL(url);
-          const normalizedPathname = Utils._getBasePathname(parsedUrl.pathname);
-          const normalizedUrl = `${parsedUrl.origin}${normalizedPathname}${parsedUrl.search}`;
-
-          const lastProcessed = BeatportMusicBrainzImporter._processedRows.get(releaseRow);
-          const hasIcons = releaseRow.querySelector(Config.SELECTORS.ICONS_CONTAINER);
-
-          if (lastProcessed !== normalizedUrl || !hasIcons) {
-            unprocessedReleases.push({
-              url: url,
-              element: releaseRow
-            });
-          }
+    getReleases: function () {
+      const rows = document.querySelectorAll(Config.SELECTORS.RELEASE_ROW);
+      const releases = [];
+      for (const element of rows) {
+        const link = element.querySelector(Config.SELECTORS.RELEASE_LINK);
+        if (link?.href) {
+          releases.push({ url: link.href, element });
         }
       }
-      return unprocessedReleases;
+      return releases;
+    },
+
+    hasUnprocessedRows: function () {
+      return document.querySelector(`${Config.SELECTORS.RELEASE_ROW}:not(:has(.${Config.CLASS_NAMES.ICONS_CONTAINER}))`) !== null;
     }
   };
 
@@ -273,7 +234,6 @@
     _runningUpdate: false,
     _scheduleUpdate: false,
     _mbApi: null,
-    _processedRows: new WeakMap(),
 
     /**
      * Initializes the application: injects CSS and sets up the MutationObserver and router hook.
@@ -374,7 +334,7 @@
           clearTimeout(debounceTimer);
         }
         debounceTimer = setTimeout(() => {
-          if (DOMScanner.isSupportedPage() && DOMScanner.getReleasesToProcess().length > 0) {
+          if (DOMScanner.isSupportedPage() && DOMScanner.hasUnprocessedRows()) {
             this.runUpdate();
           }
         }, 300);
@@ -401,7 +361,7 @@
             return;
           }
 
-          const itemsToProcess = DOMScanner.getReleasesToProcess();
+          const itemsToProcess = DOMScanner.getReleases();
           if (itemsToProcess.length === 0) {
             continue;
           }
@@ -490,7 +450,7 @@
           }
 
           // If DOM elements were replaced or added while fetching, schedule another pass
-          if (DOMScanner.getReleasesToProcess().length > 0) {
+          if (DOMScanner.hasUnprocessedRows()) {
             this._scheduleUpdate = true;
           }
 
