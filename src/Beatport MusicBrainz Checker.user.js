@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Beatport: MusicBrainz Checker
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      2.7.1
+// @version      2.8.0
 // @description  Adds MusicBrainz status icons to Beatport releases on list pages and links missing releases for importing
 // @tag          ai-created
 // @author       RustyNova, chaban
@@ -30,10 +30,11 @@
 
     /**
      * Missing release action provider:
-     * - 'beatport': Opens Beatport release page in a new tab for 1-click import via Murdos Beatport Importer (default workaround while Cloudflare blocks Harmony server scraping).
-     * - 'harmony': Opens Harmony import URL directly (available when Harmony implements Beatport API support).
+     * - 'auto': Automatically uses 'harmony' if Harmony Beatport Recovery (unsafeWindow.HBR) is installed, otherwise 'beatport'.
+     * - 'beatport': Opens Beatport release page in a new tab for 1-click import via Murdos Beatport Importer.
+     * - 'harmony': Opens Harmony import URL directly.
      */
-    MISSING_RELEASE_PROVIDER: 'beatport',
+    MISSING_RELEASE_PROVIDER: 'auto',
 
     HARMONY_BASE_URL: 'https://harmony.pulsewidth.org.uk/release',
     HARMONY_ICON_URL: 'https://harmony.pulsewidth.org.uk/favicon.svg',
@@ -86,6 +87,18 @@
   };
 
   /**
+   * Resolves the effective missing release provider based on configuration
+   * and runtime environment (auto-detects Harmony Beatport Recovery).
+   * @returns {'harmony'|'beatport'} The active provider.
+   */
+  function getEffectiveMissingProvider() {
+    if (Config.MISSING_RELEASE_PROVIDER !== 'auto') {
+      return Config.MISSING_RELEASE_PROVIDER;
+    }
+    return unsafeWindow.HBR ? 'harmony' : 'beatport';
+  }
+
+  /**
    * Constructs the Harmony import URL for a given Beatport release URL.
    * @param {string} releaseUrl - The Beatport release URL.
    * @returns {string} The complete Harmony import URL.
@@ -104,10 +117,10 @@
   /**
    * Resolves the target destination URL for releases missing from MusicBrainz.
    * @param {string} releaseUrl - The Beatport release URL.
-   * @returns {string} The target URL based on Config.MISSING_RELEASE_PROVIDER.
+   * @returns {string} The target URL based on the effective provider.
    */
   function getMissingReleaseUrl(releaseUrl) {
-    if (Config.MISSING_RELEASE_PROVIDER === 'harmony') {
+    if (getEffectiveMissingProvider() === 'harmony') {
       return getHarmonyImportUrl(releaseUrl);
     }
     return releaseUrl;
@@ -118,7 +131,7 @@
    * @returns {string} Tooltip description.
    */
   function getMissingReleaseTitle() {
-    if (Config.MISSING_RELEASE_PROVIDER === 'harmony') {
+    if (getEffectiveMissingProvider() === 'harmony') {
       return 'Import with Harmony';
     }
     return 'Missing from MusicBrainz — Open release page to import';
