@@ -2007,6 +2007,7 @@
                         return node;
                     }
                     if (node.nodeType === Node.ELEMENT_NODE) {
+                        if (node.matches('.alt-values')) continue;
                         const found = findTextNode(node, text);
                         if (found) return found;
                     }
