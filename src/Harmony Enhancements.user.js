@@ -729,13 +729,9 @@
         */
         createIndicatorSpan: (indicatorText, originalValue, { type = 'overwritten', tooltip = '', tooltipPrefix = 'Original value:', standalone = false } = {}) => {
             const span = document.createElement('span');
-            span.className = type === 'added' ? 'he-added-label' : 'he-overwritten-label';
+            span.className = `he-badge he-badge--${type}${standalone ? ' he-badge--standalone' : ''}`;
             span.title = tooltip || `${tooltipPrefix} ${originalValue}`;
             span.textContent = `(${indicatorText})`;
-
-            if (!standalone) {
-                span.style.marginLeft = '0.5em';
-            }
             return span;
         },
 
