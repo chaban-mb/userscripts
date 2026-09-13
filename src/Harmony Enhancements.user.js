@@ -439,8 +439,8 @@
                     if (medium.format) {
                         set(`${prefix}.format`, medium.format);
                     }
-                    if (medium.title || medium.name) {
-                        set(`${prefix}.name`, medium.title || medium.name);
+                    if (medium.title) {
+                        set(`${prefix}.name`, medium.title);
                     }
                     medium.tracklist?.forEach((track, trackIndex) => {
                         const trackPrefix = `${prefix}.track.${trackIndex}`;
