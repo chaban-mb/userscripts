@@ -3294,6 +3294,9 @@
         } else if (path.startsWith('/release') && !path.startsWith('/release/actions')) {
             cacheReleaseLookupPageDOM();
             getReleaseDataFromJSON();
+            if (ingestExternalFormData()) {
+                AppState.data.originalRelease = structuredClone(AppState.data.release);
+            }
         } else if (path.startsWith('/release/actions')) {
             cacheReleaseActionsPageDOM();
         } else if (path.startsWith('/settings')) {
