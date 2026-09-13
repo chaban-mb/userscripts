@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        Harmony: Enhancements
 // @namespace   https://musicbrainz.org/user/chaban
-// @version     1.28.2
+// @version     1.29.0
 // @description Adds some convenience features, various UI and behavior settings, as well as an improved language detection to Harmony.
 // @tag         ai-created
 // @author      chaban
@@ -413,6 +413,72 @@
                     artistName: artist.mbid ? undefined : name,
                     joinPhrase: joinPhrase || undefined,
                 };
+            });
+        },
+
+        /**
+         * Ingests a single artist credit field into an artist object.
+         * Returns true if a value was modified.
+         * @param {object} artist - Target artist object.
+         * @param {string} field - Field name ('name', 'mbid', 'artist.name', 'join_phrase').
+         * @param {string} value - Value from external form input.
+         * @returns {boolean} True if a change occurred.
+         */
+        ingestField(artist, field, value) {
+            if (!artist || !field) return false;
+            if (field === 'name') {
+                const current = artist.creditedName ?? artist.name;
+                artist.name ??= value;
+                if (current !== value) {
+                    artist.creditedName = value;
+                    return true;
+                }
+            } else if (field === 'mbid') {
+                if (artist.mbid !== value) {
+                    artist.mbid = value;
+                    return true;
+                }
+            } else if (field === 'artist.name') {
+                if (artist.name !== value) {
+                    artist.name = value;
+                    return true;
+                }
+            } else if (field === 'join_phrase') {
+                if (artist.joinPhrase !== value) {
+                    artist.joinPhrase = value;
+                    return true;
+                }
+            }
+            return false;
+        },
+
+        /**
+         * Returns a flat array of all artist objects across release and tracks.
+         * @param {object} release - Release data object.
+         * @returns {Array<object>} Flat array of artist objects.
+         */
+        getAllArtists(release) {
+            if (!release) return [];
+            return [
+                ...(release.artists || []),
+                ...((release.media || []).flatMap(m =>
+                    (m.tracklist || []).flatMap(t => t.artists || [])
+                )),
+            ];
+        },
+
+        /**
+         * Executes a callback for every artist object across release and tracks.
+         * @param {object} release - Release data object.
+         * @param {Function} callback - Callback receiving (artist, location: 'release' | 'track').
+         */
+        forEachArtist(release, callback) {
+            if (!release) return;
+            release.artists?.forEach(a => callback(a, 'release'));
+            release.media?.forEach(m => {
+                m.tracklist?.forEach(t => {
+                    t.artists?.forEach(a => callback(a, 'track'));
+                });
             });
         }
     };
@@ -2152,12 +2218,7 @@
             }
 
             // 1. Gather all artist names (Release Artists + Track Artists)
-            const allArtists = [
-                ...releaseData.artists,
-                ...(releaseData.media || []).flatMap(m =>
-                    (m.tracklist || []).flatMap(t => t.artists || [])
-                )
-            ];
+            const allArtists = ARTIST_CREDIT_UTILS.getAllArtists(releaseData);
 
             // 2. Extract unique names and sort by length (descending)
             const uniqueArtistNames = new Set();
@@ -2527,19 +2588,10 @@
         },
 
         cleanArtistNames: () => {
-            const clean = (artists) => {
-                if (!Array.isArray(artists)) return;
-                artists.forEach(artist => {
-                    if (artist.mbid) {
-                        artist.name = null;
-                        artist.creditedName = null;
-                    }
-                });
-            };
-            clean(AppState.data.release.artists);
-            AppState.data.release.media?.forEach(medium => {
-                if (medium.tracklist) {
-                    clean(medium.tracklist.flatMap(t => t.artists || []));
+            ARTIST_CREDIT_UTILS.forEachArtist(AppState.data.release, (artist) => {
+                if (artist.mbid) {
+                    artist.name = null;
+                    artist.creditedName = null;
                 }
             });
         },
@@ -2776,6 +2828,8 @@
         const release = AppState.data.release;
         let changesDetected = false;
         const raw = [];
+        const getOrCreateMedium = (mIdx) => ((release.media ??= [])[mIdx] ??= {});
+        const getOrCreateTrack = (mIdx, tIdx) => ((getOrCreateMedium(mIdx).tracklist ??= [])[tIdx] ??= {});
 
         for (const form of forms) {
             const formElements = form.querySelectorAll('input, textarea, select');
@@ -2787,10 +2841,10 @@
                 if (!name) continue;
 
                 raw.push({
+                    form: form.getAttribute('name'),
                     name,
                     value,
-                    tagName: el.tagName,
-                    dataset: { ...el.dataset }
+                    type: el.type || el.tagName.toLowerCase(),
                 });
 
                 // 1. Labels: labels.N.name, labels.N.catalog_number, labels.N.mbid
@@ -2863,32 +2917,10 @@
                 // 7. Release Artists: artist_credit.names.N.(name|mbid|artist.name|join_phrase)
                 const artistMatch = name.match(/^artist_credit\.names\.(\d+)\.(name|mbid|artist\.name|join_phrase)$/);
                 if (artistMatch) {
-                    const index = parseInt(artistMatch[1], 10);
-                    const field = artistMatch[2];
-                    release.artists ??= [];
-                    release.artists[index] ??= {};
-                    if (field === 'name') {
-                        const current = release.artists[index].creditedName ?? release.artists[index].name;
-                        release.artists[index].name ??= value;
-                        if (current !== value) {
-                            release.artists[index].creditedName = value;
-                            changesDetected = true;
-                        }
-                    } else if (field === 'mbid') {
-                        if (release.artists[index].mbid !== value) {
-                            release.artists[index].mbid = value;
-                            changesDetected = true;
-                        }
-                    } else if (field === 'artist.name') {
-                        if (release.artists[index].name !== value) {
-                            release.artists[index].name = value;
-                            changesDetected = true;
-                        }
-                    } else if (field === 'join_phrase') {
-                        if (release.artists[index].joinPhrase !== value) {
-                            release.artists[index].joinPhrase = value;
-                            changesDetected = true;
-                        }
+                    const [, index, field] = artistMatch;
+                    const artist = ((release.artists ??= [])[index] ??= {});
+                    if (ARTIST_CREDIT_UTILS.ingestField(artist, field, value)) {
+                        changesDetected = true;
                     }
                     continue;
                 }
@@ -2896,14 +2928,8 @@
                 // 8. Tracklist: mediums.M.track.T.(name|number|length|recording)
                 const trackMatch = name.match(/^mediums\.(\d+)\.track\.(\d+)\.(name|number|length|recording)$/);
                 if (trackMatch) {
-                    const mIdx = parseInt(trackMatch[1], 10);
-                    const tIdx = parseInt(trackMatch[2], 10);
-                    const field = trackMatch[3];
-                    release.media ??= [];
-                    release.media[mIdx] ??= { tracklist: [] };
-                    release.media[mIdx].tracklist ??= [];
-                    release.media[mIdx].tracklist[tIdx] ??= {};
-                    const track = release.media[mIdx].tracklist[tIdx];
+                    const [, mIdx, tIdx, field] = trackMatch;
+                    const track = getOrCreateTrack(mIdx, tIdx);
                     if (field === 'name' && track.title !== value) {
                         track.title = value;
                         changesDetected = true;
@@ -2926,40 +2952,10 @@
                 // 9. Track Artists: mediums.M.track.T.artist_credit.names.A.(name|mbid|artist.name|join_phrase)
                 const trackArtistMatch = name.match(/^mediums\.(\d+)\.track\.(\d+)\.artist_credit\.names\.(\d+)\.(name|mbid|artist\.name|join_phrase)$/);
                 if (trackArtistMatch) {
-                    const mIdx = parseInt(trackArtistMatch[1], 10);
-                    const tIdx = parseInt(trackArtistMatch[2], 10);
-                    const aIdx = parseInt(trackArtistMatch[3], 10);
-                    const field = trackArtistMatch[4];
-                    release.media ??= [];
-                    release.media[mIdx] ??= { tracklist: [] };
-                    release.media[mIdx].tracklist ??= [];
-                    release.media[mIdx].tracklist[tIdx] ??= {};
-                    const track = release.media[mIdx].tracklist[tIdx];
-                    track.artists ??= [];
-                    track.artists[aIdx] ??= {};
-                    const artist = track.artists[aIdx];
-                    if (field === 'name') {
-                        const current = artist.creditedName ?? artist.name;
-                        artist.name ??= value;
-                        if (current !== value) {
-                            artist.creditedName = value;
-                            changesDetected = true;
-                        }
-                    } else if (field === 'mbid') {
-                        if (artist.mbid !== value) {
-                            artist.mbid = value;
-                            changesDetected = true;
-                        }
-                    } else if (field === 'artist.name') {
-                        if (artist.name !== value) {
-                            artist.name = value;
-                            changesDetected = true;
-                        }
-                    } else if (field === 'join_phrase') {
-                        if (artist.joinPhrase !== value) {
-                            artist.joinPhrase = value;
-                            changesDetected = true;
-                        }
+                    const [, mIdx, tIdx, aIdx, field] = trackArtistMatch;
+                    const artist = ((getOrCreateTrack(mIdx, tIdx).artists ??= [])[aIdx] ??= {});
+                    if (ARTIST_CREDIT_UTILS.ingestField(artist, field, value)) {
+                        changesDetected = true;
                     }
                     continue;
                 }
@@ -2967,13 +2963,11 @@
                 // 10. Mediums: mediums.M.(format|name)
                 const mediumMatch = name.match(/^mediums\.(\d+)\.(format|name)$/);
                 if (mediumMatch) {
-                    const mIdx = parseInt(mediumMatch[1], 10);
-                    const field = mediumMatch[2];
-                    release.media ??= [];
-                    release.media[mIdx] ??= {};
+                    const [, mIdx, field] = mediumMatch;
+                    const medium = getOrCreateMedium(mIdx);
                     const prop = field === 'name' ? 'title' : field;
-                    if (release.media[mIdx][prop] !== value) {
-                        release.media[mIdx][prop] = value;
+                    if (medium[prop] !== value) {
+                        medium[prop] = value;
                         changesDetected = true;
                     }
                     continue;
