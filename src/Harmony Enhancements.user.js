@@ -339,6 +339,85 @@
     };
 
     /**
+     * Centralized utilities for artist credit parsing, formatting, normalization, and form seeding.
+     */
+    const ARTIST_CREDIT_UTILS = {
+        /**
+         * Returns the default join phrase based on position (' & ' for penultimate, ', ' for earlier, '' for last).
+         * @param {number} index - Index of the artist in the array.
+         * @param {number} total - Total number of artists in the array.
+         * @returns {string} The default join phrase.
+         */
+        getDefaultJoinPhrase(index, total) {
+            if (index >= total - 1) return '';
+            return (index === total - 2) ? ' & ' : ', ';
+        },
+
+        /**
+         * Returns the effective join phrase for an artist, respecting custom join phrases on non-final artists.
+         * @param {object} artist - Artist object { name, creditedName?, joinPhrase? }.
+         * @param {number} index - Index of the artist.
+         * @param {number} total - Total number of artists.
+         * @returns {string} The join phrase string.
+         */
+        getEffectiveJoinPhrase(artist, index, total) {
+            if (index >= total - 1) return '';
+            return artist.joinPhrase ?? this.getDefaultJoinPhrase(index, total);
+        },
+
+        /**
+         * Formats an array of artist objects into a credit string, respecting custom join phrases where present.
+         * @param {Array<object>} artists - Array of artist objects.
+         * @returns {string} Formatted artist credit string.
+         */
+        formatString(artists) {
+            if (!Array.isArray(artists) || artists.length === 0) return '';
+            return artists.reduce((str, artist, index) => {
+                const name = artist.name || artist.creditedName || '';
+                return str + name + this.getEffectiveJoinPhrase(artist, index, artists.length);
+            }, '');
+        },
+
+        /**
+         * Normalizes an artist array in-place after insertions or deletions.
+         * Enforces that the final artist never has a trailing join phrase, and aligns standard join phrases.
+         * @param {Array<object>} artists - Array of artist objects.
+         * @returns {Array<object>} The normalized array.
+         */
+        normalize(artists) {
+            if (!Array.isArray(artists) || artists.length === 0) return artists;
+            delete artists[artists.length - 1].joinPhrase;
+            if (artists.length > 1) {
+                const penultimate = artists[artists.length - 2];
+                if (!penultimate.joinPhrase || penultimate.joinPhrase === ', ') {
+                    penultimate.joinPhrase = ' & ';
+                }
+            }
+            return artists;
+        },
+
+        /**
+         * Transforms an artist array into normalized MusicBrainz artist credit schema entries.
+         * Pure function with zero DOM or form side-effects.
+         * @param {Array<object>} artists - Array of artist objects.
+         * @returns {Array<{ name: string, mbid?: string, artistName?: string, joinPhrase?: string }>}
+         */
+        toSeederCredits(artists) {
+            if (!Array.isArray(artists)) return [];
+            return artists.map((artist, index) => {
+                const name = artist.creditedName || artist.name;
+                const joinPhrase = this.getEffectiveJoinPhrase(artist, index, artists.length);
+                return {
+                    name,
+                    mbid: artist.mbid || undefined,
+                    artistName: artist.mbid ? undefined : name,
+                    joinPhrase: joinPhrase || undefined,
+                };
+            });
+        }
+    };
+
+    /**
     * A map of functions that generate the required form parameters from the release data object.
     * Each function takes the corresponding value from the release data and a setter function
     * to add key-value pairs to our desired state map.
@@ -403,22 +482,17 @@
         'artists': {
             cleanupPrefix: 'artist_credit.names.',
             generator: (value, set) => {
-                value?.forEach((artist, index) => {
+                const credits = ARTIST_CREDIT_UTILS.toSeederCredits(value);
+                credits.forEach((credit, index) => {
                     const prefix = `artist_credit.names.${index}`;
-                    const artistName = artist.creditedName || artist.name;
-                    if (artistName) {
-                        set(`${prefix}.name`, artistName);
+                    if (credit.name) set(`${prefix}.name`, credit.name);
+                    if (credit.mbid) {
+                        set(`${prefix}.mbid`, credit.mbid);
+                    } else if (credit.artistName) {
+                        set(`${prefix}.artist.name`, credit.artistName);
                     }
-                    if (artist.mbid) {
-                        set(`${prefix}.mbid`, artist.mbid);
-                    } else if (artistName) {
-                        set(`${prefix}.artist.name`, artistName);
-                    }
-                    if (artist.joinPhrase !== undefined) {
-                        set(`${prefix}.join_phrase`, artist.joinPhrase);
-                    } else if (index < value.length - 1) {
-                        const defaultJoinPhrase = (index === value.length - 2) ? ' & ' : ', ';
-                        set(`${prefix}.join_phrase`, defaultJoinPhrase);
+                    if (credit.joinPhrase) {
+                        set(`${prefix}.join_phrase`, credit.joinPhrase);
                     }
                 });
             },
@@ -451,22 +525,17 @@
                             set(`${trackPrefix}.recording`, track.recording.mbid);
                         }
 
-                        track.artists?.forEach((artist, artistIndex) => {
+                        const credits = ARTIST_CREDIT_UTILS.toSeederCredits(track.artists);
+                        credits.forEach((credit, artistIndex) => {
                             const artistPrefix = `${trackPrefix}.artist_credit.names.${artistIndex}`;
-                            const artistName = artist.creditedName || artist.name;
-                            if (artistName) {
-                                set(`${artistPrefix}.name`, artistName);
+                            if (credit.name) set(`${artistPrefix}.name`, credit.name);
+                            if (credit.mbid) {
+                                set(`${artistPrefix}.mbid`, credit.mbid);
+                            } else if (credit.artistName) {
+                                set(`${artistPrefix}.artist.name`, credit.artistName);
                             }
-                            if (artist.mbid) {
-                                set(`${artistPrefix}.mbid`, artist.mbid);
-                            } else if (artistName) {
-                                set(`${artistPrefix}.artist.name`, artistName);
-                            }
-                            if (artist.joinPhrase !== undefined) {
-                                set(`${artistPrefix}.join_phrase`, artist.joinPhrase);
-                            } else if (artistIndex < track.artists.length - 1) {
-                                const defaultJoinPhrase = (artistIndex === track.artists.length - 2) ? ' & ' : ', ';
-                                set(`${artistPrefix}.join_phrase`, defaultJoinPhrase);
+                            if (credit.joinPhrase) {
+                                set(`${artistPrefix}.join_phrase`, credit.joinPhrase);
                             }
                         });
                     });
@@ -518,22 +587,6 @@
         console.error(`%c[${SCRIPT_NAME}] %c${message}`, 'color: #d9534f; font-weight: bold;', 'color: unset;', ...args);
     }
 
-    /**
-    * Formats an array of artist objects into a single credit string with proper join phrases.
-    * @param {Array<object>} artists - The array of artist objects, each with a `name` property.
-    * @returns {string} The formatted artist credit string.
-    */
-    function formatArtistString(artists) {
-        if (!Array.isArray(artists) || artists.length === 0) return '';
-        return artists.reduce((str, artist, index) => {
-            str += artist.name;
-            if (index < artists.length - 1) {
-                const joinPhrase = (index === artists.length - 2) ? ' & ' : ', ';
-                str += joinPhrase;
-            }
-            return str;
-        }, '');
-    }
 
     /**
      * Filters a list of labels to ensure uniqueness based on MBID/Name and Catalog Number.
@@ -831,10 +884,7 @@
                 }
 
                 html += artistLinkHTML;
-                if (index < artists.length - 1) {
-                    const joinPhrase = (index === artists.length - 2) ? ' & ' : ', ';
-                    html += joinPhrase;
-                }
+                html += ARTIST_CREDIT_UTILS.getEffectiveJoinPhrase(artist, index, artists.length);
                 return html;
             }, '');
         },
@@ -2227,8 +2277,8 @@
 
                 if (removedFromThisTrack.length > 0) {
                     if (keptArtists.length > 0) {
-                        const oldArtistsString = formatArtistString(track.artists);
-                        track.artists = keptArtists;
+                        const oldArtistsString = ARTIST_CREDIT_UTILS.formatString(track.artists);
+                        track.artists = ARTIST_CREDIT_UTILS.normalize(keptArtists);
                         removedArtistsLog.push({
                             track: track.number,
                             title: title,
@@ -2461,8 +2511,8 @@
                 return;
             }
 
-            const oldArtists = formatArtistString(releaseArtists);
-            const newArtists = formatArtistString(commonTrackArtists);
+            const oldArtists = ARTIST_CREDIT_UTILS.formatString(releaseArtists);
+            const newArtists = ARTIST_CREDIT_UTILS.formatString(commonTrackArtists);
             AppState.data.release.artists = commonTrackArtists;
 
             const { artistCreditSpan } = AppState.dom;
