@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Beatport: MusicBrainz Checker
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      2.7.0
+// @version      2.7.1
 // @description  Adds MusicBrainz status icons to Beatport releases on list pages and links missing releases for importing
 // @tag          ai-created
 // @author       RustyNova, chaban
@@ -11,6 +11,7 @@
 
 // @icon         https://www.google.com/s2/favicons?sz=64&domain=beatport.com
 // @grant        GM.xmlHttpRequest
+// @grant        unsafeWindow
 // @run-at       document-idle
 // @updateURL    https://github.com/chaban-mb/userscripts/raw/dist/src/Beatport%20MusicBrainz%20Checker.user.js
 // @downloadURL  https://github.com/chaban-mb/userscripts/raw/dist/src/Beatport%20MusicBrainz%20Checker.user.js
@@ -437,7 +438,7 @@ class PermanentError extends Error {
 
     SELECTORS: {
       RELEASE_ROW: '[class*="TableRow"]',
-      RELEASE_LINK: '[href*="/release/"]',
+      RELEASE_LINK: 'a[href*="/release/"]:not(.status-icon)',
       ANCHOR: '.date',
       ICONS_CONTAINER: '.button_container'
     },
@@ -622,8 +623,9 @@ class PermanentError extends Error {
           const normalizedUrl = `${parsedUrl.origin}${normalizedPathname}${parsedUrl.search}`;
 
           const lastProcessed = BeatportMusicBrainzImporter._processedRows.get(releaseRow);
+          const hasIcons = releaseRow.querySelector(Config.SELECTORS.ICONS_CONTAINER);
 
-          if (lastProcessed !== normalizedUrl) {
+          if (lastProcessed !== normalizedUrl || !hasIcons) {
             unprocessedReleases.push({
               url: url,
               element: releaseRow
@@ -653,6 +655,7 @@ class PermanentError extends Error {
       });
       this._injectCSS();
       this._hookNextRouter();
+      this._setupDOMObserver();
       // Initial run
       setTimeout(() => this.runUpdate(), 1000);
     },
@@ -712,35 +715,10 @@ class PermanentError extends Error {
     _hookNextRouter: function () {
       const self = this;
 
-      const checkContentAndTrigger = (observer) => {
-        const itemsToProcess = DOMScanner.getReleasesToProcess();
-
-        if (itemsToProcess.length > 0) {
-          if (observer) observer.disconnect();
-          self.runUpdate();
-          return true;
-        }
-
-        return false;
-      };
-
       const valCheckNext = () => {
         if (unsafeWindow.next?.router?.events) {
           unsafeWindow.next.router.events.on('routeChangeComplete', () => {
-            // 1. Immediate check for synchronous update
-            if (checkContentAndTrigger(null)) return;
-
-            // 2. Observer for async updates
-            const observer = new MutationObserver(() => {
-              checkContentAndTrigger(observer);
-            });
-
-            observer.observe(document.body, { childList: true, subtree: true });
-
-            // Timeout safety
-            setTimeout(() => {
-              observer.disconnect();
-            }, 10000);
+            self.runUpdate();
           });
           return;
         }
@@ -749,6 +727,31 @@ class PermanentError extends Error {
       };
 
       valCheckNext();
+    },
+
+    /**
+     * Continuous debounced observer to restore status icons
+     * when React re-renders table rows or after background session refreshes.
+     */
+    _setupDOMObserver: function () {
+      let debounceTimer = null;
+      const observer = new MutationObserver((mutations) => {
+        const hasNewNodes = mutations.some(m => m.addedNodes.length > 0);
+        if (!hasNewNodes) {
+          return;
+        }
+
+        if (debounceTimer) {
+          clearTimeout(debounceTimer);
+        }
+        debounceTimer = setTimeout(() => {
+          if (DOMScanner.isSupportedPage() && DOMScanner.getReleasesToProcess().length > 0) {
+            this.runUpdate();
+          }
+        }, 300);
+      });
+
+      observer.observe(document.body, { childList: true, subtree: true });
     },
 
     /**
@@ -855,6 +858,11 @@ class PermanentError extends Error {
 
             // Update UI for newly fetched items
             updateUIForUrls(uncachedUrls);
+          }
+
+          // If DOM elements were replaced or added while fetching, schedule another pass
+          if (DOMScanner.getReleasesToProcess().length > 0) {
+            this._scheduleUpdate = true;
           }
 
         } while (this._scheduleUpdate);
