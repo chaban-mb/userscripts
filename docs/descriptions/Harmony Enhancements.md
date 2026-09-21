@@ -23,5 +23,6 @@ A comprehensive userscript for **[Harmony](http://harmony.pulsewidth.org.uk/)** 
 #### UI & Workflow
 - **Clipboard Re-Lookup:** Adds a **"Re-Lookup from Clipboard"** button to the lookup form for quickly starting a new lookup or extending an existing one using a supported source URL found in your clipboard.
 - **Provider Re-Lookup Buttons:** Adds a small **⟳** button next to each secondary provider URL in the "Providers" section, allowing you to quickly redo the lookup using that provider as the primary source.
+- **Compact "Not Found" Messages:** Replaces verbose red error banners for providers that do not have the release with compact tags directly under provider checkboxes.
 - **External Search Links:** Adds quick search links for yet unsupported providers (Qobuz, YouTube Music, Beatsource, etc.).
 - **Minor Tweaks:** Enables **copying the permalink URL** on click and provides options to **hide verbose/redundant info sections** for a cleaner UI.
