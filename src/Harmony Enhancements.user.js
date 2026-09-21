@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        Harmony: Enhancements
 // @namespace   https://musicbrainz.org/user/chaban
-// @version     1.27.14
+// @version     1.28.0
 // @description Adds some convenience features, various UI and behavior settings, as well as an improved language detection to Harmony.
 // @tag         ai-created
 // @author      chaban
@@ -81,6 +81,16 @@
             key: 'enhancements.ui.hideReleaseInfo',
             label: 'Hide Availability, Sources, and External Links sections',
             description: 'Hides the verbose and redundant release info sections.',
+            defaultValue: false,
+            section: 'UI Settings',
+            type: 'checkbox',
+            runAt: 'load',
+            paths: [/^\/release(?!\/actions)/],
+        },
+        compactNotFoundMessages: {
+            key: 'enhancements.ui.compactNotFoundMessages',
+            label: 'Compact "Not Found" provider messages',
+            description: 'Replaces verbose red error banners for providers that do not have the release with compact tags directly under provider checkboxes.',
             defaultValue: false,
             section: 'UI Settings',
             type: 'checkbox',
@@ -1377,6 +1387,35 @@
         return config;
     });
 
+    const NOT_FOUND_SIGNATURES = [
+        { regex: /^no data\s*\(code\s*800\)/i, label: 'no data' },
+        { regex: /^API returned no (?:matching )?results/i, label: 'no results' },
+        { regex: /^Search returned no matching results for/i, label: 'no results' },
+        { regex: /^Album (?:song list )?not found/i, label: 'not found' },
+        { regex: /^Release not found/i, label: 'not found' },
+    ];
+
+    /**
+     * Resolves a provider checkbox label element by provider name or class.
+     * @param {string} providerName - Display name of the provider.
+     * @param {string} [providerClass] - CSS class from the error icon element.
+     * @returns {HTMLLabelElement | null}
+     */
+    function findProviderLabel(providerName, providerClass) {
+        if (providerClass) {
+            const byClass = document.querySelector(`form.center label.provider-input.${CSS.escape(providerClass)}`);
+            if (byClass) return byClass;
+        }
+        const cleanName = (providerName || '').trim().toLowerCase();
+        if (!cleanName) return null;
+
+        const labels = AppState.dom.providerInputs?.length
+            ? AppState.dom.providerInputs
+            : Array.from(document.querySelectorAll('form.center label.provider-input'));
+
+        return labels.find(l => l.textContent.trim().toLowerCase() === cleanName) || null;
+    }
+
     const enhancements = {
         _copyHandler: async (event, text, name) => {
             try {
@@ -1403,6 +1442,88 @@
                     row.style.display = 'none';
                 }
             });
+        },
+
+        compactNotFoundMessages: () => {
+            const errorMessages = AppState.dom.errorMessages?.length
+                ? AppState.dom.errorMessages
+                : Array.from(document.querySelectorAll('.message.error'));
+
+            if (!errorMessages.length) return;
+
+            let badgesCreated = 0;
+
+            errorMessages.forEach(msg => {
+                if (msg.style.display === 'none' || msg.dataset.heCompacted) return;
+
+                const providerSpan = msg.querySelector('.provider');
+                if (!providerSpan) return;
+
+                const providerName = providerSpan.textContent.replace(/:\s*$/, '').trim();
+
+                // Detect provider class from icon span (e.g. <span class="deezer" title="Deezer"> or <span class="itunes">)
+                const iconSpan = msg.querySelector('span:not(.provider)');
+                const providerClass = iconSpan ? Array.from(iconSpan.classList).find(c => !c.startsWith('brand-') && c !== 'icon') : '';
+
+                const p = msg.querySelector('p');
+                const rawText = p ? p.textContent.trim() : '';
+
+                // Match against release-level not-found signatures
+                const matchedSignature = NOT_FOUND_SIGNATURES.find(sig => sig.regex.test(rawText));
+                if (!matchedSignature) return;
+
+                const targetLabel = findProviderLabel(providerName, providerClass);
+                if (!targetLabel) return;
+
+                // Extract URL if present
+                const link = p?.querySelector('a[href]');
+                const url = link?.href || '';
+
+                const messageDetail = link
+                    ? rawText.replace(link.textContent, '').trim().replace(/:\s*$/, '')
+                    : rawText;
+
+                // Format native tooltip
+                const tooltip = url
+                    ? `${providerName}: ${messageDetail}\n${url}`
+                    : `${providerName}: ${messageDetail}`;
+
+                // Wrap label in .he-provider-chip-slot if not already wrapped
+                let slot = targetLabel.parentElement;
+                if (!slot || !slot.classList.contains('he-provider-chip-slot')) {
+                    slot = document.createElement('div');
+                    slot.className = 'he-provider-chip-slot';
+                    targetLabel.parentNode.insertBefore(slot, targetLabel);
+                    slot.appendChild(targetLabel);
+                }
+
+                // Create or update the badge as a sibling to targetLabel inside slot
+                let badge = slot.querySelector('.he-not-found-badge');
+                if (!badge) {
+                    badge = document.createElement('span');
+                    badge.className = 'he-not-found-badge';
+                    slot.appendChild(badge);
+                }
+
+                badge.textContent = matchedSignature.label;
+                badge.title = tooltip;
+
+                // Hide original message banner and mark as compacted
+                msg.dataset.heCompacted = 'true';
+                msg.style.display = 'none';
+
+                badgesCreated++;
+
+                // Ensure parent row has bottom spacing
+                const row = slot.closest('.row');
+                if (row) {
+                    row.classList.add('has-he-badges');
+                }
+            });
+
+            if (badgesCreated > 0 && AppState.debug) {
+                log(`Compacted ${badgesCreated} not-found message(s) into provider badges.`);
+            }
         },
 
         addClipboardButton: () => {
@@ -2613,6 +2734,9 @@
         AppState.dom.providerLinks = providersRow
             ? Array.from(providersRow.querySelectorAll('a[href]'))
             : [];
+
+        AppState.dom.providerInputs = Array.from(document.querySelectorAll('form.center label.provider-input'));
+        AppState.dom.errorMessages = Array.from(document.querySelectorAll('.message.error'));
     }
 
     /** Caches DOM elements for the release actions page. */
@@ -2764,6 +2888,45 @@
             .he-provider-relookup:hover {
                 border-color: #aaa;
                 color: var(--text);
+            }
+            .he-provider-chip-slot {
+                position: relative;
+                display: inline-flex;
+                vertical-align: top;
+            }
+            .he-not-found-badge {
+                position: absolute;
+                top: calc(100% + 4px);
+                left: 50%;
+                transform: translateX(-50%);
+                font-size: 10px;
+                font-weight: 600;
+                line-height: 1;
+                padding: 2px 6px;
+                border-radius: 3px;
+                background-color: #ffe7e7;
+                color: #de0604;
+                border: 1px solid rgba(222, 6, 4, 0.35);
+                cursor: help;
+                white-space: nowrap;
+                pointer-events: auto;
+                letter-spacing: 0.02em;
+                z-index: 1;
+            }
+            .he-not-found-badge:hover {
+                border-color: #de0604;
+                filter: brightness(0.96);
+            }
+            @media (prefers-color-scheme: dark) {
+                .he-not-found-badge {
+                    background-color: #3b1818;
+                    color: #ff9b9b;
+                    border-color: rgba(255, 155, 155, 0.4);
+                }
+            }
+            .row.has-he-badges {
+                margin-bottom: 2.2em;
+                row-gap: 1.8em;
             }
         `;
         GM_addStyle(css);
