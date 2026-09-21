@@ -1,5 +1,16 @@
+"""
+tools/build_list.py
+
+Scans userscripts in src/ and companion descriptions in docs/descriptions/
+to generate the central Markdown catalog at docs/USERSCRIPTS.md.
+
+Usage:
+    python tools/build_list.py [--help]
+"""
+
 import os
 import re
+import argparse
 from pathlib import Path
 from typing import List, Dict, Any
 
@@ -103,4 +114,8 @@ def build():
     print(f"Built USERSCRIPTS.md successfully at {output_file}")
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(
+        description="Generate docs/USERSCRIPTS.md catalog from src/ userscripts and docs/descriptions/."
+    )
+    parser.parse_args()
     build()

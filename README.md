@@ -17,3 +17,7 @@ To use these userscripts, you need a [userscript manager extension](https://wiki
 A list of all userscripts, including descriptions and installation links, can be found in [docs/USERSCRIPTS.md](docs/USERSCRIPTS.md).
 
 Most of the scripts are also available on [Greasy Fork](https://greasyfork.org/en/users/1473430-chaban).
+
+## Development
+
+For local userscript development using Violentmonkey's native tracking workflow, see the [Developer Tools Guide](tools/README.md).
