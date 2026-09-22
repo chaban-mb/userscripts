@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        Harmony: Enhancements
 // @namespace   https://musicbrainz.org/user/chaban
-// @version     1.28.0
+// @version     1.28.1
 // @description Adds some convenience features, various UI and behavior settings, as well as an improved language detection to Harmony.
 // @tag         ai-created
 // @author      chaban
@@ -2893,6 +2893,7 @@
                 position: relative;
                 display: inline-flex;
                 vertical-align: top;
+                margin-bottom: 1.4em;
             }
             .he-not-found-badge {
                 position: absolute;
@@ -2925,8 +2926,7 @@
                 }
             }
             .row.has-he-badges {
-                margin-bottom: 2.2em;
-                row-gap: 1.8em;
+                align-items: flex-start;
             }
         `;
         GM_addStyle(css);
