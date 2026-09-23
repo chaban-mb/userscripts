@@ -3,6 +3,7 @@
 This directory contains development utilities, automation scripts, and workflow tooling for the `userscripts` repository.
 
 ## Table of Contents
+
 - [Local Development Server (`dev_server.js`)](#local-development-server-dev_serverjs)
   - [Overview](#overview)
   - [CLI Usage & Options](#cli-usage--options)
@@ -21,15 +22,18 @@ A lightweight zero-dependency Node.js HTTP server designed specifically for **Vi
 ### Overview
 
 Developing userscripts by manually copy-pasting code into the browser editor on every change is slow and prone to errors. `tools/dev_server.js` serves scripts directly from `src/` over HTTP with on-the-fly development safeguards:
+
 - **In-Place Tracking (Zero Conflict)**: By default, `@name` is preserved identically to production so Violentmonkey updates your existing installed script in-place. This guarantees **only ONE script instance runs** on target sites (preventing duplicate UI elements and conflicting handlers).
 - **Git-Aware Versioning**: Injects the active git branch and commit hash into `@version` (e.g. `2.8.1-dev.beatport-checker.3357794`) for exact build identification in Violentmonkey without artificial version hacks.
 - **Update URL Redirection**: Rewrites `@updateURL` and `@downloadURL` to `http://localhost:8080/...` so Violentmonkey won't overwrite your local development script with upstream GitHub releases during polling.
 - **Shared Libraries**: Serves helper libraries from `lib/` (e.g., `/lib/MusicBrainzAPI.js`) for relative `@require` resolution.
 - **Web Dashboard**: Provides a clean visual interface at `http://localhost:8080/` with one-click tracking links and instant links to restore official release versions.
+- **Conflict Diagnostic & Graceful Shutdown**: Intercepts `EADDRINUSE` to identify the occupying process (`tasklist` / `lsof`) and offers automatic takeover (`--kill`) or fallback (`--find-port`). Drains active keep-alive sockets on shutdown to prevent `FIN_WAIT_2` lingers.
 
 ### CLI Usage & Options
 
 Start the development server:
+
 ```bash
 node tools/dev_server.js
 ```
@@ -43,6 +47,8 @@ node tools/dev_server.js
 | `--separate` | `false` | Tag `@name` with `[DEV]` to install side-by-side as a separate script. |
 | `--name-tag <tag>` | `[DEV]` (when `--separate`) | Custom suffix appended to the `@name` metadata field. |
 | `--no-tag` | `false` | Serve unmodified source files without injecting dev metadata or rewriting URLs. |
+| `--kill`, `--force` | `false` | Terminate any existing process occupying the port before starting. |
+| `--find-port` | `false` | Automatically select the next available port if requested port is in use. |
 | `--help`, `-h` | — | Display CLI help screen with tracking instructions and exit. |
 
 #### Examples
@@ -59,6 +65,12 @@ node tools/dev_server.js --separate
 
 # Serve raw production source without dev metadata injection
 node tools/dev_server.js --no-tag
+
+# Terminate conflicting process occupying port 8080 and take over
+node tools/dev_server.js --kill
+
+# Automatically bind to next available port (e.g. 8081) if 8080 is busy
+node tools/dev_server.js --find-port
 ```
 
 ### Tracking Scripts in Violentmonkey
@@ -66,9 +78,11 @@ node tools/dev_server.js --no-tag
 Follow these steps to establish live auto-reloading:
 
 1. **Start the server**:
+
    ```bash
    node tools/dev_server.js
    ```
+
 2. **Open the dashboard**:
    Navigate to [http://localhost:8080/](http://localhost:8080/) in your browser.
 3. **Select a script**:
@@ -85,6 +99,7 @@ Follow these steps to establish live auto-reloading:
 
 - **ETag Caching**: Violentmonkey sends `If-None-Match` requests matching the file's modification time. The server returns `304 Not Modified` when unchanged, minimizing CPU and network overhead.
 - **Metadata Injection**: The server intercepts the userscript metadata block on-the-fly using regex stream transformation:
+
   ```javascript
   // Original
   // @name        Beatport MusicBrainz Checker
@@ -108,6 +123,7 @@ python tools/workflow.py --help
 ```
 
 Key subcommands:
+
 - `status`: Show status of userscripts across branches.
 - `release <script_name>`: Bump version, build distribution files, create release commit, and tag release.
 - `sync`: Synchronize branch state with remotes.

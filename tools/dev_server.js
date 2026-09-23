@@ -45,6 +45,8 @@ OPTIONS:
   --separate          Install as a separate script by appending [DEV] to @name
   --name-tag <tag>    Custom suffix appended to @name (implies --separate)
   --no-tag            Serve raw script without injecting dev version or local update URLs
+  --kill, --force     Terminate any existing process occupying the port before starting
+  --find-port         Automatically select the next available port if requested port is in use
   --help, -h          Show this help screen and exit
 
 HOW TO TRACK SCRIPTS IN VIOLENTMONKEY:
@@ -73,6 +75,72 @@ const HOST = process.env.HOST || '127.0.0.1';
 const NO_TAG = ARGS.includes('--no-tag');
 const SEPARATE = ARGS.includes('--separate');
 const NAME_TAG = getArgValue('--name-tag') || (SEPARATE ? '[DEV]' : '');
+const KILL_OCCUPANT = ARGS.includes('--kill') || ARGS.includes('--force');
+const FIND_PORT = ARGS.includes('--find-port');
+
+let currentPort = PORT;
+const MAX_FALLBACK_PORT = PORT + 20;
+
+function getPortOccupant(port) {
+  try {
+    if (process.platform === 'win32') {
+      const cmd = `powershell -NoProfile -Command "$c = Get-NetTCPConnection -LocalPort ${port} -ErrorAction SilentlyContinue | Select-Object -First 1; if ($c) { $p = Get-Process -Id $c.OwningProcess -ErrorAction SilentlyContinue; \\"$($c.OwningProcess):$($p.ProcessName)\\" }"`;
+      const out = execSync(cmd, { encoding: 'utf8', stdio: ['pipe', 'pipe', 'ignore'], timeout: 3000 }).trim();
+      if (out && out.includes(':')) {
+        const [pidStr, name] = out.split(':');
+        const pid = parseInt(pidStr, 10);
+        if (!isNaN(pid) && pid > 0) {
+          return { pid, name: name ? `${name}.exe` : 'Unknown' };
+        }
+      }
+      const netstatOut = execSync('netstat -ano -p tcp', { encoding: 'utf8', stdio: ['pipe', 'pipe', 'ignore'], timeout: 2500 });
+      for (const line of netstatOut.split(/\r?\n/)) {
+        if (line.includes(`:${port}`) && !line.includes('TIME_WAIT')) {
+          const parts = line.trim().split(/\s+/);
+          const pid = parseInt(parts[parts.length - 1], 10);
+          if (!isNaN(pid) && pid > 0) {
+            return { pid, name: 'Unknown' };
+          }
+        }
+      }
+    } else {
+      const pidStr = execSync(`lsof -i :${port} -sTCP:LISTEN -t`, { encoding: 'utf8', stdio: ['pipe', 'pipe', 'ignore'], timeout: 2500 }).trim();
+      const pid = parseInt(pidStr.split('\n')[0], 10);
+      if (!isNaN(pid) && pid > 0) {
+        let name = 'Unknown';
+        try {
+          name = execSync(`ps -p ${pid} -o comm=`, { encoding: 'utf8', stdio: ['pipe', 'pipe', 'ignore'], timeout: 1000 }).trim();
+        } catch {}
+        return { pid, name };
+      }
+    }
+  } catch {}
+  return null;
+}
+
+function killProcess(pid) {
+  try {
+    if (process.platform === 'win32') {
+      execSync(`taskkill /F /PID ${pid}`, { stdio: ['pipe', 'pipe', 'ignore'], timeout: 3000 });
+    } else {
+      process.kill(pid, 'SIGKILL');
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function preparePort(port) {
+  if (KILL_OCCUPANT) {
+    const occupant = getPortOccupant(port);
+    if (occupant && occupant.pid !== process.pid) {
+      console.log(`\x1b[33m[DevServer]\x1b[0m Terminating conflicting process \x1b[36m${occupant.name}\x1b[0m (PID: \x1b[36m${occupant.pid}\x1b[0m) on port ${port}...`);
+      killProcess(occupant.pid);
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 300);
+    }
+  }
+}
 
 const REPO_ROOT = path.resolve(__dirname, '..');
 const SRC_DIR = path.join(REPO_ROOT, 'src');
@@ -139,7 +207,7 @@ function transformUserscript(rawCode, scriptFileName, reqHost, isSeparate = fals
   return code;
 }
 
-function renderDashboard(reqHost) {
+function renderDashboard(reqHost, port = currentPort) {
   const files = fs.readdirSync(SRC_DIR).filter(f => f.endsWith('.user.js'));
   const { branch, hash } = getGitInfo();
 
@@ -197,7 +265,7 @@ function renderDashboard(reqHost) {
       <div class="container">
         <div class="header">
           <h1 style="margin: 0 0 8px 0; font-size: 26px;">Violentmonkey Dev Server</h1>
-          <p style="margin: 0; color: #586069; font-size: 14px;">Active Git Branch: <code>${branch}</code> &bull; Commit: <code>${hash}</code> &bull; Port: <code>${PORT}</code></p>
+          <p style="margin: 0; color: #586069; font-size: 14px;">Active Git Branch: <code>${branch}</code> &bull; Commit: <code>${hash}</code> &bull; Port: <code>${port}</code></p>
         </div>
 
         <div class="hint">
@@ -219,7 +287,7 @@ function renderDashboard(reqHost) {
 }
 
 const server = http.createServer((req, res) => {
-  const hostHeader = req.headers.host || `${HOST}:${PORT}`;
+  const hostHeader = req.headers.host || `${HOST}:${currentPort}`;
   const parsedUrl = new URL(req.url, `http://${hostHeader}`);
   const pathname = decodeURIComponent(parsedUrl.pathname);
 
@@ -229,7 +297,7 @@ const server = http.createServer((req, res) => {
       'Content-Type': 'text/html; charset=utf-8',
       'Cache-Control': 'no-cache, no-store, must-revalidate',
     });
-    res.end(renderDashboard(hostHeader));
+    res.end(renderDashboard(hostHeader, currentPort));
     return;
   }
 
@@ -292,14 +360,71 @@ const server = http.createServer((req, res) => {
   }
 });
 
-server.listen(PORT, HOST, () => {
+server.on('error', (err) => {
+  if (err.code === 'EADDRINUSE') {
+    if (FIND_PORT && currentPort < MAX_FALLBACK_PORT) {
+      console.warn(`\x1b[33m[DevServer]\x1b[0m Port ${currentPort} is busy. Trying port ${currentPort + 1} (--find-port enabled)...`);
+      currentPort++;
+      preparePort(currentPort);
+      server.listen(currentPort, HOST);
+      return;
+    }
+
+    const occupant = getPortOccupant(currentPort);
+    console.error(`\n\x1b[31m====================================================\x1b[0m`);
+    console.error(`  \x1b[1;31m[DevServer Error] Port ${currentPort} is already in use.\x1b[0m`);
+    if (occupant) {
+      console.error(`  Occupied by: \x1b[33m${occupant.name}\x1b[0m (PID: \x1b[36m${occupant.pid}\x1b[0m)`);
+    } else {
+      console.error(`  (Could not identify process; port may be lingering in TCP teardown)`);
+    }
+    console.error(`\x1b[31m====================================================\x1b[0m`);
+    console.error(`\nResolution options:`);
+    console.error(`  1. Terminate conflicting process and take over port:`);
+    console.error(`       \x1b[36mnode tools/dev_server.js --kill\x1b[0m`);
+    if (occupant && process.platform === 'win32') {
+      console.error(`       \x1b[90m(or manually: taskkill /F /PID ${occupant.pid})\x1b[0m`);
+    } else if (occupant) {
+      console.error(`       \x1b[90m(or manually: kill -9 ${occupant.pid})\x1b[0m`);
+    }
+    console.error(`  2. Automatically select next available port:`);
+    console.error(`       \x1b[36mnode tools/dev_server.js --find-port\x1b[0m`);
+    console.error(`  3. Run on a specific alternative port:`);
+    console.error(`       \x1b[36mnode tools/dev_server.js --port <number>\x1b[0m\n`);
+    process.exit(1);
+  } else {
+    console.error(`\n\x1b[31m[DevServer Error]\x1b[0m ${err.message}\n`);
+    process.exit(1);
+  }
+});
+
+function handleGracefulShutdown(signal) {
+  console.log(`\n\x1b[33m[DevServer]\x1b[0m Received ${signal}, closing server and active connections...`);
+  if (typeof server.closeAllConnections === 'function') {
+    server.closeAllConnections();
+  }
+  server.close(() => {
+    process.exit(0);
+  });
+  setTimeout(() => {
+    process.exit(0);
+  }, 1500).unref();
+}
+
+process.on('SIGINT', () => handleGracefulShutdown('SIGINT'));
+process.on('SIGTERM', () => handleGracefulShutdown('SIGTERM'));
+
+preparePort(currentPort);
+
+server.listen(currentPort, HOST, () => {
   const { branch, hash } = getGitInfo();
+  const displayHost = (HOST === '127.0.0.1' || HOST === '0.0.0.0') ? 'localhost' : HOST;
   console.log(`\x1b[34m====================================================\x1b[0m`);
   console.log(`  \x1b[1mViolentmonkey Dev Server\x1b[0m`);
-  console.log(`  Listening at: \x1b[36mhttp://localhost:${PORT}/\x1b[0m`);
+  console.log(`  Listening at: \x1b[36mhttp://${displayHost}:${currentPort}/\x1b[0m`);
   console.log(`  Git branch:   \x1b[33m${branch}\x1b[0m (${hash})`);
   console.log(`  Dev tag:      \x1b[32m${NAME_TAG}\x1b[0m`);
   console.log(`\x1b[34m====================================================\x1b[0m`);
-  console.log(`Open http://localhost:${PORT}/ to track any script in Violentmonkey.`);
+  console.log(`Open http://${displayHost}:${currentPort}/ to track any script in Violentmonkey.`);
   console.log(`Run with --help to view detailed usage information.`);
 });
