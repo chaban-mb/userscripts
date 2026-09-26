@@ -3219,9 +3219,8 @@
                 }
             });
 
-            // Cache alt label names
-            AppState.dom.labelAltNames = Array.from(document.querySelectorAll('ul.release-labels ~ ul.alt-values .entity-links'))
-                .map(span => span.textContent.trim());
+            // Cache alt label elements
+            AppState.dom.labelAltElements = Array.from(document.querySelectorAll('ul.release-labels ~ ul.alt-values .entity-links'));
         }
 
         AppState.dom.labelListElements = document.querySelectorAll('ul.release-labels:not(.inline) li span.entity-links');
