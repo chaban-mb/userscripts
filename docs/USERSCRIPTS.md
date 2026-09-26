@@ -570,7 +570,12 @@ Enhances the MusicBrainz Release Editor by adding ISRC search capabilities to th
 [![Install](https://img.shields.io/badge/Install-success.svg?style=for-the-badge&logo=tampermonkey)](https://github.com/chaban-mb/userscripts/raw/main/src/MusicBrainz%20Subscriber%20Spam%20Filter.user.js)
 [![Source](https://img.shields.io/badge/Source-grey.svg?style=for-the-badge&logo=github)](https://github.com/chaban-mb/userscripts/blob/main/src/MusicBrainz%20Subscriber%20Spam%20Filter.user.js)
 
-*No description provided.*
+Filters spammers on your MusicBrainz subscriber list by detecting blocked profiles, edit statistics, and name patterns.
+
+### Features
+- **Spammer Detection:** Identifies blocked, hidden, and zero-edit accounts subscribed to your profile.
+- **Visual Highlighting:** Highlights suspect subscriber rows and provides quick actions to review or clean up subscriptions.
+- **Cached Profile Scrapes:** Caches profile inspection results to minimize network requests.
 
 ## MusicBrainz: Uncheck checkboxes with Esc
 
