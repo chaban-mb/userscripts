@@ -2090,24 +2090,123 @@
 
             const providers = releaseData.info?.providers || [];
             const providerCount = providers.length;
-            const regexp = /(?<title>.+?)(?:\s+?[~/-])(?![^(]*\)) (?<eti>.*)/;
+            const techTerms = AppState.settings[SETTINGS_CONFIG.techTerms.key];
+            const techTermsRegex = new RegExp(`\\b(${techTerms.join('|')})\\b`, 'i');
             let modifications = [];
 
-            const getCorrectedTitle = (originalTitle) => {
-                if (!originalTitle) return null;
-                const match = originalTitle.match(regexp);
-                if (!match) return null;
+            const extractTrailingParentheses = (title) => {
+                let current = title.trim();
+                const trailing = [];
 
-                const { title, eti } = match.groups;
-                const etiTrimmed = eti.trim();
-                if (!etiTrimmed) return null;
+                while (current.endsWith(')')) {
+                    let depth = 0;
+                    let openParenIndex = -1;
+                    for (let i = current.length - 1; i >= 0; i--) {
+                        if (current[i] === ')') {
+                            depth++;
+                        } else if (current[i] === '(') {
+                            depth--;
+                            if (depth === 0) {
+                                openParenIndex = i;
+                                break;
+                            }
+                        }
+                    }
 
-                // Split any further ETI sections separated by ' - ', ' ~ ', or ' / '
-                // The negative lookahead (?![^(]*\)) ensures we don't split on hyphens inside existing parentheses
-                const etiParts = etiTrimmed.split(/\s+[~/-]\s+(?![^(]*\))/).filter(part => part.trim() !== '');
-                const etiFormatted = etiParts.map(part => `(${part.trim()})`).join(' ');
+                    if (openParenIndex > 0) {
+                        const block = current.slice(openParenIndex);
+                        trailing.unshift(block);
+                        current = current.slice(0, openParenIndex).trim();
+                    } else {
+                        break;
+                    }
+                }
 
-                const newTitle = `${title.trim()} ${etiFormatted}`;
+                return { baseTitle: current, trailingParentheses: trailing };
+            };
+
+            const splitOutsideParentheses = (str) => {
+                const parts = [];
+                const delimiters = [];
+                let depth = 0;
+                let currentPart = '';
+                let i = 0;
+
+                while (i < str.length) {
+                    const char = str[i];
+                    if (char === '(') {
+                        depth++;
+                        currentPart += char;
+                        i++;
+                    } else if (char === ')') {
+                        if (depth > 0) depth--;
+                        currentPart += char;
+                        i++;
+                    } else if (depth === 0) {
+                        const sub = str.slice(i);
+                        const delimMatch = sub.match(/^(\s+[~/-]\s+)/);
+                        if (delimMatch) {
+                            parts.push(currentPart.trim());
+                            delimiters.push(delimMatch[1]);
+                            currentPart = '';
+                            i += delimMatch[1].length;
+                        } else {
+                            currentPart += char;
+                            i++;
+                        }
+                    } else {
+                        currentPart += char;
+                        i++;
+                    }
+                }
+                parts.push(currentPart.trim());
+                return { parts, delimiters };
+            };
+
+            const getCorrectedTitle = (originalTitle, isDiscrepancy = false) => {
+                if (!originalTitle || typeof originalTitle !== 'string') return null;
+
+                const { baseTitle, trailingParentheses } = extractTrailingParentheses(originalTitle);
+                if (!baseTitle) return null;
+
+                const { parts, delimiters } = splitOutsideParentheses(baseTitle);
+                if (parts.length < 2) return null;
+
+                // Determine which trailing parts are ETIs
+                const etiIndices = [];
+                for (let i = parts.length - 1; i >= 1; i--) {
+                    const part = parts[i];
+                    if (!part) break;
+
+                    const isTechTerm = techTermsRegex.test(part);
+                    // Condition B: only if there are no existing trailing parentheses,
+                    // it's the last part, and a multi-provider discrepancy is present.
+                    const isDiscrepancyETI = isDiscrepancy && trailingParentheses.length === 0 && i === parts.length - 1;
+
+                    if (isTechTerm || isDiscrepancyETI) {
+                        etiIndices.unshift(i);
+                    } else {
+                        // Once a part is not an ETI, stop - all preceding parts belong to the title
+                        break;
+                    }
+                }
+
+                if (etiIndices.length === 0) return null;
+
+                const firstEtiIndex = etiIndices[0];
+                let newTitle = parts[0];
+                for (let i = 1; i < firstEtiIndex; i++) {
+                    newTitle += delimiters[i - 1] + parts[i];
+                }
+
+                const etiFormatted = etiIndices.map(idx => `(${parts[idx]})`).join(' ');
+                newTitle = `${newTitle.trim()} ${etiFormatted}`;
+
+                if (trailingParentheses.length > 0) {
+                    newTitle = `${newTitle.trim()} ${trailingParentheses.join(' ')}`;
+                }
+
+                if (newTitle === originalTitle) return null;
                 return { original: originalTitle, new: newTitle };
             };
 
@@ -2130,17 +2229,15 @@
                 UI_UTILS.updateElementText(element, newTitle, originalTitle, 'Original title:');
             };
 
-            // --- First Pass: Determine which titles are normalizable ---
-            const normalizableTitles = new Set();
-            const techTerms = AppState.settings[SETTINGS_CONFIG.techTerms.key];
-            const techTermsRegex = new RegExp(`\\b(${techTerms.join('|')})\\b`, 'i');
+            // --- First Pass: Determine corrections for normalizable titles ---
+            const titleCorrections = new Map();
 
             // Consolidate all titles and their potential UI nodes
             const titlesToScan = [
                 { title: releaseData.title, node: releaseTitleNode },
                 ...releaseData.media.flatMap(m => m.tracklist?.map(t => ({
                     title: t.title,
-                    node: Array.from(tracklistTitleCells).find(cell => cell.textContent.includes(t.title)),
+                    node: Array.from(tracklistTitleCells || []).find(cell => cell.textContent.includes(t.title)),
                 })) || [])
             ].filter(item => item.title); // Ensure title exists
 
@@ -2149,45 +2246,35 @@
 
             uniqueTitlesToScan.forEach(item => {
                 const { title, node } = item;
-                const match = title.match(regexp);
-                if (!match) return; // Doesn't have hyphenated ETI
-
-                // Condition A: ETI contains a known "tech term" (always safe)
-                const { eti } = match.groups;
-                const etiTrimmed = eti.trim();
-                if (etiTrimmed && techTermsRegex.test(etiTrimmed)) {
-                    normalizableTitles.add(title);
-                    return; // Added, no need to check condition B
-                }
-
-                // Condition B: Multi-provider release AND a UI discrepancy is shown
-                // (This is the original safeguard against false positives)
-                if (providerCount > 1) {
-                    if (node && node.querySelector('ul.alt-values')) {
-                        normalizableTitles.add(title);
-                    }
+                const isDiscrepancy = providerCount > 1 && Boolean(node?.querySelector('ul.alt-values'));
+                const correction = getCorrectedTitle(title, isDiscrepancy);
+                if (correction) {
+                    titleCorrections.set(title, correction);
                 }
             });
 
             // --- Second Pass: Apply corrections to normalizable titles ---
             // Correct the release title
-            const releaseTitleCorrection = getCorrectedTitle(releaseData.title);
-            if (releaseTitleCorrection && normalizableTitles.has(releaseTitleCorrection.original)) {
+            const releaseTitleCorrection = titleCorrections.get(releaseData.title);
+            if (releaseTitleCorrection) {
                 AppState.data.release.title = releaseTitleCorrection.new;
                 modifications.push(`Release title: "${releaseTitleCorrection.original}" -> "${releaseTitleCorrection.new}"`);
                 updateTitleUI(releaseTitleNode, releaseTitleCorrection.original, releaseTitleCorrection.new);
             }
 
             // Correct each track title
+            let trackIndex = 0;
             releaseData.media.forEach(medium => {
                 medium.tracklist?.forEach(track => {
-                    const trackTitleCorrection = getCorrectedTitle(track.title);
-                    if (trackTitleCorrection && normalizableTitles.has(trackTitleCorrection.original)) {
+                    const currentTrackIndex = trackIndex++;
+                    const trackTitleCorrection = titleCorrections.get(track.title);
+                    if (trackTitleCorrection) {
                         track.title = trackTitleCorrection.new;
                         modifications.push(`Track ${track.number}: "${trackTitleCorrection.original}" -> "${trackTitleCorrection.new}"`);
 
-                        const trackCell = Array.from(tracklistTitleCells)
-                            .find(cell => cell.textContent.includes(trackTitleCorrection.original));
+                        const trackCell = tracklistTitleCells?.[currentTrackIndex]?.textContent.includes(trackTitleCorrection.original)
+                            ? tracklistTitleCells[currentTrackIndex]
+                            : Array.from(tracklistTitleCells || []).find(cell => cell.textContent.includes(trackTitleCorrection.original));
                         if (trackCell) {
                             const titleTextNode = findTextNode(trackCell, trackTitleCorrection.original);
                             if (titleTextNode) {
