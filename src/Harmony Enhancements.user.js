@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        Harmony: Enhancements
 // @namespace   https://musicbrainz.org/user/chaban
-// @version     1.29.1
+// @version     1.29.2
 // @description Adds some convenience features, various UI and behavior settings, as well as an improved language detection to Harmony.
 // @tag         ai-created
 // @author      chaban
@@ -2383,7 +2383,7 @@
             if (!releaseData?.media) return;
 
             // Keywords that indicate a remix/version string
-            const REMIX_KEYWORDS = ['Remix', 'Rework', 'Edit', 'Mix', 'Flip', 'Bootleg', 'Mashup', 'VIP', 'Dub', 'Version', 'Redub'];
+            const REMIX_KEYWORDS = ['Remix', 'Rework', 'Edit', 'Mix', 'Flip', 'Bootleg', 'Mashup', 'VIP', 'Dub', 'Version', 'Redub', 'RMX'];
             const KEYWORDS_REGEX = new RegExp(`\\b(${REMIX_KEYWORDS.join('|')})\\b`, 'i');
 
             // Regex to find content in parentheses or brackets at the end of the title
