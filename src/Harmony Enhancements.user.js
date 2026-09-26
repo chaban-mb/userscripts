@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        Harmony: Enhancements
 // @namespace   https://musicbrainz.org/user/chaban
-// @version     1.29.0
+// @version     1.29.1
 // @description Adds some convenience features, various UI and behavior settings, as well as an improved language detection to Harmony.
 // @tag         ai-created
 // @author      chaban
@@ -2271,7 +2271,7 @@
                         const overwrittenSpan = UI_UTILS.createIndicatorSpan('overwritten', originalLabel.name, {
                             tooltipPrefix: 'Original label:',
                         });
-                        if (!labelListElement.nextElementSibling || !labelListElement.nextElementSibling.classList.contains('he-overwritten-label')) {
+                        if (!labelListElement.nextElementSibling?.classList.contains('he-badge') && !labelListElement.nextElementSibling?.classList.contains('he-overwritten-label')) {
                             labelListElement.parentNode.insertBefore(overwrittenSpan, labelListElement.nextSibling);
                         }
                     }
@@ -2518,7 +2518,7 @@
 
                     // Remove existing HE indicators if present (to avoid stacking)
                     const existingIndicator = labelListElement.nextElementSibling;
-                    if (existingIndicator?.classList.contains('he-added-label') || existingIndicator?.classList.contains('he-overwritten-label')) {
+                    if (existingIndicator?.classList.contains('he-badge') || existingIndicator?.classList.contains('he-added-label') || existingIndicator?.classList.contains('he-overwritten-label')) {
                         existingIndicator.remove();
                     }
 
@@ -3159,10 +3159,31 @@
             .release-artist::before { content: "by "; }
             .release-artist > :first-child { margin-left: 0.25em; }
             ${AppState.settings[SETTINGS_CONFIG.hideDebugMessages.key] ? '.message.debug { display: none !important; }' : ''}
+            .he-badge {
+                font-size: 0.8em;
+                font-weight: bold;
+                cursor: help;
+                margin-left: 0.5em;
+                white-space: nowrap;
+            }
+            .he-badge--overwritten,
+            .he-badge--removed {
+                color: #d9534f;
+                border-bottom: 1px dotted #d9534f;
+            }
+            .he-badge--added {
+                color: #4CAF50;
+                border-bottom: 1px dotted #4CAF50;
+            }
+            .he-badge--standalone {
+                margin-left: 0;
+            }
             .he-overwritten-label,.he-added-label {
                 font-size: 0.8em;
                 font-weight: bold;
                 cursor: help;
+                margin-left: 0.5em;
+                white-space: nowrap;
             }
             .he-overwritten-label {
                 color: #d9534f;
