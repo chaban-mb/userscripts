@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Beatport: MusicBrainz Checker
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      2.8.0
+// @version      2.8.1
 // @description  Adds MusicBrainz status icons to Beatport releases on list pages and links missing releases for importing
 // @tag          ai-created
 // @author       RustyNova, chaban
@@ -280,7 +280,7 @@
      */
     init: function () {
       this._mbApi = new MusicBrainzAPI({
-        user_agent: `${Config.USER_AGENT}/${GM_info.script.version} ( ${GM_info.script.namespace} )`
+        user_agent: `${Config.USER_AGENT}/${GM.info.script.version} ( ${GM.info.script.namespace} )`
       });
       this._injectCSS();
       this._hookNextRouter();

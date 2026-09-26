@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        YouTube: MusicBrainz Importer
 // @namespace   https://musicbrainz.org/user/chaban
-// @version     2.12.2
+// @version     2.12.3
 // @description Imports YouTube videos to MusicBrainz as a new standalone recording
 // @tag         ai-created
 // @author      nikki, RustyNova, chaban
@@ -148,7 +148,7 @@
         MUSICBRAINZ_FREE_STREAMING_RELATION_TYPE_ID: '7e41ef12-a124-4324-afdb-fdbae687a89c',
     };
 
-    const USER_AGENT = `${Config.SHORT_APP_NAME}/${GM_info.script.version} ( ${GM_info.script.namespace} )`;
+    const USER_AGENT = `${Config.SHORT_APP_NAME}/${GM.info.script.version} ( ${GM.info.script.namespace} )`;
 
     /**
      * Manages the ListenBrainz user token.
@@ -1209,7 +1209,7 @@
 
             console.info(`[${GM.info.script.name}] Video: "${ytData ? (ytData.snippet.title || ytData.id) : 'N/A'}"`, {
                 event: 'video_processed',
-                version: GM_info.script.version,
+                version: GM.info.script.version,
                 videoId: ytData ? ytData.id : '',
                 videoTitle: ytData ? ytData.snippet.title : '',
                 canonicalUrl: canonicalYtUrl || (ytData ? `https://www.youtube.com/watch?v=${ytData.id}` : null),
@@ -1296,7 +1296,7 @@
 
             console.info(`[${GM.info.script.name}] Channel: "${channelData.channelTitle || channelData.handle || 'N/A'}"`, {
                 event: 'channel_processed',
-                version: GM_info.script.version,
+                version: GM.info.script.version,
                 channelTitle: channelData.channelTitle || '',
                 channelId: channelData.channelId || '',
                 handle: channelData.handle || '',
@@ -1964,7 +1964,7 @@
             this._addField('edit-recording.video', '1');
             this._addField('edit-recording.url.0.text', canonicalYtUrl);
             this._addField('edit-recording.url.0.link_type_id', Config.MUSICBRAINZ_FREE_STREAMING_LINK_TYPE_ID);
-            const scriptInfo = GM_info.script;
+            const scriptInfo = GM.info.script;
             const editNote = `${canonicalYtUrl}\n—\n${scriptInfo.name} (v${scriptInfo.version})`;
             this._addField('edit-recording.edit_note', editNote);
 
@@ -2019,7 +2019,7 @@
                 if (!hasLength && ytHasLength) {
                     outcome = 'update_length';
                     const lengthInMs = youtubeVideoData.contentDetails.durationMs || youtubeVideoData.contentDetails.directMs;
-                    const scriptInfo = GM_info.script;
+                    const scriptInfo = GM.info.script;
                     const editNote = `${canonicalYtUrl}\n—\n${scriptInfo.name} (v${scriptInfo.version})`;
                     const encodedEditNote = encodeURIComponent(editNote);
                     const href = `//musicbrainz.org/recording/${recordingMBID}/edit?edit-recording.length=${lengthInMs}&edit-recording.edit_note=${encodedEditNote}`;
@@ -2307,7 +2307,7 @@
                 }
             }
 
-            const scriptInfo = GM_info.script;
+            const scriptInfo = GM.info.script;
             const editNote = `${cleanUrl}\n—\n${scriptInfo.name} (v${scriptInfo.version})`;
             params.set('edit-artist.edit_note', editNote);
 

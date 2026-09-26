@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        MusicBrainz: Hotkeys for selected entities
 // @namespace   https://musicbrainz.org/user/chaban
-// @version     1.8.0
+// @version     1.8.1
 // @description Adds hotkeys to perform actions on selected entities. "A" = Artwork, "D" = Delete, "E" = Edit, "W" = Merge, "Q" = Aliases, "R" = Relationship Editor, "H" = Editing History
 // @tag         ai-created
 // @author      chaban
@@ -39,8 +39,8 @@
 (function () {
     'use strict';
 
-    const SCRIPT_NAMESPACE = GM_info.script.namespace;
-    const SCRIPT_NAME = GM_info.script.name;
+    const SCRIPT_NAMESPACE = GM.info.script.namespace;
+    const SCRIPT_NAME = GM.info.script.name;
     const ACTION_EVENT_NAME = 'UserJS:MusicBrainz';
 
     const entityTypes = {
