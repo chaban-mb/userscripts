@@ -2444,8 +2444,12 @@
 
             if (labelMap.size === 0) return;
 
+            const { labelListElements } = AppState.dom;
+
             releaseData.labels.forEach((originalLabel, index) => {
                 if (!originalLabel?.name) return;
+
+                const labelListElement = labelListElements[index];
 
                 const currentLabelName = originalLabel.name.trim();
                 const isPrimaryLabel = index === 0;
