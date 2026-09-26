@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        Click buttons across tabs
 // @namespace   https://musicbrainz.org/user/chaban
-// @version     4.13.1
+// @version     4.13.2
 // @description Clicks specified buttons across tabs using the Broadcast Channel API and closes tabs after successful submission.
 // @tag         ai-created
 // @author      chaban
@@ -10,8 +10,8 @@
 // @match       *://magicisrc.kepstin.ca/*
 // @match       *://magicisrc-beta.kepstin.ca/*
 // @match       *://isrchunt.com/*
-// @grant       GM_registerMenuCommand
-// @grant       GM_unregisterMenuCommand
+// @grant       GM.registerMenuCommand
+// @grant       GM.unregisterMenuCommand
 // @grant       GM.getValue
 // @grant       GM.setValue
 // @grant       window.close
@@ -1103,13 +1103,13 @@
     async function setupMenuCommands() {
         for (const commandId of registeredMenuCommandIDs) {
             try {
-                GM_unregisterMenuCommand(commandId);
+                await GM.unregisterMenuCommand(commandId);
             } catch (e) { /* ignore */ }
         }
         registeredMenuCommandIDs = [];
 
-        const registerCommand = (name, func) => {
-            const id = GM_registerMenuCommand(name, func);
+        const registerCommand = async (name, func) => {
+            const id = await GM.registerMenuCommand(name, func);
             registeredMenuCommandIDs.push(id);
         };
 
@@ -1162,7 +1162,7 @@
 
         for (const setting of settings) {
             const value = await GM.getValue(setting.key, setting.defaultValue);
-            registerCommand(await setting.getLabel(value), async () => {
+            await registerCommand(await setting.getLabel(value), async () => {
                 await setting.onClick(value);
                 await setupMenuCommands();
             });
@@ -1172,7 +1172,7 @@
         const configsForMenu = activeConfigs.filter(c => !c.autoClick && c.menuCommandName);
 
         for (const config of configsForMenu) {
-            registerCommand(config.menuCommandName, async () => {
+            await registerCommand(config.menuCommandName, async () => {
                 await acquireThrottlingBypass();
                 const channel = new BroadcastChannel(config.channelName);
                 channel.postMessage(config.messageTrigger);

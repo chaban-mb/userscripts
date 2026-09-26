@@ -1,16 +1,16 @@
 // ==UserScript==
 // @name        ListenBrainz: Extended Controls
 // @namespace   https://musicbrainz.org/user/chaban
-// @version     1.2.11
+// @version     1.2.12
 // @description Allows customizing which actions are shown in listen controls cards, moving "Open in Music Service" links to the main controls area, displaying source info, and auto-copying text in the "Link Listen" modal.
 // @tag         ai-created
 // @author      chaban
 // @license     MIT
 // @match       https://*.listenbrainz.org/*
 // @icon        https://listenbrainz.org/static/img/favicon-256.png
-// @grant       GM_setValue
-// @grant       GM_getValue
-// @grant       GM_addStyle
+// @grant       GM.setValue
+// @grant       GM.getValue
+// @grant       GM.addStyle
 // @run-at      document-end
 // @updateURL   https://github.com/chaban-mb/userscripts/raw/dist/src/ListenBrainz%20Extended%20Controls.user.js
 // @downloadURL https://github.com/chaban-mb/userscripts/raw/dist/src/ListenBrainz%20Extended%20Controls.user.js
@@ -89,7 +89,7 @@
         showHarmonyButton: true
     };
 
-    let settings = GM_getValue('UserJS.ListenBrainz.ExtendedListenControls', DEFAULT_SETTINGS);
+    let settings = { ...DEFAULT_SETTINGS };
     const processedCards = new WeakSet();
     const processedCopyButtons = new WeakSet();
     let discoveredActions = new Set();
@@ -98,7 +98,7 @@
     const notify = () => window.dispatchEvent(new CustomEvent('UserJS.ListenBrainz.ExtendedListenControls.settings_changed'));
 
     // --- Native UI Styles ---
-    GM_addStyle(`
+    GM.addStyle(`
         #lb-ext-settings-menu {
             position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
             z-index: 10000; width: 340px; max-height: 85vh; overflow-y: auto;
@@ -172,13 +172,13 @@
                 type: 'checkbox',
                 checked: isKey ? settings[target] : settings.enabledActions.includes(target),
                 on: {
-                    change: (e) => {
+                    change: async (e) => {
                         if (isKey) settings[target] = e.target.checked;
                         else {
                             if (e.target.checked) !settings.enabledActions.includes(target) && settings.enabledActions.push(target);
                             else settings.enabledActions = settings.enabledActions.filter(a => a !== target);
                         }
-                        GM_setValue('UserJS.ListenBrainz.ExtendedListenControls', settings);
+                        await GM.setValue('UserJS.ListenBrainz.ExtendedListenControls', settings);
                         notify();
                     }
                 }
@@ -496,6 +496,12 @@
         }
     }
 
-    scanPage();
-    new MutationObserver(scanPage).observe(document.body, { childList: true, subtree: true });
+    async function init() {
+        const stored = await GM.getValue('UserJS.ListenBrainz.ExtendedListenControls', DEFAULT_SETTINGS);
+        settings = { ...DEFAULT_SETTINGS, ...stored };
+        scanPage();
+        new MutationObserver(scanPage).observe(document.body, { childList: true, subtree: true });
+    }
+
+    init().catch(console.error);
 })();
