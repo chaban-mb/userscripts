@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        MusicBrainz: Add search link for barcode
 // @namespace   https://musicbrainz.org/user/chaban
-// @version     3.2.5
+// @version     3.2.6
 // @description Searches for existing releases in "Add release" edits by barcode, highlights and adds a search link on match
 // @tag         ai-created
 // @author      chaban
@@ -19,7 +19,7 @@
 // @connect     self
 // @require     ../lib/MusicBrainzAPI.js
 // @icon        https://musicbrainz.org/static/images/favicons/android-chrome-512x512.png
-// @grant       GM_xmlhttpRequest
+// @grant       GM.xmlHttpRequest
 // @updateURL   https://github.com/chaban-mb/userscripts/raw/main/src/MusicBrainz%20Add%20search%20link%20for%20barcode.user.js
 // @downloadURL https://github.com/chaban-mb/userscripts/raw/main/src/MusicBrainz%20Add%20search%20link%20for%20barcode.user.js
 // ==/UserScript==

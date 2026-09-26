@@ -1,15 +1,15 @@
 // ==UserScript==
 // @name        MusicBrainz: Remember Search Type
 // @namespace   https://musicbrainz.org/user/chaban
-// @version     1.0.2
+// @version     1.0.3
 // @description Remembers the last selected entity type in the header search bar (expires after 48h).
 // @tag         ai-created
 // @author      chaban
 // @license     MIT
 // @match       *://*.musicbrainz.org/*
 // @match       *://*.musicbrainz.eu/*
-// @grant       GM_getValue
-// @grant       GM_setValue
+// @grant       GM.getValue
+// @grant       GM.setValue
 // @run-at      document-end
 // @updateURL   https://github.com/chaban-mb/userscripts/raw/main/src/MusicBrainz%20Remember%20Search%20Type.user.js
 // @downloadURL https://github.com/chaban-mb/userscripts/raw/main/src/MusicBrainz%20Remember%20Search%20Type.user.js
@@ -48,7 +48,7 @@
     } else {
         // 3. Lowest priority: The last saved value from GM storage.
         try {
-            storedValue = await GM_getValue(STORAGE_KEY);
+            storedValue = await GM.getValue(STORAGE_KEY);
             if (storedValue && storedValue.timestamp && storedValue.type) {
                 const now = new Date().getTime();
                 if ((now - storedValue.timestamp) < EXPIRY_DURATION_MS) {
@@ -73,7 +73,7 @@
                 type: type,
                 timestamp: new Date().getTime()
             };
-            await GM_setValue(STORAGE_KEY, dataToStore);
+            await GM.setValue(STORAGE_KEY, dataToStore);
         } catch (e) {
             console.error(`[${SCRIPT_NAME}] Error setting stored value:`, e);
         }

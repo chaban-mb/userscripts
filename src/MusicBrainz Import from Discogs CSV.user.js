@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        MusicBrainz: Import from Discogs CSV
 // @namespace   https://musicbrainz.org/user/chaban
-// @version     0.2.5
+// @version     0.2.6
 // @description Imports releases to a MusicBrainz collection based on a Discogs CSV export by matching Discogs IDs to MusicBrainz Releases.
 // @tag         ai-created
 // @author      chaban
@@ -12,7 +12,7 @@
 // @exclude     https://*musicbrainz.eu/collection/*/*
 // @connect     self
 // @require     https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js
-// @grant       GM_xmlhttpRequest
+// @grant       GM.xmlHttpRequest
 // @updateURL   https://github.com/chaban-mb/userscripts/raw/main/src/MusicBrainz%20Import%20from%20Discogs%20CSV.user.js
 // @downloadURL https://github.com/chaban-mb/userscripts/raw/main/src/MusicBrainz%20Import%20from%20Discogs%20CSV.user.js
 // ==/UserScript==
@@ -155,9 +155,9 @@
                 const url = `${this.baseUrl}/collection/${collectionId}/releases/${releaseString}?client=userscript-csv-importer`;
 
                 try {
-                    // Uses GM_xmlhttpRequest to bypass potential CORS/Header issues with PUT
+                    // Uses GM.xmlHttpRequest to bypass potential CORS/Header issues with PUT
                     await new Promise((resolve, reject) => {
-                        GM_xmlhttpRequest({
+                        GM.xmlHttpRequest({
                             method: "PUT",
                             url: url,
                             headers: {

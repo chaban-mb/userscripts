@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        ISBN Barcode Generator
 // @namespace   https://musicbrainz.org/user/chaban
-// @version     0.1.5
+// @version     0.1.6
 // @description Erkennt ISBNs und bettet einen scanbaren Barcode direkt ein. Mit An/Aus-Schalter im Menü.
 // @tag         ai-created
 // @author      chaban
@@ -17,12 +17,12 @@
 // @match       https://www.danibooks.de/*
 // @match       https://dokico.de/*
 // @connect     barcode.tec-it.com
-// @grant       GM_addStyle
-// @grant       GM_getValue
-// @grant       GM_setValue
-// @grant       GM_registerMenuCommand
-// @grant       GM_unregisterMenuCommand
-// @grant       GM_addElement
+// @grant       GM.addStyle
+// @grant       GM.getValue
+// @grant       GM.setValue
+// @grant       GM.registerMenuCommand
+// @grant       GM.unregisterMenuCommand
+// @grant       GM.addElement
 // @updateURL   https://github.com/chaban-mb/userscripts/raw/main/src/ISBN%20Barcode%20Generator.user.js
 // @downloadURL https://github.com/chaban-mb/userscripts/raw/main/src/ISBN%20Barcode%20Generator.user.js
 // ==/UserScript==
@@ -119,7 +119,7 @@
         const imageWrapper = document.createElement('div');
         imageWrapper.className = IMAGE_WRAPPER_CLASS;
 
-        GM_addElement(imageWrapper, 'img', {
+        GM.addElement(imageWrapper, 'img', {
             src: imageUrl,
             alt: altText
         });
@@ -133,7 +133,7 @@
      * Injiziert das CSS für die eingebetteten Barcodes.
      */
     function addGlobalStyle() {
-        GM_addStyle(`
+        GM.addStyle(`
             .${WRAPPER_CLASS} {
                 display: inline-block;
                 vertical-align: bottom;
@@ -239,28 +239,28 @@
         });
     }
 
-    function enableBarcodeEmbedding() {
-        GM_setValue(SETTING_KEY, true);
+    async function enableBarcodeEmbedding() {
+        await GM.setValue(SETTING_KEY, true);
         scanAndWrapISBNs();
-        updateMenuCommand();
+        await updateMenuCommand();
     }
 
-    function disableBarcodeEmbedding() {
-        GM_setValue(SETTING_KEY, false);
+    async function disableBarcodeEmbedding() {
+        await GM.setValue(SETTING_KEY, false);
         removeEmbeddedBarcodes();
-        updateMenuCommand();
+        await updateMenuCommand();
     }
 
-    function updateMenuCommand() {
+    async function updateMenuCommand() {
         if (menuCommandId) {
-            GM_unregisterMenuCommand(menuCommandId);
+            await GM.unregisterMenuCommand(menuCommandId);
         }
 
-        const isEnabled = GM_getValue(SETTING_KEY, true);
+        const isEnabled = await GM.getValue(SETTING_KEY, true);
         const label = isEnabled ? "✅ ISBN-Barcodes ausblenden" : "❌ ISBN-Barcodes einbetten";
         const commandFunc = isEnabled ? disableBarcodeEmbedding : enableBarcodeEmbedding;
 
-        menuCommandId = GM_registerMenuCommand(label, commandFunc);
+        menuCommandId = await GM.registerMenuCommand(label, commandFunc);
     }
 
     // --- Skriptstart ---
@@ -268,8 +268,8 @@
     addGlobalStyle();
     updateMenuCommand();
 
-    const debouncedScan = debounce(() => {
-        if (GM_getValue(SETTING_KEY, true)) {
+    const debouncedScan = debounce(async () => {
+        if (await GM.getValue(SETTING_KEY, true)) {
             scanAndWrapISBNs();
         }
     }, 500);
@@ -295,12 +295,14 @@
 
     observer.observe(document.body, { childList: true, subtree: true });
 
-    if (GM_getValue(SETTING_KEY, true)) {
-        if (document.readyState === 'loading') {
-            document.addEventListener('DOMContentLoaded', scanAndWrapISBNs);
-        } else {
-            setTimeout(scanAndWrapISBNs, 500);
+    (async () => {
+        if (await GM.getValue(SETTING_KEY, true)) {
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', scanAndWrapISBNs);
+            } else {
+                setTimeout(scanAndWrapISBNs, 500);
+            }
         }
-    }
+    })();
 
 })();
