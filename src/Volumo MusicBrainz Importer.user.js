@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        Volumo: MusicBrainz Importer
 // @namespace   https://musicbrainz.org/user/chaban
-// @version     1.4.4
+// @version     1.4.5
 // @description Allows importing releases from Volumo into MusicBrainz.
 // @tag         ai-created
 // @author      chaban
@@ -490,7 +490,7 @@ class PermanentError extends Error {
 
         constructor() {
             this.#mbApi = new MusicBrainzAPI({
-                user_agent: `${VolumoMusicBrainzImporter.SCRIPT_NAME}/${GM.info.script.version} ( ${GM_info.script.namespace} )`
+                user_agent: `${VolumoMusicBrainzImporter.SCRIPT_NAME}/${GM.info.script.version} ( ${GM.info.script.namespace} )`
             });
             this.#addStyles();
 

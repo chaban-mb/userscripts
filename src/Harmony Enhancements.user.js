@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        Harmony: Enhancements
 // @namespace   https://musicbrainz.org/user/chaban
-// @version     1.28.1
+// @version     1.28.2
 // @description Adds some convenience features, various UI and behavior settings, as well as an improved language detection to Harmony.
 // @tag         ai-created
 // @author      chaban
@@ -9,10 +9,10 @@
 // @match       https://harmony.pulsewidth.org.uk/*
 // @match       https://harmony.mybrainz.dev/*
 // @icon        https://harmony.pulsewidth.org.uk/harmony-logo.svg
-// @grant       GM_getValue
-// @grant       GM_setValue
-// @grant       GM_deleteValue
-// @grant       GM_addStyle
+// @grant       GM.getValue
+// @grant       GM.setValue
+// @grant       GM.deleteValue
+// @grant       GM.addStyle
 // @updateURL   https://github.com/chaban-mb/userscripts/raw/dist/src/Harmony%20Enhancements.user.js
 // @downloadURL https://github.com/chaban-mb/userscripts/raw/dist/src/Harmony%20Enhancements.user.js
 // ==/UserScript==
@@ -20,7 +20,7 @@
 (function () {
     'use strict';
 
-    const SCRIPT_NAME = GM_info.script.name;
+    const SCRIPT_NAME = GM.info.script.name;
     const TOOLTIP_DISPLAY_DURATION = 2000;
     const DATA_ATTRIBUTE_APPLIED = 'data-he-applied';
     const NO_LABEL = {
@@ -565,7 +565,7 @@
             // Only populate setting if it's not already set, or if this config entry provides a default value.
             // This prevents "headless" configs (routing/submit modules) from overwriting actual settings with undefined.
             if (settings[config.key] === undefined || config.defaultValue !== undefined) {
-                settings[config.key] = await GM_getValue(config.key, config.defaultValue);
+                settings[config.key] = await GM.getValue(config.key, config.defaultValue);
             }
         }
         return settings;
@@ -668,7 +668,7 @@
         _defaultValue: SETTINGS_CONFIG.debugMode.defaultValue,
 
         async init() {
-            AppState.debug = await GM_getValue(this._key, this._defaultValue);
+            AppState.debug = await GM.getValue(this._key, this._defaultValue);
             if (AppState.debug) {
                 this._setupFeatures();
                 log('Debug mode is ON. Per-module logs and timers will appear on page load.');
@@ -699,7 +699,7 @@
         async toggle() {
             const newState = !AppState.debug;
 
-            await GM_setValue(this._key, newState);
+            await GM.setValue(this._key, newState);
             AppState.debug = newState;
 
             if (newState) {
@@ -1243,7 +1243,7 @@
                     if (descriptionEl) {
                         input.setAttribute('aria-describedby', descriptionEl.id);
                     }
-                    const save = () => {
+                    const save = async () => {
                         let value;
                         if (config.type === 'checkbox') {
                             value = input.checked;
@@ -1257,7 +1257,7 @@
                         } else if (config.type === 'textarea') {
                             value = input.value.split('\n').map(s => s.trim()).filter(Boolean);
                         }
-                        GM_setValue(config.key, value);
+                        await GM.setValue(config.key, value);
                     };
                     input.addEventListener('change', save);
                     if (config.type === 'range' || config.type === 'textarea') {
@@ -1298,7 +1298,7 @@
     async function resetLanguageSettings() {
         const langConfigs = Object.values(SETTINGS_CONFIG).filter(c => c.section === 'Language Detection');
         for (const config of langConfigs) {
-            await GM_deleteValue(config.key);
+            await GM.deleteValue(config.key);
             const input = document.getElementById(config.key);
             if (!input) continue;
 
@@ -2929,7 +2929,7 @@
                 align-items: flex-start;
             }
         `;
-        GM_addStyle(css);
+        GM.addStyle(css);
     }
 
     /**
@@ -2957,11 +2957,11 @@
             }
 
             log(`Migrated to new mode: '${newMode}'`);
-            await GM_setValue(modeKey, newMode);
+            await GM.setValue(modeKey, newMode);
             AppState.settings[modeKey] = newMode;
-            await GM_deleteValue(oldEnabledKey);
-            await GM_deleteValue(oldDisableKey);
-            await GM_deleteValue(`${oldEnabledKey}.backup`);
+            await GM.deleteValue(oldEnabledKey);
+            await GM.deleteValue(oldDisableKey);
+            await GM.deleteValue(`${oldEnabledKey}.backup`);
         }
 
         // 2. Cleanup List Defaults
@@ -2972,7 +2972,7 @@
         for (const config of cleanupLists) {
             // Use a unique symbol to detect if the key is missing/unset
             const UNSET = 'HE_UNSET_' + Math.random();
-            const storedValue = await GM_getValue(config.key, UNSET);
+            const storedValue = await GM.getValue(config.key, UNSET);
 
             if (storedValue !== UNSET && Array.isArray(storedValue)) {
                 const storedSet = new Set(storedValue);
@@ -2996,7 +2996,7 @@
                 }
 
                 if (shouldDelete) {
-                    await GM_deleteValue(config.key);
+                    await GM.deleteValue(config.key);
                     log(`Cleanup: Reset ${config.key} to default (stored value matched default).`);
                 }
             }
