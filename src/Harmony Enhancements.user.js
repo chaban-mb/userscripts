@@ -2594,38 +2594,40 @@
                     AppState.data.release.labels[index].name = matchedName;
                     AppState.data.release.labels[index].mbid = mbid;
 
-                    // Update UI
-                    UI_UTILS.updateLabelLink(labelListElement, matchedName, mbid);
+                    // Update UI (if a corresponding DOM element exists)
+                    if (labelListElement) {
+                        UI_UTILS.updateLabelLink(labelListElement, matchedName, mbid);
 
-                    const isOverwriting = !!oldMbid || oldName !== matchedName;
-                    let indicatorText = isOverwriting ? 'overwritten' : 'added';
-                    let type = isOverwriting ? 'overwritten' : 'added';
-                    let tooltip;
+                        const isOverwriting = !!oldMbid || oldName !== matchedName;
+                        let indicatorText = isOverwriting ? 'overwritten' : 'added';
+                        let type = isOverwriting ? 'overwritten' : 'added';
+                        let tooltip;
 
-                    if (isNoLabel) {
-                        indicatorText = 'overwritten';
-                        type = 'overwritten';
-                        tooltip = `Original label: ${oldName}`;
-                    } else if (oldName !== matchedName) {
-                        tooltip = `Original label "${oldName}" replaced by user mapping for "${matchedName}".`;
-                    } else if (oldMbid) {
-                        tooltip = `Original MBID (${oldMbid}) overwritten via user mapping.`;
-                    } else {
-                        tooltip = `MBID ${mbid} added via user mapping.`;
+                        if (isNoLabel) {
+                            indicatorText = 'overwritten';
+                            type = 'overwritten';
+                            tooltip = `Original label: ${oldName}`;
+                        } else if (oldName !== matchedName) {
+                            tooltip = `Original label "${oldName}" replaced by user mapping for "${matchedName}".`;
+                        } else if (oldMbid) {
+                            tooltip = `Original MBID (${oldMbid}) overwritten via user mapping.`;
+                        } else {
+                            tooltip = `MBID ${mbid} added via user mapping.`;
+                        }
+
+                        const indicatorSpan = UI_UTILS.createIndicatorSpan(indicatorText, null, {
+                            type,
+                            tooltip,
+                        });
+
+                        // Remove existing HE indicators if present (to avoid stacking)
+                        const existingIndicator = labelListElement.nextElementSibling;
+                        if (existingIndicator?.classList.contains('he-badge') || existingIndicator?.classList.contains('he-added-label') || existingIndicator?.classList.contains('he-overwritten-label')) {
+                            existingIndicator.remove();
+                        }
+
+                        labelListElement.parentNode.insertBefore(indicatorSpan, labelListElement.nextSibling);
                     }
-
-                    const indicatorSpan = UI_UTILS.createIndicatorSpan(indicatorText, null, {
-                        type,
-                        tooltip,
-                    });
-
-                    // Remove existing HE indicators if present (to avoid stacking)
-                    const existingIndicator = labelListElement.nextElementSibling;
-                    if (existingIndicator?.classList.contains('he-badge') || existingIndicator?.classList.contains('he-added-label') || existingIndicator?.classList.contains('he-overwritten-label')) {
-                        existingIndicator.remove();
-                    }
-
-                    labelListElement.parentNode.insertBefore(indicatorSpan, labelListElement.nextSibling);
 
                     const messageContent = (oldName !== matchedName)
                         ? `Promoted label "${matchedName}" (MBID: ${mbid}) over original "${oldName}" via user mapping.`
