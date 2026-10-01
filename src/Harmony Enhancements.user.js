@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        Harmony: Enhancements
 // @namespace   https://musicbrainz.org/user/chaban
-// @version     1.29.2
+// @version     1.29.3
 // @description Adds some convenience features, various UI and behavior settings, as well as an improved language detection to Harmony.
 // @tag         ai-created
 // @author      chaban
@@ -845,22 +845,89 @@
 
     const UI_UTILS = {
         /**
-        * Creates an indicator span (e.g., '(overwritten)', '(removed)') with a tooltip.
-        * @param {string} indicatorText - The text to display inside the parentheses (e.g., 'added').
-        * @param {string} originalValue - The original value to show in the tooltip.
-        * @param {object} [options] - Optional parameters.
-        * @param {string} [options.type='overwritten'] - The type of indicator ('overwritten', 'removed', 'added').
-        * @param {string} [options.tooltip] - A full override for the tooltip text.
-        * @param {string} [options.tooltipPrefix='Original:'] - The text to prepend to the original value.
-        * @param {boolean} [options.standalone=false] - If true, the span will not have a left margin.
-        * @returns {HTMLSpanElement}
-        */
-        createIndicatorSpan: (indicatorText, originalValue, { type = 'overwritten', tooltip = '', tooltipPrefix = 'Original value:', standalone = false } = {}) => {
-            const span = document.createElement('span');
-            span.className = `he-badge he-badge--${type}${standalone ? ' he-badge--standalone' : ''}`;
-            span.title = tooltip || `${tooltipPrefix} ${originalValue}`;
-            span.textContent = `(${indicatorText})`;
-            return span;
+         * Consolidated badge manager for an anchor element (e.g. span.entity-links).
+         * Ensures a single, idempotent .he-badge per anchor, aggregating tooltips and types.
+         * @param {HTMLElement} anchor - The anchor element after which the badge is rendered.
+         * @returns {{ set: (key: string, entry: { type: string, tooltip: string }) => void, remove: (key: string) => void, clear: () => void }}
+         */
+        badgeHost: (anchor) => {
+            if (!anchor || !anchor.parentNode) {
+                return { set: () => {}, remove: () => {}, clear: () => {} };
+            }
+
+            if (!anchor._heBadgeEntries) {
+                anchor._heBadgeEntries = new Map();
+            }
+
+            const TYPE_PRIORITY = {
+                overwritten: 3,
+                removed: 2,
+                added: 1,
+            };
+
+            const render = () => {
+                const entries = Array.from(anchor._heBadgeEntries.values());
+                const parent = anchor.parentNode;
+
+                if (entries.length === 0) {
+                    const existingBadges = parent.querySelectorAll(':scope > .he-badge');
+                    existingBadges.forEach(b => b.remove());
+                    return;
+                }
+
+                // Determine highest priority type
+                let topType = 'overwritten';
+                let maxPriority = -1;
+                for (const entry of entries) {
+                    const prio = TYPE_PRIORITY[entry.type] || 0;
+                    if (prio > maxPriority) {
+                        maxPriority = prio;
+                        topType = entry.type;
+                    }
+                }
+
+                // Deduplicate and combine tooltip lines
+                const combinedTooltip = Array.from(
+                    new Set(entries.map(e => e.tooltip).filter(Boolean))
+                ).join('\n');
+
+                const indicatorText = topType;
+
+                let badge = anchor.nextElementSibling;
+                if (!badge || !badge.classList.contains('he-badge')) {
+                    const existingBadges = parent.querySelectorAll(':scope > .he-badge');
+                    existingBadges.forEach(b => b.remove());
+
+                    badge = document.createElement('span');
+                    anchor.after(badge);
+                } else {
+                    let next = badge.nextElementSibling;
+                    while (next && next.classList.contains('he-badge')) {
+                        const toRemove = next;
+                        next = next.nextElementSibling;
+                        toRemove.remove();
+                    }
+                }
+
+                badge.className = `he-badge he-badge--${topType}`;
+                badge.title = combinedTooltip;
+                badge.textContent = `(${indicatorText})`;
+            };
+
+            return {
+                set: (key, entry) => {
+                    anchor._heBadgeEntries.set(key, entry);
+                    render();
+                },
+                remove: (key) => {
+                    anchor._heBadgeEntries.delete(key);
+                    render();
+                },
+                clear: () => {
+                    anchor._heBadgeEntries.clear();
+                    render();
+                }
+            };
         },
 
         /**
@@ -886,17 +953,19 @@
         },
 
         /**
-        * Updates the text content of an element and appends an indicator span.
-        * @param {HTMLElement} element - The DOM element to update.
-        * @param {string} newText - The new text content.
-        * @param {string} originalText - The original text for the tooltip.
-        * @param {string} tooltipPrefix - The prefix for the tooltip title.
-        */
-        updateElementText: (element, newText, originalText, tooltipPrefix) => {
+         * Updates the text content of an element and attaches an overwritten indicator badge.
+         * @param {HTMLElement|Node} element - The DOM element or text node to update.
+         * @param {string} newText - The new text content.
+         * @param {string} originalText - The original text for the tooltip.
+         * @param {string} [tooltipPrefix='Original title:'] - The prefix for the tooltip title.
+         */
+        updateElementText: (element, newText, originalText, tooltipPrefix = 'Original title:') => {
             if (!element) return;
-            const overwrittenSpan = UI_UTILS.createIndicatorSpan('overwritten', originalText, { tooltipPrefix });
             element.textContent = newText;
-            element.parentNode.insertBefore(overwrittenSpan, element.nextSibling);
+            UI_UTILS.badgeHost(element).set('titleNormalization', {
+                type: 'overwritten',
+                tooltip: `${tooltipPrefix ? `${tooltipPrefix.trim()} ` : ''}${originalText}`,
+            });
         },
 
         /**
@@ -966,11 +1035,14 @@
             const existingAltValues = cell.querySelector('ul.alt-values');
             const newHTML = UI_UTILS.buildArtistCreditsHTML(newArtists);
 
-            cell.innerHTML = newHTML;
+            cell.innerHTML = `<span class="artist-credit">${newHTML}</span>`;
+            const anchor = cell.querySelector('.artist-credit');
 
             const tooltipPrefix = options.tooltipPrefix || 'Original track artists:';
-            const overwrittenSpan = UI_UTILS.createIndicatorSpan('overwritten', oldArtistsString, { ...options, tooltipPrefix });
-            cell.appendChild(overwrittenSpan);
+            UI_UTILS.badgeHost(anchor).set('trackArtist', {
+                type: 'overwritten',
+                tooltip: `${tooltipPrefix} ${oldArtistsString}`,
+            });
 
             if (existingAltValues) {
                 cell.appendChild(document.createTextNode(' '));
@@ -987,7 +1059,7 @@
          * @param {string} originalNames - The original label names to display in the tooltip.
          */
         replaceReleaseLabels: (newLabelName, newMbid, originalNames) => {
-            const labelsUl = document.querySelector('ul.release-labels');
+            const labelsUl = document.querySelector('ul.release-labels:not(.inline)');
             if (!labelsUl) return;
 
             labelsUl.innerHTML = '';
@@ -998,10 +1070,10 @@
             labelsUl.appendChild(li);
 
             UI_UTILS.updateLabelLink(span, newLabelName, newMbid);
-            const indicator = UI_UTILS.createIndicatorSpan('overwritten', originalNames, {
-                tooltipPrefix: 'Original labels:',
+            UI_UTILS.badgeHost(span).set('setNoLabel', {
+                type: 'overwritten',
+                tooltip: `Original labels: ${originalNames}`,
             });
-            li.appendChild(indicator);
         },
     };
 
@@ -1971,9 +2043,13 @@
                     AppState.data.release.language = { code: languageCode3 };
                     const cell = langRow.querySelector('td');
                     cell.textContent = '';
-                    cell.append(newLangContent, ' ');
-                    const overwrittenSpan = UI_UTILS.createIndicatorSpan('overwritten', originalText, { tooltipPrefix: "Harmony's original guess:" });
-                    cell.append(overwrittenSpan);
+                    const textSpan = document.createElement('span');
+                    textSpan.textContent = newLangContent;
+                    cell.append(textSpan);
+                    UI_UTILS.badgeHost(textSpan).set('language', {
+                        type: 'overwritten',
+                        tooltip: `Harmony's original guess: ${originalText}`,
+                    });
                     cell.setAttribute(DATA_ATTRIBUTE_APPLIED, 'true');
                 }
             } else {
@@ -1983,13 +2059,14 @@
                 const th = document.createElement('th');
                 th.textContent = 'Language';
                 const td = document.createElement('td');
-                td.textContent = newLangContent;
+                const textSpan = document.createElement('span');
+                textSpan.textContent = newLangContent;
+                td.append(textSpan);
 
-                const addedSpan = UI_UTILS.createIndicatorSpan('added', null, {
+                UI_UTILS.badgeHost(textSpan).set('language', {
                     type: 'added',
                     tooltip: `Added by ${SCRIPT_NAME}; value was not present.`,
                 });
-                td.append(' ', addedSpan);
                 newRow.append(th, td);
                 langRow = newRow;
             }
@@ -2005,9 +2082,13 @@
                         AppState.data.release.script = { code: scriptCode };
                         const cell = scriptRow.querySelector('td');
                         cell.textContent = '';
-                        cell.append(newScript, ' ');
-                        const overwrittenSpan = UI_UTILS.createIndicatorSpan('overwritten', originalScriptText, { tooltipPrefix: "Harmony's original guess:" });
-                        cell.append(overwrittenSpan);
+                        const textSpan = document.createElement('span');
+                        textSpan.textContent = newScript;
+                        cell.append(textSpan);
+                        UI_UTILS.badgeHost(textSpan).set('script', {
+                            type: 'overwritten',
+                            tooltip: `Harmony's original guess: ${originalScriptText}`,
+                        });
                         cell.setAttribute(DATA_ATTRIBUTE_APPLIED, 'true');
                     }
                 } else {
@@ -2016,13 +2097,14 @@
                     const th = document.createElement('th');
                     th.textContent = 'Script';
                     const td = document.createElement('td');
-                    td.textContent = newScript;
+                    const textSpan = document.createElement('span');
+                    textSpan.textContent = newScript;
+                    td.append(textSpan);
 
-                    const addedSpan = UI_UTILS.createIndicatorSpan('added', null, {
+                    UI_UTILS.badgeHost(textSpan).set('script', {
                         type: 'added',
                         tooltip: `Added by ${SCRIPT_NAME}; value was not present.`,
                     });
-                    td.append(' ', addedSpan);
                     newRow.append(th, td);
                 }
             }
@@ -2066,13 +2148,22 @@
                     const cell = releaseTypeRow.querySelector('td');
                     if (!cell) return;
 
-                    const altValuesList = cell.querySelector('ul.alt-values');
-                    const textNode = Array.from(cell.childNodes).find(node => node.nodeType === Node.TEXT_NODE && node.textContent.trim());
+                    let typeSpan = cell.querySelector('.he-release-type');
+                    if (!typeSpan) {
+                        const textNode = Array.from(cell.childNodes).find(node => node.nodeType === Node.TEXT_NODE && node.textContent.trim());
+                        if (textNode) {
+                            typeSpan = document.createElement('span');
+                            typeSpan.className = 'he-release-type';
+                            textNode.replaceWith(typeSpan);
+                        }
+                    }
 
-                    if (textNode) {
-                        textNode.textContent = detectedType;
-                        cell.insertBefore(document.createTextNode(' '), altValuesList);
-                        cell.insertBefore(UI_UTILS.createIndicatorSpan('overwritten', originalType, { tooltipPrefix: "Harmony's original guess:" }), altValuesList);
+                    if (typeSpan) {
+                        typeSpan.textContent = detectedType;
+                        UI_UTILS.badgeHost(typeSpan).set('releaseType', {
+                            type: 'overwritten',
+                            tooltip: `Harmony's original guess: ${originalType}`,
+                        });
                     }
                 }
 
@@ -2361,12 +2452,10 @@
                     if (labelListElement) {
                         UI_UTILS.updateLabelLink(labelListElement, NO_LABEL.name, NO_LABEL.mbid);
 
-                        const overwrittenSpan = UI_UTILS.createIndicatorSpan('overwritten', originalLabel.name, {
-                            tooltipPrefix: 'Original label:',
+                        UI_UTILS.badgeHost(labelListElement).set('setNoLabel', {
+                            type: 'overwritten',
+                            tooltip: `Original label: ${originalLabel.name}`,
                         });
-                        if (!labelListElement.nextElementSibling?.classList.contains('he-badge') && !labelListElement.nextElementSibling?.classList.contains('he-overwritten-label')) {
-                            labelListElement.parentNode.insertBefore(overwrittenSpan, labelListElement.nextSibling);
-                        }
                     }
                 });
             }
@@ -2495,20 +2584,17 @@
 
                         if (textNodeToReplace) {
                             textNodeToReplace.textContent = textNodeToReplace.textContent.replace(cleanGtin, '');
-
-                            const removedSpan = UI_UTILS.createIndicatorSpan('removed', cleanGtin, {
-                                type: 'removed',
-                                tooltipPrefix: 'Removed catalog number (matches barcode):',
-                                standalone: true
-                            });
-
-                            const labelLinkSpan = li.querySelector('.entity-links');
-                            if (labelLinkSpan) {
-                                labelLinkSpan.after(removedSpan);
-                                labelLinkSpan.after(' ');
-                            } else {
-                                li.append(removedSpan);
+                            if (!textNodeToReplace.textContent.trim()) {
+                                textNodeToReplace.remove();
                             }
+                        }
+
+                        const labelLinkSpan = li.querySelector('.entity-links');
+                        if (labelLinkSpan) {
+                            UI_UTILS.badgeHost(labelLinkSpan).set('barcodeCatalog', {
+                                type: 'removed',
+                                tooltip: `Removed catalog number (matches barcode): ${cleanGtin}`,
+                            });
                         }
                     }
 
@@ -2615,18 +2701,10 @@
                             tooltip = `MBID ${mbid} added via user mapping.`;
                         }
 
-                        const indicatorSpan = UI_UTILS.createIndicatorSpan(indicatorText, null, {
+                        UI_UTILS.badgeHost(labelListElement).set('mapLabelMbids', {
                             type,
                             tooltip,
                         });
-
-                        // Remove existing HE indicators if present (to avoid stacking)
-                        const existingIndicator = labelListElement.nextElementSibling;
-                        if (existingIndicator?.classList.contains('he-badge') || existingIndicator?.classList.contains('he-added-label') || existingIndicator?.classList.contains('he-overwritten-label')) {
-                            existingIndicator.remove();
-                        }
-
-                        labelListElement.parentNode.insertBefore(indicatorSpan, labelListElement.nextSibling);
                     }
 
                     const messageContent = (oldName !== matchedName)
@@ -2679,8 +2757,10 @@
             if (artistCreditSpan) {
                 const newCreditHTML = UI_UTILS.buildArtistCreditsHTML(commonTrackArtists);
                 artistCreditSpan.innerHTML = newCreditHTML;
-                const overwrittenSpan = UI_UTILS.createIndicatorSpan('overwritten', oldArtists, { tooltipPrefix: 'Original release artists:' });
-                artistCreditSpan.append(overwrittenSpan);
+                UI_UTILS.badgeHost(artistCreditSpan).set('syncTrackArtist', {
+                    type: 'overwritten',
+                    tooltip: `Original release artists: ${oldArtists}`,
+                });
             }
             const messageContent = `Synced more detailed track artist credit to release artist.<br><b>Before:</b> ${oldArtists}<br><b>After:</b> ${newArtists}`;
             createAndInsertMessage('he-artist-sync', messageContent, 'debug', ['he-release-type-override', 'he-language-analysis']);
@@ -2717,14 +2797,12 @@
                     if (!cell) return;
 
                     const originalText = cell.textContent.trim();
-                    const removedSpan = UI_UTILS.createIndicatorSpan('removed', originalText, {
+                    const placeholder = document.createElement('span');
+                    cell.replaceChildren(placeholder);
+                    UI_UTILS.badgeHost(placeholder).set('languageDisabled', {
                         type: 'removed',
-                        tooltipPrefix: 'Original value:',
-                        standalone: true,
+                        tooltip: `Original value: ${originalText}`,
                     });
-
-                    cell.textContent = '';
-                    cell.appendChild(removedSpan);
                 }
             });
         },
@@ -3381,23 +3459,10 @@
                 color: #4CAF50;
                 border-bottom: 1px dotted #4CAF50;
             }
+            .he-badge:first-child,
+            span:empty + .he-badge,
             .he-badge--standalone {
                 margin-left: 0;
-            }
-            .he-overwritten-label,.he-added-label {
-                font-size: 0.8em;
-                font-weight: bold;
-                cursor: help;
-                margin-left: 0.5em;
-                white-space: nowrap;
-            }
-            .he-overwritten-label {
-                color: #d9534f;
-                border-bottom: 1px dotted #d9534f;
-            }
-            .he-added-label {
-                color: #4CAF50;
-                border-bottom: 1px dotted #4CAF50;
             }
             .he-reset-button, .he-tidy-button {
                 padding: 4px 8px;
