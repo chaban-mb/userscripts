@@ -24,7 +24,7 @@ A lightweight zero-dependency Node.js HTTP server designed specifically for **Vi
 Developing userscripts by manually copy-pasting code into the browser editor on every change is slow and prone to errors. `tools/dev_server.js` serves scripts directly from `src/` over HTTP with on-the-fly development safeguards:
 
 - **In-Place Tracking (Zero Conflict)**: By default, `@name` is preserved identically to production so Violentmonkey updates your existing installed script in-place. This guarantees **only ONE script instance runs** on target sites (preventing duplicate UI elements and conflicting handlers).
-- **Git-Aware Versioning**: Injects the active git branch and commit hash into `@version` (e.g. `2.8.1-dev.beatport-checker.3357794`) for exact build identification in Violentmonkey without artificial version hacks.
+- **Git-Aware Versioning**: Injects the active git branch and commit hash into `@version` (e.g. `2.8.1-dev.3357794` on `dev`, or `2.8.1-dev.beatport-checker.3357794` on topic branches) for exact build identification in Violentmonkey without artificial version hacks.
 - **Update URL Redirection**: Rewrites `@updateURL` and `@downloadURL` to `http://localhost:8080/...` so Violentmonkey won't overwrite your local development script with upstream GitHub releases during polling.
 - **Shared Libraries**: Serves helper libraries from `lib/` (e.g., `/lib/MusicBrainzAPI.js`) for relative `@require` resolution.
 - **Web Dashboard**: Provides a clean visual interface at `http://localhost:8080/` with one-click tracking links and instant links to restore official release versions.

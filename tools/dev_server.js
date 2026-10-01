@@ -6,7 +6,7 @@
  * Local HTTP development server for Violentmonkey's native "Track external edits" workflow.
  * Serves userscripts from src/ with on-the-fly development tagging:
  *   - Appends "[DEV]" to @name
- *   - Injects git branch and short commit hash into @version (e.g. 1.28.0-dev.branch.hash)
+ *   - Injects git branch and short commit hash into @version (e.g. 1.28.0-dev.branch.hash or 1.28.0-dev.hash on dev)
  *   - Routes @updateURL and @downloadURL to localhost to prevent clobbering by upstream releases
  *   - Serves dependencies from lib/ for @require resolution
  *
@@ -33,7 +33,7 @@ Serves userscripts from src/ for Violentmonkey's native "Track external edits" w
 Allows instant live reloading on local file saves without manual copy-pasting.
 
 By default, the server preserves @name identically (for in-place tracking)
-and tags @version with the git branch and commit hash (e.g. 2.8.1-dev.branch.hash)
+and tags @version with the git branch and commit hash (e.g. 2.8.1-dev.branch.hash or 2.8.1-dev.hash on dev)
 for exact build identification without duplicate script execution.
 
 USAGE:
@@ -167,6 +167,13 @@ function getGitInfo() {
   }
 }
 
+function formatDevVersion(version, branch, hash) {
+  const cleanVer = version.split('-dev')[0].split('+dev')[0];
+  const hasBranch = branch && branch !== 'dev' && branch !== 'HEAD';
+  const devTag = hasBranch ? `${branch}.${hash}` : hash;
+  return `${cleanVer}-dev.${devTag}`;
+}
+
 function transformUserscript(rawCode, scriptFileName, reqHost, isSeparate = false) {
   if (NO_TAG) return rawCode;
 
@@ -185,9 +192,7 @@ function transformUserscript(rawCode, scriptFileName, reqHost, isSeparate = fals
 
   // 2. Tag @version with branch and commit hash for exact identification
   code = code.replace(/^(\/\/\s*@version\s+)(\S+)$/m, (match, prefix, ver) => {
-    const cleanVer = ver.split('-dev')[0].split('+dev')[0];
-    const devTag = branch ? `${branch}.${hash}` : hash;
-    return `${prefix}${cleanVer}-dev.${devTag}`;
+    return `${prefix}${formatDevVersion(ver, branch, hash)}`;
   });
 
   // 3. Point @updateURL and @downloadURL to the local server
@@ -228,7 +233,7 @@ function renderDashboard(reqHost, port = currentPort) {
             ${scriptName} <span style="background: #ddf4ff; color: #0969da; font-size: 11px; font-weight: 500; padding: 2px 6px; border-radius: 4px; margin-left: 6px; border: 1px solid #b6e3ff;">IN-PLACE TRACKING</span>
           </div>
           <div style="font-size: 13px; color: #586069; margin-top: 4px;">
-            v${version}-dev.${branch}.${hash} &bull; <code>${file}</code>
+            v${formatDevVersion(version, branch, hash)} &bull; <code>${file}</code>
           </div>
           <div style="font-size: 12px; margin-top: 6px;">
             <a href="${separateUrl}" style="color: #6e7781; text-decoration: underline; margin-right: 12px;">Track as separate [DEV] script</a>
