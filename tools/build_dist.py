@@ -1,11 +1,9 @@
 #!/usr/bin/env python3
-import io
 import os
 import re
 import sys
 import subprocess
 import shutil
-import tarfile
 import tempfile
 from pathlib import Path
 
@@ -22,7 +20,7 @@ def clean_lib_content(lib_text):
     """Strips the UserScript header from library file so only the executable code remains."""
     return USERSCRIPT_HEADER_RE.sub('', lib_text).strip()
 
-def inline_script_content(script_text, repo_root=REPO_ROOT):
+def inline_script_content(script_text, repo_root=REPO_ROOT, commit_hash=None, lib_cache=None):
     """
     Finds relative @require directives pointing to lib/ in script_text,
     removes the @require line from metadata, and inlines the library code into the script.
@@ -33,13 +31,29 @@ def inline_script_content(script_text, repo_root=REPO_ROOT):
 
     for match in matches:
         lib_filename = match.group(1)
-        lib_path = Path(repo_root) / "lib" / lib_filename
-        if not lib_path.exists():
-            print(f"Warning: Library file not found: {lib_path}")
-            continue
+        raw_lib_text = None
 
-        with open(lib_path, 'r', encoding='utf-8') as f:
-            raw_lib_text = f.read()
+        if lib_cache is not None and lib_filename in lib_cache:
+            raw_lib_text = lib_cache[lib_filename]
+        elif commit_hash:
+            res = subprocess.run(
+                ["git", "show", f"{commit_hash}:lib/{lib_filename}"],
+                capture_output=True, text=True, encoding="utf-8"
+            )
+            if res.returncode == 0:
+                raw_lib_text = res.stdout
+                if lib_cache is not None:
+                    lib_cache[lib_filename] = raw_lib_text
+
+        if raw_lib_text is None:
+            lib_path = Path(repo_root) / "lib" / lib_filename
+            if lib_path.exists():
+                with open(lib_path, 'r', encoding='utf-8') as f:
+                    raw_lib_text = f.read()
+
+        if raw_lib_text is None:
+            print(f"Warning: Library file not found: lib/{lib_filename}")
+            continue
 
         cleaned_lib = clean_lib_content(raw_lib_text)
         lib_codes.append(f"    // --- Inlined Library: lib/{lib_filename} ---\n{cleaned_lib}\n    // --- End Inlined Library ---")
@@ -101,35 +115,19 @@ def build_all_inlined_scripts(output_dir, source_root=REPO_ROOT):
 
     return results
 
-def extract_commit_sources(commit, target_dir):
-    """Extracts src/ and lib/ from a git commit into target_dir using git archive."""
-    paths = [p for p in ["src", "lib"] if subprocess.run(
-        ["git", "cat-file", "-e", f"{commit}:{p}"],
-        capture_output=True
-    ).returncode == 0]
-    if not paths:
-        return
-    archive_bytes = subprocess.run(
-        ["git", "archive", commit, *paths],
-        capture_output=True,
-        check=True
-    ).stdout
-    with tarfile.open(fileobj=io.BytesIO(archive_bytes)) as tar:
-        tar.extractall(target_dir)
-
-def find_commits_to_sync(main_branch="main", dist_branch="dist"):
+def find_commits_to_sync(main_branch="main", dist_branch="dist", with_mode=False):
     """
     Finds commits on main_branch that modified src/ or lib/ and need to be synced to dist_branch.
     Matches the latest commit on dist against main_branch commit history.
     """
     dist_log = subprocess.run(
         ["git", "log", "-50", "--format=%s|||%ad", dist_branch],
-        capture_output=True, text=True, check=True
+        capture_output=True, text=True, check=True, encoding="utf-8"
     ).stdout.strip().splitlines()
 
     main_log = subprocess.run(
         ["git", "log", "-200", "--format=%H|||%s|||%ad", main_branch],
-        capture_output=True, text=True, check=True
+        capture_output=True, text=True, check=True, encoding="utf-8"
     ).stdout.strip().splitlines()
 
     matched_main = None
@@ -155,39 +153,45 @@ def find_commits_to_sync(main_branch="main", dist_branch="dist"):
         log_range = f"{matched_main}..{main_branch}"
         commits = subprocess.run(
             ["git", "log", log_range, "--reverse", "--format=%H", "--", "src/", "lib/"],
-            capture_output=True, text=True, check=True
+            capture_output=True, text=True, check=True, encoding="utf-8"
         ).stdout.strip().splitlines()
-        return [c.strip() for c in commits if c.strip()]
+        clean_commits = [c.strip() for c in commits if c.strip()]
+        return (clean_commits, False) if with_mode else clean_commits
     else:
         tip = subprocess.run(
             ["git", "rev-parse", main_branch],
-            capture_output=True, text=True, check=True
+            capture_output=True, text=True, check=True, encoding="utf-8"
         ).stdout.strip()
-        return [tip] if tip else []
+        clean_commits = [tip] if tip else []
+        return (clean_commits, True) if with_mode else clean_commits
 
 def sync_dist_branch(main_branch="main", dist_branch="dist"):
     """
     Builds inlined userscripts from main_branch onto a dedicated dist branch,
     ensuring that the commit message history reflects the substantive changes
     from main (including script updates and shared lib updates).
-    Replays each commit from main that touches src/ or lib/ sequentially.
+    Replays each commit from main that touches src/ or lib/ incrementally.
     Uses a temporary git worktree to avoid switching branches in the main working tree.
     """
-    # Check if dist branch exists locally
+    # Check if dist branch exists locally or on remote
     branches = subprocess.run(["git", "branch", "--list", dist_branch], capture_output=True, text=True, check=True).stdout.strip()
     dist_exists = bool(branches)
 
     if not dist_exists:
-        # Create a true orphan root commit containing only inlined scripts + LICENSE
-        print(f"Creating true orphan '{dist_branch}' branch with initial standalone userscripts...")
-        main_author = subprocess.run(["git", "log", "-1", "--format=%an <%ae>", main_branch], capture_output=True, text=True, check=True).stdout.strip()
-        main_date = subprocess.run(["git", "log", "-1", "--format=%ad", main_branch], capture_output=True, text=True, check=True).stdout.strip()
-        author_name = subprocess.run(["git", "log", "-1", "--format=%an", main_branch], capture_output=True, text=True, check=True).stdout.strip()
-        author_email = subprocess.run(["git", "log", "-1", "--format=%ae", main_branch], capture_output=True, text=True, check=True).stdout.strip()
+        remote_branch = subprocess.run(["git", "rev-parse", "--verify", f"origin/{dist_branch}"], capture_output=True, text=True)
+        if remote_branch.returncode == 0:
+            subprocess.run(["git", "branch", "--track", dist_branch, f"origin/{dist_branch}"], check=True)
+            dist_exists = True
 
-        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as init_wt_dir, \
-             tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as build_tmpdir:
-            build_all_inlined_scripts(build_tmpdir)
+    if not dist_exists:
+        # Create a true orphan root commit containing only inlined scripts
+        print(f"Creating true orphan '{dist_branch}' branch with initial standalone userscripts...")
+        main_author = subprocess.run(["git", "log", "-1", "--format=%an <%ae>", main_branch], capture_output=True, text=True, check=True, encoding="utf-8").stdout.strip()
+        main_date = subprocess.run(["git", "log", "-1", "--format=%ad", main_branch], capture_output=True, text=True, check=True, encoding="utf-8").stdout.strip()
+        author_name = subprocess.run(["git", "log", "-1", "--format=%an", main_branch], capture_output=True, text=True, check=True, encoding="utf-8").stdout.strip()
+        author_email = subprocess.run(["git", "log", "-1", "--format=%ae", main_branch], capture_output=True, text=True, check=True, encoding="utf-8").stdout.strip()
+
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as init_wt_dir:
             env = os.environ.copy()
             env["GIT_AUTHOR_NAME"] = author_name
             env["GIT_AUTHOR_EMAIL"] = author_email
@@ -205,9 +209,7 @@ def sync_dist_branch(main_branch="main", dist_branch="dist"):
             subprocess.run(["git", "branch", dist_branch, root_commit], check=True)
             subprocess.run(["git", "worktree", "add", init_wt_dir, dist_branch], check=True)
             try:
-                init_wt_path = Path(init_wt_dir)
-                shutil.copytree(Path(build_tmpdir) / "src", init_wt_path / "src")
-
+                build_all_inlined_scripts(init_wt_dir)
                 subprocess.run(["git", "-C", init_wt_dir, "add", "-A"], check=True)
                 subprocess.run([
                     "git", "-C", init_wt_dir, "commit", "--amend",
@@ -221,7 +223,7 @@ def sync_dist_branch(main_branch="main", dist_branch="dist"):
                 subprocess.run(["git", "worktree", "remove", "--force", init_wt_dir], capture_output=True)
                 subprocess.run(["git", "worktree", "prune"], capture_output=True)
 
-    commits_to_sync = find_commits_to_sync(main_branch, dist_branch)
+    commits_to_sync, is_full_sync = find_commits_to_sync(main_branch, dist_branch, with_mode=True)
     if not commits_to_sync:
         print(f"Branch '{dist_branch}' is already up-to-date with '{main_branch}'. No new commit needed.")
         return True
@@ -233,40 +235,108 @@ def sync_dist_branch(main_branch="main", dist_branch="dist"):
         try:
             wt_path = Path(worktree_dir)
             wt_src = wt_path / "src"
+            wt_src.mkdir(parents=True, exist_ok=True)
 
             committed_count = 0
-            for commit_hash in commits_to_sync:
-                subject = subprocess.run(["git", "log", "-1", "--format=%s", commit_hash], capture_output=True, text=True, check=True).stdout.strip()
-                body = subprocess.run(["git", "log", "-1", "--format=%b", commit_hash], capture_output=True, text=True, check=True).stdout.strip()
-                author = subprocess.run(["git", "log", "-1", "--format=%an <%ae>", commit_hash], capture_output=True, text=True, check=True).stdout.strip()
-                date = subprocess.run(["git", "log", "-1", "--format=%ad", commit_hash], capture_output=True, text=True, check=True).stdout.strip()
+            for idx, commit_hash in enumerate(commits_to_sync):
+                full_sync_this_commit = is_full_sync and (idx == 0)
 
-                with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as commit_src_dir, \
-                     tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as build_tmpdir:
-                    extract_commit_sources(commit_hash, commit_src_dir)
-                    build_all_inlined_scripts(build_tmpdir, source_root=commit_src_dir)
+                subject = subprocess.run(["git", "log", "-1", "--format=%s", commit_hash], capture_output=True, text=True, check=True, encoding="utf-8").stdout.strip()
+                body = subprocess.run(["git", "log", "-1", "--format=%b", commit_hash], capture_output=True, text=True, check=True, encoding="utf-8").stdout.strip()
+                author = subprocess.run(["git", "log", "-1", "--format=%an <%ae>", commit_hash], capture_output=True, text=True, check=True, encoding="utf-8").stdout.strip()
+                date = subprocess.run(["git", "log", "-1", "--format=%ad", commit_hash], capture_output=True, text=True, check=True, encoding="utf-8").stdout.strip()
 
-                    if wt_src.exists():
-                        shutil.rmtree(wt_src)
-                    shutil.copytree(Path(build_tmpdir) / "src", wt_src)
+                scripts_to_update = set()
+                scripts_to_delete = set()
 
-                    subprocess.run(["git", "-C", worktree_dir, "add", "-A"], check=True)
+                if full_sync_this_commit:
+                    ls_res = subprocess.run(
+                        ["git", "ls-tree", "-r", "--name-only", commit_hash, "--", "src/"],
+                        capture_output=True, text=True, check=True, encoding="utf-8"
+                    )
+                    current_scripts = {line.strip() for line in ls_res.stdout.splitlines() if line.strip().endswith(".user.js")}
+                    scripts_to_update = current_scripts
+                    existing_names = {p.name for p in wt_src.glob("*.user.js")}
+                    expected_names = {Path(s).name for s in current_scripts}
+                    for removed_name in (existing_names - expected_names):
+                        (wt_src / removed_name).unlink(missing_ok=True)
+                else:
+                    diff_res = subprocess.run(
+                        ["git", "diff-tree", "--root", "--no-commit-id", "--name-status", "--no-renames", "-r", commit_hash, "--", "src/", "lib/"],
+                        capture_output=True, text=True, check=True, encoding="utf-8"
+                    )
+                    diff_lines = [l.strip() for l in diff_res.stdout.splitlines() if l.strip()]
+                    libs_changed = set()
 
-                    diff_cached = subprocess.run(["git", "-C", worktree_dir, "diff", "--cached", "--quiet"], capture_output=True)
-                    if diff_cached.returncode != 0:
-                        commit_msg = subject
-                        if body:
-                            commit_msg += f"\n\n{body}"
+                    for line in diff_lines:
+                        parts = line.split(maxsplit=1)
+                        if len(parts) != 2:
+                            continue
+                        status, file_path = parts[0], parts[1].replace("\\", "/")
+                        if file_path.startswith("src/") and file_path.endswith(".user.js"):
+                            if status == "D":
+                                scripts_to_delete.add(file_path)
+                            else:
+                                scripts_to_update.add(file_path)
+                        elif file_path.startswith("lib/"):
+                            libs_changed.add(Path(file_path).name)
 
-                        print(f"Committing inlined scripts on '{dist_branch}': '{subject}'...")
-                        env = os.environ.copy()
-                        subprocess.run([
-                            "git", "-C", worktree_dir, "commit",
-                            "-m", commit_msg,
-                            "--author", author,
-                            "--date", date
-                        ], env=env, check=True)
-                        committed_count += 1
+                    if libs_changed:
+                        for lib_name in libs_changed:
+                            grep_res = subprocess.run(
+                                ["git", "grep", "-l", f"lib/{lib_name}", commit_hash, "--", "src/"],
+                                capture_output=True, text=True, encoding="utf-8"
+                            )
+                            if grep_res.returncode == 0:
+                                for match_line in grep_res.stdout.splitlines():
+                                    match_line = match_line.strip()
+                                    if not match_line:
+                                        continue
+                                    _, _, matched_path = match_line.partition(":")
+                                    matched_path = matched_path.replace("\\", "/")
+                                    if matched_path.startswith("src/") and matched_path.endswith(".user.js"):
+                                        scripts_to_update.add(matched_path)
+
+                for del_script in scripts_to_delete:
+                    target = wt_src / Path(del_script).name
+                    if target.exists():
+                        target.unlink()
+                    scripts_to_update.discard(del_script)
+
+                if scripts_to_update:
+                    lib_cache = {}
+                    for script_path in sorted(scripts_to_update):
+                        show_res = subprocess.run(
+                            ["git", "show", f"{commit_hash}:{script_path}"],
+                            capture_output=True, text=True, encoding="utf-8"
+                        )
+                        if show_res.returncode != 0:
+                            continue
+                        inlined_content, _ = inline_script_content(
+                            show_res.stdout,
+                            commit_hash=commit_hash,
+                            lib_cache=lib_cache
+                        )
+                        target = wt_src / Path(script_path).name
+                        target.write_text(inlined_content, encoding="utf-8")
+
+                subprocess.run(["git", "-C", worktree_dir, "add", "-A"], check=True)
+
+                diff_cached = subprocess.run(["git", "-C", worktree_dir, "diff", "--cached", "--quiet"], capture_output=True)
+                if diff_cached.returncode != 0:
+                    commit_msg = subject
+                    if body:
+                        commit_msg += f"\n\n{body}"
+
+                    print(f"Committing inlined scripts on '{dist_branch}': '{subject}'...")
+                    env = os.environ.copy()
+                    subprocess.run([
+                        "git", "-C", worktree_dir, "commit",
+                        "-m", commit_msg,
+                        "--author", author,
+                        "--date", date
+                    ], env=env, check=True)
+                    committed_count += 1
 
             if committed_count == 0:
                 print(f"Branch '{dist_branch}' is already up-to-date with '{main_branch}'. No new commit needed.")
