@@ -2466,7 +2466,7 @@
             const firstLabelSpan = AppState.dom.labelListElements?.[0];
             if (!firstLabelSpan) return;
 
-            const labelListItems = firstLabelSpan.closest('ul')?.querySelectorAll('li');
+            const labelListItems = firstLabelSpan.closest('ul')?.querySelectorAll(':scope > li');
             if (!labelListItems) return;
 
             let changesMade = false;
@@ -2510,6 +2510,12 @@
                                 li.append(removedSpan);
                             }
                         }
+                    }
+
+                    const form = document.querySelector('form[name="release-seeder"]');
+                    const catInput = form?.querySelector(`input[name="labels.${index}.catalog_number"]`);
+                    if (catInput) {
+                        catInput.remove();
                     }
                 }
             });
@@ -3138,6 +3144,93 @@
         }
     }
 
+    /**
+     * @summary Reconciles the release labels DOM with unique release labels, demoting companion-injected extra labels to alternative values.
+     */
+    function reconcileReleaseLabelsDOM() {
+        const release = AppState.data.release;
+        if (!release || !Array.isArray(release.labels)) return;
+
+        const ul = document.querySelector('ul.release-labels:not(.inline)');
+        if (!ul) return;
+
+        const listItems = Array.from(ul.querySelectorAll(':scope > li'));
+
+        listItems.forEach(li => {
+            const isHbr = li.querySelector('[data-hbr-label-provider], a[href*="beatport.com"]');
+            if (!isHbr) return;
+
+            const labelText = li.querySelector('.entity-links')?.textContent.trim().toLowerCase();
+            const isPrimarySelected = release.labels.some(l =>
+                l.name && l.name !== NO_LABEL.name && l.name.trim().toLowerCase() === labelText
+            );
+
+            if (!isPrimarySelected) {
+                let altUl = AppState.dom.releaseInfoTable?.querySelector('ul.release-labels ~ ul.alt-values')
+                    || document.querySelector('ul.release-labels ~ ul.alt-values')
+                    || document.querySelector('ul.alt-values');
+
+                if (!altUl) {
+                    altUl = document.createElement('ul');
+                    altUl.className = 'alt-values';
+                    ul.after(altUl);
+                }
+
+                let hbrAlt = altUl.querySelector('#hbr-beatport-label-alt');
+                if (!hbrAlt) {
+                    hbrAlt = document.createElement('li');
+                    hbrAlt.id = 'hbr-beatport-label-alt';
+
+                    const entityLinks = li.querySelector('.entity-links');
+                    const providerIcon = entityLinks?.querySelector('[data-hbr-label-provider]');
+                    if (providerIcon) providerIcon.remove();
+
+                    li.querySelectorAll('.he-badge').forEach(b => b.remove());
+
+                    const altSpan = document.createElement('span');
+                    altSpan.className = 'alt-value';
+
+                    const inlineUl = document.createElement('ul');
+                    inlineUl.className = 'release-labels inline';
+                    const innerLi = document.createElement('li');
+                    if (entityLinks) innerLi.appendChild(entityLinks);
+
+                    const catTextNodes = Array.from(li.childNodes).filter(node =>
+                        node.nodeType === Node.TEXT_NODE && node.textContent.trim().length > 0
+                    );
+                    catTextNodes.forEach(node => innerLi.appendChild(node.cloneNode(true)));
+
+                    inlineUl.appendChild(innerLi);
+                    altSpan.appendChild(inlineUl);
+
+                    const bpIcon = document.createElement('span');
+                    bpIcon.className = 'beatport';
+                    bpIcon.title = 'Beatport';
+                    bpIcon.innerHTML = '<svg class="icon" width="24" height="24" stroke-width="1.25"><use xlink:href="/icon-sprite.svg#brand-beatport"></use></svg>';
+                    altSpan.appendChild(bpIcon);
+
+                    hbrAlt.appendChild(altSpan);
+                    altUl.appendChild(hbrAlt);
+                }
+                li.remove();
+
+                release.labels = release.labels.filter(l =>
+                    l.name === NO_LABEL.name || l.name.trim().toLowerCase() !== labelText
+                );
+            }
+        });
+
+        const remainingListItems = Array.from(ul.querySelectorAll(':scope > li'));
+        if (remainingListItems.length > release.labels.length) {
+            for (let i = release.labels.length; i < remainingListItems.length; i++) {
+                remainingListItems[i].remove();
+            }
+        }
+
+        AppState.dom.labelListElements = document.querySelectorAll('ul.release-labels:not(.inline) li span.entity-links');
+        AppState.dom.labelAltElements = Array.from(document.querySelectorAll('ul.release-labels ~ ul.alt-values .entity-links'));
+    }
+
     let formObserverDebounceTimer = null;
 
     /**
@@ -3147,6 +3240,10 @@
         const changes = ingestExternalFormData();
         if (changes) {
             runActiveEnhancements({ trigger: 'mutation' });
+            if (Array.isArray(AppState.data.release?.labels)) {
+                AppState.data.release.labels = getUniqueLabels(AppState.data.release.labels);
+            }
+            reconcileReleaseLabelsDOM();
             const form = document.querySelector('form[name="release-seeder"]');
             if (form) {
                 buildSeederParameters(form, AppState.data.release, AppState.data.originalRelease, null);
@@ -3190,6 +3287,17 @@
         });
 
         forms.forEach(form => observer.observe(form, { childList: true, subtree: true }));
+
+        const labelsUl = document.querySelector('ul.release-labels:not(.inline)');
+        if (labelsUl) {
+            const labelsObserver = new MutationObserver((mutations) => {
+                const hasAddedLi = mutations.some(m => Array.from(m.addedNodes).some(n => n.nodeType === Node.ELEMENT_NODE && n.tagName === 'LI'));
+                if (hasAddedLi) {
+                    reconcileReleaseLabelsDOM();
+                }
+            });
+            labelsObserver.observe(labelsUl, { childList: true });
+        }
     }
 
     // --- INITIALIZATION AND ROUTING ---
@@ -3556,6 +3664,10 @@
         }
 
         runActiveEnhancements({ trigger: 'load' });
+        if (Array.isArray(AppState.data.release?.labels)) {
+            AppState.data.release.labels = getUniqueLabels(AppState.data.release.labels);
+        }
+        reconcileReleaseLabelsDOM();
         const releaseForm = document.querySelector('form[name="release-seeder"]');
         if (releaseForm) {
             buildSeederParameters(releaseForm, AppState.data.release, AppState.data.originalRelease, null);
