@@ -4,6 +4,7 @@ It works by spoofing the browser APIs that Discourse uses for touch detection, e
 By default, this script only runs on the [MetaBrainz Community Discourse](https://community.metabrainz.org/). To use it on other forums, you can add more `@match` directives in the script's settings.
 
 ### Features
+
 - **Spoofing:** Spoofs browser APIs to report a mouse-based interface.
 - **Toolbar:** Ensures the desktop version of the editor toolbar is shown.
 
@@ -15,6 +16,6 @@ By default, this script only runs on the [MetaBrainz Community Discourse](https:
 
 ![After](https://greasyfork.org/rails/active_storage/blobs/redirect/eyJfcmFpbHMiOnsiZGF0YSI6MTg2NzE0LCJwdXIiOiJibG9iX2lkIn19--d769e44c4fa0dbc674c3390dd59e24d4f108e50e/Screenshot%202025-08-25%2018.06.09.png)
 
-
 See also:
+
 - [Why so many options in the gear editor menu? - UX - Discourse Meta](https://meta.discourse.org/t/why-so-many-options-in-the-gear-editor-menu/239497).

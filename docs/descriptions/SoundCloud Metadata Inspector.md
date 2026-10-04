@@ -1,6 +1,7 @@
 Metadata inspector dashboard for SoundCloud that extracts and displays hidden data such as ISRCs, UPCs, publisher copyright lines, exact release/upload timestamps, streaming presets, and technical entity identifiers.
 
 ### Features
+
 - **Release Metadata:** View detailed release information including barcode (UPC/EAN), record label, ℗/© publisher lines, writer/composer, rights license, buy links, and full tag lists.
 - **Track-Level Metadata & ISRCs:** Inspect individual track ISRCs, track-level UPCs, BPM, key signature, monetization model, policy controls, and streaming/download availability.
 - **Unified Timeline:** View all timestamps (created, published, released, display, and last modified dates) side-by-side.

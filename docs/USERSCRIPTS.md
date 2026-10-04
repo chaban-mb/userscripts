@@ -9,11 +9,12 @@ Displays additional date attributes for Bandcamp releases, such as `publish_date
 
 For more info and discusson about these dates see the MusicBrainz forum thread:
 
-https://community.metabrainz.org/t/question-about-bandcamp-publish-dates/667997
+<https://community.metabrainz.org/t/question-about-bandcamp-publish-dates/667997>
 
 This script is based on the [Bandcamp: Show publish date](https://greasyfork.org/scripts/420662) userscript by @w-biggs
 
 ### Features
+
 - **Detailed Dates:** Specific dates for when a release was published, modified, or created.
 - **Source Transparency:** Shows where each date comes from (e.g., "release date" vs "publish date").
 - **Smart Sorting:** Automatically sorts and displays the dates chronologically.
@@ -41,6 +42,7 @@ Based on the original Beatport status script by [RustyNova](https://github.com/R
 Allows selecting multiple checkboxes by drawing a selection box around them.
 
 ### Features
+
 - **Drag Selection:** Click and drag to draw a box and toggle all checkboxes inside it.
 - **Visual Feedback:** Shows a semi-transparent selection rectangle.
 - **Modernized Code:** Updated code of the original CheckBoxMate Greasemonkey script by scottmweaver.
@@ -67,6 +69,7 @@ ISRC Hunt: Submit ISRCs (All Tabs)<br>
 `javascript:(function(){ new BroadcastChannel('isrc_hunt_submit_channel').postMessage('submit-isrcs'); })();`
 
 ### Features
+
 - **Cross-Tab Sync:** Will click the same button in all open tabs to trigger the same action in other tabs.
 - **Rate Limiting:** Has a configurable rate limit to prevent errors during bulk submissions.
 - **Auto-Close:** Can automatically close tabs after a successful submission.
@@ -79,6 +82,7 @@ ISRC Hunt: Submit ISRCs (All Tabs)<br>
 Helper userscript for MusicBrainz editors to simplify data import from Deezer. It provides quick access to external tools for data import and editing.
 
 ### Features
+
 - **Release Seeding**: Allows importing releases with [Harmony](http://harmony.pulsewidth.org.uk/) and search for existing artists, releases, or recordings on MusicBrainz.
 - **SAMBL**: Provides quick access to [SAMBL](https://github.com/Lioncat6/SAMBL-React), which can fetch an artist's entire Deezer discography and compare it against MusicBrainz. This allows editors to quickly identify missing release or incomplete entries.
 - **ISRC Hunt**: Provides quick access to [ISRC Hunt](https://isrchunt.com/) to find and import track-level ISRCs.
@@ -95,6 +99,7 @@ It works by spoofing the browser APIs that Discourse uses for touch detection, e
 By default, this script only runs on the [MetaBrainz Community Discourse](https://community.metabrainz.org/). To use it on other forums, you can add more `@match` directives in the script's settings.
 
 ### Features
+
 - **Spoofing:** Spoofs browser APIs to report a mouse-based interface.
 - **Toolbar:** Ensures the desktop version of the editor toolbar is shown.
 
@@ -106,8 +111,8 @@ By default, this script only runs on the [MetaBrainz Community Discourse](https:
 
 [📷 View After](https://greasyfork.org/rails/active_storage/blobs/redirect/eyJfcmFpbHMiOnsiZGF0YSI6MTg2NzE0LCJwdXIiOiJibG9iX2lkIn19--d769e44c4fa0dbc674c3390dd59e24d4f108e50e/Screenshot%202025-08-25%2018.06.09.png)
 
-
 See also:
+
 - [Why so many options in the gear editor menu? - UX - Discourse Meta](https://meta.discourse.org/t/why-so-many-options-in-the-gear-editor-menu/239497).
 
 ## DOM Mutation Observer Debugger
@@ -118,6 +123,7 @@ See also:
 A developer tool that logs all DOM changes to the console.
 
 ### Features
+
 - **Live Logging:** Real-time console logs for element additions, removals, and attribute changes.
 - **Detailed Info:** Shows exactly what changed, including old and new values.
 
@@ -138,6 +144,7 @@ A comprehensive userscript for **[Harmony](http://harmony.pulsewidth.org.uk/)** 
 ### Features
 
 #### Release Data Correction & Automation
+
 - **Improved Release Type Detection:** Automatically corrects the release type to **"Single"** or **"EP"** based on track title analysis, useful for releases that contain multiple versions of a single song.
 - **Artist Credit Sync:** For single-track releases, automatically syncs the more detailed **track artist credit** up to the main **release artist**.
 - **Normalize ETI:** Converts hyphenated Extra Title Information (ETI) on titles (e.g., `Title - Remix` to `Title (Remix)`) to match MusicBrainz style guidelines.
@@ -147,15 +154,18 @@ A comprehensive userscript for **[Harmony](http://harmony.pulsewidth.org.uk/)** 
 - **Catalog Number Cleanup:** Automatically removes catalog numbers that are identical to the release barcode (GTIN).
 
 #### Language Detection
+
 - **Enhanced Language/Script Guessing:** Implements a secondary **browser-based language detection** system which can be more accurate than Harmony's default.
 - **Customizable Settings:** Offers a dedicated settings panel to control detection mode (browser, Harmony, or none) and fine-tune **confidence thresholds** for applying changes.
 
 #### Seeder Behavior
+
 - **Include GTIN and Packaging on Update**: Adds an option to include GTIN (barcode) and set packaging when updating existing releases.
 - **Drop Artist Names as credited from Seed:** When an MBID is available, this option removes the artist's name from the seed data.
 - **MusicBrainz Server Selection:** Allows choosing between the main server (**musicbrainz.org**), the beta server, or the mirror (**musicbrainz.eu**) for all links and seeding actions.
 
 #### UI & Workflow
+
 - **Clipboard Re-Lookup:** Adds a **"Re-Lookup from Clipboard"** button to the lookup form for quickly starting a new lookup or extending an existing one using a supported source URL found in your clipboard.
 - **Provider Re-Lookup Buttons:** Adds a small **⟳** button next to each secondary provider URL in the "Providers" section, allowing you to quickly redo the lookup using that provider as the primary source.
 - **Compact "Not Found" Messages:** Replaces verbose red error banners for providers that do not have the release with compact tags directly under provider checkboxes.
@@ -170,6 +180,7 @@ A comprehensive userscript for **[Harmony](http://harmony.pulsewidth.org.uk/)** 
 Generates and embeds scanable barcodes for ISBNs found on various German book retailer sites.
 
 ### Features
+
 - **Auto-Detection:** Automatically spots ISBN-10 and ISBN-13 codes within the page text.
 - **Live Generation:** Creates scannable barcode images on the fly.
 - **Toggleable:** Includes a menu command to enable/disable the barcode embedding.
@@ -182,6 +193,7 @@ Generates and embeds scanable barcodes for ISBNs found on various German book re
 Cleans up the ISRC Hunt interface by hiding a-tisket links and normalizing styles.
 
 ### Features
+
 - **Filter:** Hides "a-tisket" links to reduce clutter.
 - **Style Reset:** Resets link styles to default for better consistency.
 
@@ -193,6 +205,7 @@ Cleans up the ISRC Hunt interface by hiding a-tisket links and normalizing style
 Visually compares ISRC codes between sources (e.g., Spotify vs. MusicBrainz) in the ISRC Hunt interface.
 
 ### Features
+
 - **Visual Diff:** Highlights matching ISRCs in green and non-matching ones in red.
 - **Multi-ISRC Support:** Handles and compares cells containing multiple comma-separated ISRCs.
 
@@ -204,6 +217,7 @@ Visually compares ISRC codes between sources (e.g., Spotify vs. MusicBrainz) in 
 Optimizes Harmony links on ISRC Hunt to default to the "preferred" category.
 
 ### Features
+
 - **Link Rewriting:** Automatically updates Harmony URLs to prioritize the preferred category.
 
 ## ListenBrainz: Extended Controls
@@ -214,6 +228,7 @@ Optimizes Harmony links on ISRC Hunt to default to the "preferred" category.
 Adds customization options and extra features to ListenBrainz listen cards.
 
 ### Features
+
 - **Custom Actions:** Choose which buttons (Love, Hate, Open in Service) appear on the card.
 - **Quick Access:** Moves "Open in Service" (e.g. Spotify) links directly to the main controls.
 - **Source Info:** Displays which player or service submitted the listen.
@@ -227,6 +242,7 @@ Adds customization options and extra features to ListenBrainz listen cards.
 Checks for duplicate releases based on barcode when viewing "Add Release" edits.
 
 ### Features
+
 - **Automatic Check:** Scans edits for barcodes and checks for existing releases.
 - **Duplicate Warning:** Highlights barcodes in **yellow** if they already exist on other releases.
 - **Quick Search:** Adds a direct link to search MusicBrainz for the barcode.
@@ -239,6 +255,7 @@ Checks for duplicate releases based on barcode when viewing "Add Release" edits.
 Adds search buttons for Spotify and SoundExchange to the ISRC view page header.
 
 ### Features
+
 - **Direct Integration:** Injects "Search on Spotify" and "Search on SoundExchange" buttons directly next to the ISRC header.
 - **Context-Aware:** Uses the current ISRC code to construct precise search URLs.
 
@@ -250,6 +267,7 @@ Adds search buttons for Spotify and SoundExchange to the ISRC view page header.
 Adds direct "import ISRCs" links to Spotify and Deezer relationships on release pages.
 
 ### Features
+
 - **Smart Integration:** Finds existing Spotify and Deezer links in the sidebar.
 - **One-Click Import:** Adds a [...] link that takes you directly to the ISRC Hunt import page for that release.
 
@@ -263,6 +281,7 @@ Makes "Add to Collection" and "Remove from Collection" actions in the sidebar in
 **Note:** Works with English UI only.
 
 ### Features
+
 - **Instant Toggle:** Adds or removes entities from your collection immediately.
 - **Visual Feedback:** Updates the link text and the sidebar collection counter dynamically.
 
@@ -274,6 +293,7 @@ Makes "Add to Collection" and "Remove from Collection" actions in the sidebar in
 Aligns columns in 'Merge' edit tables for easier side-by-side comparison.
 
 ### Features
+
 - **Smart Alignment:** Dynamically calculates and applies column widths based on content.
 - **Clean Interface:** Options to Collapse Empty Columns to hide irrelevant data.
 - **Layout Control:** Option to Widen Table Container for better use of screen space.
@@ -287,6 +307,7 @@ Aligns columns in 'Merge' edit tables for easier side-by-side comparison.
 Supercharges the MusicBrainz artwork uploader with batch processing and reliability features.
 
 ### Features
+
 - **Multi-Upload:** Upload multiple images simultaneously. (Fixes[MBS-12374](https://tickets.metabrainz.org/browse/MBS-12374))
 - **Directory Support:** Drag and drop entire folders to upload all images within. (Fixes [MBS-12452](https://tickets.metabrainz.org/browse/MBS-12452))
 - **Resiliency:** Automatically retries failed uploads and handles rate limits.
@@ -300,6 +321,7 @@ Supercharges the MusicBrainz artwork uploader with batch processing and reliabil
 Automatically clicks the button to confirm submitting (seeding) data from other sites
 
 ### Features
+
 - **Auto-Confirm:** Clicks the submit button on the confirmation page automatically.
 - **Time Saver:** Skips a manual step when adding releases or recordings via external tools or scripts from other sites.
 
@@ -311,6 +333,7 @@ Automatically clicks the button to confirm submitting (seeding) data from other 
 Simplifies the login process for ISRC submission sites like MagicISRC and ISRC Hunt.
 
 ### Features
+
 - **Auto-Confirm:** Automatically clicks "Allow Access" on MusicBrainz OAuth pages for trusted importers.
 - **Auto-Login:** Detects login forms on supported sites and initiates the sign-in process automatically.
 - **Security:** Validates client IDs and scopes before taking action to ensure safety.
@@ -325,6 +348,7 @@ Automatically reveals AcoustIDs on Artist Recording pages.
 Requires the [Display acoustIDs and merge recordings with common acoustID userscript](https://github.com/loujine/musicbrainz-scripts/?tab=readme-ov-file#musicbrainz-edit-display-acoustids-and-merge-recordings-with-common-acoustid) to be installed.
 
 ### Features
+
 - **Auto-Click:** Triggers the "Show acoustIDs" button immediately upon page load.
 
 ## MusicBrainz: Batch Delete Entities
@@ -340,6 +364,7 @@ MusicBrainz: Batch Delete Entities<br>
 `javascript:(()=>{const items=Array.from(document.querySelectorAll('input[name="add-to-merge"]:checked, input[name="remove"]:checked'),b=>(b.closest('tr,li')||b.parentElement)?.querySelector('a[href]')?.href).filter(Boolean);if(document.dispatchEvent(new CustomEvent('UserJS:MusicBrainz',{detail:{action:'delete',items},bubbles:!0,cancelable:!0})))alert('MusicBrainz: Batch Delete Entities userscript is not active on this page.');})();`
 
 ### Features
+
 - **Modal Dialog Interface:** Provides a batch delete popup with input for entity URLs or MBIDs and a required edit note.
 - **Real-time Status Streaming:** Displays progress logs, success/error statuses, and summary reporting for each entry processed.
 - **Custom Event Integration:** Listens for `UserJS:MusicBrainz` custom events triggered from hotkeys or bookmarklets.
@@ -353,6 +378,7 @@ MusicBrainz: Batch Delete Entities<br>
 Enables removing multiple cover art images from a release at once.
 
 ### Features
+
 - **Bulk Selection:** Adds checkboxes to each cover art image and a "Select All" option.
 - **Elephant Editor:** Features an edit note memory (based on and compatible with [Elephant Editor](https://github.com/jesus2099/konami-command/blob/master/mb_ELEPHANT-EDITOR.user.js)) that remembers previous edit notes and offers quick-insert buttons.
 - **Progress Tracking:** Shows a real-time progress bar and specific status messages for each image removal.
@@ -364,9 +390,10 @@ Enables removing multiple cover art images from a release at once.
 
 Enhances AcoustID visibility and comparison across MusicBrainz.
 
-Modernized and refactored version of the original script which can be found at https://github.com/otringal/MB-userscripts/blob/master/Musicbrainz_acoustid.user.js
+Modernized and refactored version of the original script which can be found at <https://github.com/otringal/MB-userscripts/blob/master/Musicbrainz_acoustid.user.js>
 
 ### Features
+
 - **Expanded Comparison:** Adds AcoustID columns to recording merge edits.
 - **Visual Comparison:** Color-codes identical AcoustIDs to make duplicates easily recognizable.
 - **Quick Links:** Add direct links to AcoustID.org for analysis.
@@ -379,6 +406,7 @@ Modernized and refactored version of the original script which can be found at h
 A dashboard for managing your editor subscriptions.
 
 ### Features
+
 - **Comprehensive List:** View all your subscriptions in a sortable, filterable table.
 - **Editor Stats:** See key metrics like edit count, rejection rate, and last active date for each subscribed editor.
 - **Bulk Actions:** Unsubscribe from multiple inactive or unwanted editors with a single click.
@@ -391,6 +419,7 @@ A dashboard for managing your editor subscriptions.
 Improves the native "Guess Case" functionality with smarter rules.
 
 ### Features
+
 - **Artist Deduplication:** Automatically removes duplicate artists when using "Guess feat. artists".
 - **Smart ETI Handling:** correctly cases Extra Title Information words like "Official Video", "Lyric Video", "Sped Up", etc.
 - **Preserves Intent:** Respects existing uppercase acronyms when configured.
@@ -402,11 +431,12 @@ Improves the native "Guess Case" functionality with smarter rules.
 
 Automatically detects and sets the Release Language and Script based on track titles.
 
-This is a modified version of the original script by ROpdebee at https://github.com/ROpdebee/mb-userscripts/pull/502
+This is a modified version of the original script by ROpdebee at <https://github.com/ROpdebee/mb-userscripts/pull/502>
 
 Instead of LibreTranslate it uses the the [language detector API](https://developer.mozilla.org/en-US/docs/Web/API/Translator_and_Language_Detector_APIs)
 
 ### Features
+
 - **One-Click Guessing:** Adds a button to the Release Editor to analyze the tracklist.
 - **Language Detection:** Uses an AI model internal to the browser to detect the language of the tracklist.
 - **Auto-Fill:** Automatically selects the correct values in the Language and Script dropdown menus.
@@ -419,6 +449,7 @@ Instead of LibreTranslate it uses the the [language detector API](https://develo
 Simplifies merging duplicate releases by visually grouping them based on barcode.
 
 ### Features
+
 - **Visual Grouping:** Highlights identical barcodes with matching colors for easy spotting.
 - **Click-to-Select:** Click any highlighted barcode to instantly check/uncheck all releases with that barcode for merging.
 
@@ -430,13 +461,14 @@ Simplifies merging duplicate releases by visually grouping them based on barcode
 Adds keyboard shortcuts for common actions on list pages (Release groups, Releases, Recordings, etc.).
 
 ### Features
+
 - **Quick Actions:** Press keys to perform actions on selected items:
-    - <kbd>A</kbd>: Artwork
-    - <kbd>D</kbd>: Delete
-    - <kbd>E</kbd>: Edit
-    - <kbd>W</kbd>: Merge
-    - <kbd>Q</kbd>: Aliases
-    - <kbd>R</kbd>: Relationship Editor
+  - <kbd>A</kbd>: Artwork
+  - <kbd>D</kbd>: Delete
+  - <kbd>E</kbd>: Edit
+  - <kbd>W</kbd>: Merge
+  - <kbd>Q</kbd>: Aliases
+  - <kbd>R</kbd>: Relationship Editor
 - **Batch Compatible:** Opens actions for multiple selected entities in new tabs (staggered to prevent rate limits).
 
 ## MusicBrainz: Import from Discogs CSV
@@ -447,16 +479,17 @@ Adds keyboard shortcuts for common actions on list pages (Release groups, Releas
 Import your Discogs collection directly into a MusicBrainz collection.
 
 ### Features
+
 - **CSV Support:** Reads standard Discogs export files.
 - **Smart Matching:** Looks up releases by Discogs ID to ensure accurate linking.
 - **Bulk Import:** Adds found releases to your MusicBrainz collection automatically.
 
-### How to use:
+### How to use
 
 1. Make a new release collection
 1. Upload your CSV
 
-[📷 View Screenshot](https://community.metabrainz.org/uploads/default/original/3X/d/3/d32d6965a2c57564bac560c8550a8089d14491f5.png)
+[📷 View Collection CSV upload screenshot](https://community.metabrainz.org/uploads/default/original/3X/d/3/d32d6965a2c57564bac560c8550a8089d14491f5.png)
 
 ## MusicBrainz: Mass Merge Recordings from Edit
 
@@ -468,6 +501,7 @@ Allows merging recordings directly from **"Edit medium"** edits.
 Based on the original [Mass Merge Recordings](https://github.com/jesus2099/konami-command/blob/master/mb_MASS-MERGE-RECORDINGS.user.js) script by @jesus2099
 
 ### Features
+
 - **In-place Merging:** Adds "Merge" buttons next to changed recordings on edit medium edits.
 - **Batch Processing:** Merge recording pairs sequentially with a single click.
 - **Progress Tracking:** Shows a status bar with real-time feedback and retry logic for failed operations.
@@ -476,8 +510,6 @@ Based on the original [Mass Merge Recordings](https://github.com/jesus2099/konam
 
 [![Install](https://img.shields.io/badge/Install-success.svg?style=for-the-badge&logo=tampermonkey)](https://github.com/chaban-mb/userscripts/raw/main/src/MusicBrainz%20Pending%20Edits%20Logger.user.js)
 [![Source](https://img.shields.io/badge/Source-grey.svg?style=for-the-badge&logo=github)](https://github.com/chaban-mb/userscripts/blob/main/src/MusicBrainz%20Pending%20Edits%20Logger.user.js)
-
-# MusicBrainz: Pending Edits Logger
 
 Real-time diagnostic and debug auditor that monitors pending changes across MusicBrainz entity editors.
 
@@ -495,10 +527,11 @@ Real-time diagnostic and debug auditor that monitors pending changes across Musi
 Power-up for the MusicBrainz Relationship Editor that enables batch removal of relationships using keyboard shortcuts.
 
 ### Features
+
 - **Batch Selection:** Hold modifier keys while clicking the "Remove" button to affect multiple relationships at once:
-    - <kbd>Shift</kbd>: Affects all relationships of the **same type**.
-    - <kbd>Ctrl</kbd>: Affects all relationships to the **same target entity**.
-    - <kbd>Ctrl</kbd>+<kbd>Shift</kbd>: Affects all relationships of the **same type AND target**.
+  - <kbd>Shift</kbd>: Affects all relationships of the **same type**.
+  - <kbd>Ctrl</kbd>: Affects all relationships to the **same target entity**.
+  - <kbd>Ctrl</kbd>+<kbd>Shift</kbd>: Affects all relationships of the **same type AND target**.
 - **Toggle Mode:** Easily switch between removal and restore.
 
 ## MusicBrainz: Release day of the week
@@ -512,9 +545,9 @@ Based on the [original script](https://userscripts-mirror.org/scripts/show/13023
 
 ### Features
 
-* **Visual Validation:** Automatically color-codes release days (Green = Standard, Orange = Non-Standard, Grey = Unknown) to easily spot potential errors at a glance.
-* **Historical Accuracy:** Understands complex historical release rules, such as Germany's shift to Fridays in September 2005 and the introduction of the Global Release Day on July 10, 2015.
-* **Informative Tooltips:** Hover over any injected weekday to see exactly why it was flagged (e.g., "Expected Tuesday for United States, but is Friday").
+- **Visual Validation:** Automatically color-codes release days (Green = Standard, Orange = Non-Standard, Grey = Unknown) to easily spot potential errors at a glance.
+- **Historical Accuracy:** Understands complex historical release rules, such as Germany's shift to Fridays in September 2005 and the introduction of the Global Release Day on July 10, 2015.
+- **Informative Tooltips:** Hover over any injected weekday to see exactly why it was flagged (e.g., "Expected Tuesday for United States, but is Friday").
 
 ## MusicBrainz: Remember Search Type
 
@@ -524,6 +557,7 @@ Based on the [original script](https://userscripts-mirror.org/scripts/show/13023
 Remembers your last selected entity type in the MusicBrainz search bar.
 
 ### Features
+
 - **Persistence:** Keeps your last used search category (e.g., Artist, Release, Recording) active across page loads.
 - **Automatic Expiry:** Resets after 48 hours
 
@@ -535,17 +569,17 @@ Remembers your last selected entity type in the MusicBrainz search bar.
 Enhances the MusicBrainz reports page by showing change indicators for each report.
 
 ### Features
+
 - **Change Tracking:** Shows how many items have been added or removed from a report since your last visit.
 - **Visual Indicators:** Uses arrows (▲/▼) and color-coding to highlight trends in report volume.
 - **Auto-Hider:** Automatically hides reports with zero items to reduce clutter.
 - **Subscriptions Mode:** Can toggle between all entities and only subscribed ones.
 
-
 [📷 View Screenshot](https://greasyfork.org/rails/active_storage/blobs/redirect/eyJfcmFpbHMiOnsiZGF0YSI6MTgxNTY2LCJwdXIiOiJibG9iX2lkIn19--b22789d3ad621ab1fdad517fdbfdedb9ccf3e6d3/7d8290c2d59333abec9b47774dd45aac8aa2e20e%5B1%5D.png?locale=en)
 
 **Note:** Currently it will only work when using ISO 8601 date/time format in user preferences and UI language set to English:
 
-[📷 View Screenshot](https://greasyfork.org/rails/active_storage/blobs/redirect/eyJfcmFpbHMiOnsiZGF0YSI6MTgxMzgzLCJwdXIiOiJibG9iX2lkIn19--3225284c1f3f5207973a381c75c38fa7050618b6/image.png?locale=en)
+[📷 View User preferences screenshot](https://greasyfork.org/rails/active_storage/blobs/redirect/eyJfcmFpbHMiOnsiZGF0YSI6MTgxMzgzLCJwdXIiOiJibG9iX2lkIn19--3225284c1f3f5207973a381c75c38fa7050618b6/image.png?locale=en)
 
 ## MusicBrainz: Resizable Secondary Types Forms
 
@@ -562,6 +596,7 @@ Fixes [MBS-10509](https://tickets.metabrainz.org/browse/MBS-10509) by making the
 Enhances the MusicBrainz Release Editor by adding ISRC search capabilities to the recording lookup.
 
 ### Features
+
 - **ISRC Search:** Allows you to find recordings by pasting an ISRC directly into the recording search field.
 - **Seamless Integration:** Works within the existing inline search interface of the Release Editor.
 
@@ -573,6 +608,7 @@ Enhances the MusicBrainz Release Editor by adding ISRC search capabilities to th
 Filters spammers on your MusicBrainz subscriber list by detecting blocked profiles, edit statistics, and name patterns.
 
 ### Features
+
 - **Spammer Detection:** Identifies blocked, hidden, and zero-edit accounts subscribed to your profile.
 - **Visual Highlighting:** Highlights suspect subscriber rows and provides quick actions to review or clean up subscriptions.
 - **Cached Profile Scrapes:** Caches profile inspection results to minimize network requests.
@@ -585,6 +621,7 @@ Filters spammers on your MusicBrainz subscriber list by detecting blocked profil
 Quickly deselect all checkboxes on the page by pressing the <kbd>Esc</kbd> key.
 
 ### Features
+
 - **Keyboard Shortcut:** Clears selection without manual clicking.
 - **Targeted Selection:** Primarily focused on checkboxes used for merging and within the release relationship editor.
 
@@ -596,6 +633,7 @@ Quickly deselect all checkboxes on the page by pressing the <kbd>Esc</kbd> key.
 Implementation of [MBS-10966](https://tickets.metabrainz.org/browse/MBS-10966). Provides a warning when merging recordings with significantly different lengths.
 
 ### Features
+
 - **Visual Warning:** Highlights recording pairs in the merge queue that differ by 15 seconds or more.
 - **Mistake Prevention:** Helps avoid accidental merges of different versions or edits of the same song.
 
@@ -607,6 +645,7 @@ Implementation of [MBS-10966](https://tickets.metabrainz.org/browse/MBS-10966). 
 Injects MusicBrainz links into SecondHandSongs pages for artists, releases, and works.
 
 ### Features
+
 - **Context-Aware:** Detects the type of entity (Artist, Work, Release) and adds the appropriate MusicBrainz icon link.
 
 ## SoundCloud Metadata Inspector
@@ -617,6 +656,7 @@ Injects MusicBrainz links into SecondHandSongs pages for artists, releases, and 
 Metadata inspector dashboard for SoundCloud that extracts and displays hidden data such as ISRCs, UPCs, publisher copyright lines, exact release/upload timestamps, streaming presets, and technical entity identifiers.
 
 ### Features
+
 - **Release Metadata:** View detailed release information including barcode (UPC/EAN), record label, ℗/© publisher lines, writer/composer, rights license, buy links, and full tag lists.
 - **Track-Level Metadata & ISRCs:** Inspect individual track ISRCs, track-level UPCs, BPM, key signature, monetization model, policy controls, and streaming/download availability.
 - **Unified Timeline:** View all timestamps (created, published, released, display, and last modified dates) side-by-side.
@@ -633,6 +673,7 @@ Metadata inspector dashboard for SoundCloud that extracts and displays hidden da
 Checks releases listed on [Spotify Release List](https://spotifyreleaselist.netlify.app/) against MusicBrainz using Spotify URL lookups.
 
 ### Features
+
 - **Auto-Filtering**: Automatically hides releases that are already found in MusicBrainz to help you focus on missing releases.
 - **Header Toggle**: Adds a "Show Found" / "Hide Found" button in the page header to toggle the visibility of cataloged releases.
 - **Direct Links**: Adds a direct "MB ↗" link badge to matching release pages on MusicBrainz.
@@ -642,7 +683,7 @@ Checks releases listed on [Spotify Release List](https://spotifyreleaselist.netl
 [![Install](https://img.shields.io/badge/Install-success.svg?style=for-the-badge&logo=tampermonkey)](https://github.com/chaban-mb/userscripts/raw/main/src/Spotify%20MusicBrainz%20importer.user.js)
 [![Source](https://img.shields.io/badge/Source-grey.svg?style=for-the-badge&logo=github)](https://github.com/chaban-mb/userscripts/blob/main/src/Spotify%20MusicBrainz%20importer.user.js)
 
-Based on the original script by RustyNova which can be found at https://github.com/RustyNova016/MusicBrainz-UserScripts/blob/main/spotify-musicbrainz-import.user.js
+Based on the original script by RustyNova which can be found at <https://github.com/RustyNova016/MusicBrainz-UserScripts/blob/main/spotify-musicbrainz-import.user.js>
 
 This version was reworked and notably adds buttons for [ISRC Hunt](https://isrchunt.com/), [ListenBrainz](https://listenbrainz.org/) and [SAMBL](https://github.com/Lioncat6/SAMBL-React). a-tisket was removed
 
@@ -654,6 +695,7 @@ This version was reworked and notably adds buttons for [ISRC Hunt](https://isrch
 Allows importing releases from Volumo into MusicBrainz.
 
 ### Features
+
 - **Direct Import**: Extracts release metadata (title, artists, tracks with durations, barcode, record label, and catalog number) from the page structure or API and seeds the MusicBrainz release editor.
 - **Harmony Integration**: Provides a link to import/seed the release via the Harmony platform.
 - **Quick Access**: If the release URL is already registered in MusicBrainz, displays a direct link to open the release on MusicBrainz.
@@ -667,6 +709,7 @@ Allows importing releases from Volumo into MusicBrainz.
 Adds a "Search on Spotify" option to the context menu in YouTube Music.
 
 ### Features
+
 - **Context-Aware:** Detects if you clicked on a Song, Album, Artist, or Playlist.
 - **Smart Query:** Constructs a targeted Spotify search based on the artist and title.
 - **Native Look:** Adds a menu item that seamlessly blends with the YouTube Music interface.
@@ -679,5 +722,6 @@ Adds a "Search on Spotify" option to the context menu in YouTube Music.
 Adds a button to YouTube video pages to easily import them as MusicBrainz recordings.
 
 ### Features
+
 - **Data Import:** Pre-fills the MusicBrainz "Add Recording" form with title, length and  artist.
 - **ListenBrainz Sync:** Also supports creating ListenBrainz playlists for mix videos with tracklists.

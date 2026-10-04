@@ -3,5 +3,6 @@ Makes "Add to Collection" and "Remove from Collection" actions in the sidebar in
 **Note:** Works with English UI only.
 
 ### Features
+
 - **Instant Toggle:** Adds or removes entities from your collection immediately.
 - **Visual Feedback:** Updates the link text and the sidebar collection counter dynamically.
