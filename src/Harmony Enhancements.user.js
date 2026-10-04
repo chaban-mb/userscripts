@@ -1059,7 +1059,7 @@
          * @param {string} originalNames - The original label names to display in the tooltip.
          */
         replaceReleaseLabels: (newLabelName, newMbid, originalNames) => {
-            const labelsUl = document.querySelector('ul.release-labels:not(.inline)');
+            const labelsUl = AppState.dom.labelsUl;
             if (!labelsUl) return;
 
             labelsUl.innerHTML = '';
@@ -1074,6 +1074,8 @@
                 type: 'overwritten',
                 tooltip: `Original labels: ${originalNames}`,
             });
+
+            AppState.dom.labelListElements = [span];
         },
     };
 
@@ -2999,7 +3001,7 @@
     function ingestExternalFormData(targetForm = null) {
         const forms = targetForm
             ? [targetForm]
-            : Array.from(document.querySelectorAll('form[name="release-seeder"], form[name="release-update-seeder"]'));
+            : (AppState.dom.seederForms || []);
         if (forms.length === 0 || !AppState.data.release) return false;
 
         const release = AppState.data.release;
@@ -3229,10 +3231,10 @@
         const release = AppState.data.release;
         if (!release || !Array.isArray(release.labels)) return;
 
-        const ul = document.querySelector('ul.release-labels:not(.inline)');
-        if (!ul) return;
+        const { labelsUl, releaseInfoTable } = AppState.dom;
+        if (!labelsUl) return;
 
-        const listItems = Array.from(ul.querySelectorAll(':scope > li'));
+        const listItems = Array.from(labelsUl.querySelectorAll(':scope > li'));
 
         listItems.forEach(li => {
             const isHbr = li.querySelector('[data-hbr-label-provider], a[href*="beatport.com"]');
@@ -3244,14 +3246,14 @@
             );
 
             if (!isPrimarySelected) {
-                let altUl = AppState.dom.releaseInfoTable?.querySelector('ul.release-labels ~ ul.alt-values')
-                    || document.querySelector('ul.release-labels ~ ul.alt-values')
+                let altUl = releaseInfoTable?.querySelector('ul.release-labels ~ ul.alt-values')
+                    || labelsUl.parentElement?.querySelector('ul.alt-values')
                     || document.querySelector('ul.alt-values');
 
                 if (!altUl) {
                     altUl = document.createElement('ul');
                     altUl.className = 'alt-values';
-                    ul.after(altUl);
+                    labelsUl.after(altUl);
                 }
 
                 let hbrAlt = altUl.querySelector('#hbr-beatport-label-alt');
@@ -3298,15 +3300,16 @@
             }
         });
 
-        const remainingListItems = Array.from(ul.querySelectorAll(':scope > li'));
+        const remainingListItems = Array.from(labelsUl.querySelectorAll(':scope > li'));
         if (remainingListItems.length > release.labels.length) {
             for (let i = release.labels.length; i < remainingListItems.length; i++) {
                 remainingListItems[i].remove();
             }
         }
 
-        AppState.dom.labelListElements = document.querySelectorAll('ul.release-labels:not(.inline) li span.entity-links');
-        AppState.dom.labelAltElements = Array.from(document.querySelectorAll('ul.release-labels ~ ul.alt-values .entity-links'));
+        AppState.dom.labelListElements = Array.from(labelsUl.querySelectorAll(':scope > li span.entity-links'));
+        AppState.dom.labelAltElements = Array.from(releaseInfoTable?.querySelectorAll('ul.release-labels ~ ul.alt-values .entity-links')
+            || document.querySelectorAll('ul.release-labels ~ ul.alt-values .entity-links'));
     }
 
     let formObserverDebounceTimer = null;
@@ -3322,9 +3325,9 @@
                 AppState.data.release.labels = getUniqueLabels(AppState.data.release.labels);
             }
             reconcileReleaseLabelsDOM();
-            const form = document.querySelector('form[name="release-seeder"]');
-            if (form) {
-                buildSeederParameters(form, AppState.data.release, AppState.data.originalRelease, null);
+            const { releaseSeederForm } = AppState.dom;
+            if (releaseSeederForm) {
+                buildSeederParameters(releaseSeederForm, AppState.data.release, AppState.data.originalRelease, null);
             }
         }
     }
@@ -3333,8 +3336,8 @@
      * @summary Sets up a MutationObserver on the release seeder forms to detect third-party injections.
      */
     function setupFormMutationObserver() {
-        const forms = document.querySelectorAll('form[name="release-seeder"], form[name="release-update-seeder"]');
-        if (forms.length === 0) return;
+        const { seederForms } = AppState.dom;
+        if (!seederForms || seederForms.length === 0) return;
 
         const observer = new MutationObserver((mutations) => {
             let hasExternalAddition = false;
@@ -3407,11 +3410,19 @@
                 }
             });
 
-            // Cache alt label elements
-            AppState.dom.labelAltElements = Array.from(document.querySelectorAll('ul.release-labels ~ ul.alt-values .entity-links'));
         }
 
-        AppState.dom.labelListElements = document.querySelectorAll('ul.release-labels:not(.inline) li span.entity-links');
+        AppState.dom.labelsUl = AppState.dom.releaseInfoTable?.querySelector('ul.release-labels:not(.inline)')
+            || document.querySelector('ul.release-labels:not(.inline)');
+        AppState.dom.labelListElements = AppState.dom.labelsUl
+            ? Array.from(AppState.dom.labelsUl.querySelectorAll(':scope > li span.entity-links'))
+            : [];
+        AppState.dom.labelAltElements = Array.from(AppState.dom.releaseInfoTable?.querySelectorAll('ul.release-labels ~ ul.alt-values .entity-links')
+            || document.querySelectorAll('ul.release-labels ~ ul.alt-values .entity-links'));
+
+        AppState.dom.releaseSeederForm = document.querySelector('form[name="release-seeder"]');
+        AppState.dom.releaseUpdateSeederForm = document.querySelector('form[name="release-update-seeder"]');
+        AppState.dom.seederForms = [AppState.dom.releaseSeederForm, AppState.dom.releaseUpdateSeederForm].filter(Boolean);
         AppState.dom.scrapedArtistLinks = Array.from(document.querySelectorAll('.entity-links')).map(span => ({
             name: span.textContent.trim(),
             count: span.querySelectorAll('a').length,
@@ -3733,9 +3744,9 @@
             AppState.data.release.labels = getUniqueLabels(AppState.data.release.labels);
         }
         reconcileReleaseLabelsDOM();
-        const releaseForm = document.querySelector('form[name="release-seeder"]');
-        if (releaseForm) {
-            buildSeederParameters(releaseForm, AppState.data.release, AppState.data.originalRelease, null);
+        const { releaseSeederForm } = AppState.dom;
+        if (releaseSeederForm) {
+            buildSeederParameters(releaseSeederForm, AppState.data.release, AppState.data.originalRelease, null);
             setupFormMutationObserver();
         }
     }
