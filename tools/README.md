@@ -25,7 +25,7 @@ Developing userscripts by manually copy-pasting code into the browser editor on 
 
 - **In-Place Tracking (Zero Conflict)**: By default, `@name` is preserved identically to production so Violentmonkey updates your existing installed script in-place. This guarantees **only ONE script instance runs** on target sites (preventing duplicate UI elements and conflicting handlers).
 - **Git-Aware Versioning**: Injects the active git branch and commit hash into `@version` (e.g. `2.8.1-dev.3357794` on `dev`, or `2.8.1-dev.beatport-checker.3357794` on topic branches) for exact build identification in Violentmonkey without artificial version hacks.
-- **Update URL Redirection**: Rewrites `@updateURL` and `@downloadURL` to `http://localhost:8080/...` so Violentmonkey won't overwrite your local development script with upstream GitHub releases during polling.
+- **Preserve Upstream Update URLs**: Preserves original `@updateURL` and `@downloadURL` so your script can cleanly update to stable upstream releases via Violentmonkey once development is complete. Violentmonkey's tracking feature operates purely on the installer tab URL and does not depend on localhost metadata update URLs.
 - **Shared Libraries**: Serves helper libraries from `lib/` (e.g., `/lib/MusicBrainzAPI.js`) for relative `@require` resolution.
 - **Web Dashboard**: Provides a clean visual interface at `http://localhost:8080/` with one-click tracking links and instant links to restore official release versions.
 - **Conflict Diagnostic & Graceful Shutdown**: Intercepts `EADDRINUSE` to identify the occupying process (`tasklist` / `lsof`) and offers automatic takeover (`--kill`) or fallback (`--find-port`). Drains active keep-alive sockets on shutdown to prevent `FIN_WAIT_2` lingers.
@@ -106,10 +106,10 @@ Follow these steps to establish live auto-reloading:
   // @version     2.8.0
 
   // Served on localhost:8080
-  // @name        Beatport MusicBrainz Checker [DEV]
-  // @version     2.8.0-dev.beatport-checker/refactor.0d961bb
-  // @updateURL   http://127.0.0.1:8080/Beatport%20MusicBrainz%20Checker.user.js
-  // @downloadURL http://127.0.0.1:8080/Beatport%20MusicBrainz%20Checker.user.js
+  // @name        Beatport MusicBrainz Checker
+  // @version     2.8.0-dev.beatport-checker.0d961bb
+  // @updateURL   https://github.com/chaban-mb/userscripts/raw/main/src/Beatport%20MusicBrainz%20Checker.user.js
+  // @downloadURL https://github.com/chaban-mb/userscripts/raw/main/src/Beatport%20MusicBrainz%20Checker.user.js
   ```
 
 ---

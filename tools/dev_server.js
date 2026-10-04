@@ -5,9 +5,9 @@
  *
  * Local HTTP development server for Violentmonkey's native "Track external edits" workflow.
  * Serves userscripts from src/ with on-the-fly development tagging:
- *   - Appends "[DEV]" to @name
+ *   - Appends "[DEV]" to @name (when requested via --separate)
  *   - Injects git branch and short commit hash into @version (e.g. 1.28.0-dev.branch.hash or 1.28.0-dev.hash on dev)
- *   - Routes @updateURL and @downloadURL to localhost to prevent clobbering by upstream releases
+ *   - Preserves original @updateURL and @downloadURL so scripts can cleanly update to stable upstream releases
  *   - Serves dependencies from lib/ for @require resolution
  *
  * Usage:
@@ -44,7 +44,7 @@ OPTIONS:
   --host <ip>         Server host (default: 127.0.0.1, or process.env.HOST)
   --separate          Install as a separate script by appending [DEV] to @name
   --name-tag <tag>    Custom suffix appended to @name (implies --separate)
-  --no-tag            Serve raw script without injecting dev version or local update URLs
+  --no-tag            Serve raw script without injecting dev metadata
   --kill, --force     Terminate any existing process occupying the port before starting
   --find-port         Automatically select the next available port if requested port is in use
   --help, -h          Show this help screen and exit
@@ -174,7 +174,7 @@ function formatDevVersion(version, branch, hash) {
   return `${cleanVer}-dev.${devTag}`;
 }
 
-function transformUserscript(rawCode, scriptFileName, reqHost, isSeparate = false) {
+function transformUserscript(rawCode, isSeparate = false) {
   if (NO_TAG) return rawCode;
 
   const { branch, hash } = getGitInfo();
@@ -194,20 +194,6 @@ function transformUserscript(rawCode, scriptFileName, reqHost, isSeparate = fals
   code = code.replace(/^(\/\/\s*@version\s+)(\S+)$/m, (match, prefix, ver) => {
     return `${prefix}${formatDevVersion(ver, branch, hash)}`;
   });
-
-  // 3. Point @updateURL and @downloadURL to the local server
-  const localScriptUrl = `http://${reqHost}/${encodeURIComponent(scriptFileName)}${isSeparate ? '?separate=1' : ''}`;
-  if (/^(\/\/\s*@updateURL\s+)/m.test(code)) {
-    code = code.replace(/^(\/\/\s*@updateURL\s+).+$/m, `$1${localScriptUrl}`);
-  } else {
-    code = code.replace(/^(\/\/\s*==\/UserScript==)/m, `// @updateURL   ${localScriptUrl}\n$1`);
-  }
-
-  if (/^(\/\/\s*@downloadURL\s+)/m.test(code)) {
-    code = code.replace(/^(\/\/\s*@downloadURL\s+).+$/m, `$1${localScriptUrl}`);
-  } else {
-    code = code.replace(/^(\/\/\s*==\/UserScript==)/m, `// @downloadURL ${localScriptUrl}\n$1`);
-  }
 
   return code;
 }
@@ -348,7 +334,7 @@ const server = http.createServer((req, res) => {
     }
 
     const rawContent = fs.readFileSync(localFilePath, 'utf8');
-    const transformedContent = transformUserscript(rawContent, requestedFilename, hostHeader, isSeparate);
+    const transformedContent = transformUserscript(rawContent, isSeparate);
 
     res.writeHead(200, {
       'Content-Type': 'application/javascript; charset=utf-8',
