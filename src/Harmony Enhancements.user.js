@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        Harmony: Enhancements
 // @namespace   https://musicbrainz.org/user/chaban
-// @version     1.29.3
+// @version     1.29.4
 // @description Adds some convenience features, various UI and behavior settings, as well as an improved language detection to Harmony.
 // @tag         ai-created
 // @author      chaban
@@ -2554,68 +2554,81 @@
 
         removeBarcodeCatalogNumbers: () => {
             const releaseData = getReleaseDataFromJSON();
-            if (!releaseData) return;
+            const { labelListElements, releaseSeederForm } = AppState.dom;
 
-            const { gtin, labels } = releaseData;
+            const gtin = releaseData?.gtin
+                || new URLSearchParams(window.location.search).get('gtin')
+                || releaseSeederForm?.querySelector('input[name="barcode"]')?.value;
 
-            if (!gtin || !labels || labels.length === 0) return;
+            if (!gtin) return;
+            const cleanGtin = String(gtin).trim();
+            if (!cleanGtin) return;
 
-            const firstLabelSpan = AppState.dom.labelListElements?.[0];
-            if (!firstLabelSpan) return;
-
-            const labelListItems = firstLabelSpan.closest('ul')?.querySelectorAll(':scope > li');
-            if (!labelListItems) return;
+            const labels = releaseData?.labels || [];
+            const labelElements = Array.from(labelListElements || []);
 
             let changesMade = false;
             const removedLogs = [];
 
-            labels.forEach((label, index) => {
-                const catNum = label.catalogNumber ? String(label.catalogNumber).trim() : '';
-                const cleanGtin = String(gtin).trim();
+            labelElements.forEach((labelLinkSpan, index) => {
+                const li = labelLinkSpan.closest('li');
+                if (!li) return;
 
-                if (catNum === cleanGtin) {
-                    label.catalogNumber = null;
-                    changesMade = true;
-                    removedLogs.push(label.name);
+                const label = labels[index];
+                const catNum = label?.catalogNumber ? String(label.catalogNumber).trim() : '';
 
-                    if (labelListItems[index]) {
-                        const li = labelListItems[index];
-
-                        let textNodeToReplace = null;
-
-                        for (const node of li.childNodes) {
-                            if (node.nodeType === Node.TEXT_NODE && node.textContent.includes(cleanGtin)) {
-                                textNodeToReplace = node;
-                                break;
-                            }
-                        }
-
-                        if (textNodeToReplace) {
-                            textNodeToReplace.textContent = textNodeToReplace.textContent.replace(cleanGtin, '');
-                            if (!textNodeToReplace.textContent.trim()) {
-                                textNodeToReplace.remove();
-                            }
-                        }
-
-                        const labelLinkSpan = li.querySelector('.entity-links');
-                        if (labelLinkSpan) {
-                            UI_UTILS.badgeHost(labelLinkSpan).set('barcodeCatalog', {
-                                type: 'removed',
-                                tooltip: `Removed catalog number (matches barcode): ${cleanGtin}`,
-                            });
+                let foundInTextNode = false;
+                for (const node of Array.from(li.childNodes)) {
+                    if (node.nodeType === Node.TEXT_NODE && node.textContent.includes(cleanGtin)) {
+                        foundInTextNode = true;
+                        node.textContent = node.textContent.replaceAll(cleanGtin, '');
+                        if (!node.textContent.trim()) {
+                            node.remove();
                         }
                     }
+                }
 
-                    const form = document.querySelector('form[name="release-seeder"]');
-                    const catInput = form?.querySelector(`input[name="labels.${index}.catalog_number"]`);
+                while (li.lastChild && li.lastChild.nodeType === Node.TEXT_NODE && !li.lastChild.textContent.trim()) {
+                    li.lastChild.remove();
+                }
+
+                if (catNum === cleanGtin || foundInTextNode) {
+                    changesMade = true;
+                    if (label) {
+                        label.catalogNumber = null;
+                    }
+                    const labelName = label?.name || labelLinkSpan.textContent.trim() || `Label ${index + 1}`;
+                    removedLogs.push(labelName);
+
+                    UI_UTILS.badgeHost(labelLinkSpan).set('barcodeCatalog', {
+                        type: 'removed',
+                        tooltip: `Removed catalog number (matches barcode): ${cleanGtin}`,
+                    });
+
+                    const catInput = releaseSeederForm?.querySelector(`input[name="labels.${index}.catalog_number"]`);
                     if (catInput) {
                         catInput.remove();
                     }
                 }
             });
 
-            if (changesMade) {
-                const messageContent = `Removed catalog numbers that matched the barcode (${gtin}) for labels: <b>${removedLogs.join(', ')}</b>`;
+            labels.slice(labelElements.length).forEach((label, offset) => {
+                const index = labelElements.length + offset;
+                const catNum = label?.catalogNumber ? String(label.catalogNumber).trim() : '';
+                if (catNum === cleanGtin) {
+                    label.catalogNumber = null;
+                    changesMade = true;
+                    removedLogs.push(label.name || `Label ${index + 1}`);
+
+                    const catInput = releaseSeederForm?.querySelector(`input[name="labels.${index}.catalog_number"]`);
+                    if (catInput) {
+                        catInput.remove();
+                    }
+                }
+            });
+
+            if (changesMade && removedLogs.length > 0) {
+                const messageContent = `Removed catalog numbers that matched the barcode (${cleanGtin}) for labels: <b>${Array.from(new Set(removedLogs)).join(', ')}</b>`;
                 createAndInsertMessage('he-cat-barcode-match', messageContent, 'debug');
             }
         },
@@ -3316,6 +3329,10 @@
         AppState.dom.labelListElements = Array.from(labelsUl.querySelectorAll(':scope > li span.entity-links'));
         AppState.dom.labelAltElements = Array.from(releaseInfoTable?.querySelectorAll('ul.release-labels ~ ul.alt-values .entity-links')
             || document.querySelectorAll('ul.release-labels ~ ul.alt-values .entity-links'));
+
+        if (AppState.settings[SETTINGS_CONFIG.removeBarcodeCatalogNumbers.key]) {
+            enhancements.removeBarcodeCatalogNumbers();
+        }
     }
 
     let formObserverDebounceTimer = null;
@@ -3342,7 +3359,7 @@
      * @summary Sets up a MutationObserver on the release seeder forms to detect third-party injections.
      */
     function setupFormMutationObserver() {
-        const { seederForms } = AppState.dom;
+        const { seederForms, labelsUl } = AppState.dom;
         if (!seederForms || seederForms.length === 0) return;
 
         const observer = new MutationObserver((mutations) => {
@@ -3373,17 +3390,26 @@
             }, 50);
         });
 
-        forms.forEach(form => observer.observe(form, { childList: true, subtree: true }));
+        seederForms.forEach(form => observer.observe(form, { childList: true, subtree: true }));
 
-        const labelsUl = document.querySelector('ul.release-labels:not(.inline)');
         if (labelsUl) {
+            let labelsObserverDebounceTimer = null;
             const labelsObserver = new MutationObserver((mutations) => {
-                const hasAddedLi = mutations.some(m => Array.from(m.addedNodes).some(n => n.nodeType === Node.ELEMENT_NODE && n.tagName === 'LI'));
-                if (hasAddedLi) {
-                    reconcileReleaseLabelsDOM();
+                const hasExternalAddition = mutations.some(m =>
+                    Array.from(m.addedNodes).some(n =>
+                        n.nodeType === Node.TEXT_NODE
+                            ? n.textContent.trim().length > 0
+                            : (n.nodeType === Node.ELEMENT_NODE && !n.classList?.contains('he-badge') && !n.querySelector?.('.he-badge'))
+                    )
+                );
+                if (hasExternalAddition) {
+                    clearTimeout(labelsObserverDebounceTimer);
+                    labelsObserverDebounceTimer = setTimeout(() => {
+                        reconcileReleaseLabelsDOM();
+                    }, 50);
                 }
             });
-            labelsObserver.observe(labelsUl, { childList: true });
+            labelsObserver.observe(labelsUl, { childList: true, subtree: true });
         }
     }
 
@@ -3415,7 +3441,6 @@
                     AppState.dom.releaseInfoRowsByHeader.set(headerText, th.parentElement);
                 }
             });
-
         }
 
         AppState.dom.labelsUl = AppState.dom.releaseInfoTable?.querySelector('ul.release-labels:not(.inline)')
@@ -3429,6 +3454,7 @@
         AppState.dom.releaseSeederForm = document.querySelector('form[name="release-seeder"]');
         AppState.dom.releaseUpdateSeederForm = document.querySelector('form[name="release-update-seeder"]');
         AppState.dom.seederForms = [AppState.dom.releaseSeederForm, AppState.dom.releaseUpdateSeederForm].filter(Boolean);
+
         AppState.dom.scrapedArtistLinks = Array.from(document.querySelectorAll('.entity-links')).map(span => ({
             name: span.textContent.trim(),
             count: span.querySelectorAll('a').length,
