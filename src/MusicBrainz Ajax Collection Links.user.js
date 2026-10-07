@@ -1,11 +1,13 @@
 // ==UserScript==
 // @name        MusicBrainz: Ajax Collection Links
 // @namespace   https://musicbrainz.org/user/chaban
-// @version     1.2.2
+// @version     1.2.3
 // @description Enhances entity sidebar collection links (Add/Remove from Collection) to use AJAX, preventing page reloads and toggling the link text on success.
 // @tag         ai-created
 // @author      chaban
 // @license     MIT
+// @homepageURL https://github.com/chaban-mb/userscripts
+// @supportURL  https://github.com/chaban-mb/userscripts/issues
 // @match       *://*.musicbrainz.org/area/*
 // @match       *://*.musicbrainz.org/artist/*
 // @match       *://*.musicbrainz.org/event/*

@@ -1,11 +1,13 @@
 // ==UserScript==
 // @name        Deezer: MusicBrainz importer
 // @namespace   https://musicbrainz.org/user/chaban
-// @version     1.0.2
+// @version     1.0.3
 // @description Adds buttons for MusicBrainz, ListenBrainz, Harmony, ISRC Hunt and SAMBL to Deezer.
 // @tag         ai-created
 // @author      chaban
 // @license     MIT
+// @homepageURL https://github.com/chaban-mb/userscripts
+// @supportURL  https://github.com/chaban-mb/userscripts/issues
 // @match       *://*.deezer.com/*
 // @connect     musicbrainz.org
 // @connect     listenbrainz.org

@@ -1,11 +1,13 @@
 // ==UserScript==
 // @name        Spotify Release List: MusicBrainz Checker
 // @namespace   https://musicbrainz.org/user/chaban
-// @version     1.0.3
+// @version     1.0.4
 // @description Checks releases on Spotify Release List instances against MusicBrainz. Fades or hides found releases and collapses date groups where everything is catalogued.
 // @tag         ai-created
 // @author      chaban
 // @license     MIT
+// @homepageURL https://github.com/chaban-mb/userscripts
+// @supportURL  https://github.com/chaban-mb/userscripts/issues
 // @match       https://spotifyreleaselist.netlify.app/*
 // @match       https://*.spotifyreleaselist.netlify.app/*
 // @match       https://spotifylist.mybrainz.dev/*

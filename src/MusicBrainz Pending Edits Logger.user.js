@@ -1,11 +1,13 @@
 // ==UserScript==
 // @name        MusicBrainz: Pending Edits Logger
 // @namespace   https://musicbrainz.org/user/chaban
-// @version     1.0.2
+// @version     1.0.3
 // @description Real-time diagnostic & debug auditor logging pending changes across MusicBrainz editors (Relationship Editors, External Links Editor, and HTML Form fields).
 // @tag         ai-created
 // @author      chaban
 // @license     MIT
+// @homepageURL https://github.com/chaban-mb/userscripts
+// @supportURL  https://github.com/chaban-mb/userscripts/issues
 // @match       https://musicbrainz.org/*
 // @match       https://*.musicbrainz.org/*
 // @icon        https://musicbrainz.org/static/images/favicons/android-chrome-512x512.png

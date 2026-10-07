@@ -1,11 +1,13 @@
 // ==UserScript==
 // @name        Spotify: MusicBrainz importer
 // @namespace   https://musicbrainz.org/user/chaban
-// @version     1.4.6
+// @version     1.4.7
 // @description Adds buttons for MusicBrainz, ListenBrainz, Harmony, ISRC Hunt and SAMBL to Spotify.
 // @tag         ai-created
 // @author      chaban, garylaski, RustyNova
 // @license     MIT
+// @homepageURL https://github.com/chaban-mb/userscripts
+// @supportURL  https://github.com/chaban-mb/userscripts/issues
 // @match       *://*.spotify.com/*
 // @connect     musicbrainz.org
 // @connect     listenbrainz.org

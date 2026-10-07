@@ -1,11 +1,13 @@
 // ==UserScript==
 // @name        MusicBrainz: Remember Search Type
 // @namespace   https://musicbrainz.org/user/chaban
-// @version     1.0.3
+// @version     1.0.4
 // @description Remembers the last selected entity type in the header search bar (expires after 48h).
 // @tag         ai-created
 // @author      chaban
 // @license     MIT
+// @homepageURL https://github.com/chaban-mb/userscripts
+// @supportURL  https://github.com/chaban-mb/userscripts/issues
 // @match       *://*.musicbrainz.org/*
 // @match       *://*.musicbrainz.eu/*
 // @grant       GM.getValue

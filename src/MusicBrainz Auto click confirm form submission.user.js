@@ -1,11 +1,13 @@
 // ==UserScript==
 // @name        MusicBrainz: Auto click confirm form submission
 // @namespace   https://musicbrainz.org/user/chaban
-// @version     1.3.4
+// @version     1.3.5
 // @description Automatically clicks the button to confirm submitting (seeding) data from other sites
 // @tag         ai-created
 // @author      chaban
 // @license     MIT
+// @homepageURL https://github.com/chaban-mb/userscripts
+// @supportURL  https://github.com/chaban-mb/userscripts/issues
 // @match       *://*.musicbrainz.org/release/add*
 // @match       *://*.musicbrainz.org/release/*/edit*
 // @match       *://*.musicbrainz.org/recording/create*

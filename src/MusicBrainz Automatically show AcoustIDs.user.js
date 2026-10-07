@@ -1,11 +1,13 @@
 // ==UserScript==
 // @name        MusicBrainz: Automatically show AcoustIDs
 // @namespace   https://musicbrainz.org/user/chaban
-// @version     1.3.3
+// @version     1.3.4
 // @description Automatically triggers the "Show acoustIDs" function of loujine's script
 // @tag         ai-created
 // @author      chaban
 // @license     MIT
+// @homepageURL https://github.com/chaban-mb/userscripts
+// @supportURL  https://github.com/chaban-mb/userscripts/issues
 // @match       *://*.musicbrainz.org/artist/*/recordings*
 // @icon        https://musicbrainz.org/static/images/favicons/android-chrome-512x512.png
 // @grant       none

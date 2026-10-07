@@ -1,11 +1,13 @@
 // ==UserScript==
 // @name        YouTube Music: Spotify Search
 // @namespace   https://musicbrainz.org/user/chaban
-// @version     1.1.3
+// @version     1.1.4
 // @description Adds a context-aware "Search on Spotify" item to the menu for songs and albums.
 // @tag         ai-created
 // @author      chaban
 // @license     MIT
+// @homepageURL https://github.com/chaban-mb/userscripts
+// @supportURL  https://github.com/chaban-mb/userscripts/issues
 // @match       https://music.youtube.com/*
 // @connect     spotify.com
 // @icon        https://music.youtube.com/img/favicon_144.png

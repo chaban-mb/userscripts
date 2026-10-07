@@ -1,11 +1,13 @@
 // ==UserScript==
 // @name        MusicBrainz: Reports Statistics
 // @namespace   https://musicbrainz.org/user/chaban
-// @version     2.1.3
+// @version     2.1.4
 // @description Indicates report changes since the last visit and hides reports without items.
 // @tag         ai-created
 // @author      chaban
 // @license     MIT
+// @homepageURL https://github.com/chaban-mb/userscripts
+// @supportURL  https://github.com/chaban-mb/userscripts/issues
 // @match       *://*.musicbrainz.org/reports*
 // @connect     self
 // @icon        https://musicbrainz.org/static/images/favicons/android-chrome-512x512.png

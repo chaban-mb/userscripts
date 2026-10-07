@@ -1,11 +1,13 @@
 // ==UserScript==
 // @name        MusicBrainz: Uncheck checkboxes with Esc
 // @namespace   https://musicbrainz.org/user/chaban
-// @version     1.4.3
+// @version     1.4.4
 // @description Unchecks all checked checkboxes for specified selectors when pressing Escape key
 // @tag         ai-created
 // @author      chaban
 // @license     MIT
+// @homepageURL https://github.com/chaban-mb/userscripts
+// @supportURL  https://github.com/chaban-mb/userscripts/issues
 // @match       *://*.musicbrainz.org/*
 // @icon        https://musicbrainz.org/static/images/favicons/android-chrome-512x512.png
 // @grant       none

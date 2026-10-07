@@ -1,11 +1,13 @@
 // ==UserScript==
 // @name        MusicBrainz: Resizable Secondary Types Forms
 // @namespace   https://musicbrainz.org/user/chaban
-// @version     1.0.5
+// @version     1.0.6
 // @description Makes the release group secondary type drop-down expandable and remembers its height.
 // @tag         ai-created
 // @author      chaban
 // @license     MIT
+// @homepageURL https://github.com/chaban-mb/userscripts
+// @supportURL  https://github.com/chaban-mb/userscripts/issues
 // @match       *://*.musicbrainz.org/release/add*
 // @match       *://*.musicbrainz.org/release/*/edit
 // @match       *://*.musicbrainz.org/release-group/create*

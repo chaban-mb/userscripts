@@ -1,11 +1,13 @@
 // ==UserScript==
 // @name        Discourse: Disable Touch Detection
 // @namespace   https://musicbrainz.org/user/chaban
-// @version     1.1.2
+// @version     1.1.3
 // @description Overrides browser APIs to disable touch-based UI adjustments in Discourse forums.
 // @tag         ai-created
 // @author      chaban
 // @license     MIT
+// @homepageURL https://github.com/chaban-mb/userscripts
+// @supportURL  https://github.com/chaban-mb/userscripts/issues
 // @match       https://community.metabrainz.org/*
 // @icon        https://www.discourse.org/a/img/favicon.png
 // @grant       none

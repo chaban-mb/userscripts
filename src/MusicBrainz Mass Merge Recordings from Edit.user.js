@@ -1,11 +1,13 @@
 // ==UserScript==
 // @name        MusicBrainz: Mass Merge Recordings from Edit
 // @namespace   https://musicbrainz.org/user/chaban
-// @version     1.0.4
+// @version     1.0.5
 // @description Batch merge recordings from an "Edit medium" page.
 // @tag         ai-created
 // @author      chaban, jesus2099
 // @license     GPL-3.0-or-later; http://www.gnu.org/licenses/gpl-3.0.txt
+// @homepageURL https://github.com/chaban-mb/userscripts
+// @supportURL  https://github.com/chaban-mb/userscripts/issues
 // @match       *://*.musicbrainz.org/edit/*
 // @match       *://*.musicbrainz.eu/edit/*
 // @connect     self

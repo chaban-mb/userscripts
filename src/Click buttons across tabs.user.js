@@ -1,11 +1,13 @@
 // ==UserScript==
 // @name        Click buttons across tabs
 // @namespace   https://musicbrainz.org/user/chaban
-// @version     4.13.2
+// @version     4.13.3
 // @description Clicks specified buttons across tabs using the Broadcast Channel API and closes tabs after successful submission.
 // @tag         ai-created
 // @author      chaban
 // @license     MIT
+// @homepageURL https://github.com/chaban-mb/userscripts
+// @supportURL  https://github.com/chaban-mb/userscripts/issues
 // @match       *://*.musicbrainz.org/*
 // @match       *://magicisrc.kepstin.ca/*
 // @match       *://magicisrc-beta.kepstin.ca/*

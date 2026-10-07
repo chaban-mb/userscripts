@@ -1,11 +1,13 @@
 // ==UserScript==
 // @name        MusicBrainz: Hotkeys for selected entities
 // @namespace   https://musicbrainz.org/user/chaban
-// @version     1.8.1
+// @version     1.8.2
 // @description Adds hotkeys to perform actions on selected entities. "A" = Artwork, "D" = Delete, "E" = Edit, "W" = Merge, "Q" = Aliases, "R" = Relationship Editor, "H" = Editing History
 // @tag         ai-created
 // @author      chaban
 // @license     MIT
+// @homepageURL https://github.com/chaban-mb/userscripts
+// @supportURL  https://github.com/chaban-mb/userscripts/issues
 // @match       *://*.musicbrainz.org/artist*
 // @match       *://*.musicbrainz.org/area/*
 // @match       *://*.musicbrainz.org/release-group/*
