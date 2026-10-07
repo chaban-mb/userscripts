@@ -489,7 +489,7 @@ Import your Discogs collection directly into a MusicBrainz collection.
 1. Make a new release collection
 1. Upload your CSV
 
-[📷 View Collection CSV upload screenshot](https://community.metabrainz.org/uploads/default/original/3X/d/3/d32d6965a2c57564bac560c8550a8089d14491f5.png)
+[📷 View Screenshot](https://community.metabrainz.org/uploads/default/original/3X/d/3/d32d6965a2c57564bac560c8550a8089d14491f5.png)
 
 ## MusicBrainz: Mass Merge Recordings from Edit
 
@@ -510,6 +510,8 @@ Based on the original [Mass Merge Recordings](https://github.com/jesus2099/konam
 
 [![Install](https://img.shields.io/badge/Install-success.svg?style=for-the-badge&logo=tampermonkey)](https://github.com/chaban-mb/userscripts/raw/main/src/MusicBrainz%20Pending%20Edits%20Logger.user.js)
 [![Source](https://img.shields.io/badge/Source-grey.svg?style=for-the-badge&logo=github)](https://github.com/chaban-mb/userscripts/blob/main/src/MusicBrainz%20Pending%20Edits%20Logger.user.js)
+
+# MusicBrainz: Pending Edits Logger
 
 Real-time diagnostic and debug auditor that monitors pending changes across MusicBrainz entity editors.
 
@@ -545,9 +547,9 @@ Based on the [original script](https://userscripts-mirror.org/scripts/show/13023
 
 ### Features
 
-- **Visual Validation:** Automatically color-codes release days (Green = Standard, Orange = Non-Standard, Grey = Unknown) to easily spot potential errors at a glance.
-- **Historical Accuracy:** Understands complex historical release rules, such as Germany's shift to Fridays in September 2005 and the introduction of the Global Release Day on July 10, 2015.
-- **Informative Tooltips:** Hover over any injected weekday to see exactly why it was flagged (e.g., "Expected Tuesday for United States, but is Friday").
+* **Visual Validation:** Automatically color-codes release days (Green = Standard, Orange = Non-Standard, Grey = Unknown) to easily spot potential errors at a glance.
+* **Historical Accuracy:** Understands complex historical release rules, such as Germany's shift to Fridays in September 2005 and the introduction of the Global Release Day on July 10, 2015.
+* **Informative Tooltips:** Hover over any injected weekday to see exactly why it was flagged (e.g., "Expected Tuesday for United States, but is Friday").
 
 ## MusicBrainz: Remember Search Type
 
@@ -579,7 +581,7 @@ Enhances the MusicBrainz reports page by showing change indicators for each repo
 
 **Note:** Currently it will only work when using ISO 8601 date/time format in user preferences and UI language set to English:
 
-[📷 View User preferences screenshot](https://greasyfork.org/rails/active_storage/blobs/redirect/eyJfcmFpbHMiOnsiZGF0YSI6MTgxMzgzLCJwdXIiOiJibG9iX2lkIn19--3225284c1f3f5207973a381c75c38fa7050618b6/image.png?locale=en)
+[📷 View Screenshot](https://greasyfork.org/rails/active_storage/blobs/redirect/eyJfcmFpbHMiOnsiZGF0YSI6MTgxMzgzLCJwdXIiOiJibG9iX2lkIn19--3225284c1f3f5207973a381c75c38fa7050618b6/image.png?locale=en)
 
 ## MusicBrainz: Resizable Secondary Types Forms
 
