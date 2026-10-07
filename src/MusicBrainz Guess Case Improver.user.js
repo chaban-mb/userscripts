@@ -1,11 +1,13 @@
 // ==UserScript==
 // @name        MusicBrainz: Guess Case Improver
 // @namespace   https://musicbrainz.org/user/chaban
-// @version     0.10.8
+// @version     0.10.9
 // @description Improves the native "Guess Case" for release, recording and track titles with advanced artist and ETI parsing. Also removes artist from title and duplicate artists after using "Guess feat. artists" on tracklists.
 // @tag         ai-created
 // @author      chaban
 // @license     MIT
+// @homepageURL https://github.com/chaban-mb/userscripts
+// @supportURL  https://github.com/chaban-mb/userscripts/issues
 // @match       https://*.musicbrainz.org/recording/create*
 // @match       https://*.musicbrainz.org/recording/*/edit
 // @match       https://*.musicbrainz.org/release/*/edit*

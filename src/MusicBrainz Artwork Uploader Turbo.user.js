@@ -1,11 +1,13 @@
 // ==UserScript==
 // @name        MusicBrainz: Artwork Uploader Turbo
 // @namespace   https://musicbrainz.org/user/chaban
-// @version     3.3.10
+// @version     3.3.11
 // @description Allows for multiple artwork images to be uploaded simultaneously and recursively upload directories.
 // @tag         ai-created
 // @author      chaban
 // @license     MIT
+// @homepageURL https://github.com/chaban-mb/userscripts
+// @supportURL  https://github.com/chaban-mb/userscripts/issues
 // @match       *://*.musicbrainz.org/release/*/add-cover-art*
 // @match       *://*.musicbrainz.org/event/*/add-event-art*
 // @icon        https://musicbrainz.org/static/images/favicons/android-chrome-512x512.png

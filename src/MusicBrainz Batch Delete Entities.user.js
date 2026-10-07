@@ -1,11 +1,13 @@
 // ==UserScript==
 // @name        MusicBrainz: Batch Delete Entities
 // @namespace   https://musicbrainz.org/user/chaban
-// @version     1.0.1
+// @version     1.0.2
 // @description Batch deletes entities like releases or recordings.
 // @tag         ai-created
 // @author      chaban
 // @license     MIT
+// @homepageURL https://github.com/chaban-mb/userscripts
+// @supportURL  https://github.com/chaban-mb/userscripts/issues
 // @match       *://*.musicbrainz.org/artist*
 // @match       *://*.musicbrainz.org/release-group*
 // @match       *://*.musicbrainz.org/release*

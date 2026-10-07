@@ -1,11 +1,13 @@
 // ==UserScript==
 // @name        ISBN Barcode Generator
 // @namespace   https://musicbrainz.org/user/chaban
-// @version     0.1.6
+// @version     0.1.7
 // @description Erkennt ISBNs und bettet einen scanbaren Barcode direkt ein. Mit An/Aus-Schalter im Menü.
 // @tag         ai-created
 // @author      chaban
 // @license     MIT
+// @homepageURL https://github.com/chaban-mb/userscripts
+// @supportURL  https://github.com/chaban-mb/userscripts/issues
 // @match       https://www.thalia.de/*
 // @match       https://www.yomeru.de/*
 // @match       https://tokyopop.de/*

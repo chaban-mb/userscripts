@@ -1,11 +1,13 @@
 // ==UserScript==
 // @name        MusicBrainz: Add search link for barcode
 // @namespace   https://musicbrainz.org/user/chaban
-// @version     3.2.6
+// @version     3.2.7
 // @description Searches for existing releases in "Add release" edits by barcode, highlights and adds a search link on match
 // @tag         ai-created
 // @author      chaban
 // @license     MIT
+// @homepageURL https://github.com/chaban-mb/userscripts
+// @supportURL  https://github.com/chaban-mb/userscripts/issues
 // @match       *://*.musicbrainz.org/edit/*
 // @match       *://*.musicbrainz.org/search/edits*
 // @match       *://*.musicbrainz.org/*/*/edits

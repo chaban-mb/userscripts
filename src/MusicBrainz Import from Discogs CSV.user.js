@@ -1,11 +1,13 @@
 // ==UserScript==
 // @name        MusicBrainz: Import from Discogs CSV
 // @namespace   https://musicbrainz.org/user/chaban
-// @version     0.2.6
+// @version     0.2.7
 // @description Imports releases to a MusicBrainz collection based on a Discogs CSV export by matching Discogs IDs to MusicBrainz Releases.
 // @tag         ai-created
 // @author      chaban
 // @license     MIT
+// @homepageURL https://github.com/chaban-mb/userscripts
+// @supportURL  https://github.com/chaban-mb/userscripts/issues
 // @match       https://*.musicbrainz.org/collection/*
 // @match       https://*.musicbrainz.eu/collection/*
 // @exclude     https://*musicbrainz.org/collection/*/*

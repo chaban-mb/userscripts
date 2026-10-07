@@ -1,11 +1,13 @@
 // ==UserScript==
 // @name        MusicBrainz: Search by ISRC in release editor
 // @namespace   https://musicbrainz.org/user/chaban
-// @version     1.1.4
+// @version     1.1.5
 // @description Hooks into the inline recording search of the release editor to allow searching by ISRC.
 // @tag         ai-created
 // @author      chaban
 // @license     MIT
+// @homepageURL https://github.com/chaban-mb/userscripts
+// @supportURL  https://github.com/chaban-mb/userscripts/issues
 // @match       *://*.musicbrainz.org/release/*/edit*
 // @match       *://*.musicbrainz.org/release/add*
 // @icon        https://musicbrainz.org/static/images/favicons/android-chrome-512x512.png

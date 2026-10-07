@@ -6,6 +6,8 @@
 // @tag         ai-created
 // @author      chaban
 // @license     MIT
+// @homepageURL https://github.com/chaban-mb/userscripts
+// @supportURL  https://github.com/chaban-mb/userscripts/issues
 // @match       https://harmony.pulsewidth.org.uk/*
 // @match       https://harmony.mybrainz.dev/*
 // @icon        https://harmony.pulsewidth.org.uk/harmony-logo.svg

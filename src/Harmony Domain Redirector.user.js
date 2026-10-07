@@ -1,11 +1,13 @@
 // ==UserScript==
 // @name        Harmony: Domain Redirector
 // @namespace   https://musicbrainz.org/user/chaban
-// @version     1.0.2
+// @version     1.0.3
 // @description Redirects the official Harmony instance to the alternative mybrainz instance.
 // @tag         ai-created
 // @author      chaban
 // @license     MIT
+// @homepageURL https://github.com/chaban-mb/userscripts
+// @supportURL  https://github.com/chaban-mb/userscripts/issues
 // @match       https://harmony.pulsewidth.org.uk/*
 // @icon        https://harmony.pulsewidth.org.uk/harmony-logo.svg
 // @grant       none
