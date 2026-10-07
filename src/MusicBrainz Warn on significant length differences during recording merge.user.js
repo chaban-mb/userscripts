@@ -1,11 +1,13 @@
 // ==UserScript==
 // @name        MusicBrainz: Warn on significant length differences during recording merge
 // @namespace   https://musicbrainz.org/user/chaban
-// @version     1.3.1
+// @version     1.3.2
 // @description Adds a warning on the recording merge page when the lengths differ by at least 15 seconds
 // @tag         ai-created
 // @author      chaban
 // @license     MIT
+// @homepageURL https://github.com/chaban-mb/userscripts
+// @supportURL  https://github.com/chaban-mb/userscripts/issues
 // @match       *://*.musicbrainz.org/recording/merge*
 // @icon        https://musicbrainz.org/static/images/favicons/android-chrome-512x512.png
 // @grant       none

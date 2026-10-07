@@ -1,11 +1,13 @@
 // ==UserScript==
 // @name        ISRC Hunt: Highlight ISRC matches and differences
 // @namespace   https://musicbrainz.org/user/chaban
-// @version     1.2.3
+// @version     1.2.4
 // @description Highlights matching ISRCs in green and non-matches red.
 // @tag         ai-created
 // @author      chaban
 // @license     MIT
+// @homepageURL https://github.com/chaban-mb/userscripts
+// @supportURL  https://github.com/chaban-mb/userscripts/issues
 // @match       *://isrchunt.com/spotify/importisrc*
 // @match       *://isrchunt.com/deezer/importisrc*
 // @grant       none

@@ -1,11 +1,13 @@
 // ==UserScript==
 // @name        CheckBoxMate Modernized
 // @namespace   https://musicbrainz.org/user/chaban
-// @version     1.1.1
+// @version     1.1.2
 // @description Select multiple checkboxes with ease by drawing a box around them.
 // @tag         ai-created
 // @author      scottmweaver, chaban
 // @license     MIT
+// @homepageURL https://github.com/chaban-mb/userscripts
+// @supportURL  https://github.com/chaban-mb/userscripts/issues
 // @match       *://*/*
 // @grant       none
 // @updateURL   https://github.com/chaban-mb/userscripts/raw/dist/src/CheckBoxMate%20Modernized.user.js

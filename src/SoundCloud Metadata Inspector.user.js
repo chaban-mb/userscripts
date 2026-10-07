@@ -1,11 +1,13 @@
 // ==UserScript==
 // @name        SoundCloud Metadata Inspector
 // @namespace   https://github.com/chaban-mb/userscripts
-// @version     1.1.2
+// @version     1.1.3
 // @description Metadata inspector for viewing hidden data like ISRC, UPCs, timestamps, etc.
 // @tag         ai-created
 // @author      chaban
 // @license     MIT
+// @homepageURL https://github.com/chaban-mb/userscripts
+// @supportURL  https://github.com/chaban-mb/userscripts/issues
 // @match       https://soundcloud.com/*
 // @icon        https://a-v2.sndcdn.com/assets/images/sc-icons/favicon-48x48-8466dd3758.png
 // @grant       none

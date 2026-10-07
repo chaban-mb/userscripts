@@ -1,11 +1,13 @@
 // ==UserScript==
 // @name        MusicBrainz: Subscriber Spam Filter
 // @namespace   https://musicbrainz.org/user/chaban
-// @version     1.0.3
+// @version     1.0.4
 // @description Filters spammers on your MusicBrainz subscriber list by detecting blocked profiles, stats, and name similarities.
 // @tag         ai-created
 // @author      chaban
 // @license     MIT
+// @homepageURL https://github.com/chaban-mb/userscripts
+// @supportURL  https://github.com/chaban-mb/userscripts/issues
 // @match       *://*.musicbrainz.org/user/*/subscribers
 // @match       *://*.musicbrainz.eu/user/*/subscribers
 // @connect     self

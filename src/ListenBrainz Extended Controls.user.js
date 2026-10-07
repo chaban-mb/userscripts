@@ -1,11 +1,13 @@
 // ==UserScript==
 // @name        ListenBrainz: Extended Controls
 // @namespace   https://musicbrainz.org/user/chaban
-// @version     1.2.12
+// @version     1.2.13
 // @description Allows customizing which actions are shown in listen controls cards, moving "Open in Music Service" links to the main controls area, displaying source info, and auto-copying text in the "Link Listen" modal.
 // @tag         ai-created
 // @author      chaban
 // @license     MIT
+// @homepageURL https://github.com/chaban-mb/userscripts
+// @supportURL  https://github.com/chaban-mb/userscripts/issues
 // @match       https://*.listenbrainz.org/*
 // @icon        https://listenbrainz.org/static/img/favicon-256.png
 // @grant       GM.setValue

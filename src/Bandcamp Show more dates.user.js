@@ -1,11 +1,13 @@
 // ==UserScript==
 // @name        Bandcamp: Show more dates
 // @namespace   https://musicbrainz.org/user/chaban
-// @version     2.1.2
+// @version     2.1.3
 // @description Shows Bandcamp releases' real "publish date" below the listed release date
 // @tag         ai-created
 // @author      w_biggs (~joks), chaban
 // @license     MIT
+// @homepageURL https://github.com/chaban-mb/userscripts
+// @supportURL  https://github.com/chaban-mb/userscripts/issues
 // @match       https://*.bandcamp.com/track/*
 // @match       https://*.bandcamp.com/album/*
 // @match       https://bandcamp.com/private/*
