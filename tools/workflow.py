@@ -9,6 +9,8 @@ from pathlib import Path
 
 VERSION_RE = re.compile(r'//\s*@version\s+(\S+)')
 NAME_RE = re.compile(r'//\s*@name\s+(.*)')
+HOMEPAGE_URL_RE = re.compile(r'//\s*@(?:homepageURL|homepage)\s+(\S+)')
+SUPPORT_URL_RE = re.compile(r'//\s*@supportURL\s+(\S+)')
 
 # ANSI Escape Codes for Terminal Colors
 COLOR_RESET = "\033[0m"
@@ -62,6 +64,13 @@ def extract_version_and_name(content):
     version = version_match.group(1).strip() if version_match else None
     name = name_match.group(1).strip() if name_match else None
     return version, name
+
+def extract_metadata_urls(content):
+    homepage_match = HOMEPAGE_URL_RE.search(content)
+    support_match = SUPPORT_URL_RE.search(content)
+    homepage_url = homepage_match.group(1).strip() if homepage_match else None
+    support_url = support_match.group(1).strip() if support_match else None
+    return homepage_url, support_url
 
 def get_main_file_content(rel_path_str, main_branch="main"):
     git_path = rel_path_str.replace('\\', '/')
@@ -180,16 +189,21 @@ def get_unreleased_userscripts(repo_root=None, main_branch="main", check_workspa
 
     return sorted(list(set(userscripts)))
 
-def do_check(json_format=False, concise=False, main_branch=None):
+def do_check(json_format=False, concise=False, main_branch=None, check_all=False):
     """
     Checks unreleased scripts, detects version bumps relative to main,
-    flags missing descriptions, and outputs human or JSON diagnostics.
+    flags missing descriptions, verifies metadata URLs (@homepageURL, @supportURL),
+    and outputs human or JSON diagnostics.
     """
     repo_root = Path(__file__).resolve().parent.parent
     if main_branch is None:
         main_branch = get_main_branch_name()
 
-    userscripts = get_unreleased_userscripts(repo_root=repo_root, main_branch=main_branch, check_workspace=True)
+    if check_all:
+        src_dir = repo_root / "src"
+        userscripts = sorted([str(p.relative_to(repo_root)).replace('\\', '/') for p in src_dir.glob("*.user.js")])
+    else:
+        userscripts = get_unreleased_userscripts(repo_root=repo_root, main_branch=main_branch, check_workspace=True)
 
     # Detect non-userscript files
     diff_all = get_git_stdout(['git', 'diff', '--name-only', main_branch]).splitlines()
@@ -209,18 +223,21 @@ def do_check(json_format=False, concise=False, main_branch=None):
 
     if not userscripts and not non_userscript_files:
         if json_format:
-            print(json.dumps({"unreleased_count": 0, "bump_needed_count": 0, "scripts": [], "infrastructure_files": []}))
+            print(json.dumps({"unreleased_count": 0, "bump_needed_count": 0, "missing_metadata_count": 0, "scripts": [], "infrastructure_files": []}))
         else:
             print(f"No unreleased changes found compared to {main_branch}.")
         return 0
 
     if not json_format and not concise:
-        if userscripts:
+        if check_all:
+            print(f"Auditing all {len(userscripts)} userscripts in repository:\n")
+        elif userscripts:
             print(f"Found {len(userscripts)} modified/new userscript(s) or library file(s) relative to {main_branch}:\n")
         else:
             print(f"No unreleased userscripts found relative to {main_branch}.\n")
 
     bump_needed_count = 0
+    missing_metadata_count = 0
     script_data = []
 
     for rel_path_str in userscripts:
@@ -240,9 +257,19 @@ def do_check(json_format=False, concise=False, main_branch=None):
             continue
 
         curr_ver, curr_name = extract_version_and_name(current_content)
+        homepage_url, support_url = extract_metadata_urls(current_content)
         display_name = curr_name or full_path.name
         if rel_path_str.startswith('lib/'):
             display_name = f"[LIB] {display_name}"
+
+        missing_metadata = []
+        if rel_path_str.startswith('src/') and rel_path_str.endswith('.user.js'):
+            if not homepage_url:
+                missing_metadata.append("@homepageURL")
+            if not support_url:
+                missing_metadata.append("@supportURL")
+            if missing_metadata:
+                missing_metadata_count += 1
 
         main_content = get_main_file_content(rel_path_str, main_branch)
         git_path = rel_path_str.replace('\\', '/')
@@ -254,6 +281,8 @@ def do_check(json_format=False, concise=False, main_branch=None):
             script_base_name = full_path.name.replace('.user.js', '')
             desc_full_path = repo_root / f"docs/descriptions/{script_base_name}.md"
             has_desc = desc_full_path.exists()
+
+        meta_warn = f" [MISSING: {', '.join(missing_metadata)}]" if missing_metadata else ""
 
         if main_content is None:
             needs_bump = not bool(curr_ver)
@@ -268,12 +297,15 @@ def do_check(json_format=False, concise=False, main_branch=None):
                 "status": status,
                 "needs_bump": needs_bump,
                 "has_description": has_desc,
+                "homepage_url": homepage_url,
+                "support_url": support_url,
+                "missing_metadata": missing_metadata,
                 "changes_count": len(commits) + (1 if has_uncommitted else 0)
             })
             if not json_format:
                 if concise:
                     bump_str = " [BUMP NEEDED]" if needs_bump else ""
-                    print(f"[+] [NEW]{bump_str} {display_name} ({rel_path_str}) v{curr_ver}")
+                    print(f"[+] [NEW]{bump_str} {display_name} ({rel_path_str}) v{curr_ver}{meta_warn}")
                 else:
                     print(f"[+] [NEW SCRIPT] {display_name} ({rel_path_str})")
                     if curr_ver:
@@ -298,13 +330,16 @@ def do_check(json_format=False, concise=False, main_branch=None):
                 "status": status,
                 "needs_bump": needs_bump,
                 "has_description": has_desc,
+                "homepage_url": homepage_url,
+                "support_url": support_url,
+                "missing_metadata": missing_metadata,
                 "changes_count": len(commits) + (1 if has_uncommitted else 0)
             })
 
             if not json_format:
                 if concise:
                     st_icon = "[!]" if needs_bump else "[*]"
-                    print(f"{st_icon} [{status}] {display_name} ({rel_path_str}) v{main_ver} -> v{curr_ver}")
+                    print(f"{st_icon} [{status}] {display_name} ({rel_path_str}) v{main_ver} -> v{curr_ver}{meta_warn}")
                 else:
                     if needs_bump:
                         print(f"[!] [BUMP NEEDED] {display_name} ({rel_path_str})")
@@ -316,6 +351,8 @@ def do_check(json_format=False, concise=False, main_branch=None):
         if not json_format and not concise:
             if not has_desc:
                 print(f"   [!] [MISSING DESCRIPTION] Description file is missing")
+            if missing_metadata:
+                print(f"   [!] [MISSING METADATA] Missing header tag(s): {', '.join(missing_metadata)}")
             if commits or has_uncommitted:
                 print(f"   Changes since {main_branch}:")
                 for c in commits:
@@ -338,6 +375,7 @@ def do_check(json_format=False, concise=False, main_branch=None):
         print(json.dumps({
             "unreleased_count": len(script_data),
             "bump_needed_count": bump_needed_count,
+            "missing_metadata_count": missing_metadata_count,
             "scripts": script_data,
             "infrastructure_files": non_userscript_files
         }, indent=2))
@@ -346,6 +384,8 @@ def do_check(json_format=False, concise=False, main_branch=None):
             print(f"[!] Action required: {bump_needed_count} script(s) need a version bump before release.")
         else:
             print("[*] All modified/new scripts have version bumps.")
+        if missing_metadata_count > 0:
+            print(f"[!] Metadata notice: {missing_metadata_count} script(s) are missing @homepageURL or @supportURL.")
 
     return 1 if bump_needed_count > 0 else 0
 
@@ -1037,6 +1077,7 @@ Examples:
     check_parser = subparsers.add_parser("check", help="Check unreleased scripts, cascading dependency bumps, and docs")
     check_parser.add_argument("--json", action="store_true", help="Output token-efficient JSON format for automated LLM/agent usage")
     check_parser.add_argument("--concise", "-c", action="store_true", help="Output concise summary without commit logs")
+    check_parser.add_argument("--all", "-a", action="store_true", help="Check all userscripts in repository, not just unreleased/modified ones")
     check_parser.add_argument("--main-branch", default=None, help="The repository main branch to compare against (default: auto-detected)")
 
     # Subcommand: cleanup
@@ -1075,8 +1116,9 @@ Examples:
         if not args.command or args.command == "check":
             json_flag = getattr(args, 'json', False)
             concise_flag = getattr(args, 'concise', False)
+            all_flag = getattr(args, 'all', False)
             main_branch_arg = getattr(args, 'main_branch', None)
-            sys.exit(do_check(json_format=json_flag, concise=concise_flag, main_branch=main_branch_arg))
+            sys.exit(do_check(json_format=json_flag, concise=concise_flag, main_branch=main_branch_arg, check_all=all_flag))
         elif args.command == "cleanup":
             do_cleanup(args.branch, args.main_branch)
         elif args.command == "bump":
