@@ -60,12 +60,12 @@
     // ====================================================================================
 
     const JOIN_PHRASE_PATTERN = /\s*\b(?:featuring|feat|ft|vs)\b\.?\s*|\s*(?:[,，、&・×/])\s*|\s+(?:and|x)\s+/gi;
-    const SEPARATOR_PATTERN = /\s+[-–—/]\s+|\s+[-–—/]\s*|\s*[-–—/]\s+(?=.)|(?<=[\u3040-\u30ff\u4e00-\u9fff\uac00-\ud7af\uff00-\uffef])[-–—/]|[-–—/](?=[\u3040-\u30ff\u4e00-\u9fff\uac00-\ud7af\uff00-\uffef])/g;
+    const SEPARATOR_PATTERN = /\s+[-–—/|]\s+|\s+[-–—/|]\s*|\s*[-–—/|]\s+(?=.)|(?<=[\u3040-\u30ff\u4e00-\u9fff\uac00-\ud7af\uff00-\uffef])[-–—/|]|[-–—/|](?=[\u3040-\u30ff\u4e00-\u9fff\uac00-\ud7af\uff00-\uffef])/g;
     const BRACKET_EXCEPTION_PATTERN = /\[(untitled|unknown|data track|silence)\]/gi;
     const FEAT_PATTERN = /\s*\b(?:featuring|feat\.?|ft\.?|with)(?!\w)/i;
     // Contextual safeguard: Match standard feature terms anywhere, but 'with' only inside brackets or clear separations
     const BRACKETED_FEAT_PATTERN = /\s*[\(\[【]\s*\b(featuring|feat\.?|ft\.?)(?!\w)\s*([^()\[\]【】]+)[\)\]】]/i;
-    const UNBRACKETED_FEAT_PATTERN = /(?:^|\s+|(?<=[\u3000-\u303f\u3040-\u30ff\u4e00-\u9fff\uff00-\uffef]))\b(featuring|feat\.?|ft\.?)(?!\w)\s*([^\s-–—/].*?)(?=\s+[-–—/]\s+|\s*[-–—/]\s+|$)/i;
+    const UNBRACKETED_FEAT_PATTERN = /(?:^|\s+|(?<=[\u3000-\u303f\u3040-\u30ff\u4e00-\u9fff\uff00-\uffef]))\b(featuring|feat\.?|ft\.?)(?!\w)\s*([^\s-–—/|].*?)(?=\s+[-–—/|]\s+|\s*[-–—/|]\s+|$)/i;
     const BRACKETED_WITH_PATTERN = /\s*[\(\[]\b(with)\b\s*([^)\]]+?)[\)\]]/i;
     const ETI_PATTERN = /\s*(\[[^\]]+\]|\([^)]+\)|【[^】]+】)$/;
     const PARENS_CONTENT_PATTERN = /\(([^)]+)\)/g;
@@ -226,7 +226,7 @@
 
             const escapedPart0 = parts[0].replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
             const escapedPart1 = parts[1].replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-            const sepMatch = rawText.match(new RegExp(`${escapedPart0}\\s*([\\\/\\-–—])\\s*${escapedPart1}`, 'i'));
+            const sepMatch = rawText.match(new RegExp(`${escapedPart0}\\s*([\\\/\\|\\-–—])\\s*${escapedPart1}`, 'i'));
             const isSlashSeparator = sepMatch && sepMatch[1] === '/';
 
             if (!isSlashSeparator) {
@@ -599,8 +599,7 @@
             }
         }
 
-        const separatorPattern = /\s+[-–—/]\s+|\s+[-–—/]\s*|\s*[-–—/]\s+(?=.)/g;
-        const parts = title.split(separatorPattern).map(p => p.trim()).filter(Boolean);
+        const parts = title.split(SEPARATOR_PATTERN).map(p => p.trim()).filter(Boolean);
         if (parts.length > 1) {
             for (let i = 1; i < parts.length; i++) {
                 const unbracketed = parts[i].replace(/\([^)]+\)|\[[^\]]+\]|【[^】]+】/g, '').trim();

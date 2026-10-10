@@ -2076,6 +2076,32 @@ if (mbServerAvailable) {
         assert.strictEqual(ac[1].joinPhrase, '');
     });
 
+    // Case 59
+    runTestCase('59. [Regression] Pipe separator with seeded artist and featured artist: "MOONFOX (Original Song) | David Johnson Kim feat. KNVWN"', () => {
+        const rawTitle = 'MOONFOX (Original Song) | David Johnson Kim feat. KNVWN';
+        const initialACNames = [
+            { name: 'David Johnson Kim', joinPhrase: '', artist: null }
+        ];
+
+        const postNativeEntity = buildPostGuessFeatEntity(rawTitle, initialACNames);
+
+        lib.cleanEntityModel({
+            model: postNativeEntity,
+            originalTitle: rawTitle,
+            originalArtists: ['David Johnson Kim'],
+            input: { value: postNativeEntity.name(), dispatchEvent: () => {} }
+        });
+        this.entity = postNativeEntity;
+    }, () => {
+        const ac = this.entity.artistCredit().names;
+        assert.strictEqual(this.entity.name(), 'MOONFOX (Original Song)', 'Title cleaned to MOONFOX (Original Song)');
+        assert.strictEqual(ac.length, 2, 'AC contains 2 artists');
+        assert.strictEqual(ac[0].name, 'David Johnson Kim');
+        assert.strictEqual(ac[0].joinPhrase.trim(), 'feat.');
+        assert.strictEqual(ac[1].name, 'KNVWN');
+        assert.strictEqual(ac[1].joinPhrase, '');
+    });
+
 } else {
     logSection('--- Scenario C: Skipped (musicbrainz-server not available at expected path) ---');
 }
