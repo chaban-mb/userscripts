@@ -855,12 +855,16 @@
     /**
      * @summary Applies advanced rule sets like French/Swedish apostrophe corrections and acronym fixes.
      * @param {string} text - The current guessed text string.
-     * @param {HTMLElement} [button] - The button element that was clicked to trigger the guess case.
      * @param {string} [originalTitle] - The original un-guessed title to preserve CamelCase.
+     * @param {string} [legacyThirdArg] - Backward compatibility for legacy (text, button, originalTitle) callers.
      * @returns {string} The text processed by advanced rules.
      */
-    function applyAdvancedRules(text, button, originalTitle) {
+    function applyAdvancedRules(text, originalTitle, legacyThirdArg) {
         if (typeof text !== 'string') return text;
+
+        const origTitle = typeof originalTitle === 'string'
+            ? originalTitle
+            : (typeof legacyThirdArg === 'string' ? legacyThirdArg : '');
 
         let newText = text;
         const keepUpperCase = getBooleanCookie('guesscase_keepuppercase');
@@ -891,9 +895,9 @@
             return `(${processedEti})`;
         });
 
-        // Restore CamelCase words from originalTitle
-        if (keepUpperCase && originalTitle && typeof originalTitle === 'string') {
-            const matches = originalTitle.match(/\b[a-zA-Z\d]+\b/g) ?? [];
+        // Restore CamelCase words from origTitle
+        if (keepUpperCase && origTitle) {
+            const matches = origTitle.match(/\b[a-zA-Z\d]+\b/g) ?? [];
             const camelCaseWords = matches.filter(word => /[a-z]+[A-Z]/.test(word));
             newText = camelCaseWords.reduce((accText, camelWord) => {
                 const regex = new RegExp(`\\b${camelWord}\\b`, 'i');
@@ -923,10 +927,9 @@
     /**
      * @summary Pure function that identifies duplicate artist credit nodes and merges their properties.
      * @param {object[]} names - List of artist credit nodes.
-     * @param {number} [titleFeaturedCount=0] - Number of featured artists parsed from title.
      * @returns {{dedupedNames: object[], toRemove: Set<number>, survivorMap: Map<number, number>, firstFeatJoinIdx: number, featJoinPhrase: string|null}} Duplicate resolution map.
      */
-    function findDuplicateACNodes(names, titleFeaturedCount = 0) {
+    function findDuplicateACNodes(names) {
         const firstFeatJoinIdx = names.findIndex(n => FEAT_PATTERN.test(n.joinPhrase ?? ''));
 
         const getMatchKeys = (entry) => {
@@ -988,7 +991,6 @@
                     }
                 }
 
-                const isSurvivorFeatured = firstFeatJoinIdx !== -1 && survivorIdx > firstFeatJoinIdx;
                 const isDuplicateFeatured = firstFeatJoinIdx !== -1 && i > firstFeatJoinIdx;
 
                 const isMisparsedSuffix = isPrefixWithSeparator(names[i].name, dedupedNames[survivorIdx].name) ||
@@ -1172,13 +1174,12 @@
     /**
      * @summary Pure function: Deduplicates and cleans up duplicate artists in an artist credit node array.
      * @param {object[]} acNames - Array of artist credit node objects.
-     * @param {number} [titleFeaturedCount=0] - Number of featured artists parsed from title.
      * @returns {object[]} Deduplicated and repaired array of artist credit node objects.
      */
-    function deduplicateACNamesList(acNames, titleFeaturedCount = 0) {
+    function deduplicateACNamesList(acNames) {
         if (!acNames?.length) return acNames || [];
 
-        const { dedupedNames, toRemove, survivorMap, firstFeatJoinIdx, featJoinPhrase } = findDuplicateACNodes(acNames, titleFeaturedCount);
+        const { dedupedNames, toRemove, survivorMap, firstFeatJoinIdx, featJoinPhrase } = findDuplicateACNodes(acNames);
 
         if (toRemove.size > 0) {
             log(`deduplicateACNamesList: Removing ${toRemove.size} duplicate(s).`);
@@ -1419,7 +1420,7 @@
                 if (!activePreview) return;
 
                 const nativePreviewValue = input.value;
-                const enhancedPreviewValue = applyAdvancedRules(nativePreviewValue, button, originalValue);
+                const enhancedPreviewValue = applyAdvancedRules(nativePreviewValue, originalValue);
 
                 if (enhancedPreviewValue !== originalValue) {
                     input.classList.add('preview');
@@ -1447,7 +1448,7 @@
 
             setTimeout(() => {
                 const nativeValue = input.value;
-                const enhancedValue = applyAdvancedRules(nativeValue, button, originalValue);
+                const enhancedValue = applyAdvancedRules(nativeValue, originalValue);
 
                 setInputValue(input, enhancedValue);
 
@@ -1618,7 +1619,7 @@
 
         // --- Stage 4: Pure AC Deduplication & Join Phrase Normalization ---
         if (currentAC?.length) {
-            currentAC = deduplicateACNamesList(currentAC, structure.featured.length);
+            currentAC = deduplicateACNamesList(currentAC);
         }
 
         // --- Stage 5: Final Title Assembly ---
@@ -1764,10 +1765,10 @@
             originalGuessCaseTrackName.call(this, track, event);
             switch (event.type) {
                 case 'mouseenter':
-                    track.previewName(applyAdvancedRules(track.previewName.peek(), event.target, originalTitle));
+                    track.previewName(applyAdvancedRules(track.previewName.peek(), originalTitle));
                     break;
                 case 'click':
-                    track.name(applyAdvancedRules(track.name.peek(), event.target, originalTitle));
+                    track.name(applyAdvancedRules(track.name.peek(), originalTitle));
                     break;
             }
         };
@@ -1873,15 +1874,15 @@
                 switch (event.type) {
                     case 'mouseenter':
                         if (medium.previewName) {
-                            medium.previewName(applyAdvancedRules(medium.previewName.peek(), event.target, originalTitle));
+                            medium.previewName(applyAdvancedRules(medium.previewName.peek(), originalTitle));
                         }
                         break;
                     case 'click':
-                        medium.name(applyAdvancedRules(medium.name.peek(), event.target, originalTitle));
+                        medium.name(applyAdvancedRules(medium.name.peek(), originalTitle));
                         break;
                     default:
                         if (event.type !== 'mouseleave') {
-                            medium.name(applyAdvancedRules(medium.name.peek(), event.target, originalTitle));
+                            medium.name(applyAdvancedRules(medium.name.peek(), originalTitle));
                         }
                         break;
                 }
