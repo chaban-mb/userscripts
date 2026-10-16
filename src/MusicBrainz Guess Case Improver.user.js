@@ -1467,14 +1467,6 @@
     // --- Preserve Artist As Credited
     // ====================================================================================
 
-    const pristineCreditedAsValues = new WeakMap();
-
-    document.addEventListener('input', (event) => {
-        if (event.isTrusted && event.target.tagName === 'INPUT' && event.target.id.includes('-credited-as-')) {
-            pristineCreditedAsValues.set(event.target, event.target.value);
-        }
-    }, true);
-
     function restorePristineCreditedAs(element) {
         const row = element.closest('tr');
         if (!row) return;
