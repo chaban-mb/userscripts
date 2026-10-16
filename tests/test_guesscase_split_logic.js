@@ -1854,6 +1854,23 @@ runTestCase('58. [Synthetic] applyAdvancedRules restores all occurrences of Came
     assert.strictEqual(res, 'iPad vs. iPad: Why iPad Beats Other Tablets');
 }, () => {});
 
+// Case 59
+runTestCase('59. [Synthetic] applyAdvancedRules handles collated ETI lowercasing and preserves ALL CAPS with keepUpperCase', () => {
+    const originalCookie = context.document.cookie;
+
+    // Normal lowercasing
+    context.document.cookie = 'guesscase_keepuppercase=false';
+    const res1 = lib.applyAdvancedRules('My Song (Official Video, Slowed & Reverb)');
+    assert.strictEqual(res1, 'My Song (official video, slowed & reverb)');
+
+    // keepUpperCase preserves all-caps phrases
+    context.document.cookie = 'guesscase_keepuppercase=true';
+    const res2 = lib.applyAdvancedRules('My Song (OFFICIAL VIDEO) (Official Lyric Video)');
+    assert.strictEqual(res2, 'My Song (OFFICIAL VIDEO) (official lyric video)');
+
+    context.document.cookie = originalCookie;
+}, () => {});
+
 console.log('\n--- Scenario B: Knockout Observable is Unavailable (DOM Fallback) ---');
 
 
