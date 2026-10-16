@@ -1840,6 +1840,20 @@ runTestCase('57. [Synthetic] parseTitleStructure preserves whitespace boundaries
     assert.strictEqual(structure2.featured[0].name, 'Guest');
 }, () => {});
 
+// Case 58
+runTestCase('58. [Synthetic] applyAdvancedRules restores all occurrences of CamelCase words globally', () => {
+    const originalCookie = context.document.cookie;
+    context.document.cookie = 'guesscase_keepuppercase=true';
+
+    const inputTitle = 'iPad vs. iPad: Why iPad Beats Other Tablets';
+    const postNativeTitle = 'Ipad vs. Ipad: Why Ipad Beats Other Tablets';
+
+    const res = lib.applyAdvancedRules(postNativeTitle, inputTitle);
+    context.document.cookie = originalCookie;
+
+    assert.strictEqual(res, 'iPad vs. iPad: Why iPad Beats Other Tablets');
+}, () => {});
+
 console.log('\n--- Scenario B: Knockout Observable is Unavailable (DOM Fallback) ---');
 
 

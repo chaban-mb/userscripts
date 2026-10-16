@@ -898,9 +898,9 @@
         // Restore CamelCase words from origTitle
         if (keepUpperCase && origTitle) {
             const matches = origTitle.match(/\b[a-zA-Z\d]+\b/g) ?? [];
-            const camelCaseWords = matches.filter(word => /[a-z]+[A-Z]/.test(word));
+            const camelCaseWords = [...new Set(matches.filter(word => /[a-z]+[A-Z]/.test(word)))];
             newText = camelCaseWords.reduce((accText, camelWord) => {
-                const regex = new RegExp(`\\b${camelWord}\\b`, 'i');
+                const regex = new RegExp(`\\b${camelWord}\\b`, 'gi');
                 return accText.replace(regex, camelWord);
             }, newText);
         }
