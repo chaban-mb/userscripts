@@ -53,6 +53,13 @@
         'super speed up', 'extra slowed', 'ultra slowed', 'slowed & reverb', 'slowed + reverb',
         'music video', 'super sped up', 'low pitched', 'slowed down'
     ];
+    const ETI_PHRASES_PATTERN = new RegExp(
+        `\\b(?:${[...etiPhrasesToLowercase]
+            .sort((a, b) => b.length - a.length)
+            .map(p => p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+            .join('|')})\\b`,
+        'gi'
+    );
 
     // ====================================================================================
     // --- 🔮 REGULAR EXPRESSION PATTERNS 🔮 ---
@@ -690,11 +697,6 @@
         }, 60);
     }
 
-    function createSafeRegex(str) {
-        const escapedStr = str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        return new RegExp(escapedStr, 'i');
-    }
-
     function getBooleanCookie(name) {
         if (typeof document === 'undefined' || !document.cookie) return false;
         const value = document.cookie.split(/;\s*/).find(row => row.startsWith(name + '='))?.split('=')[1]?.replace(/;$/, '');
@@ -870,12 +872,10 @@
 
         newText = newText.replace(/\[/g, '(').replace(/\]/g, ')');
         newText = newText.replace(PARENS_CONTENT_PATTERN, (match, etiContent) => {
-            const processedEti = etiPhrasesToLowercase.reduce((acc, phrase) => {
-                return acc.replace(createSafeRegex(phrase), matched => {
-                    const isAllCaps = matched === matched.toUpperCase() && matched !== matched.toLowerCase();
-                    return (keepUpperCase && isAllCaps) ? matched : phrase.toLowerCase();
-                });
-            }, etiContent);
+            const processedEti = etiContent.replace(ETI_PHRASES_PATTERN, matched => {
+                const isAllCaps = matched === matched.toUpperCase() && matched !== matched.toLowerCase();
+                return (keepUpperCase && isAllCaps) ? matched : matched.toLowerCase();
+            });
             return `(${processedEti})`;
         });
 
