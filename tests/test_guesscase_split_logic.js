@@ -17,12 +17,10 @@ const hookText = `
         applyAdvancedRules,
         cleanTrackModelAfterGuessFeat,
         cleanEntityModel,
-        deduplicateACFromObservable,
         deduplicateACNamesList,
         mergeArtistCredits,
         extractTrailingEtis,
         propagateGidsFromTracksToRelease,
-        removeRemixersFromAC,
         removeRemixersFromACList,
         isArtistRemixerInTitle,
         enhanceReleaseGuessFeat,
@@ -117,6 +115,24 @@ vm.createContext(context);
 vm.runInContext(code, context);
 
 const lib = context.__TEST_EXPORTS__;
+
+// Test harness helpers for observable-based assertions testing pure list transformations
+lib.deduplicateACFromObservable = (acObservable, titleFeaturedCount = 0) => {
+    if (typeof acObservable !== 'function') return;
+    const ac = acObservable();
+    if (!ac?.names?.length) return;
+    const repairedNames = lib.deduplicateACNamesList(ac.names, titleFeaturedCount);
+    acObservable({ ...ac, names: repairedNames });
+};
+lib.removeRemixersFromAC = (acObservable, title) => {
+    if (typeof acObservable !== 'function' || !title) return;
+    const ac = acObservable();
+    if (!ac?.names?.length) return;
+    const repaired = lib.removeRemixersFromACList(ac.names, title);
+    if (repaired !== ac.names) {
+        acObservable({ ...ac, names: repaired });
+    }
+};
 
 // Helper to make mock Knockout observable
 function makeObservable(initialValue) {

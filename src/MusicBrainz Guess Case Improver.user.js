@@ -671,22 +671,6 @@
         return repaired;
     }
 
-    /**
-     * @summary Removes detected remixers from a Knockout artist credit observable and normalizes standard join phrases.
-     * @param {Function} acObservable - The Knockout observable function for the artist credit.
-     * @param {string} title - The track title.
-     */
-    function removeRemixersFromAC(acObservable, title) {
-        if (typeof acObservable !== 'function' || !title) return;
-        const ac = acObservable();
-        if (!ac?.names?.length) return;
-
-        const repaired = removeRemixersFromACList(ac.names, title);
-        if (repaired !== ac.names) {
-            acObservable({ ...ac, names: repaired });
-        }
-    }
-
 
     /**
      * @summary Resolves the Knockout artist credit observable for the given context.
@@ -1202,22 +1186,6 @@
 
         const filteredNames = dedupedNames.filter((_, i) => !toRemove.has(i));
         return repairFeatBoundary(filteredNames, acNames, toRemove, survivorMap, featJoinPhrase, firstFeatJoinIdx);
-    }
-
-    /**
-     * @summary Deduplicates and cleans up duplicate artists in the Knockout artist credit observable.
-     * @param {ko.Observable} acObservable - The entity.artistCredit ko.observable.
-     * @param {number} [titleFeaturedCount=0] - Number of featured artists parsed from title.
-     * @returns {void}
-     */
-    function deduplicateACFromObservable(acObservable, titleFeaturedCount = 0) {
-        if (typeof acObservable !== 'function') return;
-
-        const ac = acObservable();
-        if (!ac?.names?.length) return;
-
-        const repairedNames = deduplicateACNamesList(ac.names, titleFeaturedCount);
-        acObservable({ ...ac, names: repairedNames });
     }
 
     /**
