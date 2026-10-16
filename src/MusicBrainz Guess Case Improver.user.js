@@ -71,6 +71,7 @@
     const PARENS_CONTENT_PATTERN = /\(([^)]+)\)/g;
     const ETI_FEAT_PATTERN = /\s*\b(?:featuring|feat\.?|ft\.?|with)(?!\w)/i;
     const REMIX_KEYWORDS = ['remix', 'rework', 'edit', 'mix', 'flip', 'bootleg', 'mashup', 'vip', 'dub', 'version'];
+    const REMIX_KEYWORD_PATTERN = new RegExp(`\\b(?:${REMIX_KEYWORDS.join('|')})\\b`, 'i');
     const IS_STANDALONE_RECORDING_PAGE = /[\/.]recording\/create|[\/.]recording\/[a-f0-9-]{36}\/edit/.test(window.location.pathname);
 
 
@@ -100,8 +101,7 @@
      * @returns {boolean} True if a remix keyword is found.
      */
     function hasRemixKeyword(str) {
-        if (!str) return false;
-        return REMIX_KEYWORDS.some(kw => new RegExp(`\\b${kw}\\b`, 'i').test(str));
+        return Boolean(str && REMIX_KEYWORD_PATTERN.test(str));
     }
 
 
