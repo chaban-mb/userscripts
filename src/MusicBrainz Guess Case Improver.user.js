@@ -1323,6 +1323,10 @@
         info('Enhancing Release/Recording "Guess Feat." button.');
 
         button.addEventListener('click', (event) => {
+            if (window.MB?._releaseEditor) {
+                log('Release editor viewmodel is active; skipping duplicate DOM click enhancement.');
+                return;
+            }
             const input = findAssociatedInput(button);
             if (!input) return;
 
@@ -1902,9 +1906,11 @@
             });
         }
 
-        document.querySelectorAll('button[data-click="guessReleaseFeatArtists"]:not([data-enhanced])').forEach(button => {
-            enhanceReleaseGuessFeat(button);
-        });
+        if (!window.MB?._releaseEditor) {
+            document.querySelectorAll('button[data-click="guessReleaseFeatArtists"]:not([data-enhanced])').forEach(button => {
+                enhanceReleaseGuessFeat(button);
+            });
+        }
     });
 
     observer.observe(document.body, { childList: true, subtree: true });
