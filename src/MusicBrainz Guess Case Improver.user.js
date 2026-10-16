@@ -866,12 +866,7 @@
             return `___MB_GUESS_CASE_EXCEPTION_${index}___`;
         });
 
-        const { cleanTitle: cleanTitleWithoutEtis, eti: extractedEtis } = extractTrailingEtis(newText);
-        newText = cleanTitleWithoutEtis;
-
-        if (extractedEtis) {
-            newText += ` ${extractedEtis}`;
-        }
+        newText = flattenEtiMisguess(newText);
 
         newText = newText.replace(/\[/g, '(').replace(/\]/g, ')');
         newText = newText.replace(PARENS_CONTENT_PATTERN, (match, etiContent) => {
