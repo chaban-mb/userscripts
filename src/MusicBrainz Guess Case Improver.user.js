@@ -156,7 +156,7 @@
             const parsedGuests = parseArtistsAndJoins(guestStr, knownArtists);
             featured.push(...parsedGuests);
 
-            current = current.replace(fullFeatClause, '').replace(/\s+/g, ' ').trim();
+            current = current.replace(fullFeatClause, ' ').replace(/\s+/g, ' ').trim();
             // Bug 1 fix: strip any trailing orphaned opening bracket left when feat. was inside [...]
             current = current.replace(/\s*[(\[【]\s*$/, '').trim();
         }
