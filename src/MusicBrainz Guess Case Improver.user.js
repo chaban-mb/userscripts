@@ -1891,7 +1891,11 @@
         }
     }
 
-    const observer = new MutationObserver(() => {
+    let isScanScheduled = false;
+
+    function scanAndEnhanceButtons() {
+        isScanScheduled = false;
+
         if (window.MB?._releaseEditor) enhanceReleaseEditorActions();
 
         document.querySelectorAll('.guesscase-title:not([data-enhanced])').forEach(button => {
@@ -1911,8 +1915,19 @@
                 enhanceReleaseGuessFeat(button);
             });
         }
+    }
+
+    const observer = new MutationObserver(mutations => {
+        const hasAddedNodes = mutations.some(m => m.addedNodes && m.addedNodes.length > 0);
+        if (!hasAddedNodes) return;
+
+        if (!isScanScheduled) {
+            isScanScheduled = true;
+            (typeof requestAnimationFrame === 'function' ? requestAnimationFrame : setTimeout)(scanAndEnhanceButtons);
+        }
     });
 
     observer.observe(document.body, { childList: true, subtree: true });
+    scanAndEnhanceButtons();
 
 })();
