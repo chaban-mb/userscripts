@@ -1200,11 +1200,12 @@
                 .map(node => [cleanStringForComparison(node.artist.name), node.artist])
         );
 
-        if (artistMap.size === 0) return;
+        if (artistMap.size === 0 && artistMapByCanonicalName.size === 0) return;
 
         let modified = false;
         const updatedNames = releaseAC.names.map(nameNode => {
-            if (!nameNode.artist && nameNode.name) {
+            const hasRealArtist = nameNode.artist && (nameNode.artist.id || nameNode.artist.gid);
+            if (!hasRealArtist && nameNode.name) {
                 const key = cleanStringForComparison(nameNode.name);
                 const matchedArtist = artistMap.get(key) ?? artistMapByCanonicalName.get(key);
                 if (matchedArtist) {
