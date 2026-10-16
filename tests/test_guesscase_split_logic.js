@@ -1871,6 +1871,33 @@ runTestCase('59. [Synthetic] applyAdvancedRules handles collated ETI lowercasing
     context.document.cookie = originalCookie;
 }, () => {});
 
+// Case 60
+runTestCase('60. [Synthetic] propagateGidsFromTracksToRelease propagates GIDs to unlinked artist stubs ({ id: null, gid: null })', () => {
+    const track = {
+        name: makeObservable('Song'),
+        artistCredit: makeObservable({
+            names: [
+                { name: 'Artist A', joinPhrase: '', artist: { id: 12345, gid: 'artist-a-gid', name: 'Artist A' } }
+            ]
+        })
+    };
+    const release = {
+        name: makeObservable('Album'),
+        artistCredit: makeObservable({
+            names: [
+                { name: 'Artist A', joinPhrase: '', artist: { id: null, gid: null, name: 'Artist A' } }
+            ]
+        }),
+        mediums: makeObservable([
+            { tracks: makeObservable([track]) }
+        ])
+    };
+
+    lib.propagateGidsFromTracksToRelease(release);
+    const releaseNames = release.artistCredit().names;
+    assert.strictEqual(releaseNames[0].artist?.gid, 'artist-a-gid', 'GID was propagated to unlinked artist stub');
+}, () => {});
+
 console.log('\n--- Scenario B: Knockout Observable is Unavailable (DOM Fallback) ---');
 
 
