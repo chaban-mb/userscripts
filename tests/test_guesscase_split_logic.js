@@ -1825,6 +1825,21 @@ runTestCase('56. [Synthetic] Standalone recording remix without featured artist:
     assert.strictEqual(ac[0].joinPhrase, '');
 }, () => {});
 
+// Case 57
+runTestCase('57. [Synthetic] parseTitleStructure preserves whitespace boundaries between tokens when removing feature clauses', () => {
+    const structure = lib.parseTitleStructure('Track Title[feat. Guest]Live');
+    assert.strictEqual(structure.core, 'Track Title Live');
+    assert.strictEqual(structure.featured.length, 1);
+    assert.strictEqual(structure.featured[0].name, 'Guest');
+
+    const structure2 = lib.parseTitleStructure('Track Title [feat. Guest] (Remix)');
+    assert.strictEqual(structure2.core, 'Track Title');
+    assert.strictEqual(structure2.etis.length, 1);
+    assert.strictEqual(structure2.etis[0], '(Remix)');
+    assert.strictEqual(structure2.featured.length, 1);
+    assert.strictEqual(structure2.featured[0].name, 'Guest');
+}, () => {});
+
 console.log('\n--- Scenario B: Knockout Observable is Unavailable (DOM Fallback) ---');
 
 
