@@ -5,6 +5,7 @@ import sys
 import os
 import argparse
 import re
+import urllib.parse
 from pathlib import Path
 
 VERSION_RE = re.compile(r'//\s*@version\s+(\S+)')
@@ -964,6 +965,14 @@ def do_release(non_interactive=False, json_output=False, bump_strategy="auto", s
 
         print(f"\n{COLOR_GREEN}{COLOR_BOLD}Release completed successfully!{COLOR_RESET}\n")
 
+        # Initial release publishing assistant for brand-new scripts
+        newly_released = [s for s in selected_scripts if s.get('main_version') is None and not s['rel_path'].startswith('lib/')]
+        if newly_released:
+            print(f"\n{COLOR_CYAN}{COLOR_BOLD}=== New Script Initial Release: Publishing Assistant ==={COLOR_RESET}")
+            for s in newly_released:
+                clean_name = s['full_path'].name.replace('.user.js', '')
+                print_publish_info(clean_name)
+
         if merged_feature_branch:
             print(f"\n{COLOR_CYAN}Cleaning up merged feature branch '{merged_feature_branch}'...{COLOR_RESET}")
             script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -1042,14 +1051,250 @@ def do_bump(bump_type="patch", scripts_filter="all", json_output=False):
 
     return 0
 
+def generate_slug_for_new_script(name):
+    s = name.strip()
+    if s.startswith("MusicBrainz "):
+        s = "mb " + s[len("MusicBrainz "):]
+    elif s.startswith("ListenBrainz "):
+        s = "lb " + s[len("ListenBrainz "):]
+    s = re.sub(r'[^a-zA-Z0-9\s-]', '', s)
+    s = re.sub(r'[\s_]+', '-', s).strip('-').lower()
+    return s
+
+def add_script_to_commit_scopes(file_name, slug):
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    scopes_path = os.path.normpath(os.path.join(script_dir, "..", ".agents", "rules", "references", "commit-scopes.md"))
+    if not os.path.exists(scopes_path):
+        return False
+    try:
+        with open(scopes_path, 'r', encoding='utf-8') as f:
+            content = f.read()
+
+        entry = f"| `{file_name}` | `{slug}` |"
+        if entry in content or f"`{file_name}`" in content:
+            return False
+
+        lib_anchor = "| `lib/MusicBrainzAPI.js`"
+        if lib_anchor in content:
+            new_content = content.replace(lib_anchor, f"{entry}\n{lib_anchor}")
+        else:
+            new_content = content.rstrip() + f"\n{entry}\n"
+
+        with open(scopes_path, 'w', encoding='utf-8') as f:
+            f.write(new_content)
+        return True
+    except Exception as e:
+        print(f"Warning: Failed to update commit-scopes.md: {e}")
+        return False
+
+def do_init(name, description=None, create_branch=False):
+    repo_root = Path(__file__).resolve().parent.parent
+    if not name or not name.strip():
+        print(f"{COLOR_RED}Error: Script name is required.{COLOR_RESET}")
+        return 1
+
+    clean_name = name.strip()
+    if clean_name.endswith('.user.js'):
+        clean_name = clean_name[:-len('.user.js')].strip()
+
+    file_name = f"{clean_name}.user.js"
+    src_file = repo_root / "src" / file_name
+    doc_file = repo_root / "docs" / "descriptions" / f"{clean_name}.md"
+
+    if src_file.exists():
+        print(f"{COLOR_RED}Error: Userscript already exists: {src_file.relative_to(repo_root)}{COLOR_RESET}")
+        return 1
+
+    userscript_tpl_path = repo_root / "templates" / "userscript.template.js"
+    desc_tpl_path = repo_root / "templates" / "description.template.md"
+
+    if not userscript_tpl_path.exists() or not desc_tpl_path.exists():
+        print(f"{COLOR_RED}Error: Template files missing in templates/ directory.{COLOR_RESET}")
+        return 1
+
+    mapping = parse_commit_scopes()
+    slug = mapping.get(file_name) or generate_slug_for_new_script(clean_name)
+    encoded_name = urllib.parse.quote(clean_name)
+    desc_text = description.strip() if description else f"Enhancement userscript for {clean_name}."
+
+    # Render userscript
+    tpl_content = userscript_tpl_path.read_text(encoding='utf-8')
+    rendered_script = tpl_content.replace('{{NAME}}', clean_name)
+    rendered_script = rendered_script.replace('{{DESCRIPTION}}', desc_text)
+    rendered_script = rendered_script.replace('{{ENCODED_NAME}}', encoded_name)
+    rendered_script = rendered_script.replace('{{SLUG}}', slug)
+    src_file.write_text(rendered_script, encoding='utf-8')
+
+    # Render description
+    desc_tpl_content = desc_tpl_path.read_text(encoding='utf-8')
+    rendered_desc = desc_tpl_content.replace('{{NAME}}', clean_name)
+    rendered_desc = rendered_desc.replace('{{DESCRIPTION}}', desc_text)
+    rendered_desc = rendered_desc.replace('{{SLUG}}', slug)
+    doc_file.parent.mkdir(parents=True, exist_ok=True)
+    doc_file.write_text(rendered_desc, encoding='utf-8')
+
+    # Register scope
+    scope_added = add_script_to_commit_scopes(file_name, slug)
+
+    print(f"\n{COLOR_GREEN}{COLOR_BOLD}Initialized new userscript successfully!{COLOR_RESET}")
+    print(f"  * Source file:    {COLOR_CYAN}{src_file.relative_to(repo_root)}{COLOR_RESET}")
+    print(f"  * Description:    {COLOR_CYAN}{doc_file.relative_to(repo_root)}{COLOR_RESET}")
+    print(f"  * Scope slug:     {COLOR_CYAN}{slug}{COLOR_RESET} {'(registered in commit-scopes.md)' if scope_added else ''}")
+
+    branch_name = f"{slug}/feat/initial-setup"
+    if create_branch:
+        print(f"\n{COLOR_CYAN}Creating and switching to git branch '{branch_name}' off 'dev'...{COLOR_RESET}")
+        try:
+            subprocess.run(['git', 'checkout', '-b', branch_name, 'dev'], check=True)
+            print(f"{COLOR_GREEN}Switched to branch '{branch_name}'.{COLOR_RESET}")
+        except subprocess.CalledProcessError as e:
+            print(f"{COLOR_RED}Failed to create git branch: {e}{COLOR_RESET}")
+    else:
+        print(f"\n{COLOR_YELLOW}{COLOR_BOLD}Next Steps:{COLOR_RESET}")
+        print(f"  1. Create your topic branch:")
+        print(f"     {COLOR_CYAN}git checkout -b {branch_name} dev{COLOR_RESET}")
+        print(f"  2. Start the local dev server:")
+        print(f"     {COLOR_CYAN}node tools/dev_server.js{COLOR_RESET}")
+        print(f"  3. Open http://localhost:8080/ and click 'Track in Violentmonkey'.\n")
+
+    return 0
+
+def format_publish_info(script_name, greasyfork_id=None):
+    repo_root = Path(__file__).resolve().parent.parent
+    clean_name = script_name.strip()
+    if clean_name.endswith('.user.js'):
+        clean_name = clean_name[:-len('.user.js')].strip()
+
+    file_name = f"{clean_name}.user.js"
+    src_file = repo_root / "src" / file_name
+
+    if not src_file.exists():
+        matches = [f for f in (repo_root / "src").glob("*.user.js") if clean_name.lower() in f.name.lower()]
+        if len(matches) == 1:
+            src_file = matches[0]
+            clean_name = src_file.name.replace('.user.js', '')
+            file_name = src_file.name
+        elif len(matches) > 1:
+            print(f"{COLOR_RED}Ambiguous script name '{clean_name}'. Matches: {[m.name for m in matches]}{COLOR_RESET}")
+            return None
+        else:
+            print(f"{COLOR_RED}Script not found in src/: {file_name}{COLOR_RESET}")
+            return None
+
+    mapping = parse_commit_scopes()
+    slug = mapping.get(file_name) or generate_slug_for_new_script(clean_name)
+    encoded_name = urllib.parse.quote(clean_name)
+
+    code_sync_url = f"https://raw.githubusercontent.com/chaban-mb/userscripts/dist/src/{encoded_name}.user.js"
+    desc_sync_url = f"https://raw.githubusercontent.com/chaban-mb/userscripts/main/docs/descriptions/{encoded_name}.md"
+    source_url = f"https://github.com/chaban-mb/userscripts/blob/main/src/{encoded_name}.user.js"
+    gf_url = f"https://greasyfork.org/en/scripts/{greasyfork_id}-{slug}" if greasyfork_id else f"https://greasyfork.org/en/scripts/<id>-{slug}"
+
+    doc_file = repo_root / "docs" / "descriptions" / f"{clean_name}.md"
+    overview_text = ""
+    body_text = ""
+    screenshots = []
+
+    if doc_file.exists():
+        raw_doc = doc_file.read_text(encoding='utf-8')
+        lines = raw_doc.splitlines()
+
+        for line in lines:
+            img_match = re.search(r'!\[([^\]]*)\]\(([^)]+)\)', line)
+            if img_match:
+                screenshots.append(line.strip())
+
+        doc_body = re.sub(r'^#\s+.*?\n+', '', raw_doc).strip()
+        paragraphs = [p.strip() for p in doc_body.split('\n\n') if p.strip()]
+
+        if paragraphs:
+            overview_text = paragraphs[0]
+            remaining_paragraphs = []
+            for p in paragraphs[1:]:
+                # Exclude standalone image lines from body paragraphs
+                cleaned_p = "\n".join([l for l in p.splitlines() if not re.match(r'^\s*!\[([^\]]*)\]\(([^)]+)\)\s*$', l)]).strip()
+                if cleaned_p:
+                    remaining_paragraphs.append(cleaned_p)
+            body_text = "\n\n".join(remaining_paragraphs)
+    else:
+        try:
+            content = src_file.read_text(encoding='utf-8')
+            desc_match = re.search(r'//\s*@description\s+(.*)', content)
+            overview_text = desc_match.group(1).strip() if desc_match else f"Enhancement userscript for {clean_name}."
+        except Exception:
+            overview_text = f"Enhancement userscript for {clean_name}."
+
+    grid_block = ""
+    if screenshots:
+        if len(screenshots) > 1:
+            grid_block = "\n\n[grid]\n" + "\n".join(screenshots) + "\n[/grid]"
+        else:
+            grid_block = "\n\n" + screenshots[0]
+    else:
+        grid_block = "\n\n<!--\n[grid]\n![Preview](https://...)\n[/grid]\n-->"
+
+    discourse_post = f"""## {clean_name}
+
+{overview_text}
+
+[Install]({code_sync_url}) | [Source Code]({source_url}) | [Greasy Fork]({gf_url})"""
+
+    if body_text:
+        discourse_post += f"\n\n{body_text}"
+
+    if grid_block:
+        discourse_post += f"{grid_block}"
+
+    return {
+        'name': clean_name,
+        'code_sync_url': code_sync_url,
+        'desc_sync_url': desc_sync_url,
+        'source_url': source_url,
+        'gf_url': gf_url,
+        'discourse_post': discourse_post
+    }
+
+def print_publish_info(script_name, greasyfork_id=None):
+    info = format_publish_info(script_name, greasyfork_id)
+    if not info:
+        return 1
+
+    print(f"\n{COLOR_CYAN}{COLOR_BOLD}{'=' * 72}{COLOR_RESET}")
+    print(f"{COLOR_CYAN}{COLOR_BOLD}POST-PUBLISH ASSISTANT: {info['name']}{COLOR_RESET}")
+    print(f"{COLOR_CYAN}{COLOR_BOLD}{'=' * 72}{COLOR_RESET}\n")
+
+    print(f"{COLOR_YELLOW}{COLOR_BOLD}1. Greasy Fork Import / Sync Form:{COLOR_RESET}")
+    print(f"   * Script URL to import / sync from (Code Sync URL):")
+    print(f"     {COLOR_GREEN}{info['code_sync_url']}{COLOR_RESET}")
+    print(f"   * Default additional info URL (Description Sync URL - select 'Markdown'):")
+    print(f"     {COLOR_GREEN}{info['desc_sync_url']}{COLOR_RESET}\n")
+
+    print(f"{COLOR_YELLOW}{COLOR_BOLD}2. Discourse Forum Announcement Draft (MetaBrainz Community):{COLOR_RESET}")
+    print(f"{COLOR_CYAN}--- BEGIN FORUM POST ---{COLOR_RESET}")
+    print(info['discourse_post'])
+    print(f"{COLOR_CYAN}--- END FORUM POST ---{COLOR_RESET}\n")
+    if not greasyfork_id:
+        print(f"{COLOR_YELLOW}Tip: Once created on Greasy Fork, run:{COLOR_RESET}")
+        print(f"     {COLOR_CYAN}python tools/workflow.py publish-info \"{info['name']}\" --greasyfork-id <id>{COLOR_RESET}\n")
+    return 0
+
 def resolve_command(arg):
-    commands = ['check', 'cleanup', 'release', 'build', 'bump', 'build-dist']
+    commands = ['check', 'cleanup', 'release', 'build', 'bump', 'build-dist', 'init', 'new', 'publish-info', 'announce']
     if arg in commands:
+        if arg == 'new':
+            return 'init'
+        if arg == 'announce':
+            return 'publish-info'
         return arg
 
     matches = [cmd for cmd in commands if cmd.startswith(arg)]
     if len(matches) == 1:
-        return matches[0]
+        match = matches[0]
+        if match == 'new':
+            return 'init'
+        if match == 'announce':
+            return 'publish-info'
+        return match
     elif len(matches) > 1:
         print(f"Ambiguous command '{arg}'. Matching commands: {', '.join(matches)}")
         sys.exit(2)
@@ -1066,12 +1311,14 @@ def main():
 Examples:
   python tools/workflow.py check --json             # Fast diagnostic check for LLM / agents
   python tools/workflow.py check --concise          # Human-readable concise status
+  python tools/workflow.py init "New Script Name"   # Initialize a new userscript from template
+  python tools/workflow.py publish-info "Script"    # Show Greasy Fork sync URLs and forum draft
   python tools/workflow.py bump --bump-type patch   # Batch bump modified scripts & dependent libs
   python tools/workflow.py release --non-interactive -y -p  # Automated release to main & dist
   python tools/workflow.py build-dist --sync-branch # Synchronize standalone inlined scripts to dist
 """
     )
-    subparsers = parser.add_subparsers(dest="command", help="Command to run", metavar="{check,release,bump,build,build-dist,cleanup}")
+    subparsers = parser.add_subparsers(dest="command", help="Command to run", metavar="{check,release,bump,build,build-dist,cleanup,init,publish-info}")
 
     # Subcommand: check
     check_parser = subparsers.add_parser("check", help="Check unreleased scripts, cascading dependency bumps, and docs")
@@ -1110,6 +1357,17 @@ Examples:
     dist_parser.add_argument("--sync-branch", action="store_true", help="Sync inlined scripts directly to dist branch")
     dist_parser.add_argument("--main-branch", default="main", help="Main branch name (default: main)")
 
+    # Subcommand: init (new)
+    init_parser = subparsers.add_parser("init", aliases=["new"], help="Initialize a new userscript from template")
+    init_parser.add_argument("name", help="Name of the new userscript")
+    init_parser.add_argument("--description", "-d", default=None, help="Short description of the userscript")
+    init_parser.add_argument("--branch", "-b", action="store_true", help="Create and switch to topic branch off dev")
+
+    # Subcommand: publish-info (announce)
+    publish_parser = subparsers.add_parser("publish-info", aliases=["announce"], help="Show Greasy Fork sync URLs and Discourse announcement draft")
+    publish_parser.add_argument("name", help="Name or path of the userscript")
+    publish_parser.add_argument("--greasyfork-id", "-g", default=None, help="Greasy Fork script ID (if already created)")
+
     args = parser.parse_args()
 
     try:
@@ -1123,6 +1381,10 @@ Examples:
             do_cleanup(args.branch, args.main_branch)
         elif args.command == "bump":
             do_bump(bump_type=args.bump_type, scripts_filter=args.scripts, json_output=getattr(args, 'json', False))
+        elif args.command == "init" or args.command == "new":
+            sys.exit(do_init(args.name, description=args.description, create_branch=args.branch))
+        elif args.command == "publish-info" or args.command == "announce":
+            sys.exit(print_publish_info(args.name, greasyfork_id=args.greasyfork_id))
         elif args.command == "release":
             do_release(
                 non_interactive=args.non_interactive,

@@ -124,9 +124,13 @@ python tools/workflow.py --help
 
 Key subcommands:
 
-- `status`: Show status of userscripts across branches.
-- `release <script_name>`: Bump version, build distribution files, create release commit, and tag release.
-- `sync`: Synchronize branch state with remotes.
+- `init "<Script Name>"` (alias: `new`): Initialize a new userscript from `templates/`, generate companion documentation in `docs/descriptions/`, register scope in `commit-scopes.md`, and optionally create topic branch (`--branch`).
+- `check`: Check unreleased scripts, cascading dependency bumps, and missing metadata.
+- `bump`: Batch bump version tags (`--bump-type patch|minor|major`).
+- `release`: Automated or interactive release assistant with changelog generation and dist sync. On initial release of brand-new scripts, automatically displays the publishing assistant.
+- `publish-info "<Script Name>"` (alias: `announce`): Display Greasy Fork code & description sync URLs and a pre-formatted Discourse forum announcement draft.
+- `cleanup [branch]`: Clean up local and remote feature branches merged on GitHub.
+- `build-dist`: Build standalone inlined scripts and sync directly to the `dist` branch (`--sync-branch`).
 
 ---
 
