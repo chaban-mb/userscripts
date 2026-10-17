@@ -1188,7 +1188,7 @@ def format_publish_info(script_name, greasyfork_id=None):
     code_sync_url = f"https://raw.githubusercontent.com/chaban-mb/userscripts/dist/src/{encoded_name}.user.js"
     desc_sync_url = f"https://raw.githubusercontent.com/chaban-mb/userscripts/main/docs/descriptions/{encoded_name}.md"
     source_url = f"https://github.com/chaban-mb/userscripts/blob/main/src/{encoded_name}.user.js"
-    gf_url = f"https://greasyfork.org/en/scripts/{greasyfork_id}-{slug}" if greasyfork_id else f"https://greasyfork.org/en/scripts/<id>-{slug}"
+    gf_url = f"https://greasyfork.org/scripts/{greasyfork_id}" if greasyfork_id else "https://greasyfork.org/scripts/<id>"
 
     doc_file = repo_root / "docs" / "descriptions" / f"{clean_name}.md"
     overview_text = ""
