@@ -1,15 +1,37 @@
 // ==UserScript==
 // @name         MusicBrainz: Align [info] Links in Relationships Table
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      1.0.0
+// @version      1.0.1
 // @tag          ai-created
 // @description  Aligns [info] metadata links uniformly after the longest URL.
 // @author       chaban
 // @license      MIT
 // @homepageURL  https://github.com/chaban-mb/userscripts
 // @supportURL   https://github.com/chaban-mb/userscripts/issues
-// @match        *://*.musicbrainz.org/*/*/relationships*
-// @match        *://*.musicbrainz.eu/*/*/relationships*
+// @match        *://*.musicbrainz.org/area/*
+// @match        *://*.musicbrainz.org/artist/*/relationships*
+// @match        *://*.musicbrainz.org/event/*
+// @match        *://*.musicbrainz.org/genre/*
+// @match        *://*.musicbrainz.org/instrument/*
+// @match        *://*.musicbrainz.org/label/*/relationships*
+// @match        *://*.musicbrainz.org/place/*
+// @match        *://*.musicbrainz.org/recording/*
+// @match        *://*.musicbrainz.org/release/*
+// @match        *://*.musicbrainz.org/release-group/*
+// @match        *://*.musicbrainz.org/series/*
+// @match        *://*.musicbrainz.org/work/*
+// @match        *://*.musicbrainz.eu/area/*
+// @match        *://*.musicbrainz.eu/artist/*/relationships*
+// @match        *://*.musicbrainz.eu/event/*
+// @match        *://*.musicbrainz.eu/genre/*
+// @match        *://*.musicbrainz.eu/instrument/*
+// @match        *://*.musicbrainz.eu/label/*/relationships*
+// @match        *://*.musicbrainz.eu/place/*
+// @match        *://*.musicbrainz.eu/recording/*
+// @match        *://*.musicbrainz.eu/release/*
+// @match        *://*.musicbrainz.eu/release-group/*
+// @match        *://*.musicbrainz.eu/series/*
+// @match        *://*.musicbrainz.eu/work/*
 // @icon         https://musicbrainz.org/static/images/favicons/android-chrome-512x512.png
 // @grant        GM.getValue
 // @grant        GM.setValue
