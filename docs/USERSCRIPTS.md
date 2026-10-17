@@ -285,6 +285,19 @@ Makes "Add to Collection" and "Remove from Collection" actions in the sidebar in
 - **Instant Toggle:** Adds or removes entities from your collection immediately.
 - **Visual Feedback:** Updates the link text and the sidebar collection counter dynamically.
 
+## MusicBrainz: Align [info] Links in Relationships Table
+
+[![Install](https://img.shields.io/badge/Install-success.svg?style=for-the-badge&logo=tampermonkey)](https://github.com/chaban-mb/userscripts/raw/main/src/MusicBrainz%20Align%20[info]%20Links%20in%20Relationships%20Table.user.js)
+[![Source](https://img.shields.io/badge/Source-grey.svg?style=for-the-badge&logo=github)](https://github.com/chaban-mb/userscripts/blob/main/src/MusicBrainz%20Align%20[info]%20Links%20in%20Relationships%20Table.user.js)
+
+Aligns [info] metadata links uniformly after the longest URL in MusicBrainz relationship tables.
+
+### Features
+
+- **Uniform Alignment:** Dynamically calculates the intrinsic width of the longest URL in the relationship table and aligns all `[info]` links into a single, clean vertical column directly after it.
+- **Direct Navigation:** Adds direct links inside the metadata brackets for URL editing (`edit`) and edit history (`edits`).
+- **Reactive GM Menu Controls:** Toggle the `edit` and `edits` links on or off from the Violentmonkey/Tampermonkey extension menu with live inline updates.
+
 ## MusicBrainz: Align Columns in Merge Edits
 
 [![Install](https://img.shields.io/badge/Install-success.svg?style=for-the-badge&logo=tampermonkey)](https://github.com/chaban-mb/userscripts/raw/main/src/MusicBrainz%20Align%20Columns%20in%20Merge%20Edits.user.js)
