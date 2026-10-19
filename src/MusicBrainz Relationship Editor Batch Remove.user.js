@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        MusicBrainz: Relationship Editor Batch Remove
 // @namespace   https://musicbrainz.org/user/chaban
-// @version     1.1.3
+// @version     1.1.4
 // @description Adds a toggle to batch remove/restore relationships. Shift+Click: Same Type. Ctrl+Click: Same Target. Ctrl+Shift+Click: Same Type & Target.
 // @tag         ai-created
 // @author      chaban
@@ -132,16 +132,14 @@ function resolveTarget(rel, source) {
  * * @param {MouseEvent} event - The click event triggered on the content area.
  */
 function handleBatchToggle(event) {
-    const target = event.target;
-
-    // 1. Basic Validation
-    if (!target.matches('.icon.remove-item')) return;
-
     const matchType = event.shiftKey;
     const matchTarget = event.ctrlKey;
 
     // Only proceed if a modifier key is held
     if (!matchType && !matchTarget) return;
+
+    const target = event.target.closest('.icon.remove-item, .remove-item');
+    if (!target) return;
 
     event.preventDefault();
     event.stopPropagation();
@@ -154,7 +152,7 @@ function handleBatchToggle(event) {
 
     const masterRel = props.relationship;
     const masterSource = props.source;
-    const dispatch = props.dispatch;
+    const dispatch = props.dispatch || MB?.relationshipEditor?.dispatch;
 
     if (!dispatch) return;
 
@@ -259,31 +257,66 @@ function setup() {
     // Clear modifiers on blur to prevent "stuck" keys when Alt-Tabbing
     window.addEventListener('blur', () => document.body.classList.remove('ctrl-is-down', 'shift-is-down'));
 
-    const content = document.getElementById('content');
+    const content = document.getElementById('content') || document.body;
     if (content) {
         content.addEventListener('click', handleBatchToggle, true);
     }
 }
 
+/**
+ * Checks whether the relationship editor is ready to accept commands.
+ * Supports both standalone release relationship editor and inline entity editors.
+ *
+ * @param {HTMLElement} root - The relationship editor DOM container.
+ * @returns {boolean} True if the editor is hydrated and operational.
+ */
+function isEditorReady(root) {
+    if (!root) return false;
+    if (typeof MB?.relationshipEditor?.dispatch === 'function') {
+        return true;
+    }
+    return Object.keys(root).some((key) =>
+        (key.startsWith('_reactListening') || key.startsWith('__reactFiber')) && root[key]
+    );
+}
+
 function onReactHydrated(element, callback) {
     if (!element) return;
-    const alreadyHydrated = Object.keys(element)
-        .some((propertyName) => propertyName.startsWith('_reactListening') && element[propertyName]);
 
-    if (alreadyHydrated) {
+    if (isEditorReady(element)) {
         callback();
-    } else {
-        element.addEventListener('mb-hydration', callback, { once: true });
+        return;
     }
+
+    element.addEventListener('mb-hydration', callback, { once: true });
 }
 
 function init() {
-    // Poll for the relationship editor container exactly as kellnerd's readyRelationshipEditor does
+    let initialized = false;
+    const runSetup = () => {
+        if (initialized) return;
+        initialized = true;
+        clearInterval(interval);
+        setup();
+    };
+
+    let attempts = 0;
+    // Poll for the relationship editor container across release and entity edit pages
     const interval = setInterval(() => {
-        const root = document.querySelector('.release-relationship-editor, .relationship-editor');
-        if (root) {
+        if (++attempts > 300) {
             clearInterval(interval);
-            onReactHydrated(root, setup);
+            return;
+        }
+
+        const root = document.querySelector(
+            '#relationship-editor, .relationship-editor, #release-relationship-editor, .release-relationship-editor, .relationship-editor-fieldset-content'
+        );
+        if (root) {
+            if (isEditorReady(root)) {
+                runSetup();
+            } else {
+                onReactHydrated(root, runSetup);
+            }
         }
     }, 100);
 }
