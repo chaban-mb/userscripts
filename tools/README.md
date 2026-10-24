@@ -160,7 +160,7 @@ Fallback method for older Violentmonkey versions or when the MCP port is connect
 1. **Start the server** (`node tools/dev_server.js`) and navigate to [http://localhost:8080/](http://localhost:8080/).
 2. Click **Track via HTTP &rarr;** on the script you are working on.
 3. In the Violentmonkey installation tab that opens:
-   - Check **`[x] Track external edits`** and **`[x] Reload tab`**.
+   - Click the button **`✚ Track external edits`** (`<button id="+track" data-hotkey="Ctrl-Enter">` or press `Ctrl-Enter`) and ensure **`[x] Reload tab`** is checked.
    - **Keep the Violentmonkey installer/editor tab open** so Violentmonkey continues polling HTTP 304 ETags.
 
 ### How It Works
