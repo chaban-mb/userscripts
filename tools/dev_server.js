@@ -8,11 +8,14 @@
  *
  *   1. Native Violentmonkey MCP Bridge (Preferred, Violentmonkey >= 2.49.5):
  *      - Speaks the `@violentmonkey/mcp` WebSocket protocol (`/ws`, protocol v1)
+ *      - Uses a deterministic local token by default so restarting `dev_server.js`
+ *        automatically reconnects without re-approval in Violentmonkey
  *      - Automatically watches `src/*.user.js` and `lib/*.js` and pushes updates directly
  *        to Violentmonkey via `scripts_write` with automatic tab reload (`reloadTab: true`)
  *      - Inlines relative `../lib/*.js` dependencies during MCP push so scripts without an
  *        HTTP `lastInstallURL` resolve shared libraries seamlessly
- *      - Provides one-click "Push via MCP" and live connection status on the web dashboard
+ *      - Provides `/connect-mcp` shortcut, `--open-mcp` flag, one-click "Push via MCP", and
+ *        live connection polling on the web dashboard
  *      - Reference: https://violentmonkey.github.io/guide/ai-agent-access/
  *
  *   2. Native HTTP "Track external edits" (Fallback / Standalone):
@@ -27,6 +30,7 @@
  *
  * Usage:
  *   node tools/dev_server.js                  # Start HTTP + MCP bridge server on port 8080
+ *   node tools/dev_server.js --open-mcp       # Start and trigger Violentmonkey MCP approval prompt
  *   node tools/dev_server.js --port 3000      # Custom port
  *   node tools/dev_server.js --no-tag         # Serve/push scripts without injecting dev metadata
  *   node tools/dev_server.js --help           # Show CLI usage and instructions
@@ -36,7 +40,7 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
-const { execSync } = require('child_process');
+const { execSync, spawn } = require('child_process');
 
 const ARGS = process.argv.slice(2);
 
@@ -66,7 +70,9 @@ USAGE:
 OPTIONS:
   --port, -p <number> Server port (default: 8080, or process.env.PORT)
   --host <ip>         Server host (default: 127.0.0.1, or process.env.HOST)
-  --token <string>    Fixed MCP auth token (default: random 32-byte base64url, or VM_MCP_TOKEN)
+  --token <string>    Fixed MCP auth token (default: deterministic local token, or VM_MCP_TOKEN)
+  --random-token      Generate a random 32-byte token on every start (requires re-approving on restart)
+  --open-mcp, --open  Automatically open the MCP Connect URL in the default browser on startup
   --no-watch          Disable automatic fs.watch push to connected Violentmonkey MCP client
   --separate          Install as a separate script by appending [DEV] to @name
   --name-tag <tag>    Custom suffix appended to @name (implies --separate)
@@ -77,17 +83,19 @@ OPTIONS:
 
 METHOD 1: NATIVE MCP PUSH SYNC (PREFERRED - Violentmonkey >= 2.49.5):
   Guide: https://violentmonkey.github.io/guide/ai-agent-access/
-  1. Start the dev server:
-       node tools/dev_server.js
-  2. Open the MCP Connect URL printed in the console (or click "Connect Violentmonkey MCP" on http://localhost:8080/)
-     and click "Approve" in Violentmonkey settings.
-  3. Edit and save any script in src/*.user.js (or shared library in lib/*.js):
+  1. Start the dev server (use --open-mcp on first run or after a browser restart):
+       node tools/dev_server.js --open-mcp
+     (Or open http://localhost:8080/connect-mcp in your browser).
+  2. Violentmonkey intercepts the connect URL and replaces "No pending requests." with:
+       "An MCP server on port 8080 wants to read and modify your scripts." -> Click [Approve].
+  3. Verify the status changes to "Connected to MCP server on port 8080." in Violentmonkey Settings
+     (and "⚡ MCP Connected" on http://localhost:8080/).
+  4. Edit and save any script in src/*.user.js (or shared library in lib/*.js):
        - Updated scripts are automatically pushed over WebSocket via \`scripts_write\`
        - Relative \`../lib/*.js\` dependencies are automatically inlined for MCP pushes
        - Active matching tabs reload automatically — no installer tab needs to stay open!
-     Note: For direct AI agent tool calls (\`scripts_list\`, \`scripts_write\`, \`tab_reload\`, \`script_logs\`, etc.),
-     you can also register the official \`@violentmonkey/mcp\` server:
-       npx -y @violentmonkey/mcp -p 5678
+     Note: Because dev_server.js uses a deterministic local token by default, restarting
+     dev_server.js will automatically reconnect without needing to re-approve in Violentmonkey!
 
 METHOD 2: HTTP FILE TRACKING (FALLBACK / STANDALONE):
   1. Open http://localhost:8080/ and click "Track via HTTP".
@@ -102,18 +110,38 @@ const PORT = parseInt(getArgValue('--port') || getArgValue('-p') || process.env.
 const HOST = getArgValue('--host') || process.env.HOST || '127.0.0.1';
 const NO_TAG = ARGS.includes('--no-tag');
 const NO_WATCH = ARGS.includes('--no-watch');
+const OPEN_MCP = ARGS.includes('--open-mcp') || ARGS.includes('--open');
+const RANDOM_TOKEN = ARGS.includes('--random-token');
 const SEPARATE = ARGS.includes('--separate');
 const NAME_TAG = getArgValue('--name-tag') || (SEPARATE ? '[DEV]' : '');
 const KILL_OCCUPANT = ARGS.includes('--kill') || ARGS.includes('--force');
 const FIND_PORT = ARGS.includes('--find-port');
-const MCP_TOKEN = getArgValue('--token') || process.env.VM_MCP_TOKEN || crypto.randomBytes(32).toString('base64url');
-
-let currentPort = PORT;
-const MAX_FALLBACK_PORT = PORT + 20;
 
 const REPO_ROOT = path.resolve(__dirname, '..');
 const SRC_DIR = path.join(REPO_ROOT, 'src');
 const LIB_DIR = path.join(REPO_ROOT, 'lib');
+
+// Use a deterministic local token by default so restarting dev_server.js allows Violentmonkey's
+// exponential-backoff WebSocket client to automatically reconnect without re-approval.
+const DEFAULT_LOCAL_TOKEN = crypto.createHash('sha256').update(`userscripts-vm-mcp:${REPO_ROOT}`).digest('base64url');
+const MCP_TOKEN = getArgValue('--token') || process.env.VM_MCP_TOKEN || (RANDOM_TOKEN ? crypto.randomBytes(32).toString('base64url') : DEFAULT_LOCAL_TOKEN);
+
+let currentPort = PORT;
+const MAX_FALLBACK_PORT = PORT + 20;
+
+function openUrlInBrowser(url) {
+  try {
+    if (process.platform === 'win32') {
+      spawn('cmd.exe', ['/c', 'start', '', url.replace(/&/g, '^&')], { stdio: 'ignore', detached: true }).unref();
+    } else if (process.platform === 'darwin') {
+      spawn('open', [url], { stdio: 'ignore', detached: true }).unref();
+    } else {
+      spawn('xdg-open', [url], { stdio: 'ignore', detached: true }).unref();
+    }
+  } catch (err) {
+    console.warn(`[DevServer] Could not auto-open browser: ${err.message}`);
+  }
+}
 
 function getPortOccupant(port) {
   try {
@@ -608,7 +636,7 @@ function renderDashboard(reqHost, port = currentPort) {
   const isMcpConnected = !!activeMcpSession;
   const mcpClientInfo = activeMcpSession
     ? `${activeMcpSession.client.name} v${activeMcpSession.client.version} (${activeMcpSession.tools.length} tools)`
-    : 'Disconnected';
+    : 'Not connected (Click "Connect Violentmonkey MCP" below)';
 
   const fileItems = files.map(file => {
     const raw = fs.readFileSync(path.join(SRC_DIR, file), 'utf8');
@@ -675,8 +703,8 @@ function renderDashboard(reqHost, port = currentPort) {
             <p style="margin: 0; color: #586069; font-size: 14px;">Active Git Branch: <code>${branch}</code> &bull; Commit: <code>${hash}</code> &bull; Port: <code>${port}</code></p>
           </div>
           <div id="mcp-status-badge" class="badge ${isMcpConnected ? 'badge-connected' : 'badge-disconnected'}">
-            <span>${isMcpConnected ? '&#9889; MCP Connected:' : '&#9888; MCP Disconnected'}</span>
-            <span id="mcp-client-label">${isMcpConnected ? mcpClientInfo : ''}</span>
+            <span id="mcp-status-icon">${isMcpConnected ? '&#9889; MCP Connected:' : '&#9888; MCP Disconnected:'}</span>
+            <span id="mcp-client-label">${mcpClientInfo}</span>
           </div>
         </div>
 
@@ -688,9 +716,10 @@ function renderDashboard(reqHost, port = currentPort) {
             </a>
           </div>
           <ol>
-            <li>Click <strong>Connect Violentmonkey MCP &rarr;</strong> above and click <strong>Approve</strong> in the Violentmonkey settings tab that opens (<a href="https://violentmonkey.github.io/guide/ai-agent-access/" target="_blank" style="color: #8250df;">Official Guide</a>).</li>
-            <li>Edit and save any script in <code>src/*.user.js</code> or library in <code>lib/*.js</code> — this server automatically pushes the update over WebSocket (with <code>../lib/</code> inlined) and reloads matching tabs!</li>
-            <li>You can also click <strong>&#9889; Push via MCP</strong> on any script below for instant one-click installation/update without keeping an installer tab open.</li>
+            <li>If Violentmonkey Settings says <em>"No pending requests."</em>, click <strong>Connect Violentmonkey MCP &rarr;</strong> above (or open <code>http://localhost:${port}/connect-mcp</code>).</li>
+            <li>Violentmonkey intercepts the URL and opens <strong>Settings &rarr; AI agent access (MCP)</strong> with an approval prompt: <em>"An MCP server on port ${port} wants to read and modify your scripts."</em> &mdash; click <strong>Approve</strong>.</li>
+            <li>Once approved, Violentmonkey displays <strong>"Connected to MCP server on port ${port}."</strong> and the badge at the top-right of this page turns green.</li>
+            <li>Edit and save any script in <code>src/*.user.js</code> or library in <code>lib/*.js</code> &mdash; this server automatically pushes the update over WebSocket (with <code>../lib/</code> inlined) and reloads matching tabs!</li>
           </ol>
         </div>
 
@@ -706,6 +735,27 @@ function renderDashboard(reqHost, port = currentPort) {
         ${fileItems}
       </div>
       <script>
+        async function pollMcpStatus() {
+          try {
+            const res = await fetch('/api/mcp/status');
+            if (!res.ok) return;
+            const data = await res.json();
+            const badge = document.getElementById('mcp-status-badge');
+            const icon = document.getElementById('mcp-status-icon');
+            const label = document.getElementById('mcp-client-label');
+            if (data.connected && data.client) {
+              badge.className = 'badge badge-connected';
+              icon.innerHTML = '&#9889; MCP Connected:';
+              label.textContent = data.client.name + ' v' + data.client.version + ' (' + data.tools.length + ' tools)';
+            } else {
+              badge.className = 'badge badge-disconnected';
+              icon.innerHTML = '&#9888; MCP Disconnected:';
+              label.textContent = 'Not connected (Click "Connect Violentmonkey MCP" below)';
+            }
+          } catch {}
+        }
+        setInterval(pollMcpStatus, 2000);
+
         async function pushViaMcp(encodedFile, btn) {
           const originalText = btn.innerHTML;
           btn.disabled = true;
@@ -719,7 +769,7 @@ function renderDashboard(reqHost, port = currentPort) {
           } catch (err) {
             btn.style.background = '#cf222e';
             btn.innerHTML = '&#10007; Not Connected';
-            alert('MCP Push Error: ' + err.message + '\\n\\nClick "Connect Violentmonkey MCP" at the top of the page and approve the connection in Violentmonkey (>= 2.49.5) first.');
+            alert('MCP Push Error: ' + err.message + '\\n\\nClick "Connect Violentmonkey MCP" at the top of the page and click "Approve" in Violentmonkey Settings first.');
           } finally {
             setTimeout(() => {
               btn.disabled = false;
@@ -739,10 +789,16 @@ const server = http.createServer(async (req, res) => {
   const parsedUrl = new URL(req.url, `http://${hostHeader}`);
   const pathname = decodeURIComponent(parsedUrl.pathname);
 
-  // 0. Health & MCP API endpoints
+  // 0. Health, Redirect & MCP API endpoints
   if (pathname === '/health') {
     res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
     res.end(JSON.stringify({ ok: true }));
+    return;
+  }
+
+  if (pathname === '/connect-mcp' || pathname === '/mcp-connect') {
+    res.writeHead(302, { 'Location': getMcpConnectUrl(currentPort) });
+    res.end();
     return;
   }
 
@@ -921,15 +977,21 @@ setupMcpFileWatchers();
 server.listen(currentPort, HOST, () => {
   const { branch, hash } = getGitInfo();
   const displayHost = (HOST === '127.0.0.1' || HOST === '0.0.0.0') ? 'localhost' : HOST;
+  const connectUrl = getMcpConnectUrl(currentPort);
   console.log(`\x1b[34m====================================================\x1b[0m`);
   console.log(`  \x1b[1mViolentmonkey Dev & MCP Server\x1b[0m`);
   console.log(`  Dashboard:    \x1b[36mhttp://${displayHost}:${currentPort}/\x1b[0m`);
+  console.log(`  MCP Connect:  \x1b[35mhttp://${displayHost}:${currentPort}/connect-mcp\x1b[0m`);
   console.log(`  MCP Bridge:   \x1b[35mws://${HOST}:${currentPort}/ws\x1b[0m`);
   console.log(`  Git branch:   \x1b[33m${branch}\x1b[0m (${hash})`);
   console.log(`  Dev tag:      \x1b[32m${NAME_TAG || '(in-place)'}\x1b[0m`);
   console.log(`\x1b[34m====================================================\x1b[0m`);
-  console.log(`\x1b[35m⚡ Connect Violentmonkey MCP (>= 2.49.5):\x1b[0m`);
-  console.log(`  ${getMcpConnectUrl(currentPort)}\n`);
+  console.log(`\x1b[35m⚡ Activate Violentmonkey MCP (>= 2.49.5):\x1b[0m`);
+  console.log(`  ${connectUrl}\n`);
+  if (OPEN_MCP) {
+    console.log(`\x1b[36m[DevServer]\x1b[0m Opening MCP Connect URL in browser (--open-mcp)...`);
+    openUrlInBrowser(connectUrl);
+  }
   console.log(`Or open http://${displayHost}:${currentPort}/ for dashboard & HTTP tracking.`);
   console.log(`Run with --help to view detailed usage information.`);
 });

@@ -90,7 +90,7 @@ Developing userscripts by manually copy-pasting code into the browser editor on 
 - **In-Place Updates (Zero Conflict)**: By default, `@name` is preserved identically to production so Violentmonkey updates your existing installed script in-place. This guarantees **only ONE script instance runs** on target sites (preventing duplicate UI elements and conflicting handlers).
 - **Git-Aware Versioning**: Injects the active git branch and commit hash into `@version` (e.g. `2.8.1-dev.3357794` on `dev`, or `2.8.1-dev.beatport-checker.3357794` on topic branches) for exact build identification in Violentmonkey without artificial version hacks.
 - **Preserve Upstream Update URLs**: Preserves original `@updateURL` and `@downloadURL` so your script can cleanly update to stable upstream releases via Violentmonkey once development is complete.
-- **Web Dashboard**: Provides a visual interface at `http://localhost:8080/` with an MCP connection status badge, a one-click **Connect Violentmonkey MCP** authorization button, one-click **&#9889; Push via MCP** buttons for every script, and fallback **Track via HTTP** links.
+- **Web Dashboard**: Provides a visual interface at `http://localhost:8080/` with a live-polling MCP connection status badge, a one-click **Connect Violentmonkey MCP** authorization button (`/connect-mcp`), one-click **&#9889; Push via MCP** buttons for every script, and fallback **Track via HTTP** links.
 - **Conflict Diagnostic & Graceful Shutdown**: Intercepts `EADDRINUSE` to identify the occupying process (`tasklist` / `lsof`) and offers automatic takeover (`--kill`) or fallback (`--find-port`). Sends WebSocket close code `4002` and drains active sockets cleanly on shutdown.
 
 ### CLI Usage & Options
@@ -107,7 +107,9 @@ node tools/dev_server.js
 | :--- | :--- | :--- |
 | `--port`, `-p <number>` | `8080` (or `process.env.PORT`) | Port number for both HTTP dashboard and `/ws` MCP WebSocket bridge. |
 | `--host <ip>` | `127.0.0.1` (or `process.env.HOST`) | Host IP to listen on. |
-| `--token <string>` | Random 32-byte `base64url` (or `VM_MCP_TOKEN`) | Fixed authentication token for Violentmonkey MCP WebSocket handshake. |
+| `--token <string>` | Deterministic local SHA-256 (or `VM_MCP_TOKEN`) | Fixed authentication token for Violentmonkey MCP WebSocket handshake. |
+| `--random-token` | `false` | Generate a random 32-byte token on every start (requires re-approving on restart). |
+| `--open-mcp`, `--open` | `false` | Automatically open the MCP Connect URL in the browser on startup to trigger the Violentmonkey approval prompt. |
 | `--no-watch` | `false` | Disable automatic `fs.watch` push to connected Violentmonkey MCP client. |
 | `--separate` | `false` | Tag `@name` with `[DEV]` to install side-by-side as a separate script. |
 | `--name-tag <tag>` | `[DEV]` (when `--separate`) | Custom suffix appended to the `@name` metadata field. |
@@ -122,10 +124,13 @@ node tools/dev_server.js
 # Default: start HTTP + MCP bridge server on port 8080 (in-place sync)
 node tools/dev_server.js
 
+# Start server and automatically open the Violentmonkey MCP approval prompt in browser
+node tools/dev_server.js --kill --open-mcp
+
 # Terminate conflicting process occupying port 8080 and take over
 node tools/dev_server.js --kill
 
-# Use a fixed MCP token so Violentmonkey can reconnect across server restarts
+# Use a custom MCP token
 node tools/dev_server.js --token my-local-dev-secret
 
 # Install side-by-side as an isolated separate script with [DEV] tag
@@ -139,19 +144,32 @@ node tools/dev_server.js --no-tag
 
 Requires **Violentmonkey &ge; 2.49.5**. No installer tabs need to be kept open!
 
-1. **Start the server**:
+#### How Activation & Connection Persistence Work (Why Violentmonkey Shows "No pending requests.")
 
-   ```bash
-   node tools/dev_server.js --kill
-   ```
+Unlike Chrome DevTools (which shows a native browser permission alert bar when an agent attaches), **Violentmonkey is a browser extension and cannot listen on a TCP port or detect a local server on its own**. If you open Violentmonkey Settings directly, it will say:
 
-2. **Authorize Violentmonkey MCP**:
-   Open the connect URL printed in the terminal (`https://violentmonkey.github.io/mcp_connect.html?port=8080&token=...`) or open [http://localhost:8080/](http://localhost:8080/) and click **Connect Violentmonkey MCP &rarr;**.
-3. **Approve in Violentmonkey**:
-   Violentmonkey intercepts the URL and opens **Settings &rarr; AI agent access (MCP)**. Click **Approve**.
+> **AI agent access (MCP)**
+> No pending requests.
+
+To transition Violentmonkey from *"No pending requests."* to **Connected**:
+
+1. **Trigger the Pending Request (AI Agent or CLI)**:
+   Violentmonkey only creates a pending connection request when a browser tab navigates to `https://violentmonkey.github.io/mcp_connect.html?port=<port>&token=<token>` (which Violentmonkey intercepts via `browser.webRequest.onBeforeRequest` and redirects to `options/index.html#settings/mcp`).
+   - **Automated by AI Agent**: The AI agent checks `GET http://localhost:8080/api/mcp/status`. When `connected: false`, the agent either starts `node tools/dev_server.js --kill --open-mcp` or navigates a tab to `http://localhost:8080/connect-mcp`, which automatically opens Violentmonkey Settings with the pending request ready, and prompts the user to click **Approve**.
+   - **Manual**: Click **Connect Violentmonkey MCP &rarr;** on [http://localhost:8080/](http://localhost:8080/) (or open `http://localhost:8080/connect-mcp`).
+2. **User Clicks `Approve` (One-Time per Browser Session)**:
+   In the Violentmonkey Settings tab that opens, *"No pending requests."* is replaced by:
+   > *"An MCP server on port 8080 wants to read and modify your scripts. Only approve if you started it yourself."*
+   > **`[Approve]`** **`[Reject]`**
+
+   Click **`Approve`**. (Chrome extensions block external automation on `chrome-extension://` pages, so this single click must be performed by the user.)
+3. **Ensuring the Connection Stands**:
+   - **In Violentmonkey Settings**: Status changes to *"Connected to MCP server on port 8080."* with a `[Disconnect]` button (and on Violentmonkey &ge; 2.49.6, the tab grant table appears below it).
+   - **On `http://localhost:8080/`**: The top-right badge live-polls `/api/mcp/status` every 2 seconds and turns green (`⚡ MCP Connected: Violentmonkey v2.49.x`).
+   - **Across `dev_server.js` Restarts**: Because `dev_server.js` uses a deterministic local token by default and Violentmonkey's `@violentmonkey/mcp-client` sends 20s heartbeats with automatic exponential-backoff reconnection, you can stop and restart `dev_server.js` at any time and Violentmonkey will **automatically reconnect** without needing to click **Approve** again (until the browser itself is restarted).
 4. **Edit & Save**:
    - Save any `src/*.user.js` or `lib/*.js` file in your IDE: `dev_server.js` automatically transforms the metadata, inlines relative `../lib/` files, pushes the script over WebSocket (`scripts_write`), and Violentmonkey reloads matching tabs!
-   - Alternatively, click **&#9889; Push via MCP** next to any script on [http://localhost:8080/](http://localhost:8080/) to install or update it on demand.
+   - Alternatively, click **&#9889; Push via MCP** next to any script on [http://localhost:8080/](http://localhost:8080/) (or `POST http://localhost:8080/api/mcp/push?file=<Script>.user.js`) to install or update it on demand.
 
 ### Method 2: HTTP File Tracking ("Track external edits")
 
