@@ -11,7 +11,6 @@
 // @match       *://*.musicbrainz.org/*
 // @match       *://magicisrc.kepstin.ca/*
 // @match       *://magicisrc-beta.kepstin.ca/*
-// @match       *://isrchunt.com/*
 // @grant       GM.registerMenuCommand
 // @grant       GM.unregisterMenuCommand
 // @grant       GM.getValue
@@ -37,7 +36,6 @@
     const RELOAD_ATTEMPTS_KEY = 'magicisrc_reload_attempts';
     const RELOAD_LOCK_KEY = 'magicisrc-reload-lock';
     const MAGICISRC_SUBMIT_LOCK_KEY = 'magicisrc-submit-lock';
-    const ISRC_HUNT_SUBMIT_LOCK_KEY = 'isrc-hunt-submit-lock';
     const MB_SUBMIT_COORDINATION_LOCK_KEY = 'mb-submit-coordination-lock';
     const DEBUG_LOG_CHANNEL_NAME = `${scriptName}_debug_log`;
 
@@ -865,28 +863,6 @@
                     if (performCheck(null)) return;
                     const observer = new MutationObserver(() => performCheck(observer));
                     observer.observe(document.body, { childList: true, subtree: true });
-                });
-            },
-        },
-        {
-            hostnames: ['isrchunt.com'],
-            paths: ['/spotify/importisrc', '/deezer/importisrc'],
-            channelName: 'isrc_hunt_submit_channel',
-            messageTrigger: 'submit-isrcs',
-            buttonSelector: 'form[action$="/importisrc"][method="post"] button[type="submit"]',
-            menuCommandName: 'ISRC Hunt: Submit ISRCs (All Tabs)',
-            successUrlPatterns: [/\?.*submitted=1/],
-            submissionHandler: (config, triggerAction) => {
-                debugLog(`Requesting ISRC Hunt submit lock...`);
-                const triggerState = JSON.stringify({
-                    channel: config.channelName,
-                    messageTrigger: config.messageTrigger
-                });
-                sessionStorage.setItem(SUBMISSION_TRIGGERED_FLAG, triggerState);
-                navigator.locks.request(ISRC_HUNT_SUBMIT_LOCK_KEY, async () => {
-                    debugLog(`Acquired ISRC Hunt submit lock. Waiting 1s before submission.`, 'green');
-                    await new Promise(resolve => setTimeout(resolve, 1000));
-                    triggerAction();
                 });
             },
         },
