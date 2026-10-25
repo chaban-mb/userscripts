@@ -54,7 +54,7 @@ Allows selecting multiple checkboxes by drawing a selection box around them.
 
 Synchronizes button clicks and form submissions across multiple open tabs.
 
-This will make it easier to submit edits and ISRCs to MusicBrainz from supported sites (MagicISRC and ISRC Hunt) from multiple tabs at once.
+This will make it easier to submit edits and ISRCs to MusicBrainz from supported sites (e.g. MagicISRC) from multiple tabs at once.
 It can also automatically close the tab after submitting a merge edit (when it was opened in a new tab).
 
 You can use it either from the script's context menu or via bookmarklets.
@@ -64,9 +64,6 @@ MusicBrainz: Submit Edit (All Tabs)<br>
 
 MagicISRC: Submit ISRCs (All Tabs)<br>
 `javascript:(function(){ new BroadcastChannel('magicisrc_submit_channel').postMessage('submit-isrcs'); })();`
-
-ISRC Hunt: Submit ISRCs (All Tabs)<br>
-`javascript:(function(){ new BroadcastChannel('isrc_hunt_submit_channel').postMessage('submit-isrcs'); })();`
 
 ### Features
 
@@ -85,7 +82,6 @@ Helper userscript for MusicBrainz editors to simplify data import from Deezer. I
 
 - **Release Seeding**: Allows importing releases with [Harmony](http://harmony.pulsewidth.org.uk/) and search for existing artists, releases, or recordings on MusicBrainz.
 - **SAMBL**: Provides quick access to [SAMBL](https://github.com/Lioncat6/SAMBL-React), which can fetch an artist's entire Deezer discography and compare it against MusicBrainz. This allows editors to quickly identify missing release or incomplete entries.
-- **ISRC Hunt**: Provides quick access to [ISRC Hunt](https://isrchunt.com/) to find and import track-level ISRCs.
 - **ListenBrainz**: Provides quick access to [ListenBrainz](https://listenbrainz.org/), an open-source alternative to Last.fm built entirely on top of MusicBrainz data.
 
 ## Discourse: Disable Touch Detection
@@ -185,41 +181,6 @@ Generates and embeds scanable barcodes for ISBNs found on various German book re
 - **Live Generation:** Creates scannable barcode images on the fly.
 - **Toggleable:** Includes a menu command to enable/disable the barcode embedding.
 
-## ISRC Hunt: Hide a-tisket links, normalize link style
-
-[![Install](https://img.shields.io/badge/Install-success.svg?style=for-the-badge&logo=tampermonkey)](https://github.com/chaban-mb/userscripts/raw/main/src/ISRC%20Hunt%20Hide%20a-tisket%20links,%20normalize%20link%20style.user.js)
-[![Source](https://img.shields.io/badge/Source-grey.svg?style=for-the-badge&logo=github)](https://github.com/chaban-mb/userscripts/blob/main/src/ISRC%20Hunt%20Hide%20a-tisket%20links,%20normalize%20link%20style.user.js)
-
-Cleans up the ISRC Hunt interface by hiding a-tisket links and normalizing styles.
-
-### Features
-
-- **Filter:** Hides "a-tisket" links to reduce clutter.
-- **Style Reset:** Resets link styles to default for better consistency.
-
-## ISRC Hunt: Highlight ISRC matches and differences
-
-[![Install](https://img.shields.io/badge/Install-success.svg?style=for-the-badge&logo=tampermonkey)](https://github.com/chaban-mb/userscripts/raw/main/src/ISRC%20Hunt%20Highlight%20ISRC%20matches%20and%20differences.user.js)
-[![Source](https://img.shields.io/badge/Source-grey.svg?style=for-the-badge&logo=github)](https://github.com/chaban-mb/userscripts/blob/main/src/ISRC%20Hunt%20Highlight%20ISRC%20matches%20and%20differences.user.js)
-
-Visually compares ISRC codes between sources (e.g., Spotify vs. MusicBrainz) in the ISRC Hunt interface.
-
-### Features
-
-- **Visual Diff:** Highlights matching ISRCs in green and non-matching ones in red.
-- **Multi-ISRC Support:** Handles and compares cells containing multiple comma-separated ISRCs.
-
-## ISRC Hunt: Rewrite Harmony URLs
-
-[![Install](https://img.shields.io/badge/Install-success.svg?style=for-the-badge&logo=tampermonkey)](https://github.com/chaban-mb/userscripts/raw/main/src/ISRC%20Hunt%20Rewrite%20Harmony%20URLs.user.js)
-[![Source](https://img.shields.io/badge/Source-grey.svg?style=for-the-badge&logo=github)](https://github.com/chaban-mb/userscripts/blob/main/src/ISRC%20Hunt%20Rewrite%20Harmony%20URLs.user.js)
-
-Optimizes Harmony links on ISRC Hunt to default to the "preferred" category.
-
-### Features
-
-- **Link Rewriting:** Automatically updates Harmony URLs to prioritize the preferred category.
-
 ## ListenBrainz: Extended Controls
 
 [![Install](https://img.shields.io/badge/Install-success.svg?style=for-the-badge&logo=tampermonkey)](https://github.com/chaban-mb/userscripts/raw/main/src/ListenBrainz%20Extended%20Controls.user.js)
@@ -258,18 +219,6 @@ Adds search buttons for Spotify and SoundExchange to the ISRC view page header.
 
 - **Direct Integration:** Injects "Search on Spotify" and "Search on SoundExchange" buttons directly next to the ISRC header.
 - **Context-Aware:** Uses the current ISRC code to construct precise search URLs.
-
-## MusicBrainz: Add Spotify and Deezer ISRC link to release pages
-
-[![Install](https://img.shields.io/badge/Install-success.svg?style=for-the-badge&logo=tampermonkey)](https://github.com/chaban-mb/userscripts/raw/main/src/MusicBrainz%20Add%20Spotify%20and%20Deezer%20ISRC%20link%20to%20release%20pages.user.js)
-[![Source](https://img.shields.io/badge/Source-grey.svg?style=for-the-badge&logo=github)](https://github.com/chaban-mb/userscripts/blob/main/src/MusicBrainz%20Add%20Spotify%20and%20Deezer%20ISRC%20link%20to%20release%20pages.user.js)
-
-Adds direct "import ISRCs" links to Spotify and Deezer relationships on release pages.
-
-### Features
-
-- **Smart Integration:** Finds existing Spotify and Deezer links in the sidebar.
-- **One-Click Import:** Adds a [...] link that takes you directly to the ISRC Hunt import page for that release.
 
 ## MusicBrainz: Ajax Collection Links
 
@@ -343,7 +292,7 @@ Automatically clicks the button to confirm submitting (seeding) data from other 
 [![Install](https://img.shields.io/badge/Install-success.svg?style=for-the-badge&logo=tampermonkey)](https://github.com/chaban-mb/userscripts/raw/main/src/MusicBrainz%20Auto%20login%20MusicBrainz%20ISRC%20importers.user.js)
 [![Source](https://img.shields.io/badge/Source-grey.svg?style=for-the-badge&logo=github)](https://github.com/chaban-mb/userscripts/blob/main/src/MusicBrainz%20Auto%20login%20MusicBrainz%20ISRC%20importers.user.js)
 
-Simplifies the login process for ISRC submission sites like MagicISRC and ISRC Hunt.
+Simplifies the login process for ISRC submission sites like MagicISRC.
 
 ### Features
 
@@ -698,7 +647,7 @@ Checks releases listed on [Spotify Release List](https://spotifyreleaselist.netl
 
 Based on the original script by RustyNova which can be found at <https://github.com/RustyNova016/MusicBrainz-UserScripts/blob/main/spotify-musicbrainz-import.user.js>
 
-This version was reworked and notably adds buttons for [ISRC Hunt](https://isrchunt.com/), [ListenBrainz](https://listenbrainz.org/) and [SAMBL](https://github.com/Lioncat6/SAMBL-React). a-tisket was removed
+This version was reworked and notably adds buttons for [ListenBrainz](https://listenbrainz.org/) and [SAMBL](https://github.com/Lioncat6/SAMBL-React). a-tisket was removed
 
 ## Volumo: MusicBrainz Importer
 
