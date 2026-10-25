@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        Spotify: MusicBrainz importer
 // @namespace   https://musicbrainz.org/user/chaban
-// @version     1.4.7
+// @version     1.4.8
 // @description Adds buttons for MusicBrainz, ListenBrainz, Harmony, and SAMBL to Spotify.
 // @tag         ai-created
 // @author      chaban, garylaski, RustyNova
