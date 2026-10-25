@@ -2,7 +2,7 @@
 // @name        Deezer: MusicBrainz importer
 // @namespace   https://musicbrainz.org/user/chaban
 // @version     1.0.3
-// @description Adds buttons for MusicBrainz, ListenBrainz, Harmony, ISRC Hunt and SAMBL to Deezer.
+// @description Adds buttons for MusicBrainz, ListenBrainz, Harmony, and SAMBL to Deezer.
 // @tag         ai-created
 // @author      chaban
 // @license     MIT
@@ -48,7 +48,6 @@
             MUSICBRAINZ_BASE: 'https://musicbrainz.org',
             HARMONY_BASE: 'https://harmony.pulsewidth.org.uk/release',
             SAMBL_BASE: 'https://sambl.lioncat6.com',
-            ISRCHUNT_BASE: 'https://isrchunt.com',
             LISTENBRAINZ_BASE: 'https://listenbrainz.org',
         };
 
@@ -168,13 +167,6 @@
                         ? main.constructUrl(`${main.URLS.SAMBL_BASE}/artist`, { provider_id: pageInfo.id, provider: 'deezer', artist_mbid: mbInfo.mbid })
                         : main.constructUrl(`${main.URLS.SAMBL_BASE}/newartist`, { provider_id: pageInfo.id, provider: 'deezer' });
                 },
-            },
-            ISRCHUNT: {
-                id: 'isrc-hunt-button', text: 'Open in ISRC Hunt', className: 'import-button-isrc-hunt', color: '#3B82F6',
-                pages: ['album'],
-                getUrl: ({ normalizedUrl, pageInfo }) => main.constructUrl(`${main.URLS.ISRCHUNT_BASE}/deezer/importisrc`, {
-                    releaseId: pageInfo.id,
-                }),
             },
         };
 
