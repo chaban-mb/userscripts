@@ -2,7 +2,7 @@
 // @name        Spotify: MusicBrainz importer
 // @namespace   https://musicbrainz.org/user/chaban
 // @version     1.4.7
-// @description Adds buttons for MusicBrainz, ListenBrainz, Harmony, ISRC Hunt and SAMBL to Spotify.
+// @description Adds buttons for MusicBrainz, ListenBrainz, Harmony, and SAMBL to Spotify.
 // @tag         ai-created
 // @author      chaban, garylaski, RustyNova
 // @license     MIT
@@ -79,7 +79,6 @@
             MUSICBRAINZ_BASE: 'https://musicbrainz.org',
             HARMONY_BASE: 'https://harmony.pulsewidth.org.uk/release',
             SAMBL_BASE: 'https://sambl.lioncat6.com',
-            ISRCHUNT_BASE: 'https://isrchunt.com',
             LISTENBRAINZ_API_BASE: 'https://api.listenbrainz.org/1',
             LISTENBRAINZ_BASE: 'https://listenbrainz.org',
         };
@@ -209,13 +208,6 @@
                         ? main.constructUrl(`${main.URLS.SAMBL_BASE}/artist`, { provider_id: pageInfo.id, provider: 'spotify', artist_mbid: mbInfo.mbid })
                         : main.constructUrl(`${main.URLS.SAMBL_BASE}/newartist`, { provider_id: pageInfo.id, provider: 'spotify' });
                 },
-            },
-            ISRCHUNT: {
-                id: 'isrc-hunt-button', text: 'Open in ISRC Hunt', className: 'import-button-isrc-hunt', color: '#3B82F6',
-                pages: ['playlist'],
-                getUrl: ({ normalizedUrl }) => main.constructUrl(main.URLS.ISRCHUNT_BASE, {
-                    spotifyPlaylist: normalizedUrl,
-                }),
             },
             LISTENBRAINZ_IMPORT_PLAYLIST: {
                 id: 'lb-playlist-import-button', text: 'ListenBrainz Playlist', className: 'import-button-listenbrainz', color: '#5555c4',
