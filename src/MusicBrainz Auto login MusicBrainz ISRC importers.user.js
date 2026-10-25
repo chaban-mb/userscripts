@@ -2,7 +2,7 @@
 // @name        MusicBrainz: Auto login MusicBrainz ISRC importers
 // @namespace   https://musicbrainz.org/user/chaban
 // @version     2.3.3
-// @description Attempts to login on MusicBrainz ISRC submission sites like ISRC Hunt or MagicISRC and automatically handle OAuth authorization
+// @description Attempts to login on MusicBrainz ISRC submission sites like MagicISRC and automatically handle OAuth authorization
 // @tag         ai-created
 // @author      chaban
 // @license     MIT
@@ -12,7 +12,6 @@
 // @match       https://metabrainz.org/oauth2/authorize*
 // @match       https://magicisrc.kepstin.ca/*
 // @match       https://magicisrc-beta.kepstin.ca/
-// @match       https://isrchunt.com/*
 // @exclude     https://magicisrc.kepstin.ca/?code=*
 // @exclude     https://magicisrc.kepstin.ca/?state=*
 // @exclude     https://magicisrc-beta.kepstin.ca/?code=*
@@ -92,12 +91,6 @@
             name: 'MagicISRC (beta)',
             expectedScopes: ['profile', 'submit_isrc'],
             redirectBase: 'https://magicisrc-beta.kepstin.ca',
-            isImporter: true
-        },
-        'BzRD1-z1sMBfKVnOaJiMLIFL6_7WSaL5': {
-            name: 'ISRCHunt',
-            expectedScopes: ['profile', 'submit_isrc'],
-            redirectBase: 'https://isrchunt.com',
             isImporter: true
         },
         // MetaBrainz OAuth
@@ -245,14 +238,6 @@
                 btn.click();
             } else {
                 log(LOG_LEVELS.WARN, 'MagicISRC login button not found.');
-            }
-        } else if (host.includes('isrchunt')) {
-            const link = document.querySelector('a[href^="https://musicbrainz.org/oauth2/authorize"]');
-            if (link) {
-                log(LOG_LEVELS.INFO, 'ISRC Hunt login link found. Clicking...');
-                link.click();
-            } else {
-                log(LOG_LEVELS.WARN, 'ISRC Hunt login link not found.');
             }
         }
     };

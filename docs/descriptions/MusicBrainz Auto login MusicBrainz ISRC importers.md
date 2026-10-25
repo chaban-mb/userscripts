@@ -1,4 +1,4 @@
-Simplifies the login process for ISRC submission sites like MagicISRC and ISRC Hunt.
+Simplifies the login process for ISRC submission sites like MagicISRC.
 
 ### Features
 
