@@ -118,15 +118,17 @@ def build_all_inlined_scripts(output_dir, source_root=REPO_ROOT):
 def find_commits_to_sync(main_branch="main", dist_branch="dist", with_mode=False):
     """
     Finds commits on main_branch that modified src/ or lib/ and need to be synced to dist_branch.
-    Matches the latest commit on dist against main_branch commit history.
+    Matches the latest commit on dist against main_branch first-parent commit history
+    to ensure clean linear progression without replaying parallel branch histories.
     """
     dist_log = subprocess.run(
         ["git", "log", "-50", "--format=%s|||%ad", dist_branch],
         capture_output=True, text=True, check=True, encoding="utf-8"
     ).stdout.strip().splitlines()
 
+    # Query first-parent history on main to prevent matching commits located on merged side branches
     main_log = subprocess.run(
-        ["git", "log", "-200", "--format=%H|||%s|||%ad", main_branch],
+        ["git", "log", "-100", "--first-parent", "--format=%H|||%s|||%ad", main_branch],
         capture_output=True, text=True, check=True, encoding="utf-8"
     ).stdout.strip().splitlines()
 
@@ -149,6 +151,11 @@ def find_commits_to_sync(main_branch="main", dist_branch="dist", with_mode=False
         if matched_main:
             break
 
+    tip = subprocess.run(
+        ["git", "rev-parse", main_branch],
+        capture_output=True, text=True, check=True, encoding="utf-8"
+    ).stdout.strip()
+
     if matched_main:
         log_range = f"{matched_main}..{main_branch}"
         commits = subprocess.run(
@@ -156,12 +163,20 @@ def find_commits_to_sync(main_branch="main", dist_branch="dist", with_mode=False
             capture_output=True, text=True, check=True, encoding="utf-8"
         ).stdout.strip().splitlines()
         clean_commits = [c.strip() for c in commits if c.strip()]
-        return (clean_commits, False) if with_mode else clean_commits
-    else:
-        tip = subprocess.run(
-            ["git", "rev-parse", main_branch],
+
+        # Check if range contains merge commits or is overly large (> 20 commits).
+        # In non-linear or long ranges, fall back to a single atomic sync commit to avoid
+        # spamming Greasy Fork with multi-commit walls.
+        merges = subprocess.run(
+            ["git", "rev-list", "--merges", log_range],
             capture_output=True, text=True, check=True, encoding="utf-8"
-        ).stdout.strip()
+        ).stdout.strip().splitlines()
+
+        if len(clean_commits) <= 20 and not merges:
+            return (clean_commits, False) if with_mode else clean_commits
+        else:
+            return ([tip], True) if with_mode else [tip]
+    else:
         clean_commits = [tip] if tip else []
         return (clean_commits, True) if with_mode else clean_commits
 
@@ -262,7 +277,7 @@ def sync_dist_branch(main_branch="main", dist_branch="dist"):
                         (wt_src / removed_name).unlink(missing_ok=True)
                 else:
                     diff_res = subprocess.run(
-                        ["git", "diff-tree", "--root", "--no-commit-id", "--name-status", "--no-renames", "-r", commit_hash, "--", "src/", "lib/"],
+                        ["git", "diff-tree", "--root", "--no-commit-id", "--name-status", "--no-renames", "-r", "-m", commit_hash, "--", "src/", "lib/"],
                         capture_output=True, text=True, check=True, encoding="utf-8"
                     )
                     diff_lines = [l.strip() for l in diff_res.stdout.splitlines() if l.strip()]
@@ -337,6 +352,67 @@ def sync_dist_branch(main_branch="main", dist_branch="dist"):
                         "--date", date
                     ], env=env, check=True)
                     committed_count += 1
+
+            # --- MANDATORY SAFETY INVARIANT: Verify 100% parity with main_branch at HEAD ---
+            # Regardless of incremental replay path, ensure the final files on dist EXACTLY match
+            # what main has at HEAD. This prevents any possibility of skipped files, missed merge
+            # commits, or downgraded userscripts reaching Greasy Fork.
+            main_ls = subprocess.run(
+                ["git", "ls-tree", "-r", "--name-only", main_branch, "--", "src/"],
+                capture_output=True, text=True, check=True, encoding="utf-8"
+            )
+            expected_scripts = {l.strip() for l in main_ls.stdout.splitlines() if l.strip().endswith(".user.js")}
+            actual_scripts = {f"src/{p.name}" for p in wt_src.glob("*.user.js")}
+
+            reconciled_any = False
+            # 1. Remove any extra scripts that no longer exist on main
+            for extra in (actual_scripts - expected_scripts):
+                (wt_path / extra).unlink(missing_ok=True)
+                reconciled_any = True
+
+            # 2. Check content of all expected scripts
+            main_tip_hash = subprocess.run(["git", "rev-parse", main_branch], capture_output=True, text=True, check=True).stdout.strip()
+            lib_cache = {}
+            for exp in sorted(expected_scripts):
+                target_file = wt_path / exp
+                show_res = subprocess.run(
+                    ["git", "show", f"{main_branch}:{exp}"],
+                    capture_output=True, text=True, encoding="utf-8"
+                )
+                if show_res.returncode != 0:
+                    continue
+                expected_inlined, _ = inline_script_content(
+                    show_res.stdout,
+                    commit_hash=main_tip_hash,
+                    lib_cache=lib_cache,
+                    repo_root=REPO_ROOT
+                )
+
+                current_content = target_file.read_text(encoding="utf-8") if target_file.exists() else None
+                if current_content != expected_inlined:
+                    target_file.parent.mkdir(parents=True, exist_ok=True)
+                    target_file.write_text(expected_inlined, encoding="utf-8")
+                    reconciled_any = True
+                    print(f"Safety Reconciliation: corrected out-of-sync script on dist: {exp}")
+
+            if reconciled_any:
+                subprocess.run(["git", "-C", worktree_dir, "add", "-A"], check=True)
+                diff_cached = subprocess.run(["git", "-C", worktree_dir, "diff", "--cached", "--quiet"], capture_output=True)
+                if diff_cached.returncode != 0:
+                    main_subject = subprocess.run(["git", "log", "-1", "--format=%s", main_branch], capture_output=True, text=True, check=True, encoding="utf-8").stdout.strip()
+                    main_author = subprocess.run(["git", "log", "-1", "--format=%an <%ae>", main_branch], capture_output=True, text=True, check=True, encoding="utf-8").stdout.strip()
+                    main_date = subprocess.run(["git", "log", "-1", "--format=%ad", main_branch], capture_output=True, text=True, check=True, encoding="utf-8").stdout.strip()
+
+                    commit_msg = f"chore(dist): reconcile standalone userscripts with {main_branch}\n\nEnforce parity with '{main_branch}' tip: {main_subject}"
+                    env = os.environ.copy()
+                    subprocess.run([
+                        "git", "-C", worktree_dir, "commit",
+                        "-m", commit_msg,
+                        "--author", main_author,
+                        "--date", main_date
+                    ], env=env, check=True)
+                    committed_count += 1
+                    print(f"Safety Reconciliation: Committed final parity synchronization with '{main_branch}'.")
 
             if committed_count == 0:
                 print(f"Branch '{dist_branch}' is already up-to-date with '{main_branch}'. No new commit needed.")
