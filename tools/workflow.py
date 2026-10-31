@@ -395,7 +395,50 @@ def do_build():
     res = subprocess.run([sys.executable, script_path])
     return res.returncode
 
-def do_cleanup(branch_name=None, main_branch="main"):
+PROTECTED_BRANCHES = {'main', 'master', 'dev', 'development', 'dist'}
+
+def find_obsolete_branches(main_branch="main"):
+    merged_raw = subprocess.run(['git', 'branch', '--merged', main_branch], capture_output=True, text=True).stdout.split()
+    merged_set = set(b.strip() for b in merged_raw if b.strip())
+
+    branches_raw = subprocess.run(['git', 'branch', '--format=%(refname:short)'], capture_output=True, text=True).stdout.splitlines()
+    local_branches = [b.strip() for b in branches_raw if b.strip() and b.strip() not in PROTECTED_BRANCHES]
+
+    obsolete = {}
+    for b in local_branches:
+        if b in merged_set:
+            obsolete[b] = f"Fully merged into {main_branch}"
+            continue
+
+        base = subprocess.run(['git', 'merge-base', main_branch, b], capture_output=True, text=True).stdout.strip()
+        if not base:
+            continue
+
+        branch_commits = subprocess.run(['git', 'rev-list', f'{base}..{b}'], capture_output=True, text=True).stdout.splitlines()
+        if not branch_commits:
+            obsolete[b] = f"No unique commits beyond merge-base with {main_branch}"
+            continue
+
+        all_matched = True
+        for bc in branch_commits:
+            subj = subprocess.run(['git', 'log', '-1', '--format=%s', bc], capture_output=True, text=True).stdout.strip()
+            candidates = subprocess.run(['git', 'log', f'{base}..{main_branch}', '--fixed-strings', f'--grep={subj}', '--format=%H'], capture_output=True, text=True).stdout.splitlines()
+            matched = False
+            for cc in candidates:
+                diff = subprocess.run(['git', 'diff', '-w', '-I', r'//[[:space:]]*@version', bc, cc], capture_output=True, text=True).stdout.strip()
+                if not diff:
+                    matched = True
+                    break
+            if not matched:
+                all_matched = False
+                break
+
+        if all_matched:
+            obsolete[b] = f"All commits integrated into {main_branch}"
+
+    return obsolete
+
+def do_cleanup(branch_name=None, main_branch="main", non_interactive=False):
     script_dir = os.path.dirname(os.path.abspath(__file__))
     git_cleanup_path = os.path.join(script_dir, "git_cleanup.py")
 
@@ -403,30 +446,29 @@ def do_cleanup(branch_name=None, main_branch="main"):
         subprocess.run([sys.executable, git_cleanup_path, branch_name, main_branch])
         return
 
-    # Auto-detect using gh CLI
-    branches_raw = run_cmd("git branch --format='%(refname:short)'")
-    local_branches = [b.strip("'") for b in branches_raw.split('\n') if b.strip()]
-
-    prs_json = run_cmd("gh pr list --state merged --limit 10 --json headRefName")
-    if not prs_json:
-        print("No recently merged PRs found or gh CLI is not authenticated.")
+    obsolete_branches = find_obsolete_branches(main_branch)
+    if not obsolete_branches:
+        print("All local branches are in sync. No merged or obsolete branches require cleanup.")
         return
 
-    try:
-        prs = json.loads(prs_json)
-    except Exception as e:
-        print(f"Error parsing JSON from gh: {e}")
+    count = len(obsolete_branches)
+    print(f"\n{COLOR_CYAN}{COLOR_BOLD}Found {count} obsolete/merged branch(es) ready for cleanup:{COLOR_RESET}")
+    for b, reason in obsolete_branches.items():
+        print(f"  * {COLOR_BOLD}{b}{COLOR_RESET} ({reason})")
+
+    auto_confirm = 'y' if non_interactive else 'y'
+    confirm = prompt_user(
+        f"\n{COLOR_BOLD}Do you want to delete these branches (locally and on remote)? (Y/n):{COLOR_RESET} ",
+        default='y',
+        non_interactive=non_interactive,
+        auto_choice=auto_confirm
+    ).lower()
+
+    if confirm != 'y' and confirm != 'yes':
+        print(f"{COLOR_YELLOW}Branch cleanup cancelled.{COLOR_RESET}\n")
         return
 
-    merged_ref_names = [pr["headRefName"] for pr in prs]
-    to_cleanup = [b for b in local_branches if b in merged_ref_names and b not in ["main", "master", "dev", "development"]]
-
-    if not to_cleanup:
-        print("All local branches are in sync. No merged branches require cleanup.")
-        return
-
-    print(f"Found merged branches ready for cleanup: {to_cleanup}")
-    for branch in to_cleanup:
+    for branch in obsolete_branches.keys():
         print(f"\n--- Cleaning up branch: {branch} ---")
         subprocess.run([sys.executable, git_cleanup_path, branch, main_branch])
 
@@ -973,11 +1015,31 @@ def do_release(non_interactive=False, json_output=False, bump_strategy="auto", s
                 clean_name = s['full_path'].name.replace('.user.js', '')
                 print_publish_info(clean_name)
 
+        # Automated cleanup of merged or obsolete feature branches
         if merged_feature_branch:
             print(f"\n{COLOR_CYAN}Cleaning up merged feature branch '{merged_feature_branch}'...{COLOR_RESET}")
             script_dir = os.path.dirname(os.path.abspath(__file__))
             git_cleanup_path = os.path.join(script_dir, "git_cleanup.py")
             subprocess.run([sys.executable, git_cleanup_path, merged_feature_branch, main_branch])
+        else:
+            obsolete_branches = find_obsolete_branches(main_branch)
+            if obsolete_branches:
+                print(f"\n{COLOR_CYAN}{COLOR_BOLD}Found {len(obsolete_branches)} obsolete/merged branch(es) ready for cleanup:{COLOR_RESET}")
+                for b, reason in obsolete_branches.items():
+                    print(f"  * {COLOR_BOLD}{b}{COLOR_RESET} ({reason})")
+                auto_choice = 'y' if non_interactive else 'y'
+                confirm_cleanup = prompt_user(
+                    f"\n{COLOR_BOLD}Clean up these obsolete branches (locally and on remote)? (Y/n):{COLOR_RESET} ",
+                    default='y',
+                    non_interactive=non_interactive,
+                    auto_choice=auto_choice
+                ).lower()
+                if confirm_cleanup in ('y', 'yes'):
+                    script_dir = os.path.dirname(os.path.abspath(__file__))
+                    git_cleanup_path = os.path.join(script_dir, "git_cleanup.py")
+                    for b in obsolete_branches.keys():
+                        print(f"\n--- Cleaning up branch: {b} ---")
+                        subprocess.run([sys.executable, git_cleanup_path, b, main_branch])
 
     except subprocess.CalledProcessError as e:
         print(f"\n{COLOR_RED}{COLOR_BOLD}An error occurred during git operations: {e}{COLOR_RESET}")
@@ -1331,6 +1393,7 @@ Examples:
     cleanup_parser = subparsers.add_parser("cleanup", help="Clean up local/remote branches merged on GitHub")
     cleanup_parser.add_argument("branch", nargs="?", help="Specific feature branch to clean up")
     cleanup_parser.add_argument("--main-branch", default="main", help="The repository main branch (default: main)")
+    cleanup_parser.add_argument("--non-interactive", "-y", action="store_true", help="Execute cleanup without interactive confirmation prompts")
 
     # Subcommand: release
     release_parser = subparsers.add_parser("release", help="Interactive or automated release assistant with dist sync")
@@ -1378,7 +1441,7 @@ Examples:
             main_branch_arg = getattr(args, 'main_branch', None)
             sys.exit(do_check(json_format=json_flag, concise=concise_flag, main_branch=main_branch_arg, check_all=all_flag))
         elif args.command == "cleanup":
-            do_cleanup(args.branch, args.main_branch)
+            do_cleanup(args.branch, args.main_branch, non_interactive=getattr(args, "non_interactive", False))
         elif args.command == "bump":
             do_bump(bump_type=args.bump_type, scripts_filter=args.scripts, json_output=getattr(args, 'json', False))
         elif args.command == "init" or args.command == "new":
