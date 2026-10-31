@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        YouTube: MusicBrainz Importer
 // @namespace   https://musicbrainz.org/user/chaban
-// @version     2.12.4
+// @version     2.13.0
 // @description Imports YouTube videos to MusicBrainz as a new standalone recording
 // @tag         ai-created
 // @author      nikki, RustyNova, chaban
@@ -2931,7 +2931,7 @@ class PermanentError extends Error {
                         const url = URL.createObjectURL(blob);
                         const reportWindow = window.open(url);
                         if (reportWindow) {
-                            reportWindow.addEventListener('unload', () => {
+                            reportWindow.addEventListener('pagehide', () => {
                                 URL.revokeObjectURL(url);
                             });
                         } else {
@@ -3031,7 +3031,7 @@ class PermanentError extends Error {
                         const url = URL.createObjectURL(blob);
                         const reportWindow = window.open(url);
                         if (reportWindow) {
-                            reportWindow.addEventListener('unload', () => {
+                            reportWindow.addEventListener('pagehide', () => {
                                 URL.revokeObjectURL(url);
                             });
                         } else {
