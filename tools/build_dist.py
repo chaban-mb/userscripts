@@ -20,7 +20,7 @@ def clean_lib_content(lib_text):
     """Strips the UserScript header from library file so only the executable code remains."""
     return USERSCRIPT_HEADER_RE.sub('', lib_text).strip()
 
-def inline_script_content(script_text, repo_root=REPO_ROOT, commit_hash=None, lib_cache=None):
+def inline_script_content(script_text, repo_root=REPO_ROOT, commit_hash=None, lib_cache=None, rewrite_urls=True):
     """
     Finds relative @require directives pointing to lib/ in script_text,
     removes the @require line from metadata, and inlines the library code into the script.
@@ -60,7 +60,9 @@ def inline_script_content(script_text, repo_root=REPO_ROOT, commit_hash=None, li
         inlined_libs.append(lib_filename)
 
     # Always update @updateURL and @downloadURL to point to dist branch
-    transformed_text = re.sub(r'(/raw/)main(/src/)', r'\g<1>dist\g<2>', script_text)
+    transformed_text = script_text
+    if rewrite_urls:
+        transformed_text = re.sub(r'(/raw/)main(/src/)', r'\g<1>dist\g<2>', transformed_text)
 
     # Remove all relative lib @require directives
     transformed_text = REQUIRE_RE.sub('', transformed_text)
@@ -94,6 +96,17 @@ def inline_script_content(script_text, repo_root=REPO_ROOT, commit_hash=None, li
                 transformed_text = combined_lib_code + "\n\n" + transformed_text
 
     return transformed_text, inlined_libs
+
+def inline_userscript(src_path, repo_root=REPO_ROOT, rewrite_urls=True):
+    """Reads a userscript from src_path, inlines any local @require lib/ dependencies, and returns the inlined content."""
+    path_obj = Path(src_path)
+    if not path_obj.is_absolute():
+        path_obj = Path(repo_root) / path_obj
+    if not path_obj.exists():
+        raise FileNotFoundError(f"Userscript not found: {path_obj}")
+    text = path_obj.read_text(encoding='utf-8')
+    inlined_content, _ = inline_script_content(text, repo_root=repo_root, rewrite_urls=rewrite_urls)
+    return inlined_content
 
 def build_all_inlined_scripts(output_dir, source_root=REPO_ROOT):
     """Reads all src/*.user.js from source_root, inlines libraries, and writes them to output_dir/src/."""
@@ -430,7 +443,13 @@ if __name__ == "__main__":
     parser.add_argument("--sync-branch", action="store_true", help="Sync inlined scripts directly onto local dist branch")
     parser.add_argument("--main-branch", default="main", help="Source branch (default: main)")
     parser.add_argument("--dist-branch", default="dist", help="Target branch (default: dist)")
+    parser.add_argument("--print", dest="print_script", default=None, help="Print inlined userscript content to stdout without rewriting URLs")
     args = parser.parse_args()
+
+    if args.print_script:
+        content = inline_userscript(args.print_script, rewrite_urls=False)
+        sys.stdout.write(content)
+        sys.exit(0)
 
     if args.sync_branch:
         sync_dist_branch(args.main_branch, args.dist_branch)
