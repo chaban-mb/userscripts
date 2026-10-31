@@ -20,6 +20,7 @@
 // @grant       GM.setValue
 // @grant       GM.deleteValue
 // @grant       GM.registerMenuCommand
+// @grant       GM.unregisterMenuCommand
 // @run-at      document-end
 // @noframes
 // @updateURL   https://github.com/chaban-mb/userscripts/raw/dist/src/YouTube%20MusicBrainz%20Importer.user.js
@@ -515,6 +516,7 @@ class PermanentError extends Error {
         MUSICBRAINZ_API_ROOT: 'https://musicbrainz.org/ws/2/',
         LISTENBRAINZ_API_ROOT: 'https://api.listenbrainz.org/1/',
         TOKEN_STORAGE_KEY: 'listenbrainz_user_token',
+        SEED_CHANNEL_LINKS_STORAGE_KEY: 'seed_channel_links_enabled',
 
         MAX_RETRIES: 5,
         INITIAL_RETRY_DELAY_MS: 1000,
@@ -547,15 +549,6 @@ class PermanentError extends Error {
         _token: null,
         async init() {
             this._token = await GM.getValue(Config.TOKEN_STORAGE_KEY, null);
-            GM.registerMenuCommand('Set ListenBrainz Token', async () => {
-                const success = await this.setToken();
-                if (success) {
-                    const currentVideoId = DOMScanner.getVideoId();
-                    if (currentVideoId) {
-                        YouTubeMusicBrainzImporter.triggerUpdate(currentVideoId);
-                    }
-                }
-            });
         },
         getTokenValue() {
             return this._token;
@@ -585,6 +578,71 @@ class PermanentError extends Error {
                 await GM.setValue(Config.TOKEN_STORAGE_KEY, this._token);
                 alert('ListenBrainz token saved!');
                 return true;
+            }
+        }
+    };
+
+    /**
+     * Manages GM menu commands and configurable user preferences.
+     */
+    const MenuManager = {
+        _commandIds: [],
+        _seedLinksEnabled: false,
+
+        async init() {
+            this._seedLinksEnabled = await GM.getValue(Config.SEED_CHANNEL_LINKS_STORAGE_KEY, false);
+            await this.registerAllCommands();
+        },
+
+        isSeedLinksEnabled() {
+            return this._seedLinksEnabled;
+        },
+
+        async setSeedLinksEnabled(enabled) {
+            this._seedLinksEnabled = Boolean(enabled);
+            await GM.setValue(Config.SEED_CHANNEL_LINKS_STORAGE_KEY, this._seedLinksEnabled);
+            await this.registerAllCommands();
+            if (DOMScanner.isChannelPage()) {
+                YouTubeMusicBrainzImporter.triggerChannelUpdate();
+            }
+        },
+
+        async registerAllCommands() {
+            for (const id of this._commandIds) {
+                try {
+                    await GM.unregisterMenuCommand(id);
+                } catch {
+                    // Ignore unregister errors across manager implementations
+                }
+            }
+            this._commandIds = [];
+
+            // 1. ListenBrainz token configuration
+            try {
+                const lbId = await GM.registerMenuCommand('Set ListenBrainz Token', async () => {
+                    const success = await TokenManager.setToken();
+                    if (success) {
+                        const currentVideoId = DOMScanner.getVideoId();
+                        if (currentVideoId) {
+                            YouTubeMusicBrainzImporter.triggerUpdate(currentVideoId);
+                        }
+                    }
+                });
+                if (lbId) this._commandIds.push(lbId);
+            } catch (err) {
+                console.warn(`[${GM.info.script.name}] Failed to register LB token menu command:`, err);
+            }
+
+            // 2. Seed missing channel links toggle (off by default)
+            try {
+                const prefix = this._seedLinksEnabled ? '☑' : '☐';
+                const label = `${prefix} Seed Missing Channel Links`;
+                const seedId = await GM.registerMenuCommand(label, async () => {
+                    await this.setSeedLinksEnabled(!this._seedLinksEnabled);
+                });
+                if (seedId) this._commandIds.push(seedId);
+            } catch (err) {
+                console.warn(`[${GM.info.script.name}] Failed to register seed links menu command:`, err);
             }
         }
     };
@@ -3249,11 +3307,12 @@ class PermanentError extends Error {
         /**
          * Initializes the application: injects CSS, initializes managers, and sets up observers.
          */
-        init: function () {
+        init: async function () {
             this._mbApi = new MusicBrainzAPI({ user_agent: USER_AGENT });
             InPageDataExtractor.initEventListeners();
             this._injectCSS();
-            TokenManager.init(); // Initialize token manager
+            await TokenManager.init();
+            await MenuManager.init();
             RecordingButtonManager.init();
             PlaylistButtonManager.init(); // Initialize playlist button manager
             ChannelButtonManager.init(); // Initialize channel button manager
@@ -3506,18 +3565,23 @@ class PermanentError extends Error {
             let linkExtractionMs = 0;
 
             try {
-                // Fetch MusicBrainz URL relationships and YouTube channel external links in parallel
+                const seedLinksEnabled = MenuManager.isSeedLinksEnabled();
                 const lookupStartTime = performance.now();
                 const mbResultsPromise = this.lookupMbUrls(urlsToQuery).then(res => {
                     lookupDurationMs = Math.round(performance.now() - lookupStartTime);
                     return res;
                 });
 
-                const linkExtractionStartTime = performance.now();
-                const externalLinksPromise = DOMScanner.fetchChannelExternalLinks(channelData, event).then(res => {
-                    linkExtractionMs = Math.round(performance.now() - linkExtractionStartTime);
-                    return res;
-                });
+                let externalLinksPromise;
+                if (seedLinksEnabled) {
+                    const linkExtractionStartTime = performance.now();
+                    externalLinksPromise = DOMScanner.fetchChannelExternalLinks(channelData, event).then(res => {
+                        linkExtractionMs = Math.round(performance.now() - linkExtractionStartTime);
+                        return res;
+                    });
+                } else {
+                    externalLinksPromise = Promise.resolve({ externalLinks: [], sources: {} });
+                }
 
                 [mbResults, linkExtractionResult] = await Promise.all([mbResultsPromise, externalLinksPromise]);
 
@@ -3570,9 +3634,9 @@ class PermanentError extends Error {
 
                 if (foundEntities.length === 1) {
                     const { targetType, id, name } = foundEntities[0];
-                    let missingExternalLinks = candidateExternalLinks;
+                    let missingExternalLinks = [];
 
-                    if (candidateExternalLinks.length > 0) {
+                    if (seedLinksEnabled && candidateExternalLinks.length > 0) {
                         try {
                             const entityStartTime = performance.now();
                             const entityDetails = await this._mbApi.get(targetType, id, ['url-rels']);
