@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Beatport: MusicBrainz Checker
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      2.8.2
+// @version      2.8.3
 // @description  Adds MusicBrainz status icons to Beatport releases on list pages and links missing releases for importing
 // @tag          ai-created
 // @author       RustyNova, chaban
@@ -440,9 +440,9 @@ class PermanentError extends Error {
     ],
 
     SELECTORS: {
-      RELEASE_ROW: '[class*="TableRow"]',
+      RELEASE_ROW: '[class*="Row-style__Stylized"], [class*="TableRow"]:not(:has([class*="Row-style__Stylized"]))',
       RELEASE_LINK: 'a[href*="/release/"]:not(.status-icon)',
-      ANCHOR: '.date',
+      ANCHOR: '[class*="DetailsCell-style__DateRow"], .date',
       ICONS_CONTAINER: '.button_container'
     },
 
@@ -619,6 +619,37 @@ class PermanentError extends Error {
     },
 
     /**
+     * Extracts release URL from a release or track row element.
+     * Checks for a direct link first, then inspects React Fiber properties.
+     * @param {HTMLElement} rowElement - The row element to extract from.
+     * @returns {string|null} The resolved release URL or null if not found.
+     */
+    _extractReleaseUrlFromRow: function (rowElement) {
+      const linkElement = rowElement.querySelector(Config.SELECTORS.RELEASE_LINK);
+      const directHref = linkElement?.getAttribute('href');
+      if (directHref) {
+        return new URL(directHref, window.location.origin).href;
+      }
+
+      const fiberKey = Object.keys(rowElement).find(k => k.startsWith('__reactFiber$'));
+      if (fiberKey) {
+        let curr = rowElement[fiberKey];
+        let depth = 0;
+        while (curr && depth < 20) {
+          const p = curr.memoizedProps;
+          const rel = p?.item?.release || p?.track?.release || (p?.item?.itemType === 'release' ? p.item : p?.release);
+          if (rel?.id && rel?.slug) {
+            return `${window.location.origin}/release/${rel.slug}/${rel.id}`;
+          }
+          curr = curr.return;
+          depth++;
+        }
+      }
+
+      return null;
+    },
+
+    /**
      * Finds all unprocessed release rows and extracts their URLs and corresponding DOM elements.
      * @returns {Array<{url: string, element: HTMLElement}>} An array of objects, each containing
      * a release URL and its DOM element.
@@ -628,12 +659,10 @@ class PermanentError extends Error {
       const unprocessedReleases = [];
 
       for (const releaseRow of releases) {
-        const releaseLinkElement = releaseRow.querySelector(Config.SELECTORS.RELEASE_LINK);
-        if (releaseLinkElement && releaseLinkElement.href) {
-          const url = releaseLinkElement.href;
-
+        const url = this._extractReleaseUrlFromRow(releaseRow);
+        if (url) {
           // Normalize the URL before checking the Map
-          const parsedUrl = new URL(url);
+          const parsedUrl = new URL(url, window.location.origin);
           const normalizedPathname = Utils._getBasePathname(parsedUrl.pathname);
           const normalizedUrl = `${parsedUrl.origin}${normalizedPathname}${parsedUrl.search}`;
 
@@ -642,7 +671,7 @@ class PermanentError extends Error {
 
           if (lastProcessed !== normalizedUrl || !hasIcons) {
             unprocessedReleases.push({
-              url: url,
+              url: parsedUrl.href,
               element: releaseRow
             });
           }
@@ -686,10 +715,11 @@ class PermanentError extends Error {
         style.textContent = `
           /* Status Icons CSS */
           .${Config.CLASS_NAMES.STATUS_ICON} {
-              margin: 0px 5px;
+              margin: 0 2px;
               width: 20px;
               height: 20px;
               display: inline-block;
+              flex-shrink: 0;
               background-repeat: no-repeat;
               background-position: center;
               background-size: 20px;
@@ -708,8 +738,8 @@ class PermanentError extends Error {
           .${Config.CLASS_NAMES.ICONS_CONTAINER} {
               display: flex;
               align-items: center;
-              gap: 10px;
-              flex-wrap: wrap;
+              gap: 4px;
+              flex-shrink: 0;
               justify-content: flex-start;
           }
 
@@ -718,6 +748,7 @@ class PermanentError extends Error {
               display: flex;
               align-items: center;
               justify-content: space-between;
+              gap: 4px;
           }
         `;
         head.appendChild(style);
