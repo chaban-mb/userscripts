@@ -2064,6 +2064,15 @@
                 if (youtubeVideoData.snippet.channelId) {
                     urlsToInvalidate.push(new URL(`https://www.youtube.com/channel/${youtubeVideoData.snippet.channelId}`).toString());
                 }
+                if (youtubeVideoData.snippet.channelHandle) {
+                    const cleanHandle = youtubeVideoData.snippet.channelHandle.startsWith('@')
+                        ? youtubeVideoData.snippet.channelHandle
+                        : `@${youtubeVideoData.snippet.channelHandle}`;
+                    const handleUrl = new URL(`https://www.youtube.com/${cleanHandle}`).toString();
+                    if (!urlsToInvalidate.includes(handleUrl)) {
+                        urlsToInvalidate.push(handleUrl);
+                    }
+                }
                 console.info(`[${GM.info.script.name}] Action button clicked: Clearing cache for video ID "${videoId}"`, {
                     event: 'action_button_clicked',
                     action: 'import_recording',
@@ -3373,10 +3382,11 @@
                 lookupDurationMs = Math.round(performance.now() - lookupStartTime);
 
                 const mbVideoUrlEntity = mbResults.get(canonicalYtUrl);
-                const artistMbid = youtubeChannelUrl ? this._extractArtistMbid(mbResults.get(youtubeChannelUrl)) : null;
+                const artistMbid = (youtubeChannelUrl ? this._extractArtistMbid(mbResults.get(youtubeChannelUrl)) : null)
+                    || (youtubeHandleUrl ? this._extractArtistMbid(mbResults.get(youtubeHandleUrl)) : null);
 
                 // ===== Run Recording Importer Logic and Playlist Logic in Parallel =====
-                const recordingPromise = this._handleRecordingImport(ytData, canonicalYtUrl, youtubeChannelUrl, mbResults, mbVideoUrlEntity, artistMbid);
+                const recordingPromise = this._handleRecordingImport(ytData, canonicalYtUrl, youtubeChannelUrl, mbResults, mbVideoUrlEntity, artistMbid, youtubeHandleUrl);
                 const playlistPromise = this._handlePlaylistLogic(ytData, canonicalYtUrl);
 
                 [actionResult] = await Promise.all([recordingPromise, playlistPromise]);
@@ -3432,12 +3442,16 @@
          * @param {Map<string, Object|null>} mbResults - Map of MusicBrainz lookup results.
          * @param {Object|null} [mbVideoUrlEntity] - Resolved video URL entity if pre-computed.
          * @param {string|null} [artistMbid] - Resolved artist MBID if pre-computed.
+         * @param {string|null} [youtubeHandleUrl] - Handle channel URL if available.
          * @returns {Promise<string>} Outcome status
          */
-        _handleRecordingImport: async function (ytData, canonicalYtUrl, youtubeChannelUrl, mbResults, mbVideoUrlEntity, artistMbid) {
+        _handleRecordingImport: async function (ytData, canonicalYtUrl, youtubeChannelUrl, mbResults, mbVideoUrlEntity, artistMbid, youtubeHandleUrl = null) {
             try {
                 const videoUrlEntity = mbVideoUrlEntity !== undefined ? mbVideoUrlEntity : mbResults.get(canonicalYtUrl);
-                const artistId = artistMbid !== undefined ? artistMbid : (youtubeChannelUrl ? this._extractArtistMbid(mbResults.get(youtubeChannelUrl)) : null);
+                const artistId = artistMbid !== undefined
+                    ? artistMbid
+                    : ((youtubeChannelUrl ? this._extractArtistMbid(mbResults.get(youtubeChannelUrl)) : null)
+                        || (youtubeHandleUrl ? this._extractArtistMbid(mbResults.get(youtubeHandleUrl)) : null));
 
                 if (videoUrlEntity) {
                     const allRelevantRecordingRelations = (videoUrlEntity.relations || []).filter(
