@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        YouTube: MusicBrainz Importer
 // @namespace   https://musicbrainz.org/user/chaban
-// @version     2.13.0
+// @version     2.14.0
 // @description Imports YouTube videos to MusicBrainz as a new standalone recording
 // @tag         ai-created
 // @author      nikki, RustyNova, chaban
@@ -445,6 +445,8 @@ class PermanentError extends Error {
                 // Channel specific strings
                 searchAddMB: 'Add to MB',
                 searchAddMBTitle: 'Search or add {name} on MusicBrainz',
+                addLinksToMB: '+ Add Links ({count})',
+                addLinksToMBTitle: 'Seed {count} external link(s) to {name} on MusicBrainz',
                 // Playlist specific strings
                 createPlaylist: 'Create LB Playlist',
                 syncPlaylist: 'Sync LB Playlist',
@@ -477,6 +479,8 @@ class PermanentError extends Error {
                 // Channel specific strings
                 searchAddMB: 'Zu MB hinzufügen',
                 searchAddMBTitle: '{name} auf MusicBrainz suchen oder hinzufügen',
+                addLinksToMB: '+ Links hinzufügen ({count})',
+                addLinksToMBTitle: '{count} externe(n) Link(s) zu {name} auf MusicBrainz hinzufügen',
                 // Playlist specific strings
                 createPlaylist: 'LB-Playlist erstellen',
                 syncPlaylist: 'LB-Playlist synchronisieren',
@@ -917,10 +921,84 @@ class PermanentError extends Error {
         },
 
         /**
-         * Checks if a URL is an internal YouTube navigation or asset URL.
+         * Sanitizes external candidate URLs by unwrapping redirects and enforcing https.
+         * (MBS's built-in URLCleanup.js handles full canonical normalization upon form load).
          * @param {string} url
+         * @returns {string}
+         */
+        cleanExternalUrl: function (url) {
+            if (!url || typeof url !== 'string') return '';
+            try {
+                let u = this.unwrapRedirectUrl(url) || url.trim();
+                u = u.replace(/(%e2%80%8e|\u200e)$/i, '');
+                if (!/^https?:\/\//i.test(u)) {
+                    u = 'https://' + u;
+                }
+                return u.trim();
+            } catch {
+                return url.trim();
+            }
+        },
+
+        /**
+         * Normalizes an external URL for case-insensitive equivalence comparisons
+         * (unifying web/mobile subdomains, aliases, stripping locale routes and ID slugs).
+         * @param {string} url
+         * @returns {string}
+         */
+        normalizeComparableUrl: function (url) {
+            if (!url || typeof url !== 'string') return '';
+            try {
+                let u = (this.unwrapRedirectUrl(url) || url).trim().toLowerCase();
+                u = u.replace(/(%e2%80%8e|\u200e)$/i, '');
+                // Standardize protocol & common web/mobile subdomains
+                u = u.replace(/^https?:\/\//i, '');
+                u = u.replace(/^(?:www\.|m\.|mobile\.|open\.|play\.|beta\.)+/i, '');
+                // Domain rebrands / aliases
+                u = u.replace(/^x\.com\//i, 'twitter.com/');
+                u = u.replace(/^threads\.net\//i, 'threads.com/');
+                u = u.replace(/^itunes\.apple\.com\//i, 'music.apple.com/');
+                u = u.replace(/^(?:fb\.com|facebook\.com)\//i, 'facebook.com/');
+                // Strip query string and fragment
+                u = u.split(/[?#]/)[0].replace(/\/+$/, '');
+                // Strip 2-letter country/language routes (e.g., /us/, /ca/, /intl-de/)
+                u = u.replace(/\/(?:intl-[a-z]{2}|[a-z]{2}(?:-[a-z]{2,4})?)(?=\/|$)/gi, '');
+                // Strip slugs attached to numeric IDs: /12345-slug -> /12345, /id12345 -> /12345
+                u = u.replace(/\/(\d{4,})-[^/]+/g, '/$1');
+                u = u.replace(/\/id(\d{4,})/g, '/$1');
+                // Strip intermediate text slugs before numeric IDs: /artist/slug/12345 -> /artist/12345
+                u = u.replace(/\/([a-z]+)\/[^/]+\/(\d{4,})$/i, '/$1/$2');
+                return u;
+            } catch {
+                return url.toLowerCase().trim();
+            }
+        },
+
+        /**
+         * Checks if two external URLs refer to the same resource.
+         * @param {string} urlA
+         * @param {string} urlB
          * @returns {boolean}
          */
+        isSameExternalUrl: function (urlA, urlB) {
+            const a = this.normalizeComparableUrl(urlA);
+            const b = this.normalizeComparableUrl(urlB);
+            if (!a || !b) return false;
+            if (a === b) return true;
+
+            const [hostA, ...pathA] = a.split('/');
+            const [hostB, ...pathB] = b.split('/');
+            if (hostA !== hostB) return false;
+
+            // Only allow prefix matching on custom subdomains when one path is empty (e.g. artist.bandcamp.com matching /music)
+            const isCustomSubdomain = hostA.includes('.') && hostA.split('.').length > 2;
+            if (isCustomSubdomain && (pathA.length === 0 || pathB.length === 0)) {
+                return true;
+            }
+
+            return false;
+        },
+
         isInternalYouTubeUrl: function (url) {
             if (!url || typeof url !== 'string') return true;
             if (url.startsWith('/') || url.startsWith('#') || url.startsWith('javascript:')) return true;
@@ -2582,7 +2660,7 @@ class PermanentError extends Error {
     class ChannelButtonManagerClass extends BaseButtonManager {
         constructor() {
             super('ytFlexibleActionsViewModelAction channel-mb-holder');
-            this._button = new YTButton({
+            this._mainButton = new YTButton({
                 tag: 'a',
                 label: L10n.getString('loading'),
                 title: L10n.getString('loading'),
@@ -2590,13 +2668,24 @@ class PermanentError extends Error {
                 variant: 'tonal',
                 disabled: true
             });
-            this._containerDiv.appendChild(this._button.container);
+            this._seedLinksButton = new YTButton({
+                tag: 'a',
+                label: '',
+                title: '',
+                icon: SVGIcons.musicbrainz,
+                variant: 'brand-mb',
+                disabled: false
+            });
+            this._button = this._mainButton; // Backwards-compatible alias
+            this._containerDiv.appendChild(this._mainButton.container);
+            this._containerDiv.appendChild(this._seedLinksButton.container);
+            this._seedLinksButton.hide();
         }
 
         reset() {
             this.hide();
-            if (this._button) {
-                this._button.update({
+            if (this._mainButton) {
+                this._mainButton.update({
                     label: L10n.getString('loading'),
                     title: L10n.getString('loading'),
                     icon: SVGIcons.musicbrainz,
@@ -2604,27 +2693,33 @@ class PermanentError extends Error {
                     disabled: true
                 });
             }
+            if (this._seedLinksButton) {
+                this._seedLinksButton.hide();
+            }
         }
 
         setPending(isPending = true) {
             super.setPending(isPending);
-            if (this._button) {
+            if (this._mainButton) {
                 if (isPending) {
-                    this._button.update({
+                    this._mainButton.update({
                         label: L10n.getString('loading'),
                         title: L10n.getString('loading'),
                         variant: 'tonal',
                         disabled: true
                     });
                 }
-                this._button.setPending(isPending);
+                this._mainButton.setPending(isPending);
+            }
+            if (this._seedLinksButton && isPending) {
+                this._seedLinksButton.hide();
             }
             if (isPending) {
                 this.show();
             }
         }
 
-        displayLinkedEntity(targetType, entityId, entityName) {
+        displayLinkedEntity(targetType, entityId, entityName, candidateExternalLinks = [], channelUrl = '', urlsToInvalidate = []) {
             const formattedType = targetType.charAt(0).toUpperCase() + targetType.slice(1);
             let label = L10n.getString('onMB');
             if (targetType === 'artist') {
@@ -2637,7 +2732,7 @@ class PermanentError extends Error {
 
             const title = `Linked to ${formattedType}: ${entityName || entityId}`;
 
-            this._button.update({
+            this._mainButton.update({
                 tag: 'a',
                 href: `//musicbrainz.org/${targetType}/${entityId}`,
                 target: '_blank',
@@ -2647,11 +2742,60 @@ class PermanentError extends Error {
                 variant: 'tonal',
                 disabled: false
             });
+
+            if (candidateExternalLinks && candidateExternalLinks.length > 0) {
+                const params = new URLSearchParams();
+                candidateExternalLinks.forEach((link, idx) => {
+                    params.set(`edit-${targetType}.url.${idx}.text`, link);
+                });
+                const scriptInfo = GM_info.script;
+                const sourceUrl = channelUrl || location.href.split('?')[0];
+                const editNote = `${sourceUrl}\n—\n${scriptInfo.name} (v${scriptInfo.version})`;
+                params.set(`edit-${targetType}.edit_note`, editNote);
+
+                const seedUrl = `//musicbrainz.org/${targetType}/${entityId}/edit?${params.toString()}`;
+                const count = candidateExternalLinks.length;
+                const seedLabel = L10n.getString('addLinksToMB', { count }) || `+ Add Links (${count})`;
+                const seedTitle = L10n.getString('addLinksToMBTitle', { count, name: entityName || formattedType }) || `Seed ${count} external link(s) to ${entityName || formattedType} on MusicBrainz`;
+
+                this._seedLinksButton.update({
+                    tag: 'a',
+                    href: seedUrl,
+                    target: '_blank',
+                    label: seedLabel,
+                    title: seedTitle,
+                    icon: SVGIcons.musicbrainz,
+                    variant: 'brand-mb',
+                    disabled: false
+                });
+
+                if (urlsToInvalidate && urlsToInvalidate.length > 0) {
+                    const invalidateCache = () => {
+                        console.info(`[${GM.info.script.name}] Action button clicked: Invalidate cache for channel "${entityName || ''}"`, {
+                            event: 'action_button_clicked',
+                            action: 'seed_channel_links',
+                            entityId,
+                            targetType,
+                            urlsToInvalidate,
+                            seedUrl,
+                            candidateExternalLinks
+                        });
+                        YouTubeMusicBrainzImporter._mbApi.invalidateCacheForUrl(urlsToInvalidate);
+                    };
+                    this._seedLinksButton.element.addEventListener('mousedown', invalidateCache, { once: true });
+                }
+
+                this._seedLinksButton.show();
+            } else {
+                this._seedLinksButton.hide();
+            }
+
             this.show();
         }
 
         displayMultiLinked(urlEntityId) {
-            this._button.update({
+            this._seedLinksButton.hide();
+            this._mainButton.update({
                 tag: 'a',
                 href: `//musicbrainz.org/url/${urlEntityId}`,
                 target: '_blank',
@@ -2665,6 +2809,7 @@ class PermanentError extends Error {
         }
 
         displaySearchOrAdd(channelTitle, targetUrl, urlsToInvalidate = [], externalLinks = []) {
+            this._seedLinksButton.hide();
             const cleanUrl = targetUrl || location.href.split('?')[0];
             const params = new URLSearchParams();
             if (channelTitle) {
@@ -2678,13 +2823,14 @@ class PermanentError extends Error {
                 urlIndex++;
             }
 
-            const seen = new Set();
-            if (cleanUrl) seen.add(cleanUrl);
+            const addedLinks = [];
+            if (cleanUrl) addedLinks.push(cleanUrl);
 
             for (const link of externalLinks) {
-                if (link && !seen.has(link)) {
-                    seen.add(link);
-                    params.set(`edit-artist.url.${urlIndex}.text`, link);
+                const cleaned = Utils.cleanExternalUrl(link);
+                if (cleaned && !addedLinks.some(existing => Utils.isSameExternalUrl(existing, cleaned))) {
+                    addedLinks.push(cleaned);
+                    params.set(`edit-artist.url.${urlIndex}.text`, cleaned);
                     urlIndex++;
                 }
             }
@@ -2695,7 +2841,7 @@ class PermanentError extends Error {
 
             const createUrl = `//musicbrainz.org/artist/create?${params.toString()}`;
 
-            this._button.update({
+            this._mainButton.update({
                 tag: 'a',
                 href: createUrl,
                 target: '_blank',
@@ -2712,18 +2858,21 @@ class PermanentError extends Error {
                         event: 'action_button_clicked',
                         action: 'add_channel_artist',
                         channelTitle,
-                        urlsToInvalidate
+                        urlsToInvalidate,
+                        createUrl,
+                        externalLinks
                     });
                     YouTubeMusicBrainzImporter._mbApi.invalidateCacheForUrl(urlsToInvalidate);
                 };
-                this._button.element.addEventListener('mousedown', invalidateCache, { once: true });
+                this._mainButton.element.addEventListener('mousedown', invalidateCache, { once: true });
             }
 
             this.show();
         }
 
         displayError(message) {
-            this._button.update({
+            this._seedLinksButton.hide();
+            this._mainButton.update({
                 tag: 'button',
                 label: message,
                 title: message,
@@ -3363,7 +3512,30 @@ class PermanentError extends Error {
 
                 [mbResults, linkExtractionResult] = await Promise.all([mbResultsPromise, externalLinksPromise]);
 
-                const externalLinks = Array.isArray(linkExtractionResult) ? linkExtractionResult : (linkExtractionResult.externalLinks || []);
+                const rawExternalLinks = Array.isArray(linkExtractionResult) ? linkExtractionResult : (linkExtractionResult.externalLinks || []);
+                const linkSources = Array.isArray(linkExtractionResult) ? {} : (linkExtractionResult.sources || {});
+
+                // Helper to check if URL is a YouTube channel/video/user link
+                const isYouTubeChannelUrl = (u) => {
+                    try {
+                        const parsed = new URL(u);
+                        return /^(www\.)?(m\.)?youtube\.com$/i.test(parsed.hostname) || /^youtu\.be$/i.test(parsed.hostname);
+                    } catch {
+                        return /youtube\.com|youtu\.be/i.test(u);
+                    }
+                };
+
+                // Filter candidate external links structurally, excluding YouTube URLs and duplicates
+                const candidateExternalLinks = [];
+                for (const link of rawExternalLinks) {
+                    if (!link) continue;
+                    const cleaned = Utils.cleanExternalUrl(link);
+                    if (!cleaned || isYouTubeChannelUrl(cleaned)) continue;
+                    const alreadySeen = candidateExternalLinks.some(existing => Utils.isSameExternalUrl(existing, cleaned));
+                    if (!alreadySeen) {
+                        candidateExternalLinks.push(cleaned);
+                    }
+                }
 
                 // Collect all matched entities across queried URLs
                 const foundEntities = [];
@@ -3389,12 +3561,40 @@ class PermanentError extends Error {
 
                 if (foundEntities.length === 1) {
                     const { targetType, id, name } = foundEntities[0];
-                    ChannelButtonManager.displayLinkedEntity(targetType, id, name);
+                    let missingExternalLinks = candidateExternalLinks;
+
+                    if (candidateExternalLinks.length > 0) {
+                        try {
+                            const entityStartTime = performance.now();
+                            const entityDetails = await this._mbApi.get(targetType, id, ['url-rels']);
+                            lookupDurationMs += Math.round(performance.now() - entityStartTime);
+
+                            const existingMbUrls = (entityDetails?.relations || [])
+                                .filter(r => r['target-type'] === 'url' && r.url?.resource)
+                                .map(r => r.url.resource);
+
+                            missingExternalLinks = candidateExternalLinks.filter(
+                                link => !existingMbUrls.some(mbUrl => Utils.isSameExternalUrl(link, mbUrl))
+                            );
+                        } catch (err) {
+                            console.warn(`[${GM.info.script.name}] Failed to fetch URL relationships for ${targetType} ${id}:`, err);
+                        }
+                    }
+
+                    ChannelButtonManager.displayLinkedEntity(
+                        targetType,
+                        id,
+                        name,
+                        missingExternalLinks,
+                        channelData.canonicalUrl || channelData.handleUrl,
+                        urlsToQuery
+                    );
                     outcome = `linked_${targetType}`;
                     actionResult = {
                         buttonVariant: 'tonal',
                         resolvedEntity: { targetType, id, name },
-                        prefilledExternalLinksCount: 0
+                        prefilledExternalLinksCount: missingExternalLinks.length,
+                        candidateExternalLinks: missingExternalLinks
                     };
                 } else if (foundEntities.length > 1) {
                     ChannelButtonManager.displayMultiLinked(urlEntityId);
@@ -3410,13 +3610,14 @@ class PermanentError extends Error {
                         channelData.channelTitle,
                         channelData.canonicalUrl || channelData.handleUrl,
                         urlsToQuery,
-                        externalLinks
+                        candidateExternalLinks
                     );
                     outcome = 'unlinked_add_artist';
                     actionResult = {
                         buttonVariant: 'brand-mb',
                         resolvedEntity: null,
-                        prefilledExternalLinksCount: externalLinks.length
+                        prefilledExternalLinksCount: candidateExternalLinks.length,
+                        candidateExternalLinks
                     };
                 }
 
@@ -3425,8 +3626,8 @@ class PermanentError extends Error {
                     urlsToQuery,
                     mbResults,
                     cachedUrlMap,
-                    externalLinks,
-                    linkSources: linkExtractionResult.sources || {},
+                    externalLinks: candidateExternalLinks,
+                    linkSources,
                     outcome,
                     actionResult,
                     timing: {
