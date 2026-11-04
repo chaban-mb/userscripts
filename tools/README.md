@@ -70,9 +70,12 @@ Unlike Chrome DevTools MCP (which attaches directly to a debugging port), Violen
 
 3. **Open in Active Browser Session**:
    - In automated agent sessions with `chrome-devtools`, open the connect URL via `new_page({ url: connectUrl })`.
-   - Violentmonkey intercepts this request via `browser.webRequest.onBeforeRequest`, registers the pending connection request, and redirects the tab to `chrome-extension://<id>/options/index.html#settings/mcp`.
-4. **Approve Request**: In the Violentmonkey settings tab, click **`[Approve]`**. (Browser extension security prevents external scripts from clicking buttons on `chrome-extension://` pages automatically, so this single approval is granted once per browser session).
-5. **Verify & Close Tab**: Verify `vm_status` reports `connected: true`, and close the options tab.
+   - **Expected Error (`net::ERR_ABORTED`)**: Chrome DevTools will report `net::ERR_ABORTED` on navigation. This is expected and normal—Violentmonkey's background worker intercepts the request via `webRequest.onBeforeRequest`, registers the pending token, and redirects the tab to `chrome-extension://<id>/options/index.html#settings/mcp`.
+4. **Approve Request**: In the Violentmonkey settings tab, click **`[Approve]`**. Because browser extension security prevents external automation from clicking buttons on `chrome-extension://` pages, the agent must prompt the user to click approve.
+5. **Verify & Close Tab**: Verify `vm_status` reports `connected: true`, and close the options tab via `close_page`.
+
+> [!IMPORTANT]
+> **`@exclude` Glob Nuance**: While `@match` follows Chrome Match Patterns (where `*://*.domain.tld/*` automatically matches apex `domain.tld` as well as subdomains), `@exclude` uses Greasemonkey glob pattern rules where `*.domain.tld` requires a literal dot and subdomain. To match both the apex domain and any subdomain in `@exclude`, use `*://*domain.tld/*`.
 
 > [!NOTE]
 > **Shared Library Inlining (`lib/*.js`)**: Because `scripts_write` sends code directly into Violentmonkey's internal storage without an HTTP base URL, any relative dependencies (such as `// @require ../lib/MusicBrainzAPI.js`) cannot be resolved over HTTP. When pushing via `scripts_write`, inline shared library code into the payload or ensure `@require` targets an absolute HTTP/CDN URL.

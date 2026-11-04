@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MusicBrainz: Align [info] Links in Relationships Table
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      1.0.1
+// @version      1.0.2
 // @tag          ai-created
 // @description  Aligns [info] metadata links uniformly after the longest URL.
 // @author       chaban
@@ -32,6 +32,12 @@
 // @match        *://*.musicbrainz.eu/release-group/*
 // @match        *://*.musicbrainz.eu/series/*
 // @match        *://*.musicbrainz.eu/work/*
+// @exclude      *://*musicbrainz.org/*/*/edit*
+// @exclude      *://*musicbrainz.org/*/*/edits*
+// @exclude      *://*musicbrainz.org/*/*/open_edits*
+// @exclude      *://*musicbrainz.eu/*/*/edit*
+// @exclude      *://*musicbrainz.eu/*/*/edits*
+// @exclude      *://*musicbrainz.eu/*/*/open_edits*
 // @icon         https://musicbrainz.org/static/images/favicons/android-chrome-512x512.png
 // @grant        GM.getValue
 // @grant        GM.setValue
