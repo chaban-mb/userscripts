@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        YouTube: MusicBrainz Importer
 // @namespace   https://musicbrainz.org/user/chaban
-// @version     2.14.0
+// @version     2.15.0
 // @description Imports YouTube videos to MusicBrainz as a new standalone recording
 // @tag         ai-created
 // @author      nikki, RustyNova, chaban
@@ -9,6 +9,7 @@
 // @homepageURL https://github.com/chaban-mb/userscripts
 // @supportURL  https://github.com/chaban-mb/userscripts/issues
 // @match       *://www.youtube.com/*
+// @match       *://m.youtube.com/*
 // @match       *://*.musicbrainz.org/recording/create*
 // @connect     musicbrainz.org
 // @connect     listenbrainz.org
@@ -139,8 +140,8 @@
         RETRY_BACKOFF_FACTOR: 2,
 
         SELECTORS: {
-            BUTTON_DOCK: '#top-row.ytd-watch-metadata #owner.ytd-watch-metadata',
-            BUTTON_DOCK_FALLBACK: '#top-row.ytd-watch-metadata #actions.ytd-watch-metadata',
+            BUTTON_DOCK: '#top-row.ytd-watch-metadata #owner.ytd-watch-metadata, ytm-slim-video-action-bar-renderer .slim-video-action-bar-actions',
+            BUTTON_DOCK_FALLBACK: '#top-row.ytd-watch-metadata #actions.ytd-watch-metadata, ytm-slim-video-action-bar-renderer',
             CHANNEL_DOCK: 'yt-page-header-view-model yt-flexible-actions-view-model, yt-page-header-view-model subscribe-button-view-model, ytd-page-header-renderer #page-header-actions, ytd-page-header-renderer ytd-subscribe-button-renderer, ytd-c4-tabbed-header-renderer #buttons, #inner-header-container #buttons',
             MUSICBRAINZ_MAIN_VIDEO_CHECKBOX: '[name="edit-recording.video"]',
             MUSICBRAINZ_EXTERNAL_LINKS_EDITOR: '#external-links-editor',
@@ -506,6 +507,15 @@
      * General utility functions.
      */
     const Utils = {
+        /**
+         * Asynchronously sleeps for the given duration in milliseconds.
+         * @param {number} ms
+         * @returns {Promise<void>}
+         */
+        sleep: function (ms) {
+            return new Promise(resolve => setTimeout(resolve, ms));
+        },
+
         /**
          * Waits for an element matching the given CSS selector to appear in the DOM.
          * @param {string} selector - The CSS selector of the element to wait for.
@@ -951,113 +961,176 @@
 
 
     /**
-     * Diagnostic module to extract YouTube video metadata directly from in-page window objects / DOM
-     * and compare it against the YouTube Data API response.
+     * Shared Schema Parser for YouTube Innertube API JSON payloads.
      */
-    const InPageDataExtractor = {
-        _lastEventDetail: null,
+    const YouTubeSchemaParser = {
+        /**
+         * Extracts external profile links from schema.org / microformat sameAs arrays and strings,
+         * as well as YouTube redirect URLs (youtube.com/redirect?q=...).
+         * @param {Object} obj
+         * @param {Set<string>} [discoveredUrls=new Set()]
+         * @param {WeakSet<Object>} [seenObjects=new WeakSet()]
+         * @returns {Set<string>}
+         */
+        findExternalLinksInPayload: function (obj, discoveredUrls = new Set(), seenObjects = new WeakSet()) {
+            if (!obj || typeof obj !== 'object') return discoveredUrls;
+            if (seenObjects.has(obj)) return discoveredUrls;
+            seenObjects.add(obj);
 
-        initEventListeners() {
-            document.addEventListener('yt-navigate-finish', (event) => {
-                this._lastEventDetail = event.detail;
-            });
+            if (Array.isArray(obj)) {
+                for (const item of obj) {
+                    if (item && typeof item === 'object') {
+                        this.findExternalLinksInPayload(item, discoveredUrls, seenObjects);
+                    }
+                }
+                return discoveredUrls;
+            }
+
+            // Extract sameAs (array or string: schema.org, JSON-LD, microformat)
+            if (Array.isArray(obj.sameAs)) {
+                for (const rawUrl of obj.sameAs) {
+                    const clean = Utils.unwrapRedirectUrl(rawUrl);
+                    if (clean && !Utils.isInternalYouTubeUrl(clean)) {
+                        discoveredUrls.add(clean);
+                    }
+                }
+            } else if (typeof obj.sameAs === 'string') {
+                const clean = Utils.unwrapRedirectUrl(obj.sameAs);
+                if (clean && !Utils.isInternalYouTubeUrl(clean)) {
+                    discoveredUrls.add(clean);
+                }
+            }
+
+            // Also check redirect URLs in obj.url, obj.q, commandMetadata.webCommandMetadata.url, urlEndpoint.url
+            const candidateUrls = [
+                obj.url,
+                obj.q,
+                obj.commandMetadata?.webCommandMetadata?.url,
+                obj.urlEndpoint?.url
+            ];
+            for (const candidate of candidateUrls) {
+                if (candidate && typeof candidate === 'string' && (candidate.includes('/redirect?') || candidate.includes('youtube.com/redirect?'))) {
+                    const clean = Utils.unwrapRedirectUrl(candidate);
+                    if (clean && !Utils.isInternalYouTubeUrl(clean)) {
+                        discoveredUrls.add(clean);
+                    }
+                }
+            }
+
+            // Skip heavy subtrees that never contain channel metadata / sameAs
+            const skipKeys = new Set([
+                'videoRenderer',
+                'reelItemRenderer',
+                'commentRenderer',
+                'postRenderer',
+                'compactVideoRenderer',
+                'playlistRenderer',
+                'shelfRenderer',
+                'richItemRenderer',
+                'richGridRenderer',
+                'horizontalListRenderer',
+                'thumbnail',
+                'avatar',
+                'lottieData',
+                'themedPalette',
+                'trackingParams'
+            ]);
+
+            for (const key of Object.keys(obj)) {
+                if (skipKeys.has(key)) continue;
+                const val = obj[key];
+                if (val && typeof val === 'object') {
+                    this.findExternalLinksInPayload(val, discoveredUrls, seenObjects);
+                }
+            }
+
+            return discoveredUrls;
         },
 
         /**
-         * Returns the raw player response currently cached or stored in window variables.
-         * @returns {Object|null}
+         * Cleans external URLs, filters out YouTube URLs, and deduplicates using Utils.isSameExternalUrl.
+         * @param {Iterable<string>|Array<string>} rawLinks
+         * @returns {string[]}
          */
-        getRawPlayerResponse() {
-            let playerResponse = null;
-            if (this._lastEventDetail?.response) {
-                const resp = this._lastEventDetail.response;
-                playerResponse = resp.playerResponse || resp.endpoint?.watchEndpoint?.playerResponse;
+        filterAndCleanExternalLinks: function (rawLinks) {
+            if (!rawLinks) return [];
+            const isYouTubeUrl = (u) => {
+                try {
+                    const parsed = new URL(u);
+                    return /^(www\.)?(m\.)?youtube\.com$/i.test(parsed.hostname) || /^youtu\.be$/i.test(parsed.hostname);
+                } catch {
+                    return /youtube\.com|youtu\.be/i.test(u);
+                }
+            };
+
+            const cleanedLinks = [];
+            for (const link of rawLinks) {
+                if (!link) continue;
+                const cleaned = Utils.cleanExternalUrl(link);
+                if (!cleaned || isYouTubeUrl(cleaned)) continue;
+                const alreadySeen = cleanedLinks.some(existing => Utils.isSameExternalUrl(existing, cleaned));
+                if (!alreadySeen) {
+                    cleanedLinks.push(cleaned);
+                }
             }
-            if (!playerResponse && window.ytInitialPlayerResponse) {
-                playerResponse = window.ytInitialPlayerResponse;
-            }
-            return playerResponse;
+            return cleanedLinks;
         },
 
         /**
-         * Extracts video data from in-page player objects or window globals for a given video ID.
-         * @param {string} videoId
+         * Parses a playerResponse payload (from Innertube or movie_player.getPlayerResponse())
+         * and returns standard ytData structure, or null if invalid/mismatched.
+         * @param {Object} playerResponse
+         * @param {string} expectedVideoId
          * @returns {Object|null}
          */
-        extractVideoData(videoId) {
-            const playerResponse = this.getRawPlayerResponse();
+        parsePlayerResponse: function (playerResponse, expectedVideoId) {
+            if (!playerResponse || typeof playerResponse !== 'object') return null;
+            if (playerResponse.videoDetails?.videoId !== expectedVideoId) return null;
 
-            // 3. Check movie_player DOM component fallback
-            const moviePlayer = document.getElementById('movie_player');
-            const moviePlayerData = moviePlayer?.getVideoData?.();
-            const videoDetails = playerResponse?.videoDetails;
+            const videoDetails = playerResponse.videoDetails;
+            if (!videoDetails || !videoDetails.title || (!videoDetails.author && !videoDetails.channelId)) {
+                return null;
+            }
 
-            const title = videoDetails?.title || moviePlayerData?.title || document.querySelector('h1.ytd-watch-metadata yt-formatted-string')?.innerText || '';
-            const channelTitle = videoDetails?.author || moviePlayerData?.author || document.querySelector('#owner #channel-name a')?.innerText || '';
-            const channelId = videoDetails?.channelId || '';
+            const title = videoDetails.title || '';
+            const channelTitle = videoDetails.author || '';
+            const channelId = videoDetails.channelId || '';
+            const microformat = playerResponse.microformat?.playerMicroformatRenderer;
 
-            // Extract channel handle from player microformat or channel cache first to avoid stale DOM scraping on SPA navigation
             let channelHandle = null;
             let handleSource = null;
 
-            const microformatHandle = playerResponse?.microformat?.playerMicroformatRenderer?.ownerProfileUrl?.match(/\/(@[A-Za-z0-9_.-]+)/)?.[1];
-            if (microformatHandle) {
-                channelHandle = microformatHandle;
+            const ownerProfileUrl = microformat?.ownerProfileUrl;
+            const handleMatch = ownerProfileUrl ? ownerProfileUrl.match(/\/(@[^\/?#]+)/) : null;
+            if (handleMatch) {
+                channelHandle = decodeURIComponent(handleMatch[1]);
                 handleSource = 'player_microformat';
             } else if (channelId) {
-                const cachedRecord = DOMScanner._channelCache.get(channelId);
-                if (cachedRecord?.handle) {
-                    channelHandle = cachedRecord.handle;
+                const cached = DOMScanner.getChannelRecord(channelId);
+                if (cached?.handle) {
+                    channelHandle = cached.handle.startsWith('@') ? cached.handle : `@${cached.handle}`;
                     handleSource = 'cache';
-                }
-            }
-            if (!channelHandle) {
-                const domHandle = document.querySelector('#owner a[href*="/@"]')?.getAttribute('href')?.match(/\/(@[A-Za-z0-9_.-]+)/)?.[1];
-                if (domHandle) {
-                    channelHandle = domHandle;
-                    handleSource = 'dom';
                 }
             }
 
             if (channelId && channelHandle) {
-                DOMScanner.cacheChannelData(channelHandle, channelId);
+                DOMScanner.cacheChannelData(channelHandle, channelId, null, false, channelTitle);
             }
 
-            let durationSeconds = 0;
-            const microformatSec = playerResponse?.microformat?.playerMicroformatRenderer?.lengthSeconds;
-            if (microformatSec) {
-                durationSeconds = parseInt(microformatSec, 10);
-            }
-
-            // Extract direct milliseconds strictly from adaptiveFormats.approxDurationMs without video element fallback
-            let directMs = 0;
-            const adaptiveFormat = playerResponse?.streamingData?.adaptiveFormats?.[0];
-            if (adaptiveFormat?.approxDurationMs) {
-                directMs = parseInt(adaptiveFormat.approxDurationMs, 10);
-            }
+            const durationSeconds = parseInt(microformat?.lengthSeconds || videoDetails.lengthSeconds || '0', 10);
+            const directMs = parseInt(playerResponse.streamingData?.adaptiveFormats?.[0]?.approxDurationMs || '0', 10);
 
             const description = (
-                videoDetails?.shortDescription
-                ?? playerResponse?.microformat?.playerMicroformatRenderer?.description?.simpleText
-                ?? document.querySelector('meta[name="description"]')?.content
-                ?? document.querySelector('#description-inline-expander #plain-snippet-text')?.innerText
-                ?? document.querySelector('#description-inline-expander yt-attributed-string')?.innerText
+                videoDetails.shortDescription
+                ?? microformat?.description?.simpleText
                 ?? ''
             ).trim();
 
-            const category = playerResponse?.microformat?.playerMicroformatRenderer?.category
-                || document.querySelector('meta[itemprop="genre"]')?.content
-                || '';
-
-            if (!title && !channelTitle) {
-                return null;
-            }
-
+            const category = microformat?.category || '';
             const { parsedTracks } = Utils.parseTracklist(description, channelTitle);
 
-            // Synthesize YouTube API shape for compatibility and validation
             return {
-                id: videoId,
+                id: expectedVideoId,
                 snippet: {
                     title,
                     channelTitle,
@@ -1068,14 +1141,322 @@
                     hasDescription: description.length > 0,
                     hasTracklist: parsedTracks.length > 0,
                     tracklistCount: parsedTracks.length,
-                    category,
+                    category
                 },
                 contentDetails: {
                     duration: `PT${durationSeconds}S`,
                     durationMs: durationSeconds * 1000,
-                    directMs,
+                    directMs
                 }
             };
+        },
+
+        /**
+         * Parses a browseResponse payload (from Innertube or ytd-browse.data)
+         * and returns standard channelData structure, or null if invalid/mismatched.
+         * @param {Object} browseResponse
+         * @param {string|null} [expectedTarget=null] - Expected handle (@...) or channel ID (UC...)
+         * @returns {Object|null}
+         */
+        parseBrowseResponse: function (browseResponse, expectedTarget = null) {
+            if (!browseResponse || typeof browseResponse !== 'object') return null;
+
+            // 1. Extract channelId
+            const channelId = browseResponse.metadata?.channelMetadataRenderer?.externalId
+                || browseResponse.header?.c4TabbedHeaderRenderer?.channelId
+                || browseResponse.header?.pageHeaderRenderer?.content?.pageHeaderViewModel?.actions?.flexibleActionsViewModel?.actionsRows?.[0]?.actions?.[0]?.subscribeButtonViewModel?.channelId
+                || browseResponse.microformat?.microformatDataRenderer?.channelProfileMicroformatDetails?.profilePage?.mainEntity?.url?.match(/\/channel\/(UC[A-Za-z0-9_-]+)/)?.[1];
+
+            // 2. Extract handle
+            let handle = null;
+            const vanityUrl = browseResponse.metadata?.channelMetadataRenderer?.vanityChannelUrl;
+            const vanityMatch = vanityUrl ? vanityUrl.match(/\/(@[^\/?#]+)/) : null;
+            if (vanityMatch) {
+                handle = vanityMatch[1];
+            } else if (browseResponse.microformat?.microformatDataRenderer?.channelProfileMicroformatDetails?.profilePage?.mainEntity?.alternateName) {
+                handle = browseResponse.microformat.microformatDataRenderer.channelProfileMicroformatDetails.profilePage.mainEntity.alternateName;
+            } else if (browseResponse.header?.c4TabbedHeaderRenderer?.channelHandleText?.runs?.[0]?.text) {
+                handle = browseResponse.header.c4TabbedHeaderRenderer.channelHandleText.runs[0].text;
+            } else {
+                const metadataRows = browseResponse.header?.pageHeaderRenderer?.content?.pageHeaderViewModel?.metadata?.contentMetadataViewModel?.metadataRows;
+                if (Array.isArray(metadataRows)) {
+                    for (const row of metadataRows) {
+                        for (const part of (row?.metadataParts || [])) {
+                            const text = Utils.extractTextFromYtObject(part?.text);
+                            const m = text.match(/(@[^\s/?#]+)/);
+                            if (m) {
+                                handle = m[1];
+                                break;
+                            }
+                        }
+                        if (handle) break;
+                    }
+                }
+            }
+
+            if (handle) {
+                handle = decodeURIComponent(handle).trim();
+                if (!handle.startsWith('@')) handle = `@${handle}`;
+            }
+
+            // 3. Validation against expectedTarget (reject stale SPA browse objects)
+            if (expectedTarget) {
+                const targetClean = decodeURIComponent(expectedTarget).replace(/^@+/, '').toLowerCase();
+                if (expectedTarget.startsWith('UC')) {
+                    if (channelId !== expectedTarget) return null;
+                } else {
+                    const handleMatches = handle && handle.toLowerCase() === `@${targetClean}`;
+                    const vanityMatches = vanityUrl && decodeURIComponent(vanityUrl).toLowerCase().endsWith(`/${targetClean}`);
+                    const cachedMatches = DOMScanner.getChannelRecord(targetClean)?.channelId === channelId;
+                    if (!handleMatches && !vanityMatches && !cachedMatches) {
+                        return null;
+                    }
+                }
+            }
+
+            if (!channelId || !channelId.startsWith('UC')) {
+                return null;
+            }
+
+            // Fallback handle from cache if browse response didn't contain handle
+            if (!handle) {
+                const cached = DOMScanner.getChannelRecord(channelId);
+                if (cached?.handle) {
+                    handle = cached.handle.startsWith('@') ? cached.handle : `@${cached.handle}`;
+                }
+            }
+
+            // 4. Extract channelTitle
+            const channelTitle = (
+                browseResponse.metadata?.channelMetadataRenderer?.title
+                || browseResponse.microformat?.microformatDataRenderer?.channelProfileMicroformatDetails?.profilePage?.mainEntity?.name
+                || browseResponse.header?.pageHeaderRenderer?.pageTitle
+                || browseResponse.header?.c4TabbedHeaderRenderer?.title
+                || Utils.extractTextFromYtObject(browseResponse.header?.pageHeaderRenderer?.content?.pageHeaderViewModel?.title)
+                || ''
+            ).trim();
+
+            if (!channelTitle) {
+                return null;
+            }
+
+            // 5. Extract and clean external links
+            const rawLinks = Array.from(this.findExternalLinksInPayload(browseResponse));
+            const externalLinks = this.filterAndCleanExternalLinks(rawLinks);
+
+            const canonicalUrl = new URL(`https://www.youtube.com/channel/${channelId}`).href;
+            const handleUrl = handle ? new URL(`https://www.youtube.com/${handle.startsWith('@') ? handle : '@' + handle}`).href : null;
+
+            return {
+                channelId,
+                handle,
+                channelTitle,
+                canonicalUrl,
+                handleUrl,
+                externalLinks,
+                hasMicroformat: Boolean(browseResponse.microformat?.microformatDataRenderer)
+            };
+        }
+    };
+
+    /**
+     * Primary extractor executing direct POST requests against YouTube's Innertube API.
+     */
+    const InnertubeExtractor = {
+        /**
+         * Safely retrieves Innertube API key and context, deep-cloning context
+         * and optionally forcing Desktop WEB client for channel browse calls.
+         * @param {boolean} [forceWebClient=false]
+         * @returns {{ apiKey: string|null, context: Object|null }}
+         * @private
+         */
+        _getContext: function (forceWebClient = false) {
+            const apiKey = Utils.getYtcfgValue('INNERTUBE_API_KEY');
+            const rawContext = Utils.getYtcfgValue('INNERTUBE_CONTEXT');
+            if (!rawContext) return { apiKey, context: null };
+
+            const context = JSON.parse(JSON.stringify(rawContext));
+            if (forceWebClient) {
+                if (!context.client) context.client = {};
+                const isWebAlready = context.client.clientName === 'WEB';
+                context.client.clientName = 'WEB';
+                context.client.clientVersion = (isWebAlready && context.client.clientVersion)
+                    ? context.client.clientVersion
+                    : '2.20260220.00.00';
+            }
+            return { apiKey, context };
+        },
+
+        /**
+         * Fetches and parses video data for a videoId via POST /youtubei/v1/player.
+         * @param {string} videoId
+         * @returns {Promise<{ data: Object|null, durationMs: number, source: string, error: Error|null }>}
+         */
+        extractVideoData: async function (videoId) {
+            const startTime = performance.now();
+            try {
+                const { apiKey, context } = this._getContext(false);
+                if (!context) {
+                    throw new Error('Missing Innertube context');
+                }
+
+                const url = `/youtubei/v1/player?prettyPrint=false${apiKey ? `&key=${apiKey}` : ''}`;
+                const res = await fetch(url, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ context, videoId })
+                });
+
+                if (!res.ok) {
+                    throw new Error(`HTTP ${res.status}`);
+                }
+
+                const raw = await res.json();
+                const data = YouTubeSchemaParser.parsePlayerResponse(raw, videoId);
+                return {
+                    data,
+                    durationMs: Math.round(performance.now() - startTime),
+                    source: 'innertube_player',
+                    error: null
+                };
+            } catch (err) {
+                console.warn(`[${GM.info.script.name}] Innertube video extraction failed for ${videoId}:`, err);
+                return {
+                    data: null,
+                    durationMs: Math.round(performance.now() - startTime),
+                    source: 'innertube_player',
+                    error: err
+                };
+            }
+        },
+
+        /**
+         * Resolves a handle (@...) or path to canonical UC... channelId using resolve_url.
+         * @param {string} handleOrPath
+         * @returns {Promise<string|null>}
+         */
+        resolveChannelId: async function (handleOrPath) {
+            if (!handleOrPath) return null;
+            const cached = DOMScanner.getChannelRecord(handleOrPath);
+            if (cached?.channelId) return cached.channelId;
+
+            try {
+                const { apiKey, context } = this._getContext(false);
+                if (!context) return null;
+
+                const cleanTarget = handleOrPath.startsWith('/') ? handleOrPath : `/${handleOrPath}`;
+                const resolveUrl = new URL(cleanTarget, 'https://www.youtube.com').href;
+                const url = `/youtubei/v1/navigation/resolve_url?prettyPrint=false${apiKey ? `&key=${apiKey}` : ''}`;
+
+                const res = await fetch(url, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ context, url: resolveUrl })
+                });
+
+                if (res.ok) {
+                    const data = await res.json();
+                    const browseId = data?.endpoint?.browseEndpoint?.browseId;
+                    if (browseId && browseId.startsWith('UC')) {
+                        const cleanHandle = handleOrPath.replace(/^\/?@?/, '');
+                        DOMScanner.cacheChannelData(cleanHandle, browseId);
+                        return browseId;
+                    }
+                }
+            } catch (err) {
+                console.warn(`[${GM.info.script.name}] Failed to resolve ${handleOrPath} via Innertube:`, err);
+            }
+            return null;
+        },
+
+        /**
+         * Fetches and parses channel metadata and external links via POST /youtubei/v1/browse.
+         * @param {string} expectedTarget - Handle (@...) or channel ID (UC...)
+         * @returns {Promise<{ data: Object|null, durationMs: number, source: string, error: Error|null }>}
+         */
+        extractChannelData: async function (expectedTarget) {
+            const startTime = performance.now();
+
+            // Check verified session cache first
+            const cached = DOMScanner.getChannelRecord(expectedTarget);
+            if (cached?.innertubeFetched && cached.channelId && cached.channelTitle && Array.isArray(cached.externalLinks)) {
+                return {
+                    data: {
+                        channelId: cached.channelId,
+                        handle: cached.handle ? (cached.handle.startsWith('@') ? cached.handle : `@${cached.handle}`) : null,
+                        channelTitle: cached.channelTitle,
+                        canonicalUrl: new URL(`https://www.youtube.com/channel/${cached.channelId}`).href,
+                        handleUrl: cached.handle ? new URL(`https://www.youtube.com/${cached.handle.startsWith('@') ? cached.handle : '@' + cached.handle}`).href : null,
+                        externalLinks: cached.externalLinks,
+                        hasMicroformat: true,
+                        resolutionSource: 'session_cache'
+                    },
+                    durationMs: Math.round(performance.now() - startTime),
+                    source: 'innertube_browse',
+                    error: null
+                };
+            }
+
+            try {
+                let channelId = null;
+                if (expectedTarget?.startsWith('UC')) {
+                    channelId = expectedTarget;
+                } else {
+                    channelId = await this.resolveChannelId(expectedTarget);
+                }
+
+                if (!channelId) {
+                    throw new Error(`Could not resolve channelId for ${expectedTarget}`);
+                }
+
+                const { apiKey, context } = this._getContext(true);
+                if (!context) {
+                    throw new Error('Missing Innertube context');
+                }
+
+                const url = `/youtubei/v1/browse?prettyPrint=false${apiKey ? `&key=${apiKey}` : ''}`;
+                const headers = {
+                    'Content-Type': 'application/json',
+                    'X-YouTube-Client-Name': '1'
+                };
+                if (context?.client?.clientVersion) {
+                    headers['X-YouTube-Client-Version'] = context.client.clientVersion;
+                }
+
+                const res = await fetch(url, {
+                    method: 'POST',
+                    headers,
+                    body: JSON.stringify({ context, browseId: channelId })
+                });
+
+                if (!res.ok) {
+                    throw new Error(`HTTP ${res.status}`);
+                }
+
+                const raw = await res.json();
+                const parsed = YouTubeSchemaParser.parseBrowseResponse(raw, expectedTarget);
+                if (!parsed) {
+                    throw new Error(`Failed to parse browse response for ${expectedTarget}`);
+                }
+
+                DOMScanner.cacheChannelData(parsed.handle || expectedTarget, parsed.channelId, parsed.externalLinks, true, parsed.channelTitle);
+                parsed.resolutionSource = 'innertube_browse';
+
+                return {
+                    data: parsed,
+                    durationMs: Math.round(performance.now() - startTime),
+                    source: 'innertube_browse',
+                    error: null
+                };
+            } catch (err) {
+                console.warn(`[${GM.info.script.name}] Innertube channel extraction failed for ${expectedTarget}:`, err);
+                return {
+                    data: null,
+                    durationMs: Math.round(performance.now() - startTime),
+                    source: 'innertube_browse',
+                    error: err
+                };
+            }
         }
     };
 
@@ -1235,24 +1616,68 @@
          * @param {string[]} [externalLinks]
          * @returns {{ channelId?: string, handle?: string, externalLinks?: string[] }}
          */
-        cacheChannelData: function (handle, channelId, externalLinks = null) {
+        cacheChannelData: function (handle, channelId, externalLinks = null, innertubeFetched = false, channelTitle = null) {
             const cleanHandle = handle ? decodeURIComponent(handle).replace(/^@+/, '').trim().toLowerCase() : null;
             const cleanId = channelId && channelId.startsWith('UC') ? channelId : null;
 
-            // Find existing record by either handle or channelId
-            let record = (cleanId && this._channelCache.get(cleanId))
-                || (cleanHandle && this._channelCache.get(cleanHandle))
-                || {};
+            if (!cleanHandle && !cleanId) return null;
 
-            if (cleanId) record.channelId = cleanId;
-            if (cleanHandle) record.handle = cleanHandle;
-            if (Array.isArray(externalLinks)) record.externalLinks = externalLinks;
+            const recordById = cleanId ? this._channelCache.get(cleanId) : null;
+            const recordByHandle = cleanHandle ? this._channelCache.get(cleanHandle) : null;
+
+            // Guard against conflicting records: only merge if they belong to the same entity
+            let record;
+            if (recordById && recordByHandle) {
+                if (recordById === recordByHandle) {
+                    record = recordById;
+                } else {
+                    // Conflict: different existing records. Keep separate to prevent cross-creator pollution.
+                    record = cleanId ? recordById : recordByHandle;
+                }
+            } else {
+                record = recordById || recordByHandle || {};
+            }
+
+            // Prevent overwriting someone else's ID or handle
+            if (cleanId) {
+                if (record.channelId && record.channelId !== cleanId) {
+                    record = { channelId: cleanId };
+                } else {
+                    record.channelId = cleanId;
+                }
+            }
+            if (cleanHandle) {
+                if (record.handle && record.handle !== cleanHandle) {
+                    record = { handle: cleanHandle, ...(cleanId ? { channelId: cleanId } : {}) };
+                } else {
+                    record.handle = cleanHandle;
+                }
+            }
+
+            if (channelTitle && typeof channelTitle === 'string') {
+                record.channelTitle = channelTitle;
+            }
+            if (Array.isArray(externalLinks)) {
+                record.externalLinks = externalLinks;
+            }
+            if (innertubeFetched) {
+                record.innertubeFetched = true;
+            }
 
             // Index under both keys pointing to the same shared object reference
-            if (cleanId) this._channelCache.set(cleanId, record);
-            if (cleanHandle) this._channelCache.set(cleanHandle, record);
+            if (record.channelId) this._channelCache.set(record.channelId, record);
+            if (record.handle) this._channelCache.set(record.handle, record);
 
             return record;
+        },
+
+        /**
+         * Resolves a channel @handle to its canonical UC... channelId using Innertube resolve_url.
+         * @param {string} handle
+         * @returns {Promise<string|null>}
+         */
+        resolveChannelId: function (handle) {
+            return InnertubeExtractor.resolveChannelId(handle);
         },
 
 
@@ -1364,6 +1789,10 @@
                 outcome,
                 timing: {
                     totalDurationMs: timing.totalDurationMs || 0,
+                    buttonRenderedMs: timing.buttonRenderedMs ?? null,
+                    anchorWaitMs: timing.anchorWaitMs ?? null,
+                    heldUpAfterAnchorMs: timing.heldUpAfterAnchorMs ?? null,
+                    ytNavigateFinishMs: timing.ytNavigateFinishMs ?? null,
                     metadataExtractionMs: timing.metadataExtractionMs || 0,
                     lookupDurationMs: timing.lookupDurationMs || 0
                 },
@@ -1444,6 +1873,10 @@
                 outcome,
                 timing: {
                     totalDurationMs: timing.totalDurationMs || 0,
+                    buttonRenderedMs: timing.buttonRenderedMs ?? null,
+                    anchorWaitMs: timing.anchorWaitMs ?? null,
+                    heldUpAfterAnchorMs: timing.heldUpAfterAnchorMs ?? null,
+                    ytNavigateFinishMs: timing.ytNavigateFinishMs ?? null,
                     linkExtractionMs: timing.linkExtractionMs || 0,
                     lookupDurationMs: timing.lookupDurationMs || 0
                 },
@@ -1478,388 +1911,7 @@
             return /^\/(?:@[^\/]+|channel\/UC[\w-]+|c\/[^\/]+|user\/[^\/]+)(?:\/|$)/u.test(decodedPath);
         },
 
-        /**
-         * Extracts channel ID, handle, display name, and resolution source from navigation event, URL, DOM, and cache.
-         * @param {CustomEvent} [event] Optional navigation event detail.
-         * @returns {{ channelId: string|null, handle: string|null, channelTitle: string, canonicalUrl: string|null, handleUrl: string|null, resolutionSource: string }}
-         */
-        getChannelData: function (event) {
-            // 1. Extract Handle (@...) directly from URL pathname
-            let handle = null;
-            const decodedPath = decodeURIComponent(location.pathname);
-            const handleMatch = decodedPath.match(/\/(@[^\/?#]+)/);
-            if (handleMatch) {
-                handle = handleMatch[1];
-            }
-
-            // 2. Extract Channel ID (UC...) and Resolution Source
-            let channelId = null;
-            let resolutionSource = 'unknown';
-
-            // Source A: Direct URL pathname (/channel/UC...)
-            const pathChannelMatch = location.pathname.match(/\/channel\/(UC[A-Za-z0-9_-]+)/);
-            if (pathChannelMatch) {
-                channelId = pathChannelMatch[1];
-                resolutionSource = 'url_pathname';
-            }
-
-            // Source B: Navigation Event Payload (when event is present)
-            const eventDetail = event && event.detail;
-            const eventResponse = eventDetail
-                ? (eventDetail.response?.response || eventDetail.response || null)
-                : (!event ? pageWin.ytInitialData : null);
-
-            if (!channelId && eventDetail) {
-                // Check trackingParams browse_id (standard in YouTube navigation payloads)
-                const trackingParams = eventResponse && eventResponse.responseContext && eventResponse.responseContext.serviceTrackingParams;
-                if (Array.isArray(trackingParams)) {
-                    for (const stp of trackingParams) {
-                        if (Array.isArray(stp.params)) {
-                            const bidParam = stp.params.find(p => p && p.key === 'browse_id');
-                            if (bidParam && typeof bidParam.value === 'string' && bidParam.value.startsWith('UC')) {
-                                channelId = bidParam.value;
-                                resolutionSource = 'nav_tracking_params';
-                                break;
-                            }
-                        }
-                    }
-                }
-
-                // Check browseEndpoints in detail/response
-                if (!channelId) {
-                    const browseId = (eventDetail.endpoint && eventDetail.endpoint.browseEndpoint && eventDetail.endpoint.browseEndpoint.browseId)
-                        || (eventDetail.response && eventDetail.response.endpoint && eventDetail.response.endpoint.browseEndpoint && eventDetail.response.endpoint.browseEndpoint.browseId)
-                        || (eventResponse && eventResponse.endpoint && eventResponse.endpoint.browseEndpoint && eventResponse.endpoint.browseEndpoint.browseId);
-                    if (browseId && typeof browseId === 'string' && browseId.startsWith('UC')) {
-                        channelId = browseId;
-                        resolutionSource = 'nav_browse_endpoint';
-                    }
-                }
-
-                // Check metadata / header in eventResponse
-                if (!channelId && eventResponse) {
-                    const extId = (eventResponse.metadata && eventResponse.metadata.channelMetadataRenderer && eventResponse.metadata.channelMetadataRenderer.externalId)
-                        || (eventResponse.header && eventResponse.header.c4TabbedHeaderRenderer && eventResponse.header.c4TabbedHeaderRenderer.channelId);
-                    if (extId && typeof extId === 'string' && extId.startsWith('UC')) {
-                        channelId = extId;
-                        resolutionSource = 'nav_metadata';
-                    }
-                }
-            }
-
-            // Source C: Initial Page Load (DOM & Initial Data when !event)
-            if (!channelId && !event) {
-                // Check DOM JSON-LD script tags
-                const ldScripts = document.querySelectorAll('script[type="application/ld+json"]');
-                for (const script of ldScripts) {
-                    try {
-                        const data = JSON.parse(script.textContent);
-                        const entityUrl = data && (data.mainEntity?.url || data.url);
-                        if (typeof entityUrl === 'string') {
-                            const m = entityUrl.match(/\/channel\/(UC[A-Za-z0-9_-]+)/);
-                            if (m) {
-                                channelId = m[1];
-                                resolutionSource = 'dom_json_ld';
-                                break;
-                            }
-                        }
-                    } catch (err) {
-                        Logger.warn('Failed to parse DOM JSON-LD script tag', err);
-                    }
-                }
-
-                // Check DOM Meta & Canonical Link
-                if (!channelId) {
-                    const channelIdMeta = document.querySelector('meta[itemprop="channelId"], meta[itemprop="identifier"]');
-                    if (channelIdMeta && channelIdMeta.content && channelIdMeta.content.startsWith('UC')) {
-                        channelId = channelIdMeta.content;
-                        resolutionSource = 'dom_meta';
-                    }
-                }
-
-                // Check initialData trackingParams / metadata
-                if (!channelId && pageWin.ytInitialData) {
-                    const trackingParams = pageWin.ytInitialData.responseContext && pageWin.ytInitialData.responseContext.serviceTrackingParams;
-                    if (Array.isArray(trackingParams)) {
-                        for (const stp of trackingParams) {
-                            if (Array.isArray(stp.params)) {
-                                const bidParam = stp.params.find(p => p && p.key === 'browse_id');
-                                if (bidParam && typeof bidParam.value === 'string' && bidParam.value.startsWith('UC')) {
-                                    channelId = bidParam.value;
-                                    resolutionSource = 'initial_data_tracking_params';
-                                    break;
-                                }
-                            }
-                        }
-                    }
-                    if (!channelId) {
-                        const extId = (pageWin.ytInitialData.metadata && pageWin.ytInitialData.metadata.channelMetadataRenderer && pageWin.ytInitialData.metadata.channelMetadataRenderer.externalId)
-                            || (pageWin.ytInitialData.header && pageWin.ytInitialData.header.c4TabbedHeaderRenderer && pageWin.ytInitialData.header.c4TabbedHeaderRenderer.channelId);
-                        if (extId && typeof extId === 'string' && extId.startsWith('UC')) {
-                            channelId = extId;
-                            resolutionSource = 'initial_data_metadata';
-                        }
-                    }
-                }
-
-                // Check ytcfg globals (only on initial load if no handle in URL)
-                if (!channelId && !handle) {
-                    const cfgId = pageWin.ytcfg?.get?.('CHANNEL_ID') || pageWin.ytcfg?.data_?.CHANNEL_ID;
-                    if (cfgId && typeof cfgId === 'string' && cfgId.startsWith('UC')) {
-                        channelId = cfgId;
-                        resolutionSource = 'initial_data_ytcfg';
-                    }
-                }
-            }
-
-            // Source D: Session Cache fallback
-            if (!channelId && handle) {
-                const cachedRecord = this.getChannelRecord(handle);
-                if (cachedRecord && cachedRecord.channelId) {
-                    channelId = cachedRecord.channelId;
-                    resolutionSource = 'handle_cache';
-                }
-            }
-
-            // Cache discovered mapping for subsequent navigation
-            if (handle || channelId) {
-                this.cacheChannelData(handle, channelId);
-            }
-
-            // 3. Extract Channel Title directly from event payload / initial data / DOM
-            let channelTitle = '';
-            const eventTitle = Utils.extractTextFromYtObject(eventResponse?.metadata?.channelMetadataRenderer?.title)
-                || Utils.extractTextFromYtObject(eventResponse?.header?.pageHeaderRenderer?.content?.pageHeaderViewModel?.title)
-                || Utils.extractTextFromYtObject(eventResponse?.header?.pageHeaderRenderer?.pageTitle)
-                || Utils.extractTextFromYtObject(eventResponse?.header?.c4TabbedHeaderRenderer?.title)
-                || Utils.extractTextFromYtObject(eventResponse?.microformat?.microformatDataRenderer?.title);
-
-            if (eventTitle) {
-                channelTitle = eventTitle;
-            } else if (!event && document.title) {
-                channelTitle = document.title.replace(/\s*-\s*YouTube$/, '').trim();
-            }
-
-            const canonicalUrl = channelId ? new URL(`https://www.youtube.com/channel/${channelId}`).href : null;
-            const handleUrl = handle ? new URL(`https://www.youtube.com/${handle.startsWith('@') ? handle : `@${handle}`}`).href : null;
-
-            return {
-                channelId,
-                handle,
-                channelTitle,
-                canonicalUrl,
-                handleUrl,
-                resolutionSource
-            };
-        },
-
-        /**
-         * Extracts verified external profile links from schema.org / microformat sameAs arrays and strings.
-         * @param {Object} obj
-         * @param {Set<string>} [discoveredUrls=new Set()]
-         * @param {WeakSet<Object>} [seenObjects=new WeakSet()]
-         * @returns {Set<string>}
-         */
-        findExternalLinksInPayload: function (obj, discoveredUrls = new Set(), seenObjects = new WeakSet()) {
-            if (!obj || typeof obj !== 'object') return discoveredUrls;
-            if (seenObjects.has(obj)) return discoveredUrls;
-            seenObjects.add(obj);
-
-            if (Array.isArray(obj)) {
-                for (const item of obj) {
-                    if (item && typeof item === 'object') {
-                        this.findExternalLinksInPayload(item, discoveredUrls, seenObjects);
-                    }
-                }
-                return discoveredUrls;
-            }
-
-            // Extract sameAs (array or string: schema.org, JSON-LD, microformat)
-            if (Array.isArray(obj.sameAs)) {
-                for (const rawUrl of obj.sameAs) {
-                    const clean = Utils.unwrapRedirectUrl(rawUrl);
-                    if (clean && !Utils.isInternalYouTubeUrl(clean)) {
-                        discoveredUrls.add(clean);
-                    }
-                }
-            } else if (typeof obj.sameAs === 'string') {
-                const clean = Utils.unwrapRedirectUrl(obj.sameAs);
-                if (clean && !Utils.isInternalYouTubeUrl(clean)) {
-                    discoveredUrls.add(clean);
-                }
-            }
-
-            // Skip heavy subtrees that never contain channel metadata / sameAs
-            const skipKeys = new Set([
-                'videoRenderer',
-                'reelItemRenderer',
-                'commentRenderer',
-                'postRenderer',
-                'compactVideoRenderer',
-                'playlistRenderer',
-                'shelfRenderer',
-                'richItemRenderer',
-                'richGridRenderer',
-                'horizontalListRenderer',
-                'thumbnail',
-                'avatar',
-                'lottieData',
-                'themedPalette',
-                'trackingParams'
-            ]);
-
-            for (const key of Object.keys(obj)) {
-                if (skipKeys.has(key)) continue;
-                const val = obj[key];
-                if (val && typeof val === 'object') {
-                    this.findExternalLinksInPayload(val, discoveredUrls, seenObjects);
-                }
-            }
-
-            return discoveredUrls;
-        },
-
-        /**
-         * Scans the active DOM JSON-LD metadata for sameAs profile links on initial page load.
-         * @param {Set<string>} [discoveredUrls=new Set()]
-         * @returns {Set<string>}
-         */
-        findExternalLinksInDOM: function (discoveredUrls = new Set()) {
-            // Extract from schema.org JSON-LD script tags
-            const ldScripts = document.querySelectorAll('script[type="application/ld+json"]');
-            for (const script of ldScripts) {
-                try {
-                    const data = JSON.parse(script.textContent);
-                    this.findExternalLinksInPayload(data, discoveredUrls);
-                } catch (err) {
-                    Logger.warn('Failed to parse JSON-LD script tag', err);
-                }
-            }
-
-            return discoveredUrls;
-        },
-
-        /**
-         * Fetches and extracts all external channel links (Patreon, Fanbox, Twitter, Instagram, official shop, etc.)
-         * from in-page objects, DOM elements, and Innertube API continuations.
-         * @param {{ channelId?: string|null, handle?: string|null }} channelData
-         * @param {CustomEvent} [event]
-         * @returns {Promise<{ externalLinks: string[], sources: Object }>}
-         */
-        fetchChannelExternalLinks: async function (channelData = {}, event) {
-            const discoveredUrls = new Set();
-            const sources = {
-                cache: { hit: false, count: 0 },
-                navigationPayload: { checked: false, count: 0 },
-                initialDataPayload: { checked: false, count: 0 },
-                dom: { checked: false, count: 0 },
-                innertubeContinuation: { attempted: false, method: null, status: null, count: 0, error: null }
-            };
-
-            const channelId = channelData.channelId;
-
-            // Check cached channel links
-            const cachedRecord = this.getChannelRecord(channelId || channelData.handle);
-            if (cachedRecord && Array.isArray(cachedRecord.externalLinks)) {
-                sources.cache = { hit: true, count: cachedRecord.externalLinks.length };
-                for (const u of cachedRecord.externalLinks) {
-                    discoveredUrls.add(u);
-                }
-            }
-
-            // 1. Extract from navigation event response (for current navigation)
-            const eventResponse = event?.detail?.response?.response
-                || event?.detail?.response
-                || null;
-            if (eventResponse) {
-                sources.navigationPayload.checked = true;
-                const before = discoveredUrls.size;
-                this.findExternalLinksInPayload(eventResponse, discoveredUrls);
-                sources.navigationPayload.count = discoveredUrls.size - before;
-            }
-
-            // 2. Extract from pageWin.ytInitialData ONLY on initial page load (when !event)
-            // This prevents stale links from prior channels persisting across SPA navigation
-            if (!event && pageWin.ytInitialData) {
-                sources.initialDataPayload.checked = true;
-                const before = discoveredUrls.size;
-                this.findExternalLinksInPayload(pageWin.ytInitialData, discoveredUrls);
-                sources.initialDataPayload.count = discoveredUrls.size - before;
-            }
-
-            // 3. Extract from active DOM & JSON-LD ONLY on initial page load (when !event)
-            // This prevents stale JSON-LD scripts from previous channels persisting across SPA navigation
-            if (!event) {
-                sources.dom.checked = true;
-                const domBefore = discoveredUrls.size;
-                this.findExternalLinksInDOM(discoveredUrls);
-                sources.dom.count = discoveredUrls.size - domBefore;
-            }
-
-            // 4. Fallback: Query Innertube /browse only if channelId is known, uncached, and in-page extraction found nothing
-            if (channelId && channelId.startsWith('UC') && !sources.cache.hit && discoveredUrls.size === 0) {
-                sources.innertubeContinuation.attempted = true;
-                const innertubeStartTime = performance.now();
-                try {
-                    const apiKey = Utils.getYtcfgValue('INNERTUBE_API_KEY');
-                    const context = Utils.getYtcfgValue('INNERTUBE_CONTEXT');
-                    const clientVersion = Utils.getYtcfgValue('INNERTUBE_CLIENT_VERSION');
-                    const clientName = Utils.getYtcfgValue('INNERTUBE_CONTEXT_CLIENT_NAME') || Utils.getYtcfgValue('INNERTUBE_CLIENT_NAME');
-
-                    if (!context) {
-                        sources.innertubeContinuation.error = 'Missing Innertube context';
-                    } else {
-                        const requestBody = {
-                            context,
-                            browseId: channelId,
-                            params: 'EghmZWF0dXJlZPIGBAoCEgA='
-                        };
-
-                        const url = `/youtubei/v1/browse?prettyPrint=false${apiKey ? `&key=${apiKey}` : ''}`;
-                        sources.innertubeContinuation.method = 'fetch';
-
-                        const headers = {
-                            'Content-Type': 'application/json'
-                        };
-                        if (clientName) headers['X-YouTube-Client-Name'] = String(clientName);
-                        if (clientVersion) headers['X-YouTube-Client-Version'] = String(clientVersion);
-
-                        const response = await fetch(url, {
-                            method: 'POST',
-                            headers,
-                            body: JSON.stringify(requestBody)
-                        });
-
-                        sources.innertubeContinuation.status = response.status;
-                        if (response.ok) {
-                            const responseData = await response.json();
-                            const beforeFetchCount = discoveredUrls.size;
-                            this.findExternalLinksInPayload(responseData, discoveredUrls);
-                            sources.innertubeContinuation.count = discoveredUrls.size - beforeFetchCount;
-                        } else {
-                            sources.innertubeContinuation.error = `HTTP ${response.status}`;
-                        }
-                    }
-                } catch (err) {
-                    sources.innertubeContinuation.error = err.message || String(err);
-                    Logger.warn('Failed to fetch Innertube About drawer continuation', err);
-                } finally {
-                    sources.innertubeContinuation.durationMs = Math.round(performance.now() - innertubeStartTime);
-                }
-            }
-
-            const externalLinks = Array.from(discoveredUrls);
-
-            // Cache discovered links
-            this.cacheChannelData(channelData.handle, channelId, externalLinks);
-
-            return {
-                externalLinks,
-                sources
-            };
-        },
-
-        /**
+/**
          * Checks if the current page is a YouTube channel or user page.
          * @returns {string|null} The channel identifier or null.
          */
@@ -1887,13 +1939,39 @@
          * Finds the DOM element where channel page buttons should be appended.
          * @returns {Promise<HTMLElement|null>} A promise that resolves with the channel dock element, or null.
          */
-        getChannelAnchorElement: async function () {
-            try {
-                return await Utils.waitForElement(Config.SELECTORS.CHANNEL_DOCK, 10000);
-            } catch (e) {
-                console.error(`[${GM.info.script.name}] Could not find channel dock element:`, e);
-                return null;
+        /**
+         * Finds the DOM element where channel page buttons should be appended,
+         * waiting until the channel header matches the expected handle/channelId to prevent docking onto stale SPA elements.
+         * @param {string|null} [expectedHandleOrId=null]
+         * @param {number} [maxWaitMs=5000]
+         * @param {number} [intervalMs=100]
+         * @returns {Promise<HTMLElement|null>} A promise that resolves with the channel dock element, or null.
+         */
+        getChannelAnchorElement: async function (expectedHandleOrId = null, maxWaitMs = 5000, intervalMs = 100) {
+            const startTime = performance.now();
+            const target = expectedHandleOrId ? expectedHandleOrId.toLowerCase().replace(/^@+/, '') : null;
+
+            while (performance.now() - startTime < maxWaitMs) {
+                if (!this.isChannelPage()) return null;
+
+                const dock = document.querySelector(Config.SELECTORS.CHANNEL_DOCK);
+                if (dock) {
+                    if (!target) return dock;
+                    const header = dock.closest('yt-page-header-view-model, ytd-page-header-renderer, ytd-c4-tabbed-header-renderer, ytm-c4-tabbed-header-renderer, ytm-channel-header-renderer')
+                        || document.querySelector('yt-page-header-view-model, ytd-page-header-renderer, ytd-c4-tabbed-header-renderer, ytm-c4-tabbed-header-renderer, ytm-channel-header-renderer');
+                    if (header) {
+                        const headerText = (header.textContent || '').toLowerCase();
+                        const subVmId = header.querySelector('yt-subscribe-button-view-model, subscribe-button-view-model')?.data?.channelId;
+                        if (headerText.includes(`@${target}`) || headerText.includes(target) || (subVmId && subVmId.toLowerCase() === target)) {
+                            return dock;
+                        }
+                    }
+                }
+                await Utils.sleep(intervalMs);
             }
+
+            // Fallback to any mounted dock element after timeout
+            return document.querySelector(Config.SELECTORS.CHANNEL_DOCK);
         },
     };
 
@@ -1924,6 +2002,18 @@
          */
         appendToDock(dockElement) {
             if (!dockElement || dockElement.contains(this._containerDiv)) return;
+            if (dockElement.classList?.contains('slim-video-action-bar-actions')) {
+                const existingMbContainer = dockElement.querySelector('.' + Config.CLASS_NAMES.CONTAINER);
+                if (existingMbContainer && existingMbContainer !== this._containerDiv && existingMbContainer.parentNode === dockElement) {
+                    existingMbContainer.after(this._containerDiv);
+                    return;
+                }
+                const subscribeAnchor = dockElement.querySelector('.slim-subscribe-button');
+                if (subscribeAnchor && subscribeAnchor.parentNode === dockElement) {
+                    subscribeAnchor.after(this._containerDiv);
+                    return;
+                }
+            }
             dockElement.appendChild(this._containerDiv);
         }
 
@@ -2003,9 +2093,21 @@
             }));
         }
 
+        /**
+         * Neutralizes previous interactive handlers/links and dims the existing button in-place
+         * during SPA navigation without hiding or changing its label/width until the new page resolves.
+         */
+        prepareForNavigation() {
+            this.setPending(true);
+        }
+
         resetState() {
             this.clear();
             this.hide();
+        }
+
+        reset() {
+            this.resetState();
         }
     }
 
@@ -2044,7 +2146,36 @@
             this._form.insertBefore(field, this._submitButton.container);
         }
 
+        _setMousedownHandler(handler) {
+            if (this._mousedownHandler) {
+                this._submitButton.element.removeEventListener('pointerdown', this._mousedownHandler);
+                this._submitButton.element.removeEventListener('mousedown', this._mousedownHandler);
+                this._mousedownHandler = null;
+            }
+            if (handler) {
+                let fired = false;
+                this._mousedownHandler = (e) => {
+                    if (fired) return;
+                    fired = true;
+                    handler(e);
+                };
+                this._submitButton.element.addEventListener('pointerdown', this._mousedownHandler, { once: true });
+                this._submitButton.element.addEventListener('mousedown', this._mousedownHandler, { once: true });
+            }
+        }
+
+        prepareForNavigation() {
+            this._setMousedownHandler(null);
+            Array.from(this._form.querySelectorAll('input[type="hidden"]')).forEach(input => this._form.removeChild(input));
+            Array.from(this._containerDiv.querySelectorAll('a[href]')).forEach(a => a.removeAttribute('href'));
+            if (this._containerDiv.style.display !== 'none') {
+                this._containerDiv.style.opacity = '0.5';
+                this._containerDiv.style.pointerEvents = 'none';
+            }
+        }
+
         resetState() {
+            this._setMousedownHandler(null);
             Array.from(this._form.querySelectorAll('input[type="hidden"]')).forEach(input => this._form.removeChild(input));
             this.clear();
             this._form.style.display = 'none';
@@ -2059,10 +2190,31 @@
             this.hide();
         }
 
+        reset() {
+            this.resetState();
+        }
+
         setPending(isPending = true) {
+            this._setMousedownHandler(null);
             super.setPending(isPending);
-            if (this._submitButton) {
-                if (isPending) {
+            const isAlreadyVisible = this._containerDiv.style.display !== 'none' && this._containerDiv.childElementCount > 0;
+            if (isPending) {
+                if (isAlreadyVisible) {
+                    // Preserve existing button label, variant, and width during SPA navigation
+                    this.prepareForNavigation();
+                    const activeBtn = this._containerDiv.querySelector('.yt-spec-button-shape-next__icon, .ytSpecButtonShapeNextIcon');
+                    if (activeBtn) {
+                        while (activeBtn.firstChild) {
+                            activeBtn.removeChild(activeBtn.firstChild);
+                        }
+                        const svg = createSvgElement(SVGIcons.spinner);
+                        if (svg) activeBtn.appendChild(svg);
+                    }
+                    return;
+                }
+                if (this._submitButton) {
+                    this.clear();
+                    this._containerDiv.appendChild(this._form);
                     this._submitButton.update({
                         label: L10n.getString('loading'),
                         title: L10n.getString('loading'),
@@ -2070,11 +2222,11 @@
                         disabled: true
                     });
                     this._form.style.display = 'inline-flex';
+                    this._submitButton.setPending(true);
                 }
-                this._submitButton.setPending(isPending);
-            }
-            if (isPending) {
                 this.show();
+            } else if (this._submitButton) {
+                this._submitButton.setPending(false);
             }
         }
 
@@ -2139,7 +2291,7 @@
                 });
                 YouTubeMusicBrainzImporter._mbApi.invalidateCacheForUrl(urlsToInvalidate);
             };
-            this._submitButton.element.addEventListener('mousedown', invalidateCacheAndPrefetch, { once: true });
+            this._setMousedownHandler(invalidateCacheAndPrefetch);
 
             return {
                 outcome: 'unlinked_add_recording',
@@ -2369,7 +2521,45 @@
             this._seedLinksButton.hide();
         }
 
+        _setMainMousedownHandler(handler) {
+            if (this._mainMousedownHandler) {
+                this._mainButton.element.removeEventListener('pointerdown', this._mainMousedownHandler);
+                this._mainButton.element.removeEventListener('mousedown', this._mainMousedownHandler);
+                this._mainMousedownHandler = null;
+            }
+            if (handler) {
+                let fired = false;
+                this._mainMousedownHandler = (e) => {
+                    if (fired) return;
+                    fired = true;
+                    handler(e);
+                };
+                this._mainButton.element.addEventListener('pointerdown', this._mainMousedownHandler, { once: true });
+                this._mainButton.element.addEventListener('mousedown', this._mainMousedownHandler, { once: true });
+            }
+        }
+
+        _setSeedMousedownHandler(handler) {
+            if (this._seedMousedownHandler) {
+                this._seedLinksButton.element.removeEventListener('pointerdown', this._seedMousedownHandler);
+                this._seedLinksButton.element.removeEventListener('mousedown', this._seedMousedownHandler);
+                this._seedMousedownHandler = null;
+            }
+            if (handler) {
+                let fired = false;
+                this._seedMousedownHandler = (e) => {
+                    if (fired) return;
+                    fired = true;
+                    handler(e);
+                };
+                this._seedLinksButton.element.addEventListener('pointerdown', this._seedMousedownHandler, { once: true });
+                this._seedLinksButton.element.addEventListener('mousedown', this._seedMousedownHandler, { once: true });
+            }
+        }
+
         reset() {
+            this._setMainMousedownHandler(null);
+            this._setSeedMousedownHandler(null);
             this.hide();
             if (this._mainButton) {
                 this._mainButton.update({
@@ -2377,32 +2567,80 @@
                     title: L10n.getString('loading'),
                     icon: SVGIcons.musicbrainz,
                     variant: 'tonal',
-                    disabled: true
+                    disabled: true,
+                    href: null,
+                    onClick: null
                 });
+                if (this._mainButton.element?.tagName === 'A') {
+                    this._mainButton.element.removeAttribute('href');
+                    this._mainButton.element.removeAttribute('target');
+                }
             }
             if (this._seedLinksButton) {
+                this._seedLinksButton.update({
+                    label: '',
+                    title: '',
+                    href: null,
+                    onClick: null
+                });
+                if (this._seedLinksButton.element?.tagName === 'A') {
+                    this._seedLinksButton.element.removeAttribute('href');
+                    this._seedLinksButton.element.removeAttribute('target');
+                }
                 this._seedLinksButton.hide();
             }
         }
 
+        prepareForNavigation() {
+            this._setMainMousedownHandler(null);
+            this._setSeedMousedownHandler(null);
+            if (this._mainButton?.element?.tagName === 'A') {
+                this._mainButton.element.removeAttribute('href');
+            }
+            if (this._seedLinksButton?.element?.tagName === 'A') {
+                this._seedLinksButton.element.removeAttribute('href');
+            }
+            if (this._containerDiv.style.display !== 'none') {
+                this._containerDiv.style.opacity = '0.5';
+                this._containerDiv.style.pointerEvents = 'none';
+            }
+        }
+
         setPending(isPending = true) {
+            this._setMainMousedownHandler(null);
+            this._setSeedMousedownHandler(null);
             super.setPending(isPending);
-            if (this._mainButton) {
-                if (isPending) {
+            const isAlreadyVisible = this._containerDiv.style.display !== 'none' && this._mainButton?.element?.textContent && this._mainButton.element.textContent !== L10n.getString('loading');
+            if (isPending) {
+                if (isAlreadyVisible) {
+                    // Preserve existing button label, variant, and width during SPA navigation
+                    this.prepareForNavigation();
+                    this._mainButton.setPending(true);
+                    return;
+                }
+                if (this._mainButton) {
                     this._mainButton.update({
                         label: L10n.getString('loading'),
                         title: L10n.getString('loading'),
                         variant: 'tonal',
-                        disabled: true
+                        disabled: true,
+                        href: null,
+                        onClick: null
                     });
+                    if (this._mainButton.element?.tagName === 'A') {
+                        this._mainButton.element.removeAttribute('href');
+                    }
+                    this._mainButton.setPending(true);
                 }
-                this._mainButton.setPending(isPending);
-            }
-            if (this._seedLinksButton && isPending) {
-                this._seedLinksButton.hide();
-            }
-            if (isPending) {
+                if (this._seedLinksButton) {
+                    if (this._seedLinksButton.element?.tagName === 'A') {
+                        this._seedLinksButton.element.removeAttribute('href');
+                    }
+                    this._seedLinksButton.hide();
+                }
                 this.show();
+            } else if (this._mainButton) {
+                this._mainButton.setPending(false);
             }
         }
 
@@ -2435,9 +2673,18 @@
                 candidateExternalLinks.forEach((link, idx) => {
                     params.set(`edit-${targetType}.url.${idx}.text`, link);
                 });
-                const scriptInfo = GM_info.script;
-                const sourceUrl = channelUrl || location.href.split('?')[0];
-                const editNote = `${sourceUrl}\n—\n${scriptInfo.name} (v${scriptInfo.version})`;
+                let sourceUrl = channelUrl;
+                if (!sourceUrl || sourceUrl.includes('/@')) {
+                    const handleMatch = (sourceUrl || location.pathname).match(/\/(@[^\/?#]+)/);
+                    if (handleMatch) {
+                        const cached = DOMScanner.getChannelRecord(handleMatch[1]);
+                        if (cached?.channelId) {
+                            sourceUrl = new URL(`https://www.youtube.com/channel/${cached.channelId}`).href;
+                        }
+                    }
+                }
+                const scriptInfo = (typeof GM !== 'undefined' && GM.info) ? GM.info.script : (typeof GM_info !== 'undefined' ? GM_info.script : { name: 'YouTube: MusicBrainz Importer', version: 'dev' });
+                const editNote = `${sourceUrl || location.href.split('?')[0]}\n—\n${scriptInfo.name} (v${scriptInfo.version})`;
                 params.set(`edit-${targetType}.edit_note`, editNote);
 
                 const seedUrl = `//musicbrainz.org/${targetType}/${entityId}/edit?${params.toString()}`;
@@ -2469,7 +2716,7 @@
                         });
                         YouTubeMusicBrainzImporter._mbApi.invalidateCacheForUrl(urlsToInvalidate);
                     };
-                    this._seedLinksButton.element.addEventListener('mousedown', invalidateCache, { once: true });
+                    this._setSeedMousedownHandler(invalidateCache);
                 }
 
                 this._seedLinksButton.show();
@@ -2497,7 +2744,22 @@
 
         displaySearchOrAdd(channelTitle, targetUrl, urlsToInvalidate = [], externalLinks = []) {
             this._seedLinksButton.hide();
-            const cleanUrl = targetUrl || location.href.split('?')[0];
+            let cleanUrl = targetUrl;
+
+            // Channel seeding MUST send canonical channel ID URL (https://www.youtube.com/channel/UC...) rather than handle
+            if (!cleanUrl || cleanUrl.includes('/@')) {
+                const handleMatch = (cleanUrl || location.pathname).match(/\/(@[^\/?#]+)/);
+                if (handleMatch) {
+                    const cached = DOMScanner.getChannelRecord(handleMatch[1]);
+                    if (cached?.channelId) {
+                        cleanUrl = new URL(`https://www.youtube.com/channel/${cached.channelId}`).href;
+                    }
+                }
+            }
+            if (!cleanUrl && location.pathname.startsWith('/channel/UC')) {
+                cleanUrl = location.href.split('?')[0];
+            }
+
             const params = new URLSearchParams();
             if (channelTitle) {
                 params.set('edit-artist.name', channelTitle);
@@ -2522,8 +2784,8 @@
                 }
             }
 
-            const scriptInfo = GM.info.script;
-            const editNote = `${cleanUrl}\n—\n${scriptInfo.name} (v${scriptInfo.version})`;
+            const scriptInfo = (typeof GM !== 'undefined' && GM.info) ? GM.info.script : (typeof GM_info !== 'undefined' ? GM_info.script : { name: 'YouTube: MusicBrainz Importer', version: 'dev' });
+            const editNote = `${cleanUrl || location.href.split('?')[0]}\n—\n${scriptInfo.name} (v${scriptInfo.version})`;
             params.set('edit-artist.edit_note', editNote);
 
             const createUrl = `//musicbrainz.org/artist/create?${params.toString()}`;
@@ -2551,7 +2813,7 @@
                     });
                     YouTubeMusicBrainzImporter._mbApi.invalidateCacheForUrl(urlsToInvalidate);
                 };
-                this._mainButton.element.addEventListener('mousedown', invalidateCache, { once: true });
+                this._setMainMousedownHandler(invalidateCache);
             }
 
             this.show();
@@ -2930,7 +3192,6 @@
          */
         init: async function () {
             this._mbApi = new MusicBrainzAPI({ user_agent: USER_AGENT });
-            InPageDataExtractor.initEventListeners();
             this._injectCSS();
             await TokenManager.init();
             await MenuManager.init();
@@ -2961,6 +3222,92 @@
                     yt-flexible-actions-view-model .${Config.CLASS_NAMES.CONTAINER},
                     .ytFlexibleActionsViewModelAction.${Config.CLASS_NAMES.CONTAINER} {
                         margin-left: 0;
+                    }
+                    /* YouTube Mobile Action Bar Integration (strictly calibrated to 32px SizeS Subscribe chip) */
+                    .slim-video-action-bar-actions .${Config.CLASS_NAMES.CONTAINER} {
+                        margin-left: 0 !important;
+                        margin-right: 0 !important;
+                        flex-shrink: 0 !important;
+                        height: 32px !important;
+                        display: inline-flex !important;
+                        align-items: center !important;
+                    }
+                    .slim-video-action-bar-actions .${Config.CLASS_NAMES.CONTAINER} + .${Config.CLASS_NAMES.CONTAINER} {
+                        margin-left: 8px !important;
+                    }
+                    .slim-video-action-bar-actions .${Config.CLASS_NAMES.BUTTON_RENDERER} a,
+                    .slim-video-action-bar-actions .${Config.CLASS_NAMES.BUTTON_RENDERER} button {
+                        height: 32px !important;
+                        min-height: 32px !important;
+                        max-height: 32px !important;
+                        line-height: 32px !important;
+                        padding: 0 12px !important;
+                        border-radius: 16px !important;
+                        font-size: 12px !important;
+                        font-weight: 500 !important;
+                        box-sizing: border-box !important;
+                        display: inline-flex !important;
+                        align-items: center !important;
+                    }
+                    .slim-video-action-bar-actions .${Config.CLASS_NAMES.BUTTON_RENDERER} .yt-spec-button-shape-next__icon,
+                    .slim-video-action-bar-actions .${Config.CLASS_NAMES.BUTTON_RENDERER} .ytSpecButtonShapeNextIcon {
+                        width: 16px !important;
+                        height: 16px !important;
+                        display: inline-flex !important;
+                        align-items: center !important;
+                        justify-content: center !important;
+                        margin-right: 6px !important;
+                        margin-left: 0 !important;
+                        flex-shrink: 0 !important;
+                    }
+                    .slim-video-action-bar-actions .${Config.CLASS_NAMES.BUTTON_RENDERER} .yt-spec-button-shape-next__icon svg,
+                    .slim-video-action-bar-actions .${Config.CLASS_NAMES.BUTTON_RENDERER} .ytSpecButtonShapeNextIcon svg {
+                        max-width: 16px !important;
+                        max-height: 16px !important;
+                        width: 16px !important;
+                        height: 16px !important;
+                        display: block !important;
+                    }
+                    /* YouTube Mobile Channel Header Integration */
+                    ytm-app .channel-mb-holder {
+                        width: 100%;
+                        display: flex;
+                        box-sizing: border-box;
+                        margin-top: 8px;
+                        gap: 8px;
+                    }
+                    ytm-app .channel-mb-holder .${Config.CLASS_NAMES.BUTTON_RENDERER} {
+                        flex: 1 1 0px;
+                        min-width: 0;
+                    }
+                    ytm-app .channel-mb-holder .${Config.CLASS_NAMES.BUTTON_RENDERER}[style*="display: none"] {
+                        display: none !important;
+                    }
+                    ytm-app .channel-mb-holder .${Config.CLASS_NAMES.BUTTON_RENDERER} a,
+                    ytm-app .channel-mb-holder .${Config.CLASS_NAMES.BUTTON_RENDERER} button {
+                        width: 100%;
+                        height: 40px;
+                        border-radius: 20px;
+                        justify-content: center;
+                        box-sizing: border-box;
+                    }
+                    /* Landscape / Inline Channel Actions: align horizontally beside Subscribe without vertical drift or stretching */
+                    ytm-app .ytFlexibleActionsViewModelInline .channel-mb-holder {
+                        width: auto;
+                        margin: 0;
+                        display: inline-flex;
+                        align-items: center;
+                    }
+                    ytm-app .ytFlexibleActionsViewModelInline .channel-mb-holder .${Config.CLASS_NAMES.BUTTON_RENDERER} {
+                        flex: 0 0 auto;
+                        width: auto;
+                    }
+                    ytm-app .ytFlexibleActionsViewModelInline .channel-mb-holder .${Config.CLASS_NAMES.BUTTON_RENDERER} a,
+                    ytm-app .ytFlexibleActionsViewModelInline .channel-mb-holder .${Config.CLASS_NAMES.BUTTON_RENDERER} button {
+                        width: auto;
+                        height: 40px;
+                        border-radius: 20px;
+                        padding: 0 16px;
                     }
                     .${Config.CLASS_NAMES.BUTTON_RENDERER} {
                         display: inline-flex;
@@ -3096,33 +3443,124 @@
             }
         },
 
+        _lastUrl: location.href,
+        _orientationDebounceTimer: null,
+        _lastNavStartTime: performance.now(),
+        _lastYtNavigateFinishMs: null,
+
         /**
-         * Sets up observers for YouTube's SPA navigation.
+         * Sets up observers for YouTube's SPA navigation and dynamic DOM mutations.
          */
         _setupObservers: function () {
-            document.addEventListener('yt-navigate-finish', (event) => {
-                this._routePage(event);
+            // 1. YouTube desktop Polymer navigation event (signals route change)
+            document.addEventListener('yt-navigate-finish', () => {
+                const navStart = this._lastNavStartTime || performance.now();
+                this._checkUrlChange();
+                this._lastYtNavigateFinishMs = Math.round(performance.now() - navStart);
+                if (!DOMScanner.getVideoId() && !DOMScanner.isChannelPage()) {
+                    RecordingButtonManager.reset();
+                    PlaylistButtonManager.reset();
+                    ChannelButtonManager.reset();
+                }
             });
+
+            // 2. Browser history popstate/hashchange events (back/forward navigation)
+            window.addEventListener('popstate', () => this._checkUrlChange());
+            window.addEventListener('hashchange', () => this._checkUrlChange());
+
+            // 3. Handle mobile orientation change and window resize
+            const handleResizeOrOrientation = () => {
+                clearTimeout(this._orientationDebounceTimer);
+                this._orientationDebounceTimer = setTimeout(() => {
+                    this._ensureDockAttached();
+                }, 150);
+            };
+
+            window.addEventListener('orientationchange', handleResizeOrOrientation);
+            window.addEventListener('resize', handleResizeOrOrientation);
+
+            // 4. MutationObserver to catch URL changes or DOM reconstruction
+            let mutationDebounceTimer = null;
+            const observer = new MutationObserver(() => {
+                if (location.href !== this._lastUrl) {
+                    this._checkUrlChange();
+                    return;
+                }
+                if (!mutationDebounceTimer) {
+                    mutationDebounceTimer = setTimeout(() => {
+                        mutationDebounceTimer = null;
+                        this._ensureDockAttached();
+                    }, 200);
+                }
+            });
+
+            observer.observe(document.documentElement, {
+                childList: true,
+                subtree: true
+            });
+        },
+
+        _currentNavigationId: 1,
+
+        _checkUrlChange: function () {
+            if (location.href === this._lastUrl) return;
+            this._lastUrl = location.href;
+            this._currentNavigationId++;
+            this._lastNavStartTime = performance.now();
+            this._lastYtNavigateFinishMs = null;
+            this._routePage();
+        },
+
+        _ensureDockAttached: async function () {
+            const currentVideoId = DOMScanner.getVideoId();
+            if (currentVideoId) {
+                if (RecordingButtonManager.container && !document.contains(RecordingButtonManager.container)) {
+                    const dock = await DOMScanner.getButtonAnchorElement();
+                    if (dock) {
+                        RecordingButtonManager.appendToDock(dock);
+                        PlaylistButtonManager.appendToDock(dock);
+                    }
+                }
+            } else if (DOMScanner.isChannelPage()) {
+                if (ChannelButtonManager.container && !document.contains(ChannelButtonManager.container)) {
+                    const channelKey = decodeURIComponent(location.pathname);
+                    const handleMatch = channelKey.match(/\/(@[^\/?#]+)/);
+                    const pathChannelMatch = channelKey.match(/\/channel\/(UC[A-Za-z0-9_-]+)/);
+                    const expectedTarget = handleMatch ? handleMatch[1] : (pathChannelMatch ? pathChannelMatch[1] : null);
+                    const dock = await DOMScanner.getChannelAnchorElement(expectedTarget);
+                    if (dock) {
+                        ChannelButtonManager.appendToDock(dock);
+                    }
+                }
+            }
         },
 
         /**
          * Evaluates current URL and coordinates page-specific logic.
-         * @param {CustomEvent} [event]
          */
-        _routePage: function (event) {
+        _routePage: function () {
             const currentVideoId = DOMScanner.getVideoId();
             if (currentVideoId) {
-                ChannelButtonManager.hide();
+                ChannelButtonManager.prepareForNavigation();
+                this._processingChannelKey = null;
+                if (this._processingVideoId !== currentVideoId) {
+                    RecordingButtonManager.prepareForNavigation();
+                    PlaylistButtonManager.prepareForNavigation();
+                }
                 this.triggerUpdate(currentVideoId);
             } else if (DOMScanner.isChannelPage()) {
-                RecordingButtonManager.hide();
-                PlaylistButtonManager.hide();
-                ChannelButtonManager.reset();
-                this.triggerChannelUpdate(event);
+                RecordingButtonManager.prepareForNavigation();
+                PlaylistButtonManager.prepareForNavigation();
+                this._processingVideoId = null;
+                const channelKey = decodeURIComponent(location.pathname);
+                if (this._processingChannelKey !== channelKey) {
+                    ChannelButtonManager.prepareForNavigation();
+                }
+                this.triggerChannelUpdate();
             } else {
-                RecordingButtonManager.hide();
-                PlaylistButtonManager.hide();
-                ChannelButtonManager.hide();
+                RecordingButtonManager.prepareForNavigation();
+                PlaylistButtonManager.prepareForNavigation();
+                ChannelButtonManager.prepareForNavigation();
                 this._processingVideoId = null;
                 this._processingChannelKey = null;
             }
@@ -3130,11 +3568,10 @@
 
         /**
          * Triggers the channel lookup and UI update.
-         * @param {CustomEvent} [event]
+         * @param {number} [navId]
          */
-        triggerChannelUpdate: function (event) {
-            const channelData = DOMScanner.getChannelData(event);
-            const channelKey = channelData.channelId || channelData.handle || location.pathname;
+        triggerChannelUpdate: function (navId) {
+            const channelKey = decodeURIComponent(location.pathname);
 
             if (this._processingChannelKey === channelKey && this._currentChannelProcessingPromise) {
                 return;
@@ -3142,7 +3579,7 @@
 
             this._processingChannelKey = channelKey;
 
-            this._currentChannelProcessingPromise = this._performChannelUpdate(channelData, event)
+            this._currentChannelProcessingPromise = this._performChannelUpdate(navId)
                 .finally(() => {
                     if (this._processingChannelKey === channelKey) {
                         this._processingChannelKey = null;
@@ -3153,13 +3590,39 @@
 
         /**
          * Performs the channel lookup and renders the appropriate MusicBrainz channel action.
-         * @param {{ channelId: string|null, handle: string|null, channelTitle: string, canonicalUrl: string|null, handleUrl: string|null }} channelData
-         * @param {CustomEvent} [event]
+         * @param {number} [navId]
          */
-        _performChannelUpdate: async function (channelData, event) {
+        _performChannelUpdate: async function (navId) {
             const startTime = performance.now();
-            const dockElement = await DOMScanner.getChannelAnchorElement();
+            const channelKey = decodeURIComponent(location.pathname);
+            const handleMatch = channelKey.match(/\/(@[^\/?#]+)/);
+            const pathChannelMatch = channelKey.match(/\/channel\/(UC[A-Za-z0-9_-]+)/);
+            const legacyPathMatch = channelKey.match(/^\/((?:c|user)\/[^\/?#]+)/);
+            const expectedTarget = handleMatch
+                ? handleMatch[1]
+                : (pathChannelMatch ? pathChannelMatch[1] : (legacyPathMatch ? legacyPathMatch[1] : null));
+
+            if (!expectedTarget) return;
+
+            const innertubePromise = InnertubeExtractor.extractChannelData(expectedTarget);
+
+            const anchorStartTime = performance.now();
+            const dockElement = await DOMScanner.getChannelAnchorElement(expectedTarget);
+            const anchorWaitMs = Math.round(performance.now() - anchorStartTime);
+            if (!DOMScanner.isChannelPage() || decodeURIComponent(location.pathname) !== channelKey) return;
+
             ChannelButtonManager.appendToDock(dockElement);
+
+            const itRes = await innertubePromise;
+            const channelData = itRes?.data;
+
+            if (!DOMScanner.isChannelPage() || decodeURIComponent(location.pathname) !== channelKey) return;
+
+            if (!channelData) {
+                console.warn(`[${GM.info.script.name}] Failed to extract channel data for: ${expectedTarget}`);
+                ChannelButtonManager.hide();
+                return;
+            }
 
             const urlsToQuery = [];
             if (channelData.canonicalUrl) urlsToQuery.push(channelData.canonicalUrl);
@@ -3179,57 +3642,20 @@
             }
 
             let mbResults = null;
-            let linkExtractionResult = { externalLinks: [], sources: {} };
             let outcome = 'unknown';
             let actionResult = null;
             let lookupDurationMs = 0;
-            let linkExtractionMs = 0;
+            const linkExtractionMs = itRes?.durationMs ?? 0;
 
             try {
                 const seedLinksEnabled = MenuManager.isSeedLinksEnabled();
                 const lookupStartTime = performance.now();
-                const mbResultsPromise = this.lookupMbUrls(urlsToQuery).then(res => {
-                    lookupDurationMs = Math.round(performance.now() - lookupStartTime);
-                    return res;
-                });
+                mbResults = await this.lookupMbUrls(urlsToQuery);
+                lookupDurationMs = Math.round(performance.now() - lookupStartTime);
 
-                let externalLinksPromise;
-                if (seedLinksEnabled) {
-                    const linkExtractionStartTime = performance.now();
-                    externalLinksPromise = DOMScanner.fetchChannelExternalLinks(channelData, event).then(res => {
-                        linkExtractionMs = Math.round(performance.now() - linkExtractionStartTime);
-                        return res;
-                    });
-                } else {
-                    externalLinksPromise = Promise.resolve({ externalLinks: [], sources: {} });
-                }
+                if (!DOMScanner.isChannelPage() || decodeURIComponent(location.pathname) !== channelKey) return;
 
-                [mbResults, linkExtractionResult] = await Promise.all([mbResultsPromise, externalLinksPromise]);
-
-                const rawExternalLinks = Array.isArray(linkExtractionResult) ? linkExtractionResult : (linkExtractionResult.externalLinks || []);
-                const linkSources = Array.isArray(linkExtractionResult) ? {} : (linkExtractionResult.sources || {});
-
-                // Helper to check if URL is a YouTube channel/video/user link
-                const isYouTubeChannelUrl = (u) => {
-                    try {
-                        const parsed = new URL(u);
-                        return /^(www\.)?(m\.)?youtube\.com$/i.test(parsed.hostname) || /^youtu\.be$/i.test(parsed.hostname);
-                    } catch {
-                        return /youtube\.com|youtu\.be/i.test(u);
-                    }
-                };
-
-                // Filter candidate external links structurally, excluding YouTube URLs and duplicates
-                const candidateExternalLinks = [];
-                for (const link of rawExternalLinks) {
-                    if (!link) continue;
-                    const cleaned = Utils.cleanExternalUrl(link);
-                    if (!cleaned || isYouTubeChannelUrl(cleaned)) continue;
-                    const alreadySeen = candidateExternalLinks.some(existing => Utils.isSameExternalUrl(existing, cleaned));
-                    if (!alreadySeen) {
-                        candidateExternalLinks.push(cleaned);
-                    }
-                }
+                const candidateExternalLinks = seedLinksEnabled ? (channelData.externalLinks || []) : [];
 
                 // Collect all matched entities across queried URLs
                 const foundEntities = [];
@@ -3252,6 +3678,9 @@
                         }
                     }
                 }
+
+                RecordingButtonManager.reset();
+                PlaylistButtonManager.reset();
 
                 if (foundEntities.length === 1) {
                     const { targetType, id, name } = foundEntities[0];
@@ -3302,7 +3731,7 @@
                 } else {
                     ChannelButtonManager.displaySearchOrAdd(
                         channelData.channelTitle,
-                        channelData.canonicalUrl || channelData.handleUrl,
+                        channelData.canonicalUrl || (channelData.channelId ? new URL(`https://www.youtube.com/channel/${channelData.channelId}`).href : null),
                         urlsToQuery,
                         candidateExternalLinks
                     );
@@ -3315,17 +3744,27 @@
                     };
                 }
 
+                const buttonRenderedMs = Math.round(performance.now() - startTime);
+                const heldUpAfterAnchorMs = Math.max(0, buttonRenderedMs - anchorWaitMs);
+
                 DOMScanner.logChannelSummary({
                     channelData,
                     urlsToQuery,
                     mbResults,
                     cachedUrlMap,
                     externalLinks: candidateExternalLinks,
-                    linkSources,
+                    linkSources: {
+                        source: channelData.resolutionSource,
+                        count: candidateExternalLinks.length
+                    },
                     outcome,
                     actionResult,
                     timing: {
                         totalDurationMs: Math.round(performance.now() - startTime),
+                        buttonRenderedMs,
+                        anchorWaitMs,
+                        heldUpAfterAnchorMs,
+                        ytNavigateFinishMs: this._lastYtNavigateFinishMs,
                         linkExtractionMs,
                         lookupDurationMs
                     }
@@ -3337,17 +3776,24 @@
                 ChannelButtonManager.displayError(errorMessage);
 
                 DOMScanner.logChannelSummary({
-                    channelData,
+                    channelData: channelData || { handle: expectedTarget },
                     urlsToQuery,
                     mbResults: mbResults || new Map(),
                     cachedUrlMap,
-                    externalLinks: linkExtractionResult.externalLinks || [],
-                    linkSources: linkExtractionResult.sources || {},
+                    externalLinks: channelData?.externalLinks || [],
+                    linkSources: {
+                        source: channelData?.resolutionSource || 'error',
+                        count: (channelData?.externalLinks || []).length
+                    },
                     outcome: 'error',
                     actionResult: null,
                     error: { message: error.message, status: error.status, apiName },
                     timing: {
                         totalDurationMs: Math.round(performance.now() - startTime),
+                        buttonRenderedMs: typeof buttonRenderedMs !== 'undefined' ? buttonRenderedMs : null,
+                        anchorWaitMs: typeof anchorWaitMs !== 'undefined' ? anchorWaitMs : null,
+                        heldUpAfterAnchorMs: typeof heldUpAfterAnchorMs !== 'undefined' ? heldUpAfterAnchorMs : null,
+                        ytNavigateFinishMs: this._lastYtNavigateFinishMs,
                         linkExtractionMs,
                         lookupDurationMs
                     }
@@ -3360,7 +3806,7 @@
          * This function acts as a gatekeeper to ensure only one update runs at a time.
          * @param {string|null} videoId - The YouTube video ID to process.
          */
-        triggerUpdate: function (videoId) {
+        triggerUpdate: function (videoId, navId) {
             if (this._processingVideoId === videoId && this._currentProcessingPromise) {
                 return;
             }
@@ -3375,7 +3821,7 @@
 
             this._processingVideoId = videoId;
 
-            this._currentProcessingPromise = this._performUpdate(videoId)
+            this._currentProcessingPromise = this._performUpdate(videoId, navId)
                 .catch((err) => {
                     console.error(`[${GM.info.script.name}] Uncaught error processing video ${videoId}:`, err);
                 })
@@ -3391,11 +3837,18 @@
          * Performs the unified API calls and updates recording and playlist UI buttons.
          * @summary Unified single-pass extraction, MusicBrainz lookup, and UI resolution pipeline.
          * @param {string} videoId - The YouTube video ID to process.
+         * @param {number} [navId] - Navigation ID to guard against race conditions.
          * @returns {Promise<void>}
          */
-        _performUpdate: async function (videoId) {
+        _performUpdate: async function (videoId, navId) {
             const startTime = performance.now();
+            const extractionStartTime = performance.now();
+            const innertubePromise = InnertubeExtractor.extractVideoData(videoId);
+
+            const anchorStartTime = performance.now();
             const dockElement = await DOMScanner.getButtonAnchorElement();
+            const anchorWaitMs = Math.round(performance.now() - anchorStartTime);
+            if (DOMScanner.getVideoId() !== videoId) return;
             RecordingButtonManager.appendToDock(dockElement);
             PlaylistButtonManager.appendToDock(dockElement);
 
@@ -3410,9 +3863,11 @@
             let lookupDurationMs = 0;
 
             try {
-                const extractionStartTime = performance.now();
-                ytData = InPageDataExtractor.extractVideoData(videoId);
-                metadataExtractionMs = Math.round(performance.now() - extractionStartTime);
+                const itRes = await innertubePromise;
+                ytData = itRes?.data;
+                metadataExtractionMs = itRes?.durationMs ?? Math.round(performance.now() - extractionStartTime);
+
+                if (DOMScanner.getVideoId() !== videoId) return;
 
                 if (!ytData) {
                     console.warn(`[${GM.info.script.name}] Could not extract metadata for video ID: ${videoId}`);
@@ -3449,11 +3904,15 @@
                 const artistMbid = (youtubeChannelUrl ? this._extractArtistMbid(mbResults.get(youtubeChannelUrl)) : null)
                     || (youtubeHandleUrl ? this._extractArtistMbid(mbResults.get(youtubeHandleUrl)) : null);
 
+                ChannelButtonManager.reset();
+
                 // ===== Run Recording Importer Logic and Playlist Logic in Parallel =====
                 const recordingPromise = this._handleRecordingImport(ytData, canonicalYtUrl, youtubeChannelUrl, mbResults, mbVideoUrlEntity, artistMbid, youtubeHandleUrl);
                 const playlistPromise = this._handlePlaylistLogic(ytData, canonicalYtUrl);
 
                 [actionResult] = await Promise.all([recordingPromise, playlistPromise]);
+                const buttonRenderedMs = Math.round(performance.now() - startTime);
+                const heldUpAfterAnchorMs = Math.max(0, buttonRenderedMs - anchorWaitMs);
                 outcome = actionResult?.outcome || 'unknown';
 
                 DOMScanner.logVideoSummary({
@@ -3466,6 +3925,10 @@
                     actionResult,
                     timing: {
                         totalDurationMs: Math.round(performance.now() - startTime),
+                        buttonRenderedMs,
+                        anchorWaitMs,
+                        heldUpAfterAnchorMs,
+                        ytNavigateFinishMs: this._lastYtNavigateFinishMs,
                         metadataExtractionMs,
                         lookupDurationMs
                     }
@@ -3489,6 +3952,10 @@
                         error: { message: error.message, status: error.status, apiName },
                         timing: {
                             totalDurationMs: Math.round(performance.now() - startTime),
+                            buttonRenderedMs: typeof buttonRenderedMs !== 'undefined' ? buttonRenderedMs : null,
+                            anchorWaitMs: typeof anchorWaitMs !== 'undefined' ? anchorWaitMs : null,
+                            heldUpAfterAnchorMs: typeof heldUpAfterAnchorMs !== 'undefined' ? heldUpAfterAnchorMs : null,
+                            ytNavigateFinishMs: this._lastYtNavigateFinishMs,
                             metadataExtractionMs,
                             lookupDurationMs
                         }
