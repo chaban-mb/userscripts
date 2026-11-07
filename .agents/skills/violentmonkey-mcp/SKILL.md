@@ -10,7 +10,9 @@ description: >-
 Guides using Violentmonkey's Model Context Protocol (MCP) server for deploying and testing userscripts.
 
 ## Triggers
+
 Activate when:
+
 - Deploying userscripts from `src/*.user.js` (`scripts_write`).
 - Inspecting installed scripts (`scripts_list`, `scripts_get`).
 - Verifying `@match` and `@exclude` evaluation (`scripts_test_match`).
@@ -35,13 +37,37 @@ Requires one manual approval per browser session:
 ## Script Deployment & Verification
 
 ### 1. Deploy Script (`scripts_write`)
+
 - Call `scripts_write({ id, code })` (or omit `id` to match by `@name` and `@namespace`).
 - Pass full userscript source including `==UserScript==` block.
 
+#### Handling `@require` Dependencies
+
+Because `scripts_write` pushes code directly into Violentmonkey via WebSocket without an HTTP base URL, relative `@require` paths (e.g. `// @require ../lib/MusicBrainzAPI.js`) cannot be resolved by Violentmonkey.
+
+Follow this protocol:
+
+1. **Unmodified Library Dependencies:**
+   If no local changes were made to `lib/*.js`, convert relative `@require` paths to absolute GitHub raw URLs before deploying:
+   - Extract `@downloadURL` (or `@updateURL`) from the userscript header (e.g. `https://github.com/chaban-mb/userscripts/raw/main/src/<filename>.user.js`).
+   - Resolve the relative path against that base URL (e.g. `../lib/MusicBrainzAPI.js` becomes `https://raw.githubusercontent.com/chaban-mb/userscripts/main/lib/MusicBrainzAPI.js`).
+   - Pass the transformed code string to `scripts_write`. Violentmonkey will fetch and cache the library from GitHub.
+2. **Modified Library Dependencies (`lib/*.js` changed):**
+   If local edits were made to `lib/`, **do not deploy via MCP `scripts_write`**. MCP cannot resolve local relative paths, and GitHub lacks your unpushed local changes.
+   - Switch to the local development server: `node tools/dev_server.js`.
+   - The dev server serves both `src/` and `lib/` over HTTP for Violentmonkey's native *"Track external edits"* workflow, resolving local library changes live.
+
 ### 2. Verify Matching (`scripts_test_match`)
+
 - Test positive URLs return `matched: true`.
 - Test excluded URLs return `matched: false`.
 
 > [!IMPORTANT]
 > **`@exclude` Glob Nuance**:
 > While `@match` covers the apex domain with `*.`, `@exclude` uses glob matching where `*.` requires a subdomain. Use `*://*domain.tld/*` to match both apex and subdomains.
+
+---
+
+## References
+
+- [Data Sync Details (v2.50.0)](./references/data-sync.md): Read when dealing with multi-device state persistence, `GM_setValue` scope, custom override synchronization, or sync conflict behavior.

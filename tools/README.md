@@ -9,6 +9,7 @@ This directory contains development utilities, automation scripts, and workflow 
   - [Direct AI Agent MCP Setup (`@violentmonkey/mcp`)](#direct-ai-agent-mcp-setup-violentmonkeymcp)
   - [Authorization & Connection Protocol](#authorization--connection-protocol)
   - [Available Violentmonkey MCP Tools](#available-violentmonkey-mcp-tools)
+  - [MCP Protocol Limitations & @require Resolution](#mcp-protocol-limitations--require-resolution)
 - [Local Development Server (`dev_server.js`)](#local-development-server-dev_serverjs)
   - [Overview](#overview)
   - [CLI Usage & Options](#cli-usage--options)
@@ -77,9 +78,6 @@ Unlike Chrome DevTools MCP (which attaches directly to a debugging port), Violen
 > [!IMPORTANT]
 > **`@exclude` Glob Nuance**: While `@match` follows Chrome Match Patterns (where `*://*.domain.tld/*` automatically matches apex `domain.tld` as well as subdomains), `@exclude` uses Greasemonkey glob pattern rules where `*.domain.tld` requires a literal dot and subdomain. To match both the apex domain and any subdomain in `@exclude`, use `*://*domain.tld/*`.
 
-> [!NOTE]
-> **Shared Library Inlining (`lib/*.js`)**: Because `scripts_write` sends code directly into Violentmonkey's internal storage without an HTTP base URL, any relative dependencies (such as `// @require ../lib/MusicBrainzAPI.js`) cannot be resolved over HTTP. When pushing via `scripts_write`, inline shared library code into the payload or ensure `@require` targets an absolute HTTP/CDN URL.
-
 ### Available Violentmonkey MCP Tools
 
 | Tool | Minimum VM Version | Tab Grant Required? | Description |
@@ -95,6 +93,15 @@ Unlike Chrome DevTools MCP (which attaches directly to a debugging port), Violen
 | `tab_scripts` | `&ge; 2.49.6` | Yes | Reports which scripts were injected (`injected`, `failed`, `pending`), their `codeHash`, and any startup error on a granted tab. |
 | `tab_reload` | `&ge; 2.49.6` | Yes | Reloads a granted tab and returns the new document `loadId`. |
 | `script_logs` | `&ge; 2.49.6` | Yes | Reads captured `GM_log` entries (requires `@grant GM_log`) for a granted tab using a monotonic `afterSeq` cursor or `sinceLoadId`. |
+
+### MCP Protocol Limitations & @require Resolution
+
+Unlike standard browser installation where Violentmonkey captures the download HTTP response URL (`lastInstallURL`) to resolve relative dependencies, MCP WebSocket calls (`scripts_write`) pass only raw script code without an HTTP base URL context. Furthermore, the MCP server currently provides no tool (e.g., `require_write`) to inject standalone dependency cache entries into Violentmonkey's internal storage.
+
+When working with userscripts containing relative library dependencies (e.g. `// @require ../lib/MusicBrainzAPI.js`):
+
+- **Unmodified Libraries**: When shared libraries in `lib/` are unchanged, convert relative `@require` paths into absolute GitHub raw URLs (`https://raw.githubusercontent.com/chaban-mb/userscripts/main/lib/MusicBrainzAPI.js`) deduced from `@downloadURL` before calling `scripts_write`. Violentmonkey will download and cache the dependency directly from GitHub.
+- **Modified Libraries**: When actively developing or modifying shared libraries in `lib/`, do not use MCP deployment. Switch to the local HTTP dev server (`node tools/dev_server.js`), which natively serves both `src/` and `lib/` over HTTP for Violentmonkey's "Track external edits" workflow, resolving local changes live.
 
 ---
 
