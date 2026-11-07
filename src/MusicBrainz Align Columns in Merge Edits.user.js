@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        MusicBrainz: Align Columns in Merge Edits
 // @namespace   https://musicbrainz.org/user/chaban
-// @version     2.4.7
+// @version     2.4.8
 // @description Aligns columns in merge edit tables for easier comparison.
 // @tag         ai-created
 // @author      chaban
@@ -106,7 +106,12 @@
         async load() {
             await Promise.all(
                 this.#configDefinition.map(async (opt) => {
-                    this.#options[opt.name] = await GM.getValue(opt.key, opt.defaultValue);
+                    const val = await GM.getValue(opt.key, opt.defaultValue);
+                    const changed = this.#options[opt.name] !== val;
+                    this.#options[opt.name] = val;
+                    if (changed && this.#listeners[opt.name]) {
+                        this.#listeners[opt.name].forEach(callback => callback(val));
+                    }
                 })
             );
         }
@@ -151,6 +156,7 @@
         #contextElement;
         #tables;
         #observer;
+        #resizeObserver;
         #config;
         #uniqueId;
         #observedNodes;
@@ -336,6 +342,10 @@
             this.#observer = new MutationObserver(() => this.#scheduler(this));
             this.#observedNodes = this.#tables.map(t => t.querySelector('tbody')).filter(Boolean);
             this.#reconnectObserver();
+            if (typeof ResizeObserver !== 'undefined') {
+                this.#resizeObserver = new ResizeObserver(() => this.#scheduler(this));
+                this.#resizeObserver.observe(this.#contextElement);
+            }
         }
 
         #reconnectObserver() {
@@ -346,6 +356,7 @@
 
         disconnect() {
             if (this.#observer) this.#observer.disconnect();
+            if (this.#resizeObserver) this.#resizeObserver.disconnect();
             globalCssRules.delete(this.#uniqueId);
             updateGlobalStyle();
         }
@@ -356,9 +367,17 @@
      * Sets up the MutationObserver and registers GM menu commands for configuration toggles.
      */
     async function init() {
+        const mobileMediaQuery = window.matchMedia('(max-width: 1024px)');
+        const getMobile = () => mobileMediaQuery.matches;
+
         const OPTIONS_CONFIG = [
             { name: 'collapseEmpty', key: 'collapse-empty-columns', text: 'Collapse Empty Columns', defaultValue: true },
-            { name: 'widenTableContainer', key: 'widen-table-container', text: 'Widen Table Container', defaultValue: true },
+            {
+                name: 'widenTableContainer',
+                key: getMobile() ? 'widen-table-container-mobile' : 'widen-table-container',
+                text: 'Widen Table Container',
+                defaultValue: getMobile(),
+            },
         ];
 
         const config = new ReactiveConfig(OPTIONS_CONFIG);
@@ -445,6 +464,17 @@
             }
         };
         await registerAllCommands();
+
+        mobileMediaQuery.addEventListener('change', async () => {
+            const isMobile = getMobile();
+            const widenOpt = OPTIONS_CONFIG.find(opt => opt.name === 'widenTableContainer');
+            if (widenOpt) {
+                widenOpt.key = isMobile ? 'widen-table-container-mobile' : 'widen-table-container';
+                widenOpt.defaultValue = isMobile;
+            }
+            await config.load();
+            await registerAllCommands();
+        });
     }
     init().catch(err => console.error(`[${SCRIPT_NAME}] Initialization failed:`, err));
 
