@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        YouTube: MusicBrainz Importer
 // @namespace   https://musicbrainz.org/user/chaban
-// @version     2.15.0
+// @version     2.15.1
 // @description Imports YouTube videos to MusicBrainz as a new standalone recording
 // @tag         ai-created
 // @author      nikki, RustyNova, chaban
@@ -2194,6 +2194,7 @@ class PermanentError extends Error {
                 mbResults = new Map(),
                 cachedUrlMap = new Map(),
                 externalLinks = [],
+                seedLinksEnabled = false,
                 linkSources = {},
                 outcome = 'unknown',
                 actionResult = null,
@@ -2263,6 +2264,7 @@ class PermanentError extends Error {
                 linkExtraction: {
                     totalLinks: externalLinks.length,
                     links: externalLinks,
+                    seedLinksEnabled: Boolean(seedLinksEnabled),
                     sources: linkSources
                 },
                 ...(lookupDiagnostics ? { lookupDiagnostics } : {}),
@@ -4126,15 +4128,17 @@ class PermanentError extends Error {
                 const buttonRenderedMs = Math.round(performance.now() - startTime);
                 const heldUpAfterAnchorMs = Math.max(0, buttonRenderedMs - anchorWaitMs);
 
+                const rawExternalLinks = channelData?.externalLinks || [];
                 DOMScanner.logChannelSummary({
                     channelData,
                     urlsToQuery,
                     mbResults,
                     cachedUrlMap,
-                    externalLinks: candidateExternalLinks,
+                    externalLinks: rawExternalLinks,
+                    seedLinksEnabled,
                     linkSources: {
                         source: channelData.resolutionSource,
-                        count: candidateExternalLinks.length
+                        count: rawExternalLinks.length
                     },
                     outcome,
                     actionResult,
