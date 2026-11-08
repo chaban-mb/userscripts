@@ -3542,27 +3542,28 @@
          */
         _routePage: function () {
             const currentVideoId = DOMScanner.getVideoId();
+            const navId = this._currentNavigationId;
             if (currentVideoId) {
-                ChannelButtonManager.prepareForNavigation();
+                ChannelButtonManager.reset();
                 this._processingChannelKey = null;
                 if (this._processingVideoId !== currentVideoId) {
                     RecordingButtonManager.prepareForNavigation();
                     PlaylistButtonManager.prepareForNavigation();
                 }
-                this.triggerUpdate(currentVideoId);
+                this.triggerUpdate(currentVideoId, navId);
             } else if (DOMScanner.isChannelPage()) {
-                RecordingButtonManager.prepareForNavigation();
-                PlaylistButtonManager.prepareForNavigation();
+                RecordingButtonManager.reset();
+                PlaylistButtonManager.reset();
                 this._processingVideoId = null;
                 const channelKey = decodeURIComponent(location.pathname);
                 if (this._processingChannelKey !== channelKey) {
                     ChannelButtonManager.prepareForNavigation();
                 }
-                this.triggerChannelUpdate();
+                this.triggerChannelUpdate(navId);
             } else {
-                RecordingButtonManager.prepareForNavigation();
-                PlaylistButtonManager.prepareForNavigation();
-                ChannelButtonManager.prepareForNavigation();
+                RecordingButtonManager.reset();
+                PlaylistButtonManager.reset();
+                ChannelButtonManager.reset();
                 this._processingVideoId = null;
                 this._processingChannelKey = null;
             }
@@ -3611,14 +3612,14 @@
             const anchorStartTime = performance.now();
             const dockElement = await DOMScanner.getChannelAnchorElement(expectedTarget);
             const anchorWaitMs = Math.round(performance.now() - anchorStartTime);
-            if (!DOMScanner.isChannelPage() || decodeURIComponent(location.pathname) !== channelKey) return;
+            if (!DOMScanner.isChannelPage() || decodeURIComponent(location.pathname) !== channelKey || (navId !== undefined && this._currentNavigationId !== navId)) return;
 
             ChannelButtonManager.appendToDock(dockElement);
 
             const itRes = await innertubePromise;
             const channelData = itRes?.data;
 
-            if (!DOMScanner.isChannelPage() || decodeURIComponent(location.pathname) !== channelKey) return;
+            if (!DOMScanner.isChannelPage() || decodeURIComponent(location.pathname) !== channelKey || (navId !== undefined && this._currentNavigationId !== navId)) return;
 
             if (!channelData) {
                 console.warn(`[${GM.info.script.name}] Failed to extract channel data for: ${expectedTarget}`);
@@ -3655,7 +3656,7 @@
                 mbResults = await this.lookupMbUrls(urlsToQuery);
                 lookupDurationMs = Math.round(performance.now() - lookupStartTime);
 
-                if (!DOMScanner.isChannelPage() || decodeURIComponent(location.pathname) !== channelKey) return;
+                if (!DOMScanner.isChannelPage() || decodeURIComponent(location.pathname) !== channelKey || (navId !== undefined && this._currentNavigationId !== navId)) return;
 
                 const candidateExternalLinks = seedLinksEnabled ? (channelData.externalLinks || []) : [];
 
@@ -3774,6 +3775,7 @@
                     }
                 });
             } catch (error) {
+                if (!DOMScanner.isChannelPage() || decodeURIComponent(location.pathname) !== channelKey || (navId !== undefined && this._currentNavigationId !== navId)) return;
                 console.error(`[${GM.info.script.name}] Error in channel lookup:`, error);
                 const apiName = error.apiName || 'API';
                 const errorMessage = error.status === 503 ? L10n.getString('errorApiRateLimit', { apiName }) : L10n.getString('errorProcessing');
@@ -3852,7 +3854,7 @@
             const anchorStartTime = performance.now();
             const dockElement = await DOMScanner.getButtonAnchorElement();
             const anchorWaitMs = Math.round(performance.now() - anchorStartTime);
-            if (DOMScanner.getVideoId() !== videoId) return;
+            if (DOMScanner.getVideoId() !== videoId || (navId !== undefined && this._currentNavigationId !== navId)) return;
             RecordingButtonManager.appendToDock(dockElement);
             PlaylistButtonManager.appendToDock(dockElement);
 
@@ -3871,7 +3873,7 @@
                 ytData = itRes?.data;
                 metadataExtractionMs = itRes?.durationMs ?? Math.round(performance.now() - extractionStartTime);
 
-                if (DOMScanner.getVideoId() !== videoId) return;
+                if (DOMScanner.getVideoId() !== videoId || (navId !== undefined && this._currentNavigationId !== navId)) return;
 
                 if (!ytData) {
                     console.warn(`[${GM.info.script.name}] Could not extract metadata for video ID: ${videoId}`);
@@ -3903,6 +3905,8 @@
                 const lookupStartTime = performance.now();
                 mbResults = await this.lookupMbUrls(urlsToQuery);
                 lookupDurationMs = Math.round(performance.now() - lookupStartTime);
+
+                if (DOMScanner.getVideoId() !== videoId || (navId !== undefined && this._currentNavigationId !== navId)) return;
 
                 const mbVideoUrlEntity = mbResults.get(canonicalYtUrl);
                 const artistMbid = (youtubeChannelUrl ? this._extractArtistMbid(mbResults.get(youtubeChannelUrl)) : null)
@@ -3938,6 +3942,7 @@
                     }
                 });
             } catch (error) {
+                if (DOMScanner.getVideoId() !== videoId || (navId !== undefined && this._currentNavigationId !== navId)) return;
                 console.error(`[${GM.info.script.name}] Error in video update pipeline:`, error);
                 const apiName = error.apiName || 'API';
                 const errorMessage = error.status === 503 ? L10n.getString('errorApiRateLimit', { apiName }) : L10n.getString('errorProcessing');
