@@ -3454,12 +3454,18 @@
          * Sets up observers for YouTube's SPA navigation and dynamic DOM mutations.
          */
         _setupObservers: function () {
-            // 1. YouTube desktop Polymer navigation event (signals route change)
+            // 1. YouTube desktop Polymer navigation event (signals route change and view transition complete)
             document.addEventListener('yt-navigate-finish', () => {
                 const navStart = this._lastNavStartTime || performance.now();
                 this._checkUrlChange();
                 this._lastYtNavigateFinishMs = Math.round(performance.now() - navStart);
-                if (!DOMScanner.getVideoId() && !DOMScanner.isChannelPage()) {
+                // Once the new page view is fully mounted, cleanly dismiss offscreen opposing managers without flicker
+                if (DOMScanner.getVideoId()) {
+                    ChannelButtonManager.reset();
+                } else if (DOMScanner.isChannelPage()) {
+                    RecordingButtonManager.reset();
+                    PlaylistButtonManager.reset();
+                } else {
                     RecordingButtonManager.reset();
                     PlaylistButtonManager.reset();
                     ChannelButtonManager.reset();
@@ -3544,21 +3550,18 @@
             const currentVideoId = DOMScanner.getVideoId();
             const navId = this._currentNavigationId;
             if (currentVideoId) {
-                ChannelButtonManager.reset();
                 this._processingChannelKey = null;
-                if (this._processingVideoId !== currentVideoId) {
-                    RecordingButtonManager.prepareForNavigation();
-                    PlaylistButtonManager.prepareForNavigation();
-                }
+                // Preserve existing button visuals in-place during transition; dismiss opposing manager on yt-navigate-finish or dock
+                RecordingButtonManager.prepareForNavigation();
+                PlaylistButtonManager.prepareForNavigation();
+                ChannelButtonManager.prepareForNavigation();
                 this.triggerUpdate(currentVideoId, navId);
             } else if (DOMScanner.isChannelPage()) {
-                RecordingButtonManager.reset();
-                PlaylistButtonManager.reset();
                 this._processingVideoId = null;
                 const channelKey = decodeURIComponent(location.pathname);
-                if (this._processingChannelKey !== channelKey) {
-                    ChannelButtonManager.prepareForNavigation();
-                }
+                RecordingButtonManager.prepareForNavigation();
+                PlaylistButtonManager.prepareForNavigation();
+                ChannelButtonManager.prepareForNavigation();
                 this.triggerChannelUpdate(navId);
             } else {
                 RecordingButtonManager.reset();
@@ -3613,6 +3616,8 @@
             const dockElement = await DOMScanner.getChannelAnchorElement(expectedTarget);
             const anchorWaitMs = Math.round(performance.now() - anchorStartTime);
             if (!DOMScanner.isChannelPage() || decodeURIComponent(location.pathname) !== channelKey || (navId !== undefined && this._currentNavigationId !== navId)) return;
+            RecordingButtonManager.reset();
+            PlaylistButtonManager.reset();
 
             ChannelButtonManager.appendToDock(dockElement);
 
@@ -3855,6 +3860,7 @@
             const dockElement = await DOMScanner.getButtonAnchorElement();
             const anchorWaitMs = Math.round(performance.now() - anchorStartTime);
             if (DOMScanner.getVideoId() !== videoId || (navId !== undefined && this._currentNavigationId !== navId)) return;
+            ChannelButtonManager.reset();
             RecordingButtonManager.appendToDock(dockElement);
             PlaylistButtonManager.appendToDock(dockElement);
 
