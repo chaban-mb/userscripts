@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        Spotify Release List: MusicBrainz Checker
 // @namespace   https://musicbrainz.org/user/chaban
-// @version     1.0.4
+// @version     1.0.5
 // @description Checks releases on Spotify Release List instances against MusicBrainz. Fades or hides found releases and collapses date groups where everything is catalogued.
 // @tag         ai-created
 // @author      chaban
@@ -92,7 +92,7 @@
 
         // Only act once the Filter button is present — that signals React has
         // finished rendering all native header controls.
-        if (!headerLeft.querySelector('[title^="Toggle Filters"]')) return;
+        if (!headerLeft.querySelector('[title^="Toggle filters" i]')) return;
 
         let btn = document.getElementById('mb-checker-toggle');
         const isNew = !btn;
