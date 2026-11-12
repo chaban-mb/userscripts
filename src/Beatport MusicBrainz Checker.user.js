@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Beatport: MusicBrainz Checker
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      2.8.3
+// @version      2.8.4
 // @description  Adds MusicBrainz status icons to Beatport releases on list pages and links missing releases for importing
 // @tag          ai-created
 // @author       RustyNova, chaban
@@ -196,6 +196,7 @@
     updateReleaseRow: function (rowElement, releaseUrl, mbStatus) {
       const dateDiv = rowElement.querySelector(Config.SELECTORS.ANCHOR);
       if (!dateDiv) {
+        BeatportMusicBrainzImporter._processedRows.set(rowElement, '__SKIPPED__');
         return;
       }
 
@@ -236,7 +237,8 @@
 
     /**
      * Extracts release URL from a release or track row element.
-     * Checks for a direct link first, then inspects React Fiber properties.
+     * Checks for a direct link first, then inspects React Fiber properties,
+     * and falls back to __NEXT_DATA__ queries when available.
      * @param {HTMLElement} rowElement - The row element to extract from.
      * @returns {string|null} The resolved release URL or null if not found.
      */
@@ -262,11 +264,44 @@
         }
       }
 
+      // Fallback: check __NEXT_DATA__ track data if row contains a track link
+      const trackLink = rowElement.querySelector('a[href*="/track/"]');
+      if (trackLink) {
+        const trackMatch = trackLink.getAttribute('href')?.match(/\/track\/[^\/]+\/(\d+)/);
+        if (trackMatch) {
+          const trackId = Number(trackMatch[1]);
+          let nextData = null;
+          const nextScript = document.getElementById('__NEXT_DATA__');
+          if (nextScript?.textContent) {
+            try {
+              nextData = JSON.parse(nextScript.textContent);
+            } catch (e) {}
+          }
+          if (!nextData && typeof unsafeWindow !== 'undefined') {
+            nextData = unsafeWindow.__NEXT_DATA__;
+          }
+
+          const queries = nextData?.props?.pageProps?.dehydratedState?.queries;
+          if (Array.isArray(queries)) {
+            for (const q of queries) {
+              const results = q?.state?.data?.results;
+              if (Array.isArray(results)) {
+                const found = results.find(t => t.id === trackId);
+                if (found?.release?.id && found?.release?.slug) {
+                  return `${window.location.origin}/release/${found.release.slug}/${found.release.id}`;
+                }
+              }
+            }
+          }
+        }
+      }
+
       return null;
     },
 
     /**
      * Finds all unprocessed release rows and extracts their URLs and corresponding DOM elements.
+     * Only considers rows that contain a designated date/anchor container.
      * @returns {Array<{url: string, element: HTMLElement}>} An array of objects, each containing
      * a release URL and its DOM element.
      */
@@ -275,6 +310,13 @@
       const unprocessedReleases = [];
 
       for (const releaseRow of releases) {
+        // Only target rows containing the date/details anchor
+        const hasAnchor = releaseRow.querySelector(Config.SELECTORS.ANCHOR);
+        if (!hasAnchor) {
+          BeatportMusicBrainzImporter._processedRows.set(releaseRow, '__SKIPPED__');
+          continue;
+        }
+
         const url = this._extractReleaseUrlFromRow(releaseRow);
         if (url) {
           // Normalize the URL before checking the Map
@@ -291,6 +333,9 @@
               element: releaseRow
             });
           }
+        } else {
+          // No release URL resolvable from this row; mark as skipped to avoid re-evaluating
+          BeatportMusicBrainzImporter._processedRows.set(releaseRow, '__SKIPPED__');
         }
       }
       return unprocessedReleases;
@@ -427,8 +472,12 @@
       this._runningUpdate = true;
 
       try {
+        let passCount = 0;
+        const MAX_CONSECUTIVE_PASSES = 3;
+
         do {
           this._scheduleUpdate = false;
+          passCount++;
 
           if (!DOMScanner.isSupportedPage()) {
             return;
@@ -523,8 +572,10 @@
           }
 
           // If DOM elements were replaced or added while fetching, schedule another pass
-          if (DOMScanner.getReleasesToProcess().length > 0) {
+          if (passCount < MAX_CONSECUTIVE_PASSES && DOMScanner.getReleasesToProcess().length > 0) {
             this._scheduleUpdate = true;
+            // Yield briefly to the browser event loop before next pass
+            await new Promise(resolve => setTimeout(resolve, 50));
           }
 
         } while (this._scheduleUpdate);
