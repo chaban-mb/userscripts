@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        Volumo: MusicBrainz Importer
 // @namespace   https://musicbrainz.org/user/chaban
-// @version     1.4.6
+// @version     1.4.7
 // @description Allows importing releases from Volumo into MusicBrainz.
 // @tag         ai-created
 // @author      chaban
