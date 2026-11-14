@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Beatport: MusicBrainz Checker
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      2.8.4
+// @version      2.8.5
 // @description  Adds MusicBrainz status icons to Beatport releases on list pages and links missing releases for importing
 // @tag          ai-created
 // @author       RustyNova, chaban
