@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        Spotify Release List: MusicBrainz Checker
 // @namespace   https://musicbrainz.org/user/chaban
-// @version     1.0.5
+// @version     1.0.6
 // @description Checks releases on Spotify Release List instances against MusicBrainz. Fades or hides found releases and collapses date groups where everything is catalogued.
 // @tag         ai-created
 // @author      chaban
@@ -97,15 +97,26 @@
         let btn = document.getElementById('mb-checker-toggle');
         const isNew = !btn;
 
+        const setToggleContent = (button, hidden) => {
+            const iconSpan = document.createElement('span');
+            iconSpan.className = 'icon';
+            const icon = document.createElement('i');
+            icon.className = hidden ? 'fas fa-eye' : 'fas fa-eye-slash';
+            iconSpan.appendChild(icon);
+
+            const labelSpan = document.createElement('span');
+            labelSpan.textContent = hidden ? 'Show Found' : 'Hide Found';
+
+            button.replaceChildren(iconSpan, labelSpan);
+        };
+
         if (isNew) {
             btn = document.createElement('button');
             btn.id = 'mb-checker-toggle';
             btn.className = 'button is-rounded has-text-weight-semibold is-dark is-darker button--compact';
             btn.title = 'Toggle visibility of releases already in MusicBrainz';
             // Set initial label to match current isHidden state.
-            btn.innerHTML = isHidden
-                ? `<span class="icon"><i class="fas fa-eye"></i></span><span>Show Found</span>`
-                : `<span class="icon"><i class="fas fa-eye-slash"></i></span><span>Hide Found</span>`;
+            setToggleContent(btn, isHidden);
 
             btn.addEventListener('click', () => {
                 isHidden = !isHidden;
@@ -117,9 +128,7 @@
                 } else {
                     updateReleaseDayCollapse();
                 }
-                btn.innerHTML = isHidden
-                    ? `<span class="icon"><i class="fas fa-eye"></i></span><span>Show Found</span>`
-                    : `<span class="icon"><i class="fas fa-eye-slash"></i></span><span>Hide Found</span>`;
+                setToggleContent(btn, isHidden);
             });
         }
 
