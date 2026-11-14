@@ -998,14 +998,7 @@ def do_release(non_interactive=False, json_output=False, bump_strategy="auto", s
             else:
                 subprocess.run(['git', 'push', remote, release_branch], check=True)
 
-        # Sync inlined dist branch for GreasyFork webhook support
-        print(f"\n{COLOR_CYAN}Syncing inlined userscripts to 'dist' branch for GreasyFork...{COLOR_RESET}")
-        script_dir = os.path.dirname(os.path.abspath(__file__))
-        build_dist_path = os.path.join(script_dir, "build_dist.py")
-        subprocess.run([sys.executable, build_dist_path, "--sync-branch", "--main-branch", main_branch], check=True)
-        subprocess.run(['git', 'push', remote, 'dist'], check=True)
-
-        print(f"\n{COLOR_GREEN}{COLOR_BOLD}Release completed successfully!{COLOR_RESET}\n")
+        print(f"\n{COLOR_GREEN}{COLOR_BOLD}Release completed successfully!{COLOR_RESET} (GitHub Actions will sync 'dist' from '{main_branch}'.)\n")
 
         # Initial release publishing assistant for brand-new scripts
         newly_released = [s for s in selected_scripts if s.get('main_version') is None and not s['rel_path'].startswith('lib/')]
@@ -1341,7 +1334,7 @@ def print_publish_info(script_name, greasyfork_id=None):
     return 0
 
 def resolve_command(arg):
-    commands = ['check', 'cleanup', 'release', 'build', 'bump', 'build-dist', 'init', 'new', 'publish-info', 'announce']
+    commands = ['check', 'cleanup', 'release', 'build', 'bump', 'init', 'new', 'publish-info', 'announce']
     if arg in commands:
         if arg == 'new':
             return 'init'
@@ -1376,11 +1369,10 @@ Examples:
   python tools/workflow.py init "New Script Name"   # Initialize a new userscript from template
   python tools/workflow.py publish-info "Script"    # Show Greasy Fork sync URLs and forum draft
   python tools/workflow.py bump --bump-type patch   # Batch bump modified scripts & dependent libs
-  python tools/workflow.py release --non-interactive -y -p  # Automated release to main & dist
-  python tools/workflow.py build-dist --sync-branch # Synchronize standalone inlined scripts to dist
+  python tools/workflow.py release --non-interactive -y -p  # Automated release to main
 """
     )
-    subparsers = parser.add_subparsers(dest="command", help="Command to run", metavar="{check,release,bump,build,build-dist,cleanup,init,publish-info}")
+    subparsers = parser.add_subparsers(dest="command", help="Command to run", metavar="{check,release,bump,build,cleanup,init,publish-info}")
 
     # Subcommand: check
     check_parser = subparsers.add_parser("check", help="Check unreleased scripts, cascading dependency bumps, and docs")
@@ -1396,7 +1388,7 @@ Examples:
     cleanup_parser.add_argument("--non-interactive", "-y", action="store_true", help="Execute cleanup without interactive confirmation prompts")
 
     # Subcommand: release
-    release_parser = subparsers.add_parser("release", help="Interactive or automated release assistant with dist sync")
+    release_parser = subparsers.add_parser("release", help="Interactive or automated release assistant")
     release_parser.add_argument("--non-interactive", "-y", "--auto", action="store_true", help="Automated non-interactive mode for LLM/agent execution")
     release_parser.add_argument("--push", "--apply", "-p", action="store_true", help="Apply git merge/rebase and push operations to remote")
     release_parser.add_argument("--dry-run", "-n", action="store_true", help="Simulate release workflow without creating commits or modifying files")
@@ -1414,11 +1406,6 @@ Examples:
 
     # Subcommand: build
     subparsers.add_parser("build", help="Rebuild docs/USERSCRIPTS.md markdown listing")
-
-    # Subcommand: build-dist
-    dist_parser = subparsers.add_parser("build-dist", help="Build standalone inlined scripts and sync to dist branch")
-    dist_parser.add_argument("--sync-branch", action="store_true", help="Sync inlined scripts directly to dist branch")
-    dist_parser.add_argument("--main-branch", default="main", help="Main branch name (default: main)")
 
     # Subcommand: init (new)
     init_parser = subparsers.add_parser("init", aliases=["new"], help="Initialize a new userscript from template")
@@ -1461,20 +1448,6 @@ Examples:
             )
         elif args.command == "build":
             do_build()
-        elif args.command == "build-dist":
-            from build_dist import sync_dist_branch, build_all_inlined_scripts
-            if getattr(args, 'sync_branch', False):
-                sync_dist_branch(main_branch=args.main_branch)
-            else:
-                import tempfile
-                with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmpdir:
-                    res = build_all_inlined_scripts(tmpdir)
-                    print("Build dry-run complete. Inlined dependencies summary:")
-                    for script, libs in res.items():
-                        if libs:
-                            print(f"  * {script}: inlined {libs}")
-                        else:
-                            print(f"  * {script}: standalone (no local libs)")
     except KeyboardInterrupt:
         print(f"\n{COLOR_YELLOW}Aborted.{COLOR_RESET}\n")
         sys.exit(1)

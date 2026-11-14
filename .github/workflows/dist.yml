@@ -1,0 +1,44 @@
+name: Sync dist branch
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "src/**"
+      - "lib/**"
+  workflow_dispatch:
+
+concurrency:
+  group: dist-sync
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  sync-dist:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout main with full history
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Configure git and fetch dist branch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch origin dist:dist || true
+
+      - name: Sync inlined userscripts to dist
+        run: python tools/build_dist.py --sync-branch --main-branch main --dist-branch dist
+
+      - name: Push dist branch
+        run: git push origin dist

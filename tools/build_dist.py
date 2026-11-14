@@ -131,17 +131,16 @@ def build_all_inlined_scripts(output_dir, source_root=REPO_ROOT):
 def find_commits_to_sync(main_branch="main", dist_branch="dist", with_mode=False):
     """
     Finds commits on main_branch that modified src/ or lib/ and need to be synced to dist_branch.
-    Matches the latest commit on dist against main_branch first-parent commit history
-    to ensure clean linear progression without replaying parallel branch histories.
+    Matches the latest commit on dist against main_branch commit history and replays
+    non-merge commits individually so each script preserves its own changelog on Greasy Fork.
     """
     dist_log = subprocess.run(
         ["git", "log", "-50", "--format=%s|||%ad", dist_branch],
         capture_output=True, text=True, check=True, encoding="utf-8"
     ).stdout.strip().splitlines()
 
-    # Query first-parent history on main to prevent matching commits located on merged side branches
     main_log = subprocess.run(
-        ["git", "log", "-100", "--first-parent", "--format=%H|||%s|||%ad", main_branch],
+        ["git", "log", "-200", "--format=%H|||%s|||%ad", main_branch],
         capture_output=True, text=True, check=True, encoding="utf-8"
     ).stdout.strip().splitlines()
 
@@ -172,23 +171,11 @@ def find_commits_to_sync(main_branch="main", dist_branch="dist", with_mode=False
     if matched_main:
         log_range = f"{matched_main}..{main_branch}"
         commits = subprocess.run(
-            ["git", "log", log_range, "--reverse", "--format=%H", "--", "src/", "lib/"],
+            ["git", "log", log_range, "--reverse", "--no-merges", "--format=%H", "--", "src/", "lib/"],
             capture_output=True, text=True, check=True, encoding="utf-8"
         ).stdout.strip().splitlines()
         clean_commits = [c.strip() for c in commits if c.strip()]
-
-        # Check if range contains merge commits or is overly large (> 20 commits).
-        # In non-linear or long ranges, fall back to a single atomic sync commit to avoid
-        # spamming Greasy Fork with multi-commit walls.
-        merges = subprocess.run(
-            ["git", "rev-list", "--merges", log_range],
-            capture_output=True, text=True, check=True, encoding="utf-8"
-        ).stdout.strip().splitlines()
-
-        if len(clean_commits) <= 20 and not merges:
-            return (clean_commits, False) if with_mode else clean_commits
-        else:
-            return ([tip], True) if with_mode else [tip]
+        return (clean_commits, False) if with_mode else clean_commits
     else:
         clean_commits = [tip] if tip else []
         return (clean_commits, True) if with_mode else clean_commits

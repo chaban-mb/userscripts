@@ -216,16 +216,15 @@ Key subcommands:
 - `init "<Script Name>"` (alias: `new`): Initialize a new userscript from `templates/`, generate companion documentation in `docs/descriptions/`, register scope in `commit-scopes.md`, and optionally create topic branch (`--branch`).
 - `check`: Check unreleased scripts, cascading dependency bumps, and missing metadata.
 - `bump`: Batch bump version tags (`--bump-type patch|minor|major`).
-- `release`: Automated or interactive release assistant with changelog generation and dist sync. On initial release of brand-new scripts, automatically displays the publishing assistant.
+- `release`: Automated or interactive release assistant with changelog generation and push to `main` (GitHub Actions handles `dist` synchronization automatically). On initial release of brand-new scripts, automatically displays the publishing assistant.
 - `publish-info "<Script Name>"` (alias: `announce`): Display Greasy Fork code & description sync URLs and a pre-formatted Discourse forum announcement draft.
 - `cleanup [branch]`: Clean up local and remote feature branches merged on GitHub.
-- `build-dist`: Build standalone inlined scripts and sync directly to the `dist` branch (`--sync-branch`).
 
 ---
 
 ## Distribution Builder (`build_dist.py`)
 
-Compiles and bundles userscripts into the `dist/` distribution directory, inlining dependencies or preparing standalone scripts.
+Inlines local `lib/` dependencies and rewrites update URLs for standalone distribution on `dist` (invoked automatically by `.github/workflows/dist.yml` on pushes to `main`, or locally as a dry-run / `--print`).
 
 ```bash
 python tools/build_dist.py
