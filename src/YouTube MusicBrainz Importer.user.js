@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        YouTube: MusicBrainz Importer
 // @namespace   https://musicbrainz.org/user/chaban
-// @version     2.15.1
+// @version     2.15.2
 // @description Imports YouTube videos to MusicBrainz as a new standalone recording
 // @tag         ai-created
 // @author      nikki, RustyNova, chaban
@@ -510,20 +510,37 @@
         /**
          * Asynchronously sleeps for the given duration in milliseconds.
          * @param {number} ms
+         * @param {AbortSignal|null} [signal=null]
          * @returns {Promise<void>}
          */
-        sleep: function (ms) {
-            return new Promise(resolve => setTimeout(resolve, ms));
+        sleep: function (ms, signal = null) {
+            if (signal?.aborted) return Promise.resolve();
+            return new Promise(resolve => {
+                const onAbort = () => {
+                    clearTimeout(timer);
+                    resolve();
+                };
+                const timer = setTimeout(() => {
+                    signal?.removeEventListener('abort', onAbort);
+                    resolve();
+                }, ms);
+                signal?.addEventListener('abort', onAbort, { once: true });
+            });
         },
 
         /**
          * Waits for an element matching the given CSS selector to appear in the DOM.
          * @param {string} selector - The CSS selector of the element to wait for.
-         * @param {number} timeout - The maximum time (in milliseconds) to wait for the element.
-         * @returns {Promise<Element>} A promise that resolves with the element once found, or rejects on timeout.
+         * @param {number} [timeout=15000] - The maximum time (in milliseconds) to wait for the element.
+         * @param {AbortSignal|null} [signal=null] - Optional AbortSignal to cancel waiting.
+         * @returns {Promise<Element>} A promise that resolves with the element once found, or rejects on timeout/abort.
          */
-        waitForElement: function (selector, timeout = 15000) {
+        waitForElement: function (selector, timeout = 15000, signal = null) {
             return new Promise((resolve, reject) => {
+                if (signal?.aborted) {
+                    reject(new DOMException('The operation was aborted', 'AbortError'));
+                    return;
+                }
                 const element = document.querySelector(selector);
                 if (element) {
                     resolve(element);
@@ -531,16 +548,26 @@
                 }
 
                 let observer;
-                const timer = setTimeout(() => {
+                const cleanup = () => {
+                    clearTimeout(timer);
                     if (observer) observer.disconnect();
+                    signal?.removeEventListener('abort', onAbort);
+                };
+                const onAbort = () => {
+                    cleanup();
+                    reject(new DOMException('The operation was aborted', 'AbortError'));
+                };
+                const timer = setTimeout(() => {
+                    cleanup();
                     reject(new Error(`Timeout waiting for element with selector: ${selector}`));
                 }, timeout);
+
+                signal?.addEventListener('abort', onAbort, { once: true });
 
                 observer = new MutationObserver(() => {
                     const targetElement = document.querySelector(selector);
                     if (targetElement) {
-                        clearTimeout(timer);
-                        observer.disconnect();
+                        cleanup();
                         resolve(targetElement);
                     }
                 });
@@ -1817,7 +1844,6 @@
                     buttonRenderedMs: timing.buttonRenderedMs ?? null,
                     anchorWaitMs: timing.anchorWaitMs ?? null,
                     heldUpAfterAnchorMs: timing.heldUpAfterAnchorMs ?? null,
-                    ytNavigateFinishMs: timing.ytNavigateFinishMs ?? null,
                     metadataExtractionMs: timing.metadataExtractionMs || 0,
                     lookupDurationMs: timing.lookupDurationMs || 0
                 },
@@ -1902,7 +1928,6 @@
                     buttonRenderedMs: timing.buttonRenderedMs ?? null,
                     anchorWaitMs: timing.anchorWaitMs ?? null,
                     heldUpAfterAnchorMs: timing.heldUpAfterAnchorMs ?? null,
-                    ytNavigateFinishMs: timing.ytNavigateFinishMs ?? null,
                     linkExtractionMs: timing.linkExtractionMs || 0,
                     lookupDurationMs: timing.lookupDurationMs || 0
                 },
@@ -1949,37 +1974,55 @@
         },
 
         /**
+         * Extracts the canonical channel target (@handle, UC..., or c/user path) from a decoded pathname.
+         * @param {string} channelKey
+         * @returns {string|null}
+         */
+        extractChannelTarget: function (channelKey) {
+            const handleMatch = channelKey.match(/\/(@[^\/?#]+)/);
+            if (handleMatch) return handleMatch[1];
+            const pathChannelMatch = channelKey.match(/\/channel\/(UC[A-Za-z0-9_-]+)/);
+            if (pathChannelMatch) return pathChannelMatch[1];
+            const legacyPathMatch = channelKey.match(/^\/((?:c|user)\/[^\/?#]+)/);
+            return legacyPathMatch ? legacyPathMatch[1] : null;
+        },
+
+        /**
          * Finds the DOM element where the watch page buttons should be appended.
+         * @param {AbortSignal|null} [signal=null]
          * @returns {Promise<HTMLElement|null>} A promise that resolves with the dock element, or null if not found.
          */
-        getButtonAnchorElement: async function () {
+        getButtonAnchorElement: async function (signal = null) {
             try {
-                return await Utils.waitForElement(Config.SELECTORS.BUTTON_DOCK, 10000)
-                    .catch(() => Utils.waitForElement(Config.SELECTORS.BUTTON_DOCK_FALLBACK, 5000));
+                try {
+                    return await Utils.waitForElement(Config.SELECTORS.BUTTON_DOCK, 10000, signal);
+                } catch (err) {
+                    if (signal?.aborted || err?.name === 'AbortError') throw err;
+                    return await Utils.waitForElement(Config.SELECTORS.BUTTON_DOCK_FALLBACK, 5000, signal);
+                }
             } catch (e) {
-                console.error(`[${GM.info.script.name}] Could not find button dock element:`, e);
+                if (!signal?.aborted && e?.name !== 'AbortError') {
+                    console.error(`[${GM.info.script.name}] Could not find button dock element:`, e);
+                }
                 return null;
             }
         },
 
-        /**
-         * Finds the DOM element where channel page buttons should be appended.
-         * @returns {Promise<HTMLElement|null>} A promise that resolves with the channel dock element, or null.
-         */
         /**
          * Finds the DOM element where channel page buttons should be appended,
          * waiting until the channel header matches the expected handle/channelId to prevent docking onto stale SPA elements.
          * @param {string|null} [expectedHandleOrId=null]
          * @param {number} [maxWaitMs=5000]
          * @param {number} [intervalMs=100]
+         * @param {AbortSignal|null} [signal=null]
          * @returns {Promise<HTMLElement|null>} A promise that resolves with the channel dock element, or null.
          */
-        getChannelAnchorElement: async function (expectedHandleOrId = null, maxWaitMs = 5000, intervalMs = 100) {
+        getChannelAnchorElement: async function (expectedHandleOrId = null, maxWaitMs = 5000, intervalMs = 100, signal = null) {
             const startTime = performance.now();
             const target = expectedHandleOrId ? expectedHandleOrId.toLowerCase().replace(/^@+/, '') : null;
 
             while (performance.now() - startTime < maxWaitMs) {
-                if (!this.isChannelPage()) return null;
+                if (signal?.aborted) return null;
 
                 const dock = document.querySelector(Config.SELECTORS.CHANNEL_DOCK);
                 if (dock) {
@@ -1994,9 +2037,10 @@
                         }
                     }
                 }
-                await Utils.sleep(intervalMs);
+                await Utils.sleep(intervalMs, signal);
             }
 
+            if (signal?.aborted) return null;
             // Fallback to any mounted dock element after timeout
             return document.querySelector(Config.SELECTORS.CHANNEL_DOCK);
         },
@@ -3179,14 +3223,19 @@
      * Main application logic for the userscript.
      */
     const YouTubeMusicBrainzImporter = {
-        _processingVideoId: null,
-        _currentProcessingPromise: null,
-        _processingChannelKey: null,
-        _currentChannelProcessingPromise: null,
         _activeVideoId: null,
         _activeChannelKey: null,
         _activeAbortController: null,
         _mbApi: null,
+
+        _cancelActiveRoute: function () {
+            if (this._activeAbortController) {
+                this._activeAbortController.abort();
+                this._activeAbortController = null;
+            }
+            this._activeVideoId = null;
+            this._activeChannelKey = null;
+        },
 
         lookupMbUrls: async function (canonicalUrls, signal = null) {
             try {
@@ -3478,36 +3527,16 @@
 
         _lastUrl: location.href,
         _orientationDebounceTimer: null,
-        _lastNavStartTime: performance.now(),
-        _lastYtNavigateFinishMs: null,
 
         /**
          * Sets up observers for YouTube's SPA navigation and dynamic DOM mutations.
          */
         _setupObservers: function () {
-            // 1. YouTube desktop Polymer navigation event (signals route change and view transition complete)
-            document.addEventListener('yt-navigate-finish', () => {
-                const navStart = this._lastNavStartTime || performance.now();
-                this._checkUrlChange();
-                this._lastYtNavigateFinishMs = Math.round(performance.now() - navStart);
-                // Once the new page view is fully mounted, cleanly dismiss offscreen opposing managers without flicker
-                if (DOMScanner.getVideoId()) {
-                    ChannelButtonManager.reset();
-                } else if (DOMScanner.isChannelPage()) {
-                    RecordingButtonManager.reset();
-                    PlaylistButtonManager.reset();
-                } else {
-                    RecordingButtonManager.reset();
-                    PlaylistButtonManager.reset();
-                    ChannelButtonManager.reset();
-                }
-            });
+            // 1. Standard Navigation API (unified SPA route change detection for desktop and mobile)
+            const nav = pageWin.navigation || window.navigation;
+            nav.addEventListener('currententrychange', () => this._checkUrlChange());
 
-            // 2. Browser history popstate/hashchange events (back/forward navigation)
-            window.addEventListener('popstate', () => this._checkUrlChange());
-            window.addEventListener('hashchange', () => this._checkUrlChange());
-
-            // 3. Handle mobile orientation change and window resize
+            // 2. Handle mobile orientation change and window resize
             const handleResizeOrOrientation = () => {
                 clearTimeout(this._orientationDebounceTimer);
                 this._orientationDebounceTimer = setTimeout(() => {
@@ -3518,13 +3547,9 @@
             window.addEventListener('orientationchange', handleResizeOrOrientation);
             window.addEventListener('resize', handleResizeOrOrientation);
 
-            // 4. MutationObserver to catch URL changes or DOM reconstruction
+            // 3. MutationObserver to re-attach docks after DOM reconstruction
             let mutationDebounceTimer = null;
             const observer = new MutationObserver(() => {
-                if (location.href !== this._lastUrl) {
-                    this._checkUrlChange();
-                    return;
-                }
                 if (!mutationDebounceTimer) {
                     mutationDebounceTimer = setTimeout(() => {
                         mutationDebounceTimer = null;
@@ -3539,22 +3564,20 @@
             });
         },
 
-        _currentNavigationId: 1,
-
         _checkUrlChange: function () {
             if (location.href === this._lastUrl) return;
             this._lastUrl = location.href;
-            this._lastNavStartTime = performance.now();
-            this._lastYtNavigateFinishMs = null;
             this._routePage();
         },
 
         _ensureDockAttached: async function () {
+            const signal = this._activeAbortController?.signal || null;
             const currentVideoId = DOMScanner.getVideoId();
             if (currentVideoId) {
                 if (RecordingButtonManager.container && !document.contains(RecordingButtonManager.container)) {
-                    const dock = await DOMScanner.getButtonAnchorElement();
-                    if (dock) {
+                    const dock = await DOMScanner.getButtonAnchorElement(signal);
+                    if (dock && !signal?.aborted) {
+                        ChannelButtonManager.reset();
                         RecordingButtonManager.appendToDock(dock);
                         PlaylistButtonManager.appendToDock(dock);
                     }
@@ -3562,11 +3585,11 @@
             } else if (DOMScanner.isChannelPage()) {
                 if (ChannelButtonManager.container && !document.contains(ChannelButtonManager.container)) {
                     const channelKey = decodeURIComponent(location.pathname);
-                    const handleMatch = channelKey.match(/\/(@[^\/?#]+)/);
-                    const pathChannelMatch = channelKey.match(/\/channel\/(UC[A-Za-z0-9_-]+)/);
-                    const expectedTarget = handleMatch ? handleMatch[1] : (pathChannelMatch ? pathChannelMatch[1] : null);
-                    const dock = await DOMScanner.getChannelAnchorElement(expectedTarget);
-                    if (dock) {
+                    const expectedTarget = DOMScanner.extractChannelTarget(channelKey);
+                    const dock = await DOMScanner.getChannelAnchorElement(expectedTarget, 5000, 100, signal);
+                    if (dock && !signal?.aborted) {
+                        RecordingButtonManager.reset();
+                        PlaylistButtonManager.reset();
                         ChannelButtonManager.appendToDock(dock);
                     }
                 }
@@ -3582,164 +3605,132 @@
                 if (this._activeVideoId === currentVideoId && !this._activeChannelKey) {
                     return;
                 }
-                this._currentNavigationId++;
-                const navId = this._currentNavigationId;
-                if (this._activeAbortController) {
-                    this._activeAbortController.abort();
-                }
-                this._activeAbortController = new AbortController();
-                const signal = this._activeAbortController.signal;
-
-                this._activeVideoId = currentVideoId;
-                this._activeChannelKey = null;
-                this._processingChannelKey = null;
-
-                // Preserve existing button visuals in-place during transition; dismiss opposing manager on yt-navigate-finish or dock
                 RecordingButtonManager.prepareForNavigation();
                 PlaylistButtonManager.prepareForNavigation();
                 ChannelButtonManager.prepareForNavigation();
-                this.triggerUpdate(currentVideoId, navId, signal);
+                this.triggerUpdate(currentVideoId);
             } else if (DOMScanner.isChannelPage()) {
                 const channelKey = decodeURIComponent(location.pathname);
                 if (this._activeChannelKey === channelKey && !this._activeVideoId) {
                     return;
                 }
-                this._currentNavigationId++;
-                const navId = this._currentNavigationId;
-                if (this._activeAbortController) {
-                    this._activeAbortController.abort();
-                }
-                this._activeAbortController = new AbortController();
-                const signal = this._activeAbortController.signal;
-
-                this._activeVideoId = null;
-                this._activeChannelKey = channelKey;
-                this._processingVideoId = null;
-
                 RecordingButtonManager.prepareForNavigation();
                 PlaylistButtonManager.prepareForNavigation();
                 ChannelButtonManager.prepareForNavigation();
-                this.triggerChannelUpdate(navId, signal);
+                this.triggerChannelUpdate();
             } else {
-                if (this._activeAbortController) {
-                    this._activeAbortController.abort();
-                    this._activeAbortController = null;
-                }
-                this._currentNavigationId++;
-                this._activeVideoId = null;
-                this._activeChannelKey = null;
-                this._processingVideoId = null;
-                this._processingChannelKey = null;
-
+                this._cancelActiveRoute();
                 RecordingButtonManager.reset();
                 PlaylistButtonManager.reset();
                 ChannelButtonManager.reset();
             }
         },
 
+        _runRouteTask: async function (routeState, taskFn, errorContext) {
+            this._cancelActiveRoute();
+            const controller = new AbortController();
+            this._activeVideoId = routeState.videoId || null;
+            this._activeChannelKey = routeState.channelKey || null;
+            this._activeAbortController = controller;
+
+            try {
+                await taskFn(controller.signal);
+            } catch (err) {
+                if (err?.name !== 'AbortError' && !controller.signal.aborted) {
+                    console.error(`[${GM.info.script.name}] Uncaught error processing ${errorContext}:`, err);
+                }
+            } finally {
+                if (this._activeAbortController === controller) {
+                    this._activeAbortController = null;
+                }
+            }
+        },
+
         /**
          * Triggers the channel lookup and UI update.
-         * @param {number} [navId]
-         * @param {AbortSignal|null} [signal=null]
          */
-        triggerChannelUpdate: function (navId = this._currentNavigationId, signal = null) {
+        triggerChannelUpdate: function () {
             const channelKey = decodeURIComponent(location.pathname);
 
-            if (this._processingChannelKey === channelKey && this._currentChannelProcessingPromise) {
+            if (this._activeChannelKey === channelKey && this._activeAbortController) {
                 return;
             }
 
-            if (!signal) {
-                if (!this._activeAbortController) {
-                    this._activeAbortController = new AbortController();
-                }
-                signal = this._activeAbortController.signal;
-            }
-
-            this._processingChannelKey = channelKey;
-
-            this._currentChannelProcessingPromise = this._performChannelUpdate(navId, signal)
-                .catch((err) => {
-                    if (err?.name === 'AbortError' || signal?.aborted) return;
-                    console.error(`[${GM.info.script.name}] Uncaught error processing channel:`, err);
-                })
-                .finally(() => {
-                    if (this._processingChannelKey === channelKey) {
-                        this._processingChannelKey = null;
-                        this._currentChannelProcessingPromise = null;
-                    }
-                });
+            this._runRouteTask(
+                { channelKey },
+                (signal) => this._performChannelUpdate(channelKey, signal),
+                `channel ${channelKey}`
+            );
         },
 
         /**
          * Performs the channel lookup and renders the appropriate MusicBrainz channel action.
-         * @param {number} [navId]
-         * @param {AbortSignal|null} [signal=null]
+         * @param {string} channelKey
+         * @param {AbortSignal} signal
          */
-        _performChannelUpdate: async function (navId, signal = null) {
+        _performChannelUpdate: async function (channelKey, signal) {
             const startTime = performance.now();
-            const channelKey = decodeURIComponent(location.pathname);
-            const handleMatch = channelKey.match(/\/(@[^\/?#]+)/);
-            const pathChannelMatch = channelKey.match(/\/channel\/(UC[A-Za-z0-9_-]+)/);
-            const legacyPathMatch = channelKey.match(/^\/((?:c|user)\/[^\/?#]+)/);
-            const expectedTarget = handleMatch
-                ? handleMatch[1]
-                : (pathChannelMatch ? pathChannelMatch[1] : (legacyPathMatch ? legacyPathMatch[1] : null));
+            const expectedTarget = DOMScanner.extractChannelTarget(channelKey);
 
-            if (!expectedTarget || signal?.aborted) return;
+            if (!expectedTarget || signal.aborted) return;
 
             const innertubePromise = InnertubeExtractor.extractChannelData(expectedTarget, signal);
+            innertubePromise.catch(() => null);
 
             const anchorStartTime = performance.now();
-            const dockElement = await DOMScanner.getChannelAnchorElement(expectedTarget);
+            const dockElement = await DOMScanner.getChannelAnchorElement(expectedTarget, 5000, 100, signal);
             const anchorWaitMs = Math.round(performance.now() - anchorStartTime);
-            if (signal?.aborted || !DOMScanner.isChannelPage() || decodeURIComponent(location.pathname) !== channelKey || (navId !== undefined && this._currentNavigationId !== navId)) return;
+            if (signal.aborted) return;
             RecordingButtonManager.reset();
             PlaylistButtonManager.reset();
+            if (!dockElement) return;
 
             ChannelButtonManager.appendToDock(dockElement);
-
-            const itRes = await innertubePromise;
-            const channelData = itRes?.data;
-
-            if (signal?.aborted || !DOMScanner.isChannelPage() || decodeURIComponent(location.pathname) !== channelKey || (navId !== undefined && this._currentNavigationId !== navId)) return;
-
-            if (!channelData) {
-                console.warn(`[${GM.info.script.name}] Failed to extract channel data for: ${expectedTarget}`);
-                ChannelButtonManager.hide();
-                return;
-            }
-
-            const urlsToQuery = [];
-            if (channelData.canonicalUrl) urlsToQuery.push(channelData.canonicalUrl);
-            if (channelData.handleUrl && !urlsToQuery.includes(channelData.handleUrl)) {
-                urlsToQuery.push(channelData.handleUrl);
-            }
-
-            if (urlsToQuery.length === 0) {
-                ChannelButtonManager.hide();
-                return;
-            }
-
-            const cachedUrlMap = new Map(urlsToQuery.map(u => [u, this._mbApi.cache.has(u)]));
-            const isAllCached = urlsToQuery.every(u => cachedUrlMap.get(u));
-            if (!isAllCached) {
-                ChannelButtonManager.setPending();
-            }
 
             let mbResults = null;
             let outcome = 'unknown';
             let actionResult = null;
             let lookupDurationMs = 0;
-            const linkExtractionMs = itRes?.durationMs ?? 0;
+            let linkExtractionMs = 0;
+            let channelData = null;
+            let urlsToQuery = [];
+            let cachedUrlMap = new Map();
 
             try {
+                const itRes = await innertubePromise;
+                channelData = itRes?.data;
+                linkExtractionMs = itRes?.durationMs ?? 0;
+
+                if (signal.aborted) return;
+
+                if (!channelData) {
+                    console.warn(`[${GM.info.script.name}] Failed to extract channel data for: ${expectedTarget}`);
+                    ChannelButtonManager.hide();
+                    return;
+                }
+
+                if (channelData.canonicalUrl) urlsToQuery.push(channelData.canonicalUrl);
+                if (channelData.handleUrl && !urlsToQuery.includes(channelData.handleUrl)) {
+                    urlsToQuery.push(channelData.handleUrl);
+                }
+
+                if (urlsToQuery.length === 0) {
+                    ChannelButtonManager.hide();
+                    return;
+                }
+
+                cachedUrlMap = new Map(urlsToQuery.map(u => [u, this._mbApi.cache.has(u)]));
+                const isAllCached = urlsToQuery.every(u => cachedUrlMap.get(u));
+                if (!isAllCached) {
+                    ChannelButtonManager.setPending();
+                }
+
                 const seedLinksEnabled = MenuManager.isSeedLinksEnabled();
                 const lookupStartTime = performance.now();
                 mbResults = await this.lookupMbUrls(urlsToQuery, signal);
                 lookupDurationMs = Math.round(performance.now() - lookupStartTime);
 
-                if (signal?.aborted || !DOMScanner.isChannelPage() || decodeURIComponent(location.pathname) !== channelKey || (navId !== undefined && this._currentNavigationId !== navId)) return;
+                if (signal.aborted) return;
 
                 const candidateExternalLinks = seedLinksEnabled ? (channelData.externalLinks || []) : [];
 
@@ -3765,9 +3756,6 @@
                     }
                 }
 
-                RecordingButtonManager.reset();
-                PlaylistButtonManager.reset();
-
                 if (foundEntities.length === 1) {
                     const { targetType, id, name } = foundEntities[0];
                     let missingExternalLinks = [];
@@ -3786,12 +3774,12 @@
                                 link => !existingMbUrls.some(mbUrl => Utils.isSameExternalUrl(link, mbUrl))
                             );
                         } catch (err) {
-                            if (err?.name === 'AbortError' || signal?.aborted) return;
+                            if (err?.name === 'AbortError' || signal.aborted) return;
                             console.warn(`[${GM.info.script.name}] Failed to fetch URL relationships for ${targetType} ${id}:`, err);
                         }
                     }
 
-                    if (signal?.aborted || !DOMScanner.isChannelPage() || decodeURIComponent(location.pathname) !== channelKey || (navId !== undefined && this._currentNavigationId !== navId)) return;
+                    if (signal.aborted) return;
 
                     ChannelButtonManager.displayLinkedEntity(
                         targetType,
@@ -3855,14 +3843,12 @@
                         buttonRenderedMs,
                         anchorWaitMs,
                         heldUpAfterAnchorMs,
-                        ytNavigateFinishMs: this._lastYtNavigateFinishMs,
                         linkExtractionMs,
                         lookupDurationMs
                     }
                 });
             } catch (error) {
-                if (error?.name === 'AbortError' || signal?.aborted) return;
-                if (!DOMScanner.isChannelPage() || decodeURIComponent(location.pathname) !== channelKey || (navId !== undefined && this._currentNavigationId !== navId)) return;
+                if (error?.name === 'AbortError' || signal.aborted) return;
                 console.error(`[${GM.info.script.name}] Error in channel lookup:`, error);
                 const apiName = error.apiName || 'API';
                 const errorMessage = error.status === 503 ? L10n.getString('errorApiRateLimit', { apiName }) : L10n.getString('errorProcessing');
@@ -3886,7 +3872,6 @@
                         buttonRenderedMs: typeof buttonRenderedMs !== 'undefined' ? buttonRenderedMs : null,
                         anchorWaitMs: typeof anchorWaitMs !== 'undefined' ? anchorWaitMs : null,
                         heldUpAfterAnchorMs: typeof heldUpAfterAnchorMs !== 'undefined' ? heldUpAfterAnchorMs : null,
-                        ytNavigateFinishMs: this._lastYtNavigateFinishMs,
                         linkExtractionMs,
                         lookupDurationMs
                     }
@@ -3898,63 +3883,46 @@
          * Triggers the update process for a given video ID.
          * This function acts as a gatekeeper to ensure only one update runs at a time.
          * @param {string|null} videoId - The YouTube video ID to process.
-         * @param {number} [navId]
-         * @param {AbortSignal|null} [signal=null]
          */
-        triggerUpdate: function (videoId, navId = this._currentNavigationId, signal = null) {
-            if (this._processingVideoId === videoId && this._currentProcessingPromise) {
-                return;
-            }
-
+        triggerUpdate: function (videoId) {
             if (!videoId) {
+                this._cancelActiveRoute();
                 RecordingButtonManager.hide();
                 PlaylistButtonManager.hide();
-                this._processingVideoId = null;
-                this._currentProcessingPromise = null;
                 return;
             }
 
-            if (!signal) {
-                if (!this._activeAbortController) {
-                    this._activeAbortController = new AbortController();
-                }
-                signal = this._activeAbortController.signal;
+            if (this._activeVideoId === videoId && this._activeAbortController) {
+                return;
             }
 
-            this._processingVideoId = videoId;
-
-            this._currentProcessingPromise = this._performUpdate(videoId, navId, signal)
-                .catch((err) => {
-                    if (err?.name === 'AbortError' || signal?.aborted) return;
-                    console.error(`[${GM.info.script.name}] Uncaught error processing video ${videoId}:`, err);
-                })
-                .finally(() => {
-                    if (this._processingVideoId === videoId) {
-                        this._processingVideoId = null;
-                        this._currentProcessingPromise = null;
-                    }
-                });
+            this._runRouteTask(
+                { videoId },
+                (signal) => this._performUpdate(videoId, signal),
+                `video ${videoId}`
+            );
         },
 
         /**
          * Performs the unified API calls and updates recording and playlist UI buttons.
          * @summary Unified single-pass extraction, MusicBrainz lookup, and UI resolution pipeline.
          * @param {string} videoId - The YouTube video ID to process.
-         * @param {number} [navId] - Navigation ID to guard against race conditions.
-         * @param {AbortSignal|null} [signal=null]
+         * @param {AbortSignal} signal
          * @returns {Promise<void>}
          */
-        _performUpdate: async function (videoId, navId, signal = null) {
+        _performUpdate: async function (videoId, signal) {
             const startTime = performance.now();
             const extractionStartTime = performance.now();
-            if (signal?.aborted) return;
+            if (signal.aborted) return;
             const innertubePromise = InnertubeExtractor.extractVideoData(videoId, signal);
+            innertubePromise.catch(() => null);
 
             const anchorStartTime = performance.now();
-            const dockElement = await DOMScanner.getButtonAnchorElement();
+            const dockElement = await DOMScanner.getButtonAnchorElement(signal);
             const anchorWaitMs = Math.round(performance.now() - anchorStartTime);
-            if (signal?.aborted || DOMScanner.getVideoId() !== videoId || (navId !== undefined && this._currentNavigationId !== navId)) return;
+            if (signal.aborted) return;
             ChannelButtonManager.reset();
+            if (!dockElement) return;
             RecordingButtonManager.appendToDock(dockElement);
             PlaylistButtonManager.appendToDock(dockElement);
 
@@ -3973,7 +3941,7 @@
                 ytData = itRes?.data;
                 metadataExtractionMs = itRes?.durationMs ?? Math.round(performance.now() - extractionStartTime);
 
-                if (signal?.aborted || DOMScanner.getVideoId() !== videoId || (navId !== undefined && this._currentNavigationId !== navId)) return;
+                if (signal.aborted) return;
 
                 if (!ytData) {
                     console.warn(`[${GM.info.script.name}] Could not extract metadata for video ID: ${videoId}`);
@@ -4006,20 +3974,18 @@
                 mbResults = await this.lookupMbUrls(urlsToQuery, signal);
                 lookupDurationMs = Math.round(performance.now() - lookupStartTime);
 
-                if (signal?.aborted || DOMScanner.getVideoId() !== videoId || (navId !== undefined && this._currentNavigationId !== navId)) return;
+                if (signal.aborted) return;
 
                 const mbVideoUrlEntity = mbResults.get(canonicalYtUrl);
                 const artistMbid = (youtubeChannelUrl ? this._extractArtistMbid(mbResults.get(youtubeChannelUrl)) : null)
                     || (youtubeHandleUrl ? this._extractArtistMbid(mbResults.get(youtubeHandleUrl)) : null);
-
-                ChannelButtonManager.reset();
 
                 // ===== Run Recording Importer Logic and Playlist Logic in Parallel =====
                 const recordingPromise = this._handleRecordingImport(ytData, canonicalYtUrl, youtubeChannelUrl, mbResults, mbVideoUrlEntity, artistMbid, youtubeHandleUrl, signal);
                 const playlistPromise = this._handlePlaylistLogic(ytData, canonicalYtUrl, signal);
 
                 [actionResult] = await Promise.all([recordingPromise, playlistPromise]);
-                if (signal?.aborted || DOMScanner.getVideoId() !== videoId || (navId !== undefined && this._currentNavigationId !== navId)) return;
+                if (signal.aborted) return;
 
                 const buttonRenderedMs = Math.round(performance.now() - startTime);
                 const heldUpAfterAnchorMs = Math.max(0, buttonRenderedMs - anchorWaitMs);
@@ -4038,14 +4004,12 @@
                         buttonRenderedMs,
                         anchorWaitMs,
                         heldUpAfterAnchorMs,
-                        ytNavigateFinishMs: this._lastYtNavigateFinishMs,
                         metadataExtractionMs,
                         lookupDurationMs
                     }
                 });
             } catch (error) {
-                if (error?.name === 'AbortError' || signal?.aborted) return;
-                if (DOMScanner.getVideoId() !== videoId || (navId !== undefined && this._currentNavigationId !== navId)) return;
+                if (error?.name === 'AbortError' || signal.aborted) return;
                 console.error(`[${GM.info.script.name}] Error in video update pipeline:`, error);
                 const apiName = error.apiName || 'API';
                 const errorMessage = error.status === 503 ? L10n.getString('errorApiRateLimit', { apiName }) : L10n.getString('errorProcessing');
@@ -4067,7 +4031,6 @@
                             buttonRenderedMs: typeof buttonRenderedMs !== 'undefined' ? buttonRenderedMs : null,
                             anchorWaitMs: typeof anchorWaitMs !== 'undefined' ? anchorWaitMs : null,
                             heldUpAfterAnchorMs: typeof heldUpAfterAnchorMs !== 'undefined' ? heldUpAfterAnchorMs : null,
-                            ytNavigateFinishMs: this._lastYtNavigateFinishMs,
                             metadataExtractionMs,
                             lookupDurationMs
                         }
