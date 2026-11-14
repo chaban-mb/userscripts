@@ -234,10 +234,6 @@ The build script generates a 5-tier aligned `// ==UserScript==` block:
 2. Click **`✚ Track external edits`** and check `[x] Reload tab`.
 3. Keep the editor/installer tab open; Violentmonkey polls ETags and automatically reloads target tabs on save.
 
-### Option 3: Violentmonkey MCP Bridge (`tools/dev_server.js`)
-1. For live AI agent interaction, connect the Violentmonkey MCP WebSocket bridge (`ws://127.0.0.1:8080/ws`).
-2. Pushes compiled scripts directly via `scripts_write` and reloads tabs automatically.
-
 ---
 
 ## 7. Dual-Output Taxonomy: Suites vs. Standalones

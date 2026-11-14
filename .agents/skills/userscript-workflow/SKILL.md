@@ -1,6 +1,6 @@
 ---
 name: userscript-workflow
-description: Userscript lifecycle, menu registration patterns, Violentmonkey direct MCP and dev server synchronization, and release management.
+description: Userscript lifecycle, menu registration patterns, HTTP dev server file tracking, read-only Violentmonkey MCP diagnostics, and release management.
 ---
 
 # Userscript Development Workflow & Lifecycle
@@ -61,38 +61,30 @@ async function setupMenuCommands() {
 
 ## Browser Testing & Live Sync
 
-### Primary: Official Violentmonkey MCP (`@violentmonkey/mcp`) Handshake
+Sync all script changes (new scripts and multi-file edits) through the local HTTP dev server with Violentmonkey's native **"Track external edits"**:
 
-1. Launch browser instance via `chrome-devtools` (`new_page`).
-2. Build distribution artifact with inline dependencies:
-
-   ```bash
-   python tools/build_dist.py --print "src/<Script Name>.user.js"
-   ```
-
-3. Sync script directly into Violentmonkey via the MCP `scripts_write` tool (inlining `@require ../lib/` references).
-4. Reload the target tab to test live behavior against clean baseline DOM.
-
-### Fallback: HTTP Dev Server & Violentmonkey External Tracking
-
-1. Start the local dev server:
+1. **Start the local dev server**:
 
    ```bash
    node tools/dev_server.js
    ```
 
-2. Open the dev dashboard in Chromium/Chrome: Navigate to `http://localhost:8080/`.
-3. Click **"Track in Violentmonkey"** for the script you are developing.
-4. In the Violentmonkey installation tab that opens:
-   - Check **"Track external edits"** (enables Violentmonkey ETag polling of local files).
-   - Check **"Reload tab"** (automatically reloads the active webpage when you save).
-   - Keep the tab open while editing in `src/*.user.js`.
-5. Mandatory cleanup when testing concludes:
+2. **Check which modified scripts need tracking** (when `violentmonkey` read-only MCP is connected):
+   - Call `scripts_list` to check which modified scripts already have an active `-dev.` `@version` (meaning file tracking is already active for them).
+   - Present only the untracked scripts (with their `http://localhost:8080/` dashboard link) for the user to click **"Track in Violentmonkey"** once.
+3. **In the Violentmonkey installation tab** (first-time setup per script):
+   - Check **"Track external edits"** (enables ETag polling of `src/` and `lib/`).
+   - Check **"Reload tab"** (automatically reloads the active webpage on save).
+   - Keep the tracking tab open while editing `src/*.user.js` or `lib/*.js`.
+4. **Verify live behavior**:
+   - Open or reload target tabs via `chrome-devtools` and check console/DOM state (plus read-only `script_logs` / `scripts_test_match` if needed).
+5. **Mandatory cleanup when testing concludes**:
 
    ```bash
    node tools/dev_server.js --kill
-   manage_task kill
    ```
+
+   Also stop any background dev-server task (`manage_task kill`).
 
 ## Branching, Commits & Release
 
@@ -104,7 +96,7 @@ async function setupMenuCommands() {
   python tools/workflow.py release --non-interactive --push
   ```
 
-  Validates versions, rebases onto `main`, inlines shared libraries (`lib/`), and synchronizes standalone bundles to `dist`.
+  Validates versions, rebases onto `main`, and pushes to `main` (GitHub Actions then inlines shared libraries and syncs `dist`).
 
 - **Publishing Assistant**:
 

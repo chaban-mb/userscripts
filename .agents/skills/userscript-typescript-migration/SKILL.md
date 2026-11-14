@@ -92,7 +92,7 @@ Extract universal utilities to prevent duplication:
 2. Enable strict type checking (`strict: true`, `noImplicitAny: true`).
 3. Replace regex-based inlining (`build_dist.py`) with native ES module `import`.
 4. Build dist bundle and verify with `node tests/<test_file>.js`.
-5. Test live in Chromium via dev server / Violentmonkey MCP.
+5. Test live in Chromium via dev server + Violentmonkey file tracking (and read-only MCP diagnostics if needed).
 
 ### Phase 3: Suite Consolidation
 
