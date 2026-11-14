@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        Deezer: MusicBrainz importer
 // @namespace   https://musicbrainz.org/user/chaban
-// @version     1.0.4
+// @version     1.0.5
 // @description Adds buttons for MusicBrainz, ListenBrainz, Harmony, and SAMBL to Deezer.
 // @tag         ai-created
 // @author      chaban
