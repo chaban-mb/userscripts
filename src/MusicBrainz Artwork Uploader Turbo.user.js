@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        MusicBrainz: Artwork Uploader Turbo
 // @namespace   https://musicbrainz.org/user/chaban
-// @version     3.3.11
+// @version     3.3.12
 // @description Allows for multiple artwork images to be uploaded simultaneously and recursively upload directories.
 // @tag         ai-created
 // @author      chaban
@@ -172,7 +172,7 @@
                 if (!fileList) return;
 
                 requestAnimationFrame(() => {
-                    fileList.innerHTML = '';
+                    fileList.replaceChildren();
                     for (const file of ArtworkUploaderTurbo.state.files) {
                         const item = document.createElement('li');
                         item.className = 'status-list-item';
