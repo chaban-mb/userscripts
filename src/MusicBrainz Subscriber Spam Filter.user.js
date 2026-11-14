@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        MusicBrainz: Subscriber Spam Filter
 // @namespace   https://musicbrainz.org/user/chaban
-// @version     1.0.4
+// @version     1.0.5
 // @description Filters spammers on your MusicBrainz subscriber list by detecting blocked profiles, stats, and name similarities.
 // @tag         ai-created
 // @author      chaban
@@ -453,13 +453,26 @@
         // Filter Group
         const filterGroup = document.createElement('div');
         filterGroup.className = 'mbsf-filter-group';
-        filterGroup.innerHTML = `
-            <strong>Filter:</strong>
-            <label><input type="radio" name="mbsf-filter" value="all"> Show All</label>
-            <label><input type="radio" name="mbsf-filter" value="hideSpammers" checked> Hide Spammers</label>
-            <label><input type="radio" name="mbsf-filter" value="spammersOnly"> Confirmed Only</label>
-            <label><input type="radio" name="mbsf-filter" value="potentialOnly"> Potential Only</label>
-        `;
+        const filterTitle = document.createElement('strong');
+        filterTitle.textContent = 'Filter:';
+        filterGroup.appendChild(filterTitle);
+
+        const filterOptions = [
+            { value: 'all', label: ' Show All', checked: false },
+            { value: 'hideSpammers', label: ' Hide Spammers', checked: true },
+            { value: 'spammersOnly', label: ' Confirmed Only', checked: false },
+            { value: 'potentialOnly', label: ' Potential Only', checked: false },
+        ];
+        for (const opt of filterOptions) {
+            const label = document.createElement('label');
+            const radio = document.createElement('input');
+            radio.type = 'radio';
+            radio.name = 'mbsf-filter';
+            radio.value = opt.value;
+            radio.checked = opt.checked;
+            label.append(radio, opt.label);
+            filterGroup.appendChild(label);
+        }
 
         // Stats Text
         const statsSpan = document.createElement('span');
