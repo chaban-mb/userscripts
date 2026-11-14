@@ -89,7 +89,7 @@ Extract universal utilities to prevent duplication:
 ### Phase 2: Pilot Script Conversion
 
 1. Rename target file to `.ts`.
-2. Enable strict type checking (`strict: true`, `noImplicitAny: true`).
+2. Enable strict type checking (`strict: true`, `noImplicitAny: true`) and ESLint rules banning unsafe DOM sinks (`innerHTML`, `outerHTML`, `insertAdjacentHTML`).
 3. Replace regex-based inlining (`build_dist.py`) with native ES module `import`.
 4. Build dist bundle and verify with `node tests/<test_file>.js`.
 5. Test live in Chromium via dev server + Violentmonkey file tracking (and read-only MCP diagnostics if needed).
@@ -105,7 +105,7 @@ For scripts operating on similar pages or sharing domain logic:
 ### Phase 4: CI/CD & Greasy Fork Release Automation
 
 1. Set up a GitHub Action on tag push (`v*.*.*`):
-   - Runs `npm run typecheck` and `npm test`.
+   - Runs `npm run lint`, `npm run typecheck`, and `npm test`.
    - Runs `npm run build` to generate all `dist/*.user.js`.
    - Creates a GitHub Release with attached `.user.js` assets.
    - Syncs to Greasy Fork via webhook or `greasyfork-deploy` action.
