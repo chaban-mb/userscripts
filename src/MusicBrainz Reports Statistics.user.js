@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        MusicBrainz: Reports Statistics
 // @namespace   https://musicbrainz.org/user/chaban
-// @version     2.1.4
+// @version     2.1.5
 // @description Indicates report changes since the last visit and hides reports without items.
 // @tag         ai-created
 // @author      chaban
@@ -262,21 +262,38 @@
     }
 
     /**
+     * Creates a styled indicator span element for report change display.
+     * @param {string} text
+     * @param {string} color
+     * @returns {HTMLSpanElement}
+     */
+    function createIndicatorElement(text, color) {
+        const outer = document.createElement('span');
+        outer.append(' ');
+        const inner = document.createElement('span');
+        inner.className = 'report-change-indicator';
+        inner.style.color = color;
+        inner.textContent = text;
+        outer.appendChild(inner);
+        return outer;
+    }
+
+    /**
      * Calculates the change in item count and formats it for display.
      * @param {Object} displayData The report's data for the current filter mode.
-     * @returns {string} Formatted change string (e.g., "▲ +5 (2.5%) since 3 days ago").
+     * @returns {HTMLSpanElement} Formatted change indicator element.
      */
     function getChangeIndicator(displayData) {
         if (displayData.unsupported) {
-             return '<span class="report-change-indicator" style="color: red;">(Unsupported Filter)</span>';
+            return createIndicatorElement('(Unsupported Filter)', 'red');
         }
         if (!displayData.history || displayData.history.length < 1) {
-            return '<span class="report-change-indicator" style="color: grey;">(No History)</span>';
+            return createIndicatorElement('(No History)', 'grey');
         }
 
         const currentEntry = displayData.history[displayData.history.length - 1];
         if (currentEntry.itemCount === -1) {
-             return '<span class="report-change-indicator" style="color: grey;">(Unknown Count)</span>';
+            return createIndicatorElement('(Unknown Count)', 'grey');
         }
 
         let previousEntry = null;
@@ -288,7 +305,7 @@
         }
 
         if (!previousEntry) {
-            return `<span class="report-change-indicator" style="color: grey;">(New: ${currentEntry.itemCount} items)</span>`;
+            return createIndicatorElement(`(New: ${currentEntry.itemCount} items)`, 'grey');
         }
 
         const change = currentEntry.itemCount - previousEntry.itemCount;
@@ -315,11 +332,11 @@
             const timeDiff = Math.abs(currentEntry.mbGeneratedTimestamp - previousEntry.mbGeneratedTimestamp);
             periodText = ` (${formatTimeAgo(timeDiff)})`;
         } else if (currentEntry.lastFetchedTimestamp && previousEntry.lastFetchedTimestamp) {
-             const timeDiff = Math.abs(currentEntry.lastFetchedTimestamp - previousEntry.lastFetchedTimestamp);
+            const timeDiff = Math.abs(currentEntry.lastFetchedTimestamp - previousEntry.lastFetchedTimestamp);
             periodText = ` (fetched ${formatTimeAgo(timeDiff)} apart)`;
         }
 
-        return `<span class="report-change-indicator" style="color: ${color};">${changeText}${percentageText}${periodText}</span>`;
+        return createIndicatorElement(`${changeText}${percentageText}${periodText}`, color);
     }
 
     /**
@@ -614,9 +631,7 @@
                     existingIndicator.remove();
                 }
 
-                const changeIndicatorHtml = getChangeIndicator(displayData);
-                const indicatorSpan = document.createElement('span');
-                indicatorSpan.innerHTML = ` ${changeIndicatorHtml}`;
+                const indicatorSpan = getChangeIndicator(displayData);
                 link.parentNode.insertBefore(indicatorSpan, link.nextSibling);
             }
         }
@@ -680,9 +695,7 @@
                     if (existingIndicator) {
                         existingIndicator.remove();
                     }
-                    const changeIndicatorHtml = getChangeIndicator(currentReportEntry);
-                    const indicatorSpan = document.createElement('span');
-                    indicatorSpan.innerHTML = ` ${changeIndicatorHtml}`;
+                    const indicatorSpan = getChangeIndicator(currentReportEntry);
                     link.parentNode.insertBefore(indicatorSpan, link.nextSibling);
                 }
 
@@ -709,8 +722,7 @@
                         if (existingIndicator) {
                             existingIndicator.remove();
                         }
-                        const indicatorSpan = document.createElement('span');
-                        indicatorSpan.innerHTML = ` <span class="report-change-indicator" style="color: red;">(Unsupported Filter)</span>`;
+                        const indicatorSpan = createIndicatorElement('(Unsupported Filter)', 'red');
                         link.parentNode.insertBefore(indicatorSpan, link.nextSibling);
                     }
                 } else {

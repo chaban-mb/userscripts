@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        MusicBrainz: Editor Subscription Manager
 // @namespace   https://musicbrainz.org/user/chaban
-// @version     0.3.5
+// @version     0.3.6
 // @description Manages subscriptions, tracks name changes and detects deleted users.
 // @tag         ai-created
 // @author      chaban
@@ -34,12 +34,32 @@
     const EDITORS_PER_PAGE = 100;
     const SPAMMER_TEXT = 'This user was blocked and their profile is hidden';
 
+    function createEl(tag, attrs = {}, ...children) {
+        const node = document.createElement(tag);
+        for (const [k, v] of Object.entries(attrs)) {
+            if (v == null) continue;
+            if (k === 'className') node.className = v;
+            else if (k === 'style' && typeof v === 'string') node.style.cssText = v;
+            else if (k.startsWith('dataset') && typeof v === 'object') Object.assign(node.dataset, v);
+            else if (k in node) node[k] = v;
+            else node.setAttribute(k, v);
+        }
+        for (const child of children) {
+            if (child != null) node.append(child);
+        }
+        return node;
+    }
+
+    function createStatusSpan(text, color, bold = false) {
+        return createEl(bold ? 'b' : 'span', { style: `color:${color}` }, text);
+    }
+
     const COLUMNS = [
         {
             id: 'select',
-            header: '<input type="checkbox" id="esm-select-all">',
+            header: () => createEl('input', { type: 'checkbox', id: 'esm-select-all' }),
             className: 'col-cb',
-            render: (e) => `<input type="checkbox" class="esm-select-row" data-id="${e.id}">`,
+            render: (e) => createEl('input', { type: 'checkbox', className: 'esm-select-row', dataset: { id: e.id } }),
             sortable: false
         },
         {
@@ -47,11 +67,17 @@
             header: 'Name',
             getValue: (e) => e.name.toLowerCase(),
             render: (e) => {
-                let html = `<a href="${getProfileUrl(e.name)}" target="_blank"><b>${e.name}</b></a>`;
+                const frag = document.createDocumentFragment();
+                frag.append(
+                    createEl('a', { href: getProfileUrl(e.name), target: '_blank' }, createEl('b', {}, e.name))
+                );
                 if (e.previousNames?.length) {
-                    html += `<br><span class="esm-aka" title="Known aliases">aka: ${e.previousNames.join(', ')}</span>`;
+                    frag.append(
+                        document.createElement('br'),
+                        createEl('span', { className: 'esm-aka', title: 'Known aliases' }, `aka: ${e.previousNames.join(', ')}`)
+                    );
                 }
-                return html;
+                return frag;
             }
         },
         {
@@ -74,7 +100,7 @@
             getValue: (e) => e.rejectedEdits || 0,
             render: (e) => {
                 const val = e.rejectedEdits || 0;
-                return val > 0 ? `<span class="esm-warn">${val.toLocaleString()}</span>` : val;
+                return val > 0 ? createEl('span', { className: 'esm-warn' }, val.toLocaleString()) : String(val);
             }
         },
         {
@@ -85,7 +111,7 @@
             render: (e) => {
                 const val = e.rejectionRate || 0;
                 const cls = val > 10 ? 'esm-bad-stat' : '';
-                return `<span class="${cls}">${val.toFixed(1)}%</span>`;
+                return createEl('span', { className: cls }, `${val.toFixed(1)}%`);
             }
         },
         {
@@ -107,7 +133,7 @@
             render: (e) => {
                 if (!e.lastUpdated) return '';
                 const age = (Date.now() - e.lastUpdated) / 86400000;
-                return `<span class="${age > CACHE_TTL_DAYS ? 'esm-stale' : 'esm-fresh'}">${age < 0.1 ? 'Fresh' : age.toFixed(1) + 'd'}</span>`;
+                return createEl('span', { className: age > CACHE_TTL_DAYS ? 'esm-stale' : 'esm-fresh' }, age < 0.1 ? 'Fresh' : `${age.toFixed(1)}d`);
             }
         },
         {
@@ -123,13 +149,13 @@
             },
             render: (e) => {
                 if (e.isDeleted) {
-                    return e.isSubscribed ? '<b style="color:darkred">DELETED</b>' : '<span style="color:#666">Visited (Deleted)</span>';
+                    return e.isSubscribed ? createStatusSpan('DELETED', 'darkred', true) : createStatusSpan('Visited (Deleted)', '#666');
                 }
-                if (e.isSpammer) return '<b style="color:red">SPAMMER</b>';
-                if (e.isLost) return '<b style="color:orange">LOST SUB</b>';
-                if (!e.isSubscribed) return '<span style="color:#666">Visited Only</span>';
+                if (e.isSpammer) return createStatusSpan('SPAMMER', 'red', true);
+                if (e.isLost) return createStatusSpan('LOST SUB', 'orange', true);
+                if (!e.isSubscribed) return createStatusSpan('Visited Only', '#666');
                 if (e.error) return `ERR: ${e.error}`;
-                return '<span style="color:green">Active</span>';
+                return createStatusSpan('Active', 'green');
             }
         }
     ];
@@ -543,7 +569,8 @@
 
         if (displayData.length === 0) {
             const msg = allEditorData.length > 0 ? 'No subscriptions to display (Visited profiles are hidden).' : 'No data found. Try scanning.';
-            tbody.innerHTML = `<tr><td colspan="${COLUMNS.length}" style="text-align:center; padding:20px;">${msg}</td></tr>`;
+            const emptyCell = createEl('td', { colSpan: COLUMNS.length, style: 'text-align:center; padding:20px;' }, msg);
+            tbody.replaceChildren(createEl('tr', {}, emptyCell));
             return;
         }
 
@@ -563,7 +590,8 @@
             return 0;
         });
 
-        tbody.innerHTML = displayData.map(e => {
+        const fragment = document.createDocumentFragment();
+        for (const e of displayData) {
             let rowClass = '';
             if (e.isDeleted) rowClass = 'esm-row-deleted';
             else if (e.isLost) rowClass = 'esm-row-lost';
@@ -571,9 +599,18 @@
             else if (isInactive(e, cutoff)) rowClass = 'esm-row-inactive';
             else if (!e.isSubscribed) rowClass = 'esm-row-visited';
 
-            const cells = COLUMNS.map(col => `<td class="${col.className || ''}">${col.render(e)}</td>`).join('');
-            return `<tr class="${rowClass}">${cells}</tr>`;
-        }).join('');
+            const tr = createEl('tr', { className: rowClass });
+            for (const col of COLUMNS) {
+                const td = createEl('td', { className: col.className || '' });
+                const rendered = col.render(e);
+                if (rendered != null && rendered !== '') {
+                    td.append(rendered);
+                }
+                tr.appendChild(td);
+            }
+            fragment.appendChild(tr);
+        }
+        tbody.replaceChildren(fragment);
     }
 
     function buildReportUI() {
@@ -582,50 +619,56 @@
         const settings = storage.getSettings();
         const years = parseInt(document.getElementById('esm-inactive-years')?.value || '5', 10);
 
-        const div = document.createElement('div');
-        div.id = 'esm-report-ui';
-        div.innerHTML = `
-            <h1>Editor Subscription Manager</h1>
-            <div class="esm-controls">
-                <div class="esm-stats">
-                    <ul>
-                        <li><strong>Total Cached:</strong> <span id="esm-stats-total">...</span></li>
-                        <li><strong>Visited Only:</strong> <span id="esm-stats-visited">...</span></li>
-                        <li><strong>Spammers:</strong> <span id="esm-stats-spammers">...</span></li>
-                        <li><strong>Inactive (> <span id="esm-inactive-years-text">${years}</span>y):</strong> <span id="esm-inactive-count">...</span></li>
-                        <li><strong>High Rejection (>10%):</strong> <span id="esm-stats-high-rejection">...</span></li>
-                        <li><strong>Lost/Deleted Subs:</strong> <span id="esm-stats-lost">...</span></li>
-                    </ul>
-                </div>
-                <div class="esm-actions">
-                    <div class="esm-action-row">
-                        <button id="esm-refresh-new" title="Updates only new or expired entries">↻ Scan (Smart)</button>
-                        <button id="esm-refresh-all" title="Force updates all cache entries">↻ Refresh (Full)</button>
-                        <button id="esm-close-report">Close</button>
-                    </div>
-                    <div class="esm-action-row">
-                        <label>Unsubscribe Inactive > </label>
-                        <input type="number" id="esm-inactive-years" value="${years}" min="1" style="width:40px"> y
-                        <button id="esm-unsub-inactive">Go</button>
-                    </div>
-                    <div class="esm-action-row">
-                        <label style="cursor:pointer; display:flex; align-items:center;">
-                            <input type="checkbox" id="esm-show-visited" style="margin-right:5px;"> Show Visited Profiles
-                        </label>
-                    </div>
-                    <div class="esm-action-row">
-                        <button id="esm-unsub-spammers" disabled>Unsubscribe Spammers</button>
-                        <button id="esm-unsub-selected" disabled>Unsubscribe / Dismiss Selected</button>
-                    </div>
-                </div>
-            </div>
-            <table class="tbl" id="esm-report-table">
-                <thead>
-                    <tr>${COLUMNS.map(c => `<th class="${c.className || ''} ${c.sortable !== false ? 'esm-sortable' : ''}" data-id="${c.id}">${c.header}</th>`).join('')}</tr>
-                </thead>
-                <tbody></tbody>
-            </table>
-        `;
+        const div = createEl('div', { id: 'esm-report-ui' },
+            createEl('h1', {}, 'Editor Subscription Manager'),
+            createEl('div', { className: 'esm-controls' },
+                createEl('div', { className: 'esm-stats' },
+                    createEl('ul', {},
+                        createEl('li', {}, createEl('strong', {}, 'Total Cached:'), ' ', createEl('span', { id: 'esm-stats-total' }, '...')),
+                        createEl('li', {}, createEl('strong', {}, 'Visited Only:'), ' ', createEl('span', { id: 'esm-stats-visited' }, '...')),
+                        createEl('li', {}, createEl('strong', {}, 'Spammers:'), ' ', createEl('span', { id: 'esm-stats-spammers' }, '...')),
+                        createEl('li', {}, createEl('strong', {}, 'Inactive (> ', createEl('span', { id: 'esm-inactive-years-text' }, String(years)), 'y):'), ' ', createEl('span', { id: 'esm-inactive-count' }, '...')),
+                        createEl('li', {}, createEl('strong', {}, 'High Rejection (>10%):'), ' ', createEl('span', { id: 'esm-stats-high-rejection' }, '...')),
+                        createEl('li', {}, createEl('strong', {}, 'Lost/Deleted Subs:'), ' ', createEl('span', { id: 'esm-stats-lost' }, '...'))
+                    )
+                ),
+                createEl('div', { className: 'esm-actions' },
+                    createEl('div', { className: 'esm-action-row' },
+                        createEl('button', { id: 'esm-refresh-new', title: 'Updates only new or expired entries' }, '↻ Scan (Smart)'),
+                        createEl('button', { id: 'esm-refresh-all', title: 'Force updates all cache entries' }, '↻ Refresh (Full)'),
+                        createEl('button', { id: 'esm-close-report' }, 'Close')
+                    ),
+                    createEl('div', { className: 'esm-action-row' },
+                        createEl('label', {}, 'Unsubscribe Inactive > '),
+                        createEl('input', { type: 'number', id: 'esm-inactive-years', value: String(years), min: '1', style: 'width:40px' }),
+                        ' y ',
+                        createEl('button', { id: 'esm-unsub-inactive' }, 'Go')
+                    ),
+                    createEl('div', { className: 'esm-action-row' },
+                        createEl('label', { style: 'cursor:pointer; display:flex; align-items:center;' },
+                            createEl('input', { type: 'checkbox', id: 'esm-show-visited', style: 'margin-right:5px;' }),
+                            ' Show Visited Profiles'
+                        )
+                    ),
+                    createEl('div', { className: 'esm-action-row' },
+                        createEl('button', { id: 'esm-unsub-spammers', disabled: true }, 'Unsubscribe Spammers'),
+                        createEl('button', { id: 'esm-unsub-selected', disabled: true }, 'Unsubscribe / Dismiss Selected')
+                    )
+                )
+            ),
+            createEl('table', { className: 'tbl', id: 'esm-report-table' },
+                createEl('thead', {},
+                    createEl('tr', {},
+                        ...COLUMNS.map(c => {
+                            const cls = [c.className || '', c.sortable !== false ? 'esm-sortable' : ''].filter(Boolean).join(' ');
+                            const headerContent = typeof c.header === 'function' ? c.header() : c.header;
+                            return createEl('th', { className: cls, dataset: { id: c.id } }, headerContent);
+                        })
+                    )
+                ),
+                createEl('tbody')
+            )
+        );
 
         document.getElementById('page').childNodes.forEach(c => { if (c.id !== 'esm-report-ui' && c.style) c.style.display = 'none'; });
         document.getElementById('page').appendChild(div);
@@ -984,9 +1027,10 @@
                 const container = document.createElement('div');
                 container.style.display = 'inline-block';
                 container.style.marginLeft = '20px';
-                container.innerHTML = `<button id="esm-btn-open" style="font-weight:bold">Manage Subscriptions</button>`;
+                const openBtn = createEl('button', { id: 'esm-btn-open', style: 'font-weight:bold' }, 'Manage Subscriptions');
+                container.appendChild(openBtn);
                 h2.appendChild(container);
-                document.getElementById('esm-btn-open').onclick = () => runManager('open');
+                openBtn.onclick = () => runManager('open');
             }
             return;
         }

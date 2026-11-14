@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        MusicBrainz: Mass Merge Recordings from Edit
 // @namespace   https://musicbrainz.org/user/chaban
-// @version     1.0.5
+// @version     1.0.6
 // @description Batch merge recordings from an "Edit medium" page.
 // @tag         ai-created
 // @author      chaban, jesus2099
@@ -159,14 +159,14 @@
                 const newMBID = newLink.href.match(/([a-f0-9-]{36})$/)[1];
 
                 if (oldMBID === newMBID) {
-                    cell.innerHTML = 'Same';
+                    cell.textContent = 'Same';
                     return;
                 }
 
-                cell.innerHTML = '...';
+                cell.textContent = '...';
                 pairs.push({ row, cell, oldMBID, newMBID });
             } else {
-                cell.innerHTML = 'N/A';
+                cell.textContent = 'N/A';
             }
         });
 
@@ -183,11 +183,10 @@
             onload: (response) => {
                 try {
                     const mbidToRowId = new Map();
-                    const tempDiv = document.createElement('div');
-                    tempDiv.innerHTML = response.responseText;
+                    const doc = new DOMParser().parseFromString(response.responseText, 'text/html');
 
                     let recordingsLi = null;
-                    const relatedLists = tempDiv.querySelectorAll('p + ul');
+                    const relatedLists = doc.querySelectorAll('p + ul');
                     relatedLists.forEach(ul => {
                         const previousP = ul.previousElementSibling;
                         if (previousP && previousP.textContent.includes('Related entities:')) {
@@ -221,7 +220,7 @@
                         const newRowID = mbidToRowId.get(p.newMBID);
 
                         if (!oldRowID || !newRowID) {
-                            p.cell.innerHTML = 'Error';
+                            p.cell.textContent = 'Error';
                             console.error(`[${SCRIPT_NAME}] Row ID lookup failed: oldMBID=${p.oldMBID} -> ${oldRowID}, newMBID=${p.newMBID} -> ${newRowID}`);
                             p.cell.title = `Could not find row ID in /data related entities list for ${!oldRowID ? p.oldMBID : ''} ${!newRowID ? p.newMBID : ''}`;
                             return;
@@ -367,18 +366,17 @@
                     return;
                 }
 
-                const html = document.createElement('html');
-                html.innerHTML = response.responseText;
+                const doc = new DOMParser().parseFromString(response.responseText, 'text/html');
 
                 if (step === 0) {
-                    if (html.querySelector(`form[method='post'] input[name='merge.target'][value='${from.value}']`) &&
-                        html.querySelector(`form[method='post'] input[name='merge.target'][value='${to.value}']`)) {
+                    if (doc.querySelector(`form[method='post'] input[name='merge.target'][value='${from.value}']`) &&
+                        doc.querySelector(`form[method='post'] input[name='merge.target'][value='${to.value}']`)) {
                         setTimeout(() => mmfe_mergeRecsStep(1), chrono(MBSminimumDelay));
                     } else {
                         mmfe_tryAgain('Did not queue');
                     }
                 } else if (step === 1) {
-                    if (html.querySelector(`a[href*='/recording/merge_queue?add-to-merge=${to.value}']`)) {
+                    if (doc.querySelector(`a[href*='/recording/merge_queue?add-to-merge=${to.value}']`)) {
                         mmfe_nextButt(true);
                     } else {
                         mmfe_checkMerge('Did not merge');

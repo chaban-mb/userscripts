@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        Deezer: MusicBrainz importer
 // @namespace   https://musicbrainz.org/user/chaban
-// @version     1.0.4
+// @version     1.0.5
 // @description Adds buttons for MusicBrainz, ListenBrainz, Harmony, and SAMBL to Deezer.
 // @tag         ai-created
 // @author      chaban
@@ -77,6 +77,26 @@ class MusicBrainzAPI {
         this.next_available_request_time = 0;
     }
 
+    _sleep(ms, signal = null) {
+        return new Promise((resolve, reject) => {
+            if (signal?.aborted) {
+                return reject(new DOMException('The operation was aborted', 'AbortError'));
+            }
+            const timer = setTimeout(() => {
+                if (signal) signal.removeEventListener('abort', onAbort);
+                resolve();
+            }, ms);
+            const onAbort = () => {
+                clearTimeout(timer);
+                if (signal) signal.removeEventListener('abort', onAbort);
+                reject(new DOMException('The operation was aborted', 'AbortError'));
+            };
+            if (signal) {
+                signal.addEventListener('abort', onAbort, { once: true });
+            }
+        });
+    }
+
     _parseHeaders(headerStr) {
         const headers = {};
         if (!headerStr) {
@@ -102,7 +122,10 @@ class MusicBrainzAPI {
      * @returns {Promise<Object>} The JSON parsed response body.
      * @private
      */
-    async _request(endpoint, params = {}, tracker = null) {
+    async _request(endpoint, params = {}, tracker = null, signal = null) {
+        if (signal?.aborted) {
+            throw new DOMException('The operation was aborted', 'AbortError');
+        }
         if (tracker) {
             tracker.requests++;
         }
@@ -121,17 +144,39 @@ class MusicBrainzAPI {
         }
 
         for (let i = 0; i < this.max_retries; i++) {
+            if (signal?.aborted) {
+                throw new DOMException('The operation was aborted', 'AbortError');
+            }
             const now = Date.now();
             const waitTime = this.next_available_request_time - now;
             if (waitTime > 0) {
                 if (tracker) tracker.rateLimitWaitMs += waitTime;
-                await new Promise(resolve => setTimeout(resolve, waitTime));
+                await this._sleep(waitTime, signal);
             }
 
             const reqStartTime = Date.now();
             try {
+                let reqHandle = null;
                 const response = await new Promise((resolve, reject) => {
-                    GM.xmlHttpRequest({
+                    const onAbort = () => {
+                        if (reqHandle && typeof reqHandle.abort === 'function') {
+                            try { reqHandle.abort(); } catch {}
+                        }
+                        reject(new DOMException('The operation was aborted', 'AbortError'));
+                    };
+
+                    if (signal?.aborted) {
+                        return reject(new DOMException('The operation was aborted', 'AbortError'));
+                    }
+                    if (signal) {
+                        signal.addEventListener('abort', onAbort, { once: true });
+                    }
+
+                    const cleanup = () => {
+                        if (signal) signal.removeEventListener('abort', onAbort);
+                    };
+
+                    reqHandle = GM.xmlHttpRequest({
                         method: 'GET',
                         url: url.toString(),
                         timeout: this.timeout,
@@ -141,7 +186,12 @@ class MusicBrainzAPI {
                             'Origin': location.origin,
                         },
                         anonymous: true,
+                        onabort: () => {
+                            cleanup();
+                            reject(new DOMException('The operation was aborted', 'AbortError'));
+                        },
                         onload: (res) => {
+                            cleanup();
                             if (tracker) {
                                 tracker.networkDurationMs += (Date.now() - reqStartTime);
                             }
@@ -173,6 +223,7 @@ class MusicBrainzAPI {
                             }
                         },
                         onerror: (err) => {
+                            cleanup();
                             if (tracker) {
                                 tracker.networkDurationMs += (Date.now() - reqStartTime);
                             }
@@ -180,6 +231,7 @@ class MusicBrainzAPI {
                             reject(new Error('Network error'));
                         },
                         ontimeout: () => {
+                            cleanup();
                             if (tracker) {
                                 tracker.networkDurationMs += (Date.now() - reqStartTime);
                             }
@@ -191,6 +243,10 @@ class MusicBrainzAPI {
 
                 return response;
             } catch (error) {
+                if (error?.name === 'AbortError' || signal?.aborted) {
+                    throw error;
+                }
+
                 if (error instanceof PermanentError) {
                     throw error; // Stop retrying and propagate the error.
                 }
@@ -218,7 +274,7 @@ class MusicBrainzAPI {
                 if (tracker) {
                     tracker.retryBackoffWaitMs += delay;
                 }
-                await new Promise(resolve => setTimeout(resolve, delay));
+                await this._sleep(delay, signal);
             }
         }
     }
@@ -243,7 +299,7 @@ class MusicBrainzAPI {
      * @param {string[]} [inc=[]] - Relationships to include in the lookup query.
      * @returns {Promise<Map<string, MbUrlLookupResponse|null>|MbUrlLookupResponse|null>} A Map mapping URLs to relationship response objects if urls was an array, or the relationship response object if urls was a string.
      */
-    async lookupUrl(urls, inc = []) {
+    async lookupUrl(urls, inc = [], signal = null) {
         const isInputArray = Array.isArray(urls);
         const rawUrls = isInputArray ? urls : [urls];
         const normalizedUrls = rawUrls.map(u => MusicBrainzAPI.normalizeUrl(u));
@@ -283,11 +339,21 @@ class MusicBrainzAPI {
                 this._request('url', {
                     resource: chunk,
                     inc: inc.join('+')
-                }, diagnostics)
+                }, diagnostics, signal)
             );
 
             // Use Promise.allSettled to ensure all batches are processed, even if some fail.
             const settledResults = await Promise.allSettled(promises);
+
+            if (signal?.aborted) {
+                throw new DOMException('The operation was aborted', 'AbortError');
+            }
+
+            for (const r of settledResults) {
+                if (r.status === 'rejected' && r.reason?.name === 'AbortError') {
+                    throw r.reason;
+                }
+            }
 
             settledResults.forEach((result, index) => {
                 const chunk = urlChunks[index]; // Get the corresponding chunk of URLs for this result.
@@ -343,11 +409,12 @@ class MusicBrainzAPI {
      * @param {number} [limit=100] - Result page chunk limit.
      * @param {string[]} [inc=[]] - Relationships to include in each search.
      * @param {boolean} [fetch_all=false] - Whether to fetch all pages sequentially.
+     * @param {AbortSignal|null} [signal=null] - Optional AbortSignal to cancel the request.
      * @returns {Promise<Object|MbEntity[]>} Parsed query result object (or list of entities if fetch_all is true).
      */
-    async search(entity, query, limit = 100, inc = [], fetch_all = false) {
+    async search(entity, query, limit = 100, inc = [], fetch_all = false, signal = null) {
         if (!fetch_all) {
-            return this._request(entity, { query, limit, inc: inc.join('+') });
+            return this._request(entity, { query, limit, inc: inc.join('+') }, null, signal);
         }
 
         let results = [];
@@ -355,7 +422,7 @@ class MusicBrainzAPI {
         let total;
 
         do {
-            const data = await this._request(entity, { query, limit, offset, inc: inc.join('+') });
+            const data = await this._request(entity, { query, limit, offset, inc: inc.join('+') }, null, signal);
             const entities = data[entity + 's'] || [];
             results.push(...entities);
             total = data.count;
@@ -373,8 +440,8 @@ class MusicBrainzAPI {
      * @param {string[]} [inc=[]] - Array of sub-queries/relationships to include (e.g., ['recordings', 'artists', 'url-rels']).
      * @returns {Promise<object>} A promise that resolves to the entity details object.
      */
-    get(entity, mbid, inc = []) {
-        return this._request(`${entity}/${mbid}`, { inc: inc.join('+') });
+    get(entity, mbid, inc = [], signal = null) {
+        return this._request(`${entity}/${mbid}`, { inc: inc.join('+') }, null, signal);
     }
 
     clearCache() {

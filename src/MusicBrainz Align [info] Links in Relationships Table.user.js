@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MusicBrainz: Align [info] Links in Relationships Table
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      1.0.2
+// @version      1.0.3
 // @tag          ai-created
 // @description  Aligns [info] metadata links uniformly after the longest URL.
 // @author       chaban
@@ -152,7 +152,7 @@
      * @param {ReactiveConfig} config
      */
     function renderActionContent(action, baseUrl, config) {
-        action.innerHTML = '';
+        action.replaceChildren();
 
         const infoLink = document.createElement('a');
         infoLink.href = baseUrl;
@@ -367,8 +367,7 @@
                         }
                     });
 
-                    td.innerHTML = '';
-                    td.appendChild(fragment);
+                    td.replaceChildren(fragment);
                     td.dataset.infoAligned = 'true';
                     modified = true;
                 });

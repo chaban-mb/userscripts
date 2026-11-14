@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        MusicBrainz: Import from Discogs CSV
 // @namespace   https://musicbrainz.org/user/chaban
-// @version     0.2.7
+// @version     0.2.8
 // @description Imports releases to a MusicBrainz collection based on a Discogs CSV export by matching Discogs IDs to MusicBrainz Releases.
 // @tag         ai-created
 // @author      chaban
@@ -60,17 +60,41 @@
             style.textContent = CSS_STYLES;
             document.head.appendChild(style);
 
-            // HTML Structure
-            this.container.innerHTML = `
-                <h3>💿 Discogs CSV Import</h3>
-                <p><small>Select your Discogs Export CSV file.</small></p>
-                <input type="file" id="csv-file-input" accept=".csv" />
-                <div class="progress-bar"><div class="progress-fill" id="csv-progress"></div></div>
-                <div class="status-box" id="csv-log">Ready...</div>
-                <div style="text-align: right; margin-top:5px;">
-                    <button id="btn-close-importer">Close</button>
-                </div>
-            `;
+            // DOM Structure
+            const title = document.createElement('h3');
+            title.textContent = '💿 Discogs CSV Import';
+
+            const subtitle = document.createElement('p');
+            const small = document.createElement('small');
+            small.textContent = 'Select your Discogs Export CSV file.';
+            subtitle.appendChild(small);
+
+            const fileInput = document.createElement('input');
+            fileInput.type = 'file';
+            fileInput.id = 'csv-file-input';
+            fileInput.accept = '.csv';
+
+            const progressBar = document.createElement('div');
+            progressBar.className = 'progress-bar';
+            const progressFill = document.createElement('div');
+            progressFill.className = 'progress-fill';
+            progressFill.id = 'csv-progress';
+            progressBar.appendChild(progressFill);
+
+            const statusBox = document.createElement('div');
+            statusBox.className = 'status-box';
+            statusBox.id = 'csv-log';
+            statusBox.textContent = 'Ready...';
+
+            const closeRow = document.createElement('div');
+            closeRow.style.textAlign = 'right';
+            closeRow.style.marginTop = '5px';
+            const closeBtn = document.createElement('button');
+            closeBtn.id = 'btn-close-importer';
+            closeBtn.textContent = 'Close';
+            closeRow.appendChild(closeBtn);
+
+            this.container.replaceChildren(title, subtitle, fileInput, progressBar, statusBox, closeRow);
 
             document.body.appendChild(this.container);
 

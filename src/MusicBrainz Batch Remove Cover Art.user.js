@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        MusicBrainz: Batch Remove Cover Art
 // @namespace   https://musicbrainz.org/user/chaban
-// @version     0.7.2
+// @version     0.7.3
 // @description Allows batch removing cover art from MusicBrainz releases.
 // @tag         ai-created
 // @author      chaban
@@ -187,32 +187,94 @@
         const batchControlsContainer = document.createElement('form');
         batchControlsContainer.className = 'batch-remove-container cover-art';
         batchControlsContainer.setAttribute('onsubmit', 'return false;');
-        batchControlsContainer.innerHTML = `
-            <div class="buttons ui-helper-clearfix" style="margin-top: 1em; margin-bottom: 1em;">
-                <label style="display: inline-flex; align-items: center; gap: 6px; cursor: pointer; font-weight: bold; user-select: none;">
-                    <input type="checkbox" id="selectAllCovers" style="margin: 0;"> Select all cover art
-                </label>
-            </div>
 
-            <fieldset class="editnote">
-                <legend>Edit note</legend>
-                <p>
-                    Entering an <a href="https://musicbrainz.org/doc/Edit_Note" target="_blank">edit note</a> that describes where you got your information is highly recommended. Not only does it make it clear where you got your information, but it can also encourage other users to vote on your edit — thus making your edit get applied faster.
-                </p>
-                <p>Even just providing a URL or two is helpful! For more suggestions, see <a href="https://musicbrainz.org/doc/How_to_Write_Edit_Notes" target="_blank">our guide for writing good edit notes</a>.</p>
-                <div class="row">
-                    <label for="editNote">Edit note:</label>
-                    <textarea id="editNote" class="edit-note" name="edit-cover-art.edit_note" cols="80" rows="5" required></textarea>
-                </div>
-            </fieldset>
+        const selectRow = document.createElement('div');
+        selectRow.className = 'buttons ui-helper-clearfix';
+        selectRow.style.marginTop = '1em';
+        selectRow.style.marginBottom = '1em';
 
-            <div class="row no-label buttons">
-                <button type="submit" id="removeSelectedBtn" class="submit positive">Remove selected cover art</button>
-                <button type="button" id="abortBtn" class="submit negative" disabled>Abort</button>
-            </div>
-            <div class="progress-bar-container" style="display: none;"><div class="progress-bar" id="progressBar">0%</div></div>
-            <div id="statusMessages"></div>
-        `;
+        const selectLabel = document.createElement('label');
+        selectLabel.style.cssText = 'display: inline-flex; align-items: center; gap: 6px; cursor: pointer; font-weight: bold; user-select: none;';
+        const selectAllCheckbox = document.createElement('input');
+        selectAllCheckbox.type = 'checkbox';
+        selectAllCheckbox.id = 'selectAllCovers';
+        selectAllCheckbox.style.margin = '0';
+        selectLabel.append(selectAllCheckbox, ' Select all cover art');
+        selectRow.appendChild(selectLabel);
+
+        const fieldset = document.createElement('fieldset');
+        fieldset.className = 'editnote';
+        const legend = document.createElement('legend');
+        legend.textContent = 'Edit note';
+
+        const p1 = document.createElement('p');
+        const editNoteDocLink = document.createElement('a');
+        editNoteDocLink.href = 'https://musicbrainz.org/doc/Edit_Note';
+        editNoteDocLink.target = '_blank';
+        editNoteDocLink.textContent = 'edit note';
+        p1.append(
+            'Entering an ',
+            editNoteDocLink,
+            ' that describes where you got your information is highly recommended. Not only does it make it clear where you got your information, but it can also encourage other users to vote on your edit — thus making your edit get applied faster.'
+        );
+
+        const p2 = document.createElement('p');
+        const editNoteGuideLink = document.createElement('a');
+        editNoteGuideLink.href = 'https://musicbrainz.org/doc/How_to_Write_Edit_Notes';
+        editNoteGuideLink.target = '_blank';
+        editNoteGuideLink.textContent = 'our guide for writing good edit notes';
+        p2.append('Even just providing a URL or two is helpful! For more suggestions, see ', editNoteGuideLink, '.');
+
+        const noteRow = document.createElement('div');
+        noteRow.className = 'row';
+        const noteLabel = document.createElement('label');
+        noteLabel.htmlFor = 'editNote';
+        noteLabel.textContent = 'Edit note:';
+        const editNoteTextarea = document.createElement('textarea');
+        editNoteTextarea.id = 'editNote';
+        editNoteTextarea.className = 'edit-note';
+        editNoteTextarea.name = 'edit-cover-art.edit_note';
+        editNoteTextarea.cols = 80;
+        editNoteTextarea.rows = 5;
+        editNoteTextarea.required = true;
+        noteRow.append(noteLabel, editNoteTextarea);
+
+        fieldset.append(legend, p1, p2, noteRow);
+
+        const actionRow = document.createElement('div');
+        actionRow.className = 'row no-label buttons';
+        const removeSelectedBtn = document.createElement('button');
+        removeSelectedBtn.type = 'submit';
+        removeSelectedBtn.id = 'removeSelectedBtn';
+        removeSelectedBtn.className = 'submit positive';
+        removeSelectedBtn.textContent = 'Remove selected cover art';
+        const abortBtn = document.createElement('button');
+        abortBtn.type = 'button';
+        abortBtn.id = 'abortBtn';
+        abortBtn.className = 'submit negative';
+        abortBtn.disabled = true;
+        abortBtn.textContent = 'Abort';
+        actionRow.append(removeSelectedBtn, abortBtn);
+
+        const progressBarContainer = document.createElement('div');
+        progressBarContainer.className = 'progress-bar-container';
+        progressBarContainer.style.display = 'none';
+        const progressBar = document.createElement('div');
+        progressBar.className = 'progress-bar';
+        progressBar.id = 'progressBar';
+        progressBar.textContent = '0%';
+        progressBarContainer.appendChild(progressBar);
+
+        const statusMessages = document.createElement('div');
+        statusMessages.id = 'statusMessages';
+
+        batchControlsContainer.replaceChildren(
+            selectRow,
+            fieldset,
+            actionRow,
+            progressBarContainer,
+            statusMessages
+        );
 
         const addCoverArtButton = document.querySelector('.buttons.ui-helper-clearfix');
         if (addCoverArtButton) {
@@ -220,14 +282,6 @@
         } else {
             document.getElementById('content')?.appendChild(batchControlsContainer);
         }
-
-        const selectAllCheckbox = document.getElementById('selectAllCovers');
-        const removeSelectedBtn = document.getElementById('removeSelectedBtn');
-        const abortBtn = document.getElementById('abortBtn');
-        const editNoteTextarea = document.getElementById('editNote');
-        const progressBarContainer = document.querySelector('.progress-bar-container');
-        const progressBar = document.getElementById('progressBar');
-        const statusMessages = document.getElementById('statusMessages');
 
         let totalRemovals = 0;
         let completedRemovals = 0;
@@ -253,6 +307,17 @@
             }
         });
 
+        const setStatusMessage = (text, append = false) => {
+            if (!append) {
+                statusMessages.replaceChildren();
+            }
+            if (text) {
+                const p = document.createElement('p');
+                p.textContent = text;
+                statusMessages.appendChild(p);
+            }
+        };
+
         const resetUI = (aborted = false) => {
             removeSelectedBtn.disabled = false;
             selectAllCheckbox.disabled = false;
@@ -261,7 +326,7 @@
             progressBarContainer.style.display = 'none';
             progressBar.style.width = '0%';
             progressBar.textContent = '0%';
-            statusMessages.innerHTML = aborted ? '<p>Batch removal aborted.</p>' : '';
+            setStatusMessage(aborted ? 'Batch removal aborted.' : '');
             document.querySelectorAll('input.cover-art-checkbox').forEach(cb => {
                 if (!cb.dataset.processed) { cb.disabled = false; }
             });
@@ -299,7 +364,7 @@
             editNoteTextarea.disabled = true;
             abortBtn.disabled = false;
             progressBarContainer.style.display = 'block';
-            statusMessages.innerHTML = '';
+            setStatusMessage('');
 
             totalRemovals = selectedCheckboxes.length;
             completedRemovals = 0;
@@ -307,7 +372,7 @@
 
             for (const checkbox of selectedCheckboxes) {
                 if (isAborting) {
-                    statusMessages.innerHTML += '<p>Batch process interrupted.</p>';
+                    setStatusMessage('Batch process interrupted.', true);
                     break;
                 }
                 const statusSpan = checkbox.closest('.mb-batch-remove-artwork-wrapper').querySelector('.status');
@@ -335,13 +400,13 @@
 
             resetUI(isAborting);
             if (!isAborting) {
-                statusMessages.innerHTML += `<p>Batch removal complete. Processed ${completedRemovals} of ${totalRemovals} selected images.</p>`;
+                setStatusMessage(`Batch removal complete. Processed ${completedRemovals} of ${totalRemovals} selected images.`, true);
             }
         });
 
         abortBtn.addEventListener('click', () => {
             isAborting = true;
-            statusMessages.innerHTML = '<p>Aborting process, please wait...</p>';
+            setStatusMessage('Aborting process, please wait...');
             abortBtn.disabled = true;
         });
 

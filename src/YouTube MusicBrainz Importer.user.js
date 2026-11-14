@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        YouTube: MusicBrainz Importer
 // @namespace   https://musicbrainz.org/user/chaban
-// @version     2.15.1
+// @version     2.15.2
 // @description Imports YouTube videos to MusicBrainz as a new standalone recording
 // @tag         ai-created
 // @author      nikki, RustyNova, chaban
@@ -91,6 +91,26 @@ class MusicBrainzAPI {
         this.next_available_request_time = 0;
     }
 
+    _sleep(ms, signal = null) {
+        return new Promise((resolve, reject) => {
+            if (signal?.aborted) {
+                return reject(new DOMException('The operation was aborted', 'AbortError'));
+            }
+            const timer = setTimeout(() => {
+                if (signal) signal.removeEventListener('abort', onAbort);
+                resolve();
+            }, ms);
+            const onAbort = () => {
+                clearTimeout(timer);
+                if (signal) signal.removeEventListener('abort', onAbort);
+                reject(new DOMException('The operation was aborted', 'AbortError'));
+            };
+            if (signal) {
+                signal.addEventListener('abort', onAbort, { once: true });
+            }
+        });
+    }
+
     _parseHeaders(headerStr) {
         const headers = {};
         if (!headerStr) {
@@ -116,7 +136,10 @@ class MusicBrainzAPI {
      * @returns {Promise<Object>} The JSON parsed response body.
      * @private
      */
-    async _request(endpoint, params = {}, tracker = null) {
+    async _request(endpoint, params = {}, tracker = null, signal = null) {
+        if (signal?.aborted) {
+            throw new DOMException('The operation was aborted', 'AbortError');
+        }
         if (tracker) {
             tracker.requests++;
         }
@@ -135,17 +158,39 @@ class MusicBrainzAPI {
         }
 
         for (let i = 0; i < this.max_retries; i++) {
+            if (signal?.aborted) {
+                throw new DOMException('The operation was aborted', 'AbortError');
+            }
             const now = Date.now();
             const waitTime = this.next_available_request_time - now;
             if (waitTime > 0) {
                 if (tracker) tracker.rateLimitWaitMs += waitTime;
-                await new Promise(resolve => setTimeout(resolve, waitTime));
+                await this._sleep(waitTime, signal);
             }
 
             const reqStartTime = Date.now();
             try {
+                let reqHandle = null;
                 const response = await new Promise((resolve, reject) => {
-                    GM.xmlHttpRequest({
+                    const onAbort = () => {
+                        if (reqHandle && typeof reqHandle.abort === 'function') {
+                            try { reqHandle.abort(); } catch {}
+                        }
+                        reject(new DOMException('The operation was aborted', 'AbortError'));
+                    };
+
+                    if (signal?.aborted) {
+                        return reject(new DOMException('The operation was aborted', 'AbortError'));
+                    }
+                    if (signal) {
+                        signal.addEventListener('abort', onAbort, { once: true });
+                    }
+
+                    const cleanup = () => {
+                        if (signal) signal.removeEventListener('abort', onAbort);
+                    };
+
+                    reqHandle = GM.xmlHttpRequest({
                         method: 'GET',
                         url: url.toString(),
                         timeout: this.timeout,
@@ -155,7 +200,12 @@ class MusicBrainzAPI {
                             'Origin': location.origin,
                         },
                         anonymous: true,
+                        onabort: () => {
+                            cleanup();
+                            reject(new DOMException('The operation was aborted', 'AbortError'));
+                        },
                         onload: (res) => {
+                            cleanup();
                             if (tracker) {
                                 tracker.networkDurationMs += (Date.now() - reqStartTime);
                             }
@@ -187,6 +237,7 @@ class MusicBrainzAPI {
                             }
                         },
                         onerror: (err) => {
+                            cleanup();
                             if (tracker) {
                                 tracker.networkDurationMs += (Date.now() - reqStartTime);
                             }
@@ -194,6 +245,7 @@ class MusicBrainzAPI {
                             reject(new Error('Network error'));
                         },
                         ontimeout: () => {
+                            cleanup();
                             if (tracker) {
                                 tracker.networkDurationMs += (Date.now() - reqStartTime);
                             }
@@ -205,6 +257,10 @@ class MusicBrainzAPI {
 
                 return response;
             } catch (error) {
+                if (error?.name === 'AbortError' || signal?.aborted) {
+                    throw error;
+                }
+
                 if (error instanceof PermanentError) {
                     throw error; // Stop retrying and propagate the error.
                 }
@@ -232,7 +288,7 @@ class MusicBrainzAPI {
                 if (tracker) {
                     tracker.retryBackoffWaitMs += delay;
                 }
-                await new Promise(resolve => setTimeout(resolve, delay));
+                await this._sleep(delay, signal);
             }
         }
     }
@@ -257,7 +313,7 @@ class MusicBrainzAPI {
      * @param {string[]} [inc=[]] - Relationships to include in the lookup query.
      * @returns {Promise<Map<string, MbUrlLookupResponse|null>|MbUrlLookupResponse|null>} A Map mapping URLs to relationship response objects if urls was an array, or the relationship response object if urls was a string.
      */
-    async lookupUrl(urls, inc = []) {
+    async lookupUrl(urls, inc = [], signal = null) {
         const isInputArray = Array.isArray(urls);
         const rawUrls = isInputArray ? urls : [urls];
         const normalizedUrls = rawUrls.map(u => MusicBrainzAPI.normalizeUrl(u));
@@ -297,11 +353,21 @@ class MusicBrainzAPI {
                 this._request('url', {
                     resource: chunk,
                     inc: inc.join('+')
-                }, diagnostics)
+                }, diagnostics, signal)
             );
 
             // Use Promise.allSettled to ensure all batches are processed, even if some fail.
             const settledResults = await Promise.allSettled(promises);
+
+            if (signal?.aborted) {
+                throw new DOMException('The operation was aborted', 'AbortError');
+            }
+
+            for (const r of settledResults) {
+                if (r.status === 'rejected' && r.reason?.name === 'AbortError') {
+                    throw r.reason;
+                }
+            }
 
             settledResults.forEach((result, index) => {
                 const chunk = urlChunks[index]; // Get the corresponding chunk of URLs for this result.
@@ -357,11 +423,12 @@ class MusicBrainzAPI {
      * @param {number} [limit=100] - Result page chunk limit.
      * @param {string[]} [inc=[]] - Relationships to include in each search.
      * @param {boolean} [fetch_all=false] - Whether to fetch all pages sequentially.
+     * @param {AbortSignal|null} [signal=null] - Optional AbortSignal to cancel the request.
      * @returns {Promise<Object|MbEntity[]>} Parsed query result object (or list of entities if fetch_all is true).
      */
-    async search(entity, query, limit = 100, inc = [], fetch_all = false) {
+    async search(entity, query, limit = 100, inc = [], fetch_all = false, signal = null) {
         if (!fetch_all) {
-            return this._request(entity, { query, limit, inc: inc.join('+') });
+            return this._request(entity, { query, limit, inc: inc.join('+') }, null, signal);
         }
 
         let results = [];
@@ -369,7 +436,7 @@ class MusicBrainzAPI {
         let total;
 
         do {
-            const data = await this._request(entity, { query, limit, offset, inc: inc.join('+') });
+            const data = await this._request(entity, { query, limit, offset, inc: inc.join('+') }, null, signal);
             const entities = data[entity + 's'] || [];
             results.push(...entities);
             total = data.count;
@@ -387,8 +454,8 @@ class MusicBrainzAPI {
      * @param {string[]} [inc=[]] - Array of sub-queries/relationships to include (e.g., ['recordings', 'artists', 'url-rels']).
      * @returns {Promise<object>} A promise that resolves to the entity details object.
      */
-    get(entity, mbid, inc = []) {
-        return this._request(`${entity}/${mbid}`, { inc: inc.join('+') });
+    get(entity, mbid, inc = [], signal = null) {
+        return this._request(`${entity}/${mbid}`, { inc: inc.join('+') }, null, signal);
     }
 
     clearCache() {
@@ -894,20 +961,37 @@ class PermanentError extends Error {
         /**
          * Asynchronously sleeps for the given duration in milliseconds.
          * @param {number} ms
+         * @param {AbortSignal|null} [signal=null]
          * @returns {Promise<void>}
          */
-        sleep: function (ms) {
-            return new Promise(resolve => setTimeout(resolve, ms));
+        sleep: function (ms, signal = null) {
+            if (signal?.aborted) return Promise.resolve();
+            return new Promise(resolve => {
+                const onAbort = () => {
+                    clearTimeout(timer);
+                    resolve();
+                };
+                const timer = setTimeout(() => {
+                    signal?.removeEventListener('abort', onAbort);
+                    resolve();
+                }, ms);
+                signal?.addEventListener('abort', onAbort, { once: true });
+            });
         },
 
         /**
          * Waits for an element matching the given CSS selector to appear in the DOM.
          * @param {string} selector - The CSS selector of the element to wait for.
-         * @param {number} timeout - The maximum time (in milliseconds) to wait for the element.
-         * @returns {Promise<Element>} A promise that resolves with the element once found, or rejects on timeout.
+         * @param {number} [timeout=15000] - The maximum time (in milliseconds) to wait for the element.
+         * @param {AbortSignal|null} [signal=null] - Optional AbortSignal to cancel waiting.
+         * @returns {Promise<Element>} A promise that resolves with the element once found, or rejects on timeout/abort.
          */
-        waitForElement: function (selector, timeout = 15000) {
+        waitForElement: function (selector, timeout = 15000, signal = null) {
             return new Promise((resolve, reject) => {
+                if (signal?.aborted) {
+                    reject(new DOMException('The operation was aborted', 'AbortError'));
+                    return;
+                }
                 const element = document.querySelector(selector);
                 if (element) {
                     resolve(element);
@@ -915,16 +999,26 @@ class PermanentError extends Error {
                 }
 
                 let observer;
-                const timer = setTimeout(() => {
+                const cleanup = () => {
+                    clearTimeout(timer);
                     if (observer) observer.disconnect();
+                    signal?.removeEventListener('abort', onAbort);
+                };
+                const onAbort = () => {
+                    cleanup();
+                    reject(new DOMException('The operation was aborted', 'AbortError'));
+                };
+                const timer = setTimeout(() => {
+                    cleanup();
                     reject(new Error(`Timeout waiting for element with selector: ${selector}`));
                 }, timeout);
+
+                signal?.addEventListener('abort', onAbort, { once: true });
 
                 observer = new MutationObserver(() => {
                     const targetElement = document.querySelector(selector);
                     if (targetElement) {
-                        clearTimeout(timer);
-                        observer.disconnect();
+                        cleanup();
                         resolve(targetElement);
                     }
                 });
@@ -1671,11 +1765,15 @@ class PermanentError extends Error {
         /**
          * Fetches and parses video data for a videoId via POST /youtubei/v1/player.
          * @param {string} videoId
+         * @param {AbortSignal|null} [signal=null]
          * @returns {Promise<{ data: Object|null, durationMs: number, source: string, error: Error|null }>}
          */
-        extractVideoData: async function (videoId) {
+        extractVideoData: async function (videoId, signal = null) {
             const startTime = performance.now();
             try {
+                if (signal?.aborted) {
+                    throw new DOMException('The operation was aborted', 'AbortError');
+                }
                 const { apiKey, context } = this._getContext(false);
                 if (!context) {
                     throw new Error('Missing Innertube context');
@@ -1685,7 +1783,8 @@ class PermanentError extends Error {
                 const res = await fetch(url, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ context, videoId })
+                    body: JSON.stringify({ context, videoId }),
+                    signal
                 });
 
                 if (!res.ok) {
@@ -1701,6 +1800,9 @@ class PermanentError extends Error {
                     error: null
                 };
             } catch (err) {
+                if (err?.name === 'AbortError' || signal?.aborted) {
+                    throw err;
+                }
                 console.warn(`[${GM.info.script.name}] Innertube video extraction failed for ${videoId}:`, err);
                 return {
                     data: null,
@@ -1714,10 +1816,12 @@ class PermanentError extends Error {
         /**
          * Resolves a handle (@...) or path to canonical UC... channelId using resolve_url.
          * @param {string} handleOrPath
+         * @param {AbortSignal|null} [signal=null]
          * @returns {Promise<string|null>}
          */
-        resolveChannelId: async function (handleOrPath) {
+        resolveChannelId: async function (handleOrPath, signal = null) {
             if (!handleOrPath) return null;
+            if (signal?.aborted) throw new DOMException('The operation was aborted', 'AbortError');
             const cached = DOMScanner.getChannelRecord(handleOrPath);
             if (cached?.channelId) return cached.channelId;
 
@@ -1732,7 +1836,8 @@ class PermanentError extends Error {
                 const res = await fetch(url, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ context, url: resolveUrl })
+                    body: JSON.stringify({ context, url: resolveUrl }),
+                    signal
                 });
 
                 if (res.ok) {
@@ -1745,6 +1850,7 @@ class PermanentError extends Error {
                     }
                 }
             } catch (err) {
+                if (err?.name === 'AbortError' || signal?.aborted) throw err;
                 console.warn(`[${GM.info.script.name}] Failed to resolve ${handleOrPath} via Innertube:`, err);
             }
             return null;
@@ -1753,10 +1859,14 @@ class PermanentError extends Error {
         /**
          * Fetches and parses channel metadata and external links via POST /youtubei/v1/browse.
          * @param {string} expectedTarget - Handle (@...) or channel ID (UC...)
+         * @param {AbortSignal|null} [signal=null]
          * @returns {Promise<{ data: Object|null, durationMs: number, source: string, error: Error|null }>}
          */
-        extractChannelData: async function (expectedTarget) {
+        extractChannelData: async function (expectedTarget, signal = null) {
             const startTime = performance.now();
+            if (signal?.aborted) {
+                throw new DOMException('The operation was aborted', 'AbortError');
+            }
 
             // Check verified session cache first
             const cached = DOMScanner.getChannelRecord(expectedTarget);
@@ -1783,7 +1893,11 @@ class PermanentError extends Error {
                 if (expectedTarget?.startsWith('UC')) {
                     channelId = expectedTarget;
                 } else {
-                    channelId = await this.resolveChannelId(expectedTarget);
+                    channelId = await this.resolveChannelId(expectedTarget, signal);
+                }
+
+                if (signal?.aborted) {
+                    throw new DOMException('The operation was aborted', 'AbortError');
                 }
 
                 if (!channelId) {
@@ -1807,7 +1921,8 @@ class PermanentError extends Error {
                 const res = await fetch(url, {
                     method: 'POST',
                     headers,
-                    body: JSON.stringify({ context, browseId: channelId })
+                    body: JSON.stringify({ context, browseId: channelId }),
+                    signal
                 });
 
                 if (!res.ok) {
@@ -1830,6 +1945,9 @@ class PermanentError extends Error {
                     error: null
                 };
             } catch (err) {
+                if (err?.name === 'AbortError' || signal?.aborted) {
+                    throw err;
+                }
                 console.warn(`[${GM.info.script.name}] Innertube channel extraction failed for ${expectedTarget}:`, err);
                 return {
                     data: null,
@@ -2055,10 +2173,11 @@ class PermanentError extends Error {
         /**
          * Resolves a channel @handle to its canonical UC... channelId using Innertube resolve_url.
          * @param {string} handle
+         * @param {AbortSignal|null} [signal=null]
          * @returns {Promise<string|null>}
          */
-        resolveChannelId: function (handle) {
-            return InnertubeExtractor.resolveChannelId(handle);
+        resolveChannelId: function (handle, signal = null) {
+            return InnertubeExtractor.resolveChannelId(handle, signal);
         },
 
         /**
@@ -2172,7 +2291,6 @@ class PermanentError extends Error {
                     buttonRenderedMs: timing.buttonRenderedMs ?? null,
                     anchorWaitMs: timing.anchorWaitMs ?? null,
                     heldUpAfterAnchorMs: timing.heldUpAfterAnchorMs ?? null,
-                    ytNavigateFinishMs: timing.ytNavigateFinishMs ?? null,
                     metadataExtractionMs: timing.metadataExtractionMs || 0,
                     lookupDurationMs: timing.lookupDurationMs || 0
                 },
@@ -2257,7 +2375,6 @@ class PermanentError extends Error {
                     buttonRenderedMs: timing.buttonRenderedMs ?? null,
                     anchorWaitMs: timing.anchorWaitMs ?? null,
                     heldUpAfterAnchorMs: timing.heldUpAfterAnchorMs ?? null,
-                    ytNavigateFinishMs: timing.ytNavigateFinishMs ?? null,
                     linkExtractionMs: timing.linkExtractionMs || 0,
                     lookupDurationMs: timing.lookupDurationMs || 0
                 },
@@ -2304,37 +2421,55 @@ class PermanentError extends Error {
         },
 
         /**
+         * Extracts the canonical channel target (@handle, UC..., or c/user path) from a decoded pathname.
+         * @param {string} channelKey
+         * @returns {string|null}
+         */
+        extractChannelTarget: function (channelKey) {
+            const handleMatch = channelKey.match(/\/(@[^\/?#]+)/);
+            if (handleMatch) return handleMatch[1];
+            const pathChannelMatch = channelKey.match(/\/channel\/(UC[A-Za-z0-9_-]+)/);
+            if (pathChannelMatch) return pathChannelMatch[1];
+            const legacyPathMatch = channelKey.match(/^\/((?:c|user)\/[^\/?#]+)/);
+            return legacyPathMatch ? legacyPathMatch[1] : null;
+        },
+
+        /**
          * Finds the DOM element where the watch page buttons should be appended.
+         * @param {AbortSignal|null} [signal=null]
          * @returns {Promise<HTMLElement|null>} A promise that resolves with the dock element, or null if not found.
          */
-        getButtonAnchorElement: async function () {
+        getButtonAnchorElement: async function (signal = null) {
             try {
-                return await Utils.waitForElement(Config.SELECTORS.BUTTON_DOCK, 10000)
-                    .catch(() => Utils.waitForElement(Config.SELECTORS.BUTTON_DOCK_FALLBACK, 5000));
+                try {
+                    return await Utils.waitForElement(Config.SELECTORS.BUTTON_DOCK, 10000, signal);
+                } catch (err) {
+                    if (signal?.aborted || err?.name === 'AbortError') throw err;
+                    return await Utils.waitForElement(Config.SELECTORS.BUTTON_DOCK_FALLBACK, 5000, signal);
+                }
             } catch (e) {
-                console.error(`[${GM.info.script.name}] Could not find button dock element:`, e);
+                if (!signal?.aborted && e?.name !== 'AbortError') {
+                    console.error(`[${GM.info.script.name}] Could not find button dock element:`, e);
+                }
                 return null;
             }
         },
 
-        /**
-         * Finds the DOM element where channel page buttons should be appended.
-         * @returns {Promise<HTMLElement|null>} A promise that resolves with the channel dock element, or null.
-         */
         /**
          * Finds the DOM element where channel page buttons should be appended,
          * waiting until the channel header matches the expected handle/channelId to prevent docking onto stale SPA elements.
          * @param {string|null} [expectedHandleOrId=null]
          * @param {number} [maxWaitMs=5000]
          * @param {number} [intervalMs=100]
+         * @param {AbortSignal|null} [signal=null]
          * @returns {Promise<HTMLElement|null>} A promise that resolves with the channel dock element, or null.
          */
-        getChannelAnchorElement: async function (expectedHandleOrId = null, maxWaitMs = 5000, intervalMs = 100) {
+        getChannelAnchorElement: async function (expectedHandleOrId = null, maxWaitMs = 5000, intervalMs = 100, signal = null) {
             const startTime = performance.now();
             const target = expectedHandleOrId ? expectedHandleOrId.toLowerCase().replace(/^@+/, '') : null;
 
             while (performance.now() - startTime < maxWaitMs) {
-                if (!this.isChannelPage()) return null;
+                if (signal?.aborted) return null;
 
                 const dock = document.querySelector(Config.SELECTORS.CHANNEL_DOCK);
                 if (dock) {
@@ -2349,9 +2484,10 @@ class PermanentError extends Error {
                         }
                     }
                 }
-                await Utils.sleep(intervalMs);
+                await Utils.sleep(intervalMs, signal);
             }
 
+            if (signal?.aborted) return null;
             // Fallback to any mounted dock element after timeout
             return document.querySelector(Config.SELECTORS.CHANNEL_DOCK);
         },
@@ -3534,13 +3670,21 @@ class PermanentError extends Error {
      * Main application logic for the userscript.
      */
     const YouTubeMusicBrainzImporter = {
-        _processingVideoId: null,
-        _currentProcessingPromise: null,
-        _processingChannelKey: null,
-        _currentChannelProcessingPromise: null,
+        _activeVideoId: null,
+        _activeChannelKey: null,
+        _activeAbortController: null,
         _mbApi: null,
 
-        lookupMbUrls: async function (canonicalUrls) {
+        _cancelActiveRoute: function () {
+            if (this._activeAbortController) {
+                this._activeAbortController.abort();
+                this._activeAbortController = null;
+            }
+            this._activeVideoId = null;
+            this._activeChannelKey = null;
+        },
+
+        lookupMbUrls: async function (canonicalUrls, signal = null) {
             try {
                 return await this._mbApi.lookupUrl(canonicalUrls, [
                     'recording-rels',
@@ -3549,8 +3693,11 @@ class PermanentError extends Error {
                     'place-rels',
                     'event-rels',
                     'series-rels'
-                ]);
+                ], signal);
             } catch (error) {
+                if (error?.name === 'AbortError' || signal?.aborted) {
+                    throw error;
+                }
                 if (error.name !== 'PermanentError') {
                     console.error(`[${GM.info.script.name}] An unexpected error occurred looking up MusicBrainz URLs:`, error);
                 }
@@ -3826,30 +3973,16 @@ class PermanentError extends Error {
 
         _lastUrl: location.href,
         _orientationDebounceTimer: null,
-        _lastNavStartTime: performance.now(),
-        _lastYtNavigateFinishMs: null,
 
         /**
          * Sets up observers for YouTube's SPA navigation and dynamic DOM mutations.
          */
         _setupObservers: function () {
-            // 1. YouTube desktop Polymer navigation event (signals route change)
-            document.addEventListener('yt-navigate-finish', () => {
-                const navStart = this._lastNavStartTime || performance.now();
-                this._checkUrlChange();
-                this._lastYtNavigateFinishMs = Math.round(performance.now() - navStart);
-                if (!DOMScanner.getVideoId() && !DOMScanner.isChannelPage()) {
-                    RecordingButtonManager.reset();
-                    PlaylistButtonManager.reset();
-                    ChannelButtonManager.reset();
-                }
-            });
+            // 1. Standard Navigation API (unified SPA route change detection for desktop and mobile)
+            const nav = pageWin.navigation || window.navigation;
+            nav.addEventListener('currententrychange', () => this._checkUrlChange());
 
-            // 2. Browser history popstate/hashchange events (back/forward navigation)
-            window.addEventListener('popstate', () => this._checkUrlChange());
-            window.addEventListener('hashchange', () => this._checkUrlChange());
-
-            // 3. Handle mobile orientation change and window resize
+            // 2. Handle mobile orientation change and window resize
             const handleResizeOrOrientation = () => {
                 clearTimeout(this._orientationDebounceTimer);
                 this._orientationDebounceTimer = setTimeout(() => {
@@ -3860,13 +3993,9 @@ class PermanentError extends Error {
             window.addEventListener('orientationchange', handleResizeOrOrientation);
             window.addEventListener('resize', handleResizeOrOrientation);
 
-            // 4. MutationObserver to catch URL changes or DOM reconstruction
+            // 3. MutationObserver to re-attach docks after DOM reconstruction
             let mutationDebounceTimer = null;
             const observer = new MutationObserver(() => {
-                if (location.href !== this._lastUrl) {
-                    this._checkUrlChange();
-                    return;
-                }
                 if (!mutationDebounceTimer) {
                     mutationDebounceTimer = setTimeout(() => {
                         mutationDebounceTimer = null;
@@ -3881,23 +4010,20 @@ class PermanentError extends Error {
             });
         },
 
-        _currentNavigationId: 1,
-
         _checkUrlChange: function () {
             if (location.href === this._lastUrl) return;
             this._lastUrl = location.href;
-            this._currentNavigationId++;
-            this._lastNavStartTime = performance.now();
-            this._lastYtNavigateFinishMs = null;
             this._routePage();
         },
 
         _ensureDockAttached: async function () {
+            const signal = this._activeAbortController?.signal || null;
             const currentVideoId = DOMScanner.getVideoId();
             if (currentVideoId) {
                 if (RecordingButtonManager.container && !document.contains(RecordingButtonManager.container)) {
-                    const dock = await DOMScanner.getButtonAnchorElement();
-                    if (dock) {
+                    const dock = await DOMScanner.getButtonAnchorElement(signal);
+                    if (dock && !signal?.aborted) {
+                        ChannelButtonManager.reset();
                         RecordingButtonManager.appendToDock(dock);
                         PlaylistButtonManager.appendToDock(dock);
                     }
@@ -3905,11 +4031,11 @@ class PermanentError extends Error {
             } else if (DOMScanner.isChannelPage()) {
                 if (ChannelButtonManager.container && !document.contains(ChannelButtonManager.container)) {
                     const channelKey = decodeURIComponent(location.pathname);
-                    const handleMatch = channelKey.match(/\/(@[^\/?#]+)/);
-                    const pathChannelMatch = channelKey.match(/\/channel\/(UC[A-Za-z0-9_-]+)/);
-                    const expectedTarget = handleMatch ? handleMatch[1] : (pathChannelMatch ? pathChannelMatch[1] : null);
-                    const dock = await DOMScanner.getChannelAnchorElement(expectedTarget);
-                    if (dock) {
+                    const expectedTarget = DOMScanner.extractChannelTarget(channelKey);
+                    const dock = await DOMScanner.getChannelAnchorElement(expectedTarget, 5000, 100, signal);
+                    if (dock && !signal?.aborted) {
+                        RecordingButtonManager.reset();
+                        PlaylistButtonManager.reset();
                         ChannelButtonManager.appendToDock(dock);
                     }
                 }
@@ -3922,119 +4048,135 @@ class PermanentError extends Error {
         _routePage: function () {
             const currentVideoId = DOMScanner.getVideoId();
             if (currentVideoId) {
-                ChannelButtonManager.prepareForNavigation();
-                this._processingChannelKey = null;
-                if (this._processingVideoId !== currentVideoId) {
-                    RecordingButtonManager.prepareForNavigation();
-                    PlaylistButtonManager.prepareForNavigation();
+                if (this._activeVideoId === currentVideoId && !this._activeChannelKey) {
+                    return;
                 }
+                RecordingButtonManager.prepareForNavigation();
+                PlaylistButtonManager.prepareForNavigation();
+                ChannelButtonManager.prepareForNavigation();
                 this.triggerUpdate(currentVideoId);
             } else if (DOMScanner.isChannelPage()) {
-                RecordingButtonManager.prepareForNavigation();
-                PlaylistButtonManager.prepareForNavigation();
-                this._processingVideoId = null;
                 const channelKey = decodeURIComponent(location.pathname);
-                if (this._processingChannelKey !== channelKey) {
-                    ChannelButtonManager.prepareForNavigation();
+                if (this._activeChannelKey === channelKey && !this._activeVideoId) {
+                    return;
                 }
-                this.triggerChannelUpdate();
-            } else {
                 RecordingButtonManager.prepareForNavigation();
                 PlaylistButtonManager.prepareForNavigation();
                 ChannelButtonManager.prepareForNavigation();
-                this._processingVideoId = null;
-                this._processingChannelKey = null;
+                this.triggerChannelUpdate();
+            } else {
+                this._cancelActiveRoute();
+                RecordingButtonManager.reset();
+                PlaylistButtonManager.reset();
+                ChannelButtonManager.reset();
+            }
+        },
+
+        _runRouteTask: async function (routeState, taskFn, errorContext) {
+            this._cancelActiveRoute();
+            const controller = new AbortController();
+            this._activeVideoId = routeState.videoId || null;
+            this._activeChannelKey = routeState.channelKey || null;
+            this._activeAbortController = controller;
+
+            try {
+                await taskFn(controller.signal);
+            } catch (err) {
+                if (err?.name !== 'AbortError' && !controller.signal.aborted) {
+                    console.error(`[${GM.info.script.name}] Uncaught error processing ${errorContext}:`, err);
+                }
+            } finally {
+                if (this._activeAbortController === controller) {
+                    this._activeAbortController = null;
+                }
             }
         },
 
         /**
          * Triggers the channel lookup and UI update.
-         * @param {number} [navId]
          */
-        triggerChannelUpdate: function (navId) {
+        triggerChannelUpdate: function () {
             const channelKey = decodeURIComponent(location.pathname);
 
-            if (this._processingChannelKey === channelKey && this._currentChannelProcessingPromise) {
+            if (this._activeChannelKey === channelKey && this._activeAbortController) {
                 return;
             }
 
-            this._processingChannelKey = channelKey;
-
-            this._currentChannelProcessingPromise = this._performChannelUpdate(navId)
-                .finally(() => {
-                    if (this._processingChannelKey === channelKey) {
-                        this._processingChannelKey = null;
-                        this._currentChannelProcessingPromise = null;
-                    }
-                });
+            this._runRouteTask(
+                { channelKey },
+                (signal) => this._performChannelUpdate(channelKey, signal),
+                `channel ${channelKey}`
+            );
         },
 
         /**
          * Performs the channel lookup and renders the appropriate MusicBrainz channel action.
-         * @param {number} [navId]
+         * @param {string} channelKey
+         * @param {AbortSignal} signal
          */
-        _performChannelUpdate: async function (navId) {
+        _performChannelUpdate: async function (channelKey, signal) {
             const startTime = performance.now();
-            const channelKey = decodeURIComponent(location.pathname);
-            const handleMatch = channelKey.match(/\/(@[^\/?#]+)/);
-            const pathChannelMatch = channelKey.match(/\/channel\/(UC[A-Za-z0-9_-]+)/);
-            const legacyPathMatch = channelKey.match(/^\/((?:c|user)\/[^\/?#]+)/);
-            const expectedTarget = handleMatch
-                ? handleMatch[1]
-                : (pathChannelMatch ? pathChannelMatch[1] : (legacyPathMatch ? legacyPathMatch[1] : null));
+            const expectedTarget = DOMScanner.extractChannelTarget(channelKey);
 
-            if (!expectedTarget) return;
+            if (!expectedTarget || signal.aborted) return;
 
-            const innertubePromise = InnertubeExtractor.extractChannelData(expectedTarget);
+            const innertubePromise = InnertubeExtractor.extractChannelData(expectedTarget, signal);
+            innertubePromise.catch(() => null);
 
             const anchorStartTime = performance.now();
-            const dockElement = await DOMScanner.getChannelAnchorElement(expectedTarget);
+            const dockElement = await DOMScanner.getChannelAnchorElement(expectedTarget, 5000, 100, signal);
             const anchorWaitMs = Math.round(performance.now() - anchorStartTime);
-            if (!DOMScanner.isChannelPage() || decodeURIComponent(location.pathname) !== channelKey) return;
+            if (signal.aborted) return;
+            RecordingButtonManager.reset();
+            PlaylistButtonManager.reset();
+            if (!dockElement) return;
 
             ChannelButtonManager.appendToDock(dockElement);
-
-            const itRes = await innertubePromise;
-            const channelData = itRes?.data;
-
-            if (!DOMScanner.isChannelPage() || decodeURIComponent(location.pathname) !== channelKey) return;
-
-            if (!channelData) {
-                console.warn(`[${GM.info.script.name}] Failed to extract channel data for: ${expectedTarget}`);
-                ChannelButtonManager.hide();
-                return;
-            }
-
-            const urlsToQuery = [];
-            if (channelData.canonicalUrl) urlsToQuery.push(channelData.canonicalUrl);
-            if (channelData.handleUrl && !urlsToQuery.includes(channelData.handleUrl)) {
-                urlsToQuery.push(channelData.handleUrl);
-            }
-
-            if (urlsToQuery.length === 0) {
-                ChannelButtonManager.hide();
-                return;
-            }
-
-            const cachedUrlMap = new Map(urlsToQuery.map(u => [u, this._mbApi.cache.has(u)]));
-            const isAllCached = urlsToQuery.every(u => cachedUrlMap.get(u));
-            if (!isAllCached) {
-                ChannelButtonManager.setPending();
-            }
 
             let mbResults = null;
             let outcome = 'unknown';
             let actionResult = null;
             let lookupDurationMs = 0;
-            const linkExtractionMs = itRes?.durationMs ?? 0;
+            let linkExtractionMs = 0;
+            let channelData = null;
+            let urlsToQuery = [];
+            let cachedUrlMap = new Map();
 
             try {
+                const itRes = await innertubePromise;
+                channelData = itRes?.data;
+                linkExtractionMs = itRes?.durationMs ?? 0;
+
+                if (signal.aborted) return;
+
+                if (!channelData) {
+                    console.warn(`[${GM.info.script.name}] Failed to extract channel data for: ${expectedTarget}`);
+                    ChannelButtonManager.hide();
+                    return;
+                }
+
+                if (channelData.canonicalUrl) urlsToQuery.push(channelData.canonicalUrl);
+                if (channelData.handleUrl && !urlsToQuery.includes(channelData.handleUrl)) {
+                    urlsToQuery.push(channelData.handleUrl);
+                }
+
+                if (urlsToQuery.length === 0) {
+                    ChannelButtonManager.hide();
+                    return;
+                }
+
+                cachedUrlMap = new Map(urlsToQuery.map(u => [u, this._mbApi.cache.has(u)]));
+                const isAllCached = urlsToQuery.every(u => cachedUrlMap.get(u));
+                if (!isAllCached) {
+                    ChannelButtonManager.setPending();
+                }
+
                 const seedLinksEnabled = MenuManager.isSeedLinksEnabled();
                 const lookupStartTime = performance.now();
-                mbResults = await this.lookupMbUrls(urlsToQuery);
+                mbResults = await this.lookupMbUrls(urlsToQuery, signal);
                 lookupDurationMs = Math.round(performance.now() - lookupStartTime);
 
-                if (!DOMScanner.isChannelPage() || decodeURIComponent(location.pathname) !== channelKey) return;
+                if (signal.aborted) return;
 
                 const candidateExternalLinks = seedLinksEnabled ? (channelData.externalLinks || []) : [];
 
@@ -4060,9 +4202,6 @@ class PermanentError extends Error {
                     }
                 }
 
-                RecordingButtonManager.reset();
-                PlaylistButtonManager.reset();
-
                 if (foundEntities.length === 1) {
                     const { targetType, id, name } = foundEntities[0];
                     let missingExternalLinks = [];
@@ -4070,7 +4209,7 @@ class PermanentError extends Error {
                     if (seedLinksEnabled && candidateExternalLinks.length > 0) {
                         try {
                             const entityStartTime = performance.now();
-                            const entityDetails = await this._mbApi.get(targetType, id, ['url-rels']);
+                            const entityDetails = await this._mbApi.get(targetType, id, ['url-rels'], signal);
                             lookupDurationMs += Math.round(performance.now() - entityStartTime);
 
                             const existingMbUrls = (entityDetails?.relations || [])
@@ -4081,9 +4220,12 @@ class PermanentError extends Error {
                                 link => !existingMbUrls.some(mbUrl => Utils.isSameExternalUrl(link, mbUrl))
                             );
                         } catch (err) {
+                            if (err?.name === 'AbortError' || signal.aborted) return;
                             console.warn(`[${GM.info.script.name}] Failed to fetch URL relationships for ${targetType} ${id}:`, err);
                         }
                     }
+
+                    if (signal.aborted) return;
 
                     ChannelButtonManager.displayLinkedEntity(
                         targetType,
@@ -4147,12 +4289,12 @@ class PermanentError extends Error {
                         buttonRenderedMs,
                         anchorWaitMs,
                         heldUpAfterAnchorMs,
-                        ytNavigateFinishMs: this._lastYtNavigateFinishMs,
                         linkExtractionMs,
                         lookupDurationMs
                     }
                 });
             } catch (error) {
+                if (error?.name === 'AbortError' || signal.aborted) return;
                 console.error(`[${GM.info.script.name}] Error in channel lookup:`, error);
                 const apiName = error.apiName || 'API';
                 const errorMessage = error.status === 503 ? L10n.getString('errorApiRateLimit', { apiName }) : L10n.getString('errorProcessing');
@@ -4176,7 +4318,6 @@ class PermanentError extends Error {
                         buttonRenderedMs: typeof buttonRenderedMs !== 'undefined' ? buttonRenderedMs : null,
                         anchorWaitMs: typeof anchorWaitMs !== 'undefined' ? anchorWaitMs : null,
                         heldUpAfterAnchorMs: typeof heldUpAfterAnchorMs !== 'undefined' ? heldUpAfterAnchorMs : null,
-                        ytNavigateFinishMs: this._lastYtNavigateFinishMs,
                         linkExtractionMs,
                         lookupDurationMs
                     }
@@ -4189,49 +4330,45 @@ class PermanentError extends Error {
          * This function acts as a gatekeeper to ensure only one update runs at a time.
          * @param {string|null} videoId - The YouTube video ID to process.
          */
-        triggerUpdate: function (videoId, navId) {
-            if (this._processingVideoId === videoId && this._currentProcessingPromise) {
-                return;
-            }
-
+        triggerUpdate: function (videoId) {
             if (!videoId) {
+                this._cancelActiveRoute();
                 RecordingButtonManager.hide();
                 PlaylistButtonManager.hide();
-                this._processingVideoId = null;
-                this._currentProcessingPromise = null;
                 return;
             }
 
-            this._processingVideoId = videoId;
+            if (this._activeVideoId === videoId && this._activeAbortController) {
+                return;
+            }
 
-            this._currentProcessingPromise = this._performUpdate(videoId, navId)
-                .catch((err) => {
-                    console.error(`[${GM.info.script.name}] Uncaught error processing video ${videoId}:`, err);
-                })
-                .finally(() => {
-                    if (this._processingVideoId === videoId) {
-                        this._processingVideoId = null;
-                        this._currentProcessingPromise = null;
-                    }
-                });
+            this._runRouteTask(
+                { videoId },
+                (signal) => this._performUpdate(videoId, signal),
+                `video ${videoId}`
+            );
         },
 
         /**
          * Performs the unified API calls and updates recording and playlist UI buttons.
          * @summary Unified single-pass extraction, MusicBrainz lookup, and UI resolution pipeline.
          * @param {string} videoId - The YouTube video ID to process.
-         * @param {number} [navId] - Navigation ID to guard against race conditions.
+         * @param {AbortSignal} signal
          * @returns {Promise<void>}
          */
-        _performUpdate: async function (videoId, navId) {
+        _performUpdate: async function (videoId, signal) {
             const startTime = performance.now();
             const extractionStartTime = performance.now();
-            const innertubePromise = InnertubeExtractor.extractVideoData(videoId);
+            if (signal.aborted) return;
+            const innertubePromise = InnertubeExtractor.extractVideoData(videoId, signal);
+            innertubePromise.catch(() => null);
 
             const anchorStartTime = performance.now();
-            const dockElement = await DOMScanner.getButtonAnchorElement();
+            const dockElement = await DOMScanner.getButtonAnchorElement(signal);
             const anchorWaitMs = Math.round(performance.now() - anchorStartTime);
-            if (DOMScanner.getVideoId() !== videoId) return;
+            if (signal.aborted) return;
+            ChannelButtonManager.reset();
+            if (!dockElement) return;
             RecordingButtonManager.appendToDock(dockElement);
             PlaylistButtonManager.appendToDock(dockElement);
 
@@ -4250,7 +4387,7 @@ class PermanentError extends Error {
                 ytData = itRes?.data;
                 metadataExtractionMs = itRes?.durationMs ?? Math.round(performance.now() - extractionStartTime);
 
-                if (DOMScanner.getVideoId() !== videoId) return;
+                if (signal.aborted) return;
 
                 if (!ytData) {
                     console.warn(`[${GM.info.script.name}] Could not extract metadata for video ID: ${videoId}`);
@@ -4280,20 +4417,22 @@ class PermanentError extends Error {
 
                 // Fetch MusicBrainz Data (single batched HTTP request for both video and channel)
                 const lookupStartTime = performance.now();
-                mbResults = await this.lookupMbUrls(urlsToQuery);
+                mbResults = await this.lookupMbUrls(urlsToQuery, signal);
                 lookupDurationMs = Math.round(performance.now() - lookupStartTime);
+
+                if (signal.aborted) return;
 
                 const mbVideoUrlEntity = mbResults.get(canonicalYtUrl);
                 const artistMbid = (youtubeChannelUrl ? this._extractArtistMbid(mbResults.get(youtubeChannelUrl)) : null)
                     || (youtubeHandleUrl ? this._extractArtistMbid(mbResults.get(youtubeHandleUrl)) : null);
 
-                ChannelButtonManager.reset();
-
                 // ===== Run Recording Importer Logic and Playlist Logic in Parallel =====
-                const recordingPromise = this._handleRecordingImport(ytData, canonicalYtUrl, youtubeChannelUrl, mbResults, mbVideoUrlEntity, artistMbid, youtubeHandleUrl);
-                const playlistPromise = this._handlePlaylistLogic(ytData, canonicalYtUrl);
+                const recordingPromise = this._handleRecordingImport(ytData, canonicalYtUrl, youtubeChannelUrl, mbResults, mbVideoUrlEntity, artistMbid, youtubeHandleUrl, signal);
+                const playlistPromise = this._handlePlaylistLogic(ytData, canonicalYtUrl, signal);
 
                 [actionResult] = await Promise.all([recordingPromise, playlistPromise]);
+                if (signal.aborted) return;
+
                 const buttonRenderedMs = Math.round(performance.now() - startTime);
                 const heldUpAfterAnchorMs = Math.max(0, buttonRenderedMs - anchorWaitMs);
                 outcome = actionResult?.outcome || 'unknown';
@@ -4311,12 +4450,12 @@ class PermanentError extends Error {
                         buttonRenderedMs,
                         anchorWaitMs,
                         heldUpAfterAnchorMs,
-                        ytNavigateFinishMs: this._lastYtNavigateFinishMs,
                         metadataExtractionMs,
                         lookupDurationMs
                     }
                 });
             } catch (error) {
+                if (error?.name === 'AbortError' || signal.aborted) return;
                 console.error(`[${GM.info.script.name}] Error in video update pipeline:`, error);
                 const apiName = error.apiName || 'API';
                 const errorMessage = error.status === 503 ? L10n.getString('errorApiRateLimit', { apiName }) : L10n.getString('errorProcessing');
@@ -4338,7 +4477,6 @@ class PermanentError extends Error {
                             buttonRenderedMs: typeof buttonRenderedMs !== 'undefined' ? buttonRenderedMs : null,
                             anchorWaitMs: typeof anchorWaitMs !== 'undefined' ? anchorWaitMs : null,
                             heldUpAfterAnchorMs: typeof heldUpAfterAnchorMs !== 'undefined' ? heldUpAfterAnchorMs : null,
-                            ytNavigateFinishMs: this._lastYtNavigateFinishMs,
                             metadataExtractionMs,
                             lookupDurationMs
                         }
@@ -4357,10 +4495,12 @@ class PermanentError extends Error {
          * @param {Object|null} [mbVideoUrlEntity] - Resolved video URL entity if pre-computed.
          * @param {string|null} [artistMbid] - Resolved artist MBID if pre-computed.
          * @param {string|null} [youtubeHandleUrl] - Handle channel URL if available.
+         * @param {AbortSignal|null} [signal=null]
          * @returns {Promise<string>} Outcome status
          */
-        _handleRecordingImport: async function (ytData, canonicalYtUrl, youtubeChannelUrl, mbResults, mbVideoUrlEntity, artistMbid, youtubeHandleUrl = null) {
+        _handleRecordingImport: async function (ytData, canonicalYtUrl, youtubeChannelUrl, mbResults, mbVideoUrlEntity, artistMbid, youtubeHandleUrl = null, signal = null) {
             try {
+                if (signal?.aborted) return null;
                 const videoUrlEntity = mbVideoUrlEntity !== undefined ? mbVideoUrlEntity : mbResults.get(canonicalYtUrl);
                 const artistId = artistMbid !== undefined
                     ? artistMbid
@@ -4383,6 +4523,7 @@ class PermanentError extends Error {
                     return RecordingButtonManager.prepareAddButton(ytData, canonicalYtUrl, artistId, ytData.id);
                 }
             } catch (error) {
+                if (error?.name === 'AbortError' || signal?.aborted) return null;
                 console.error(`[${GM.info.script.name}] Error in recording import logic:`, error);
                 const apiName = error.apiName || 'API';
                 const errorMessage = error.status === 503 ? L10n.getString('errorApiRateLimit', { apiName }) : L10n.getString('errorProcessing');
@@ -4395,8 +4536,9 @@ class PermanentError extends Error {
             }
         },
 
-        _handlePlaylistLogic: async function (ytData, canonicalYtUrl) {
+        _handlePlaylistLogic: async function (ytData, canonicalYtUrl, signal = null) {
             try {
+                if (signal?.aborted) return;
                 if (!TokenManager.getTokenValue()) {
                     PlaylistButtonManager.hide();
                     return;
@@ -4410,6 +4552,7 @@ class PermanentError extends Error {
                 }
 
                 const searchResults = await ListenBrainzAPI.searchPlaylists(ytData.id);
+                if (signal?.aborted) return;
                 const perfectMatches = (searchResults.playlists || []).filter(p => p.playlist.annotation && p.playlist.annotation.includes(canonicalYtUrl));
 
                 if (perfectMatches.length === 1) {
@@ -4434,6 +4577,7 @@ class PermanentError extends Error {
                     });
                 }
             } catch (error) {
+                if (error?.name === 'AbortError' || signal?.aborted) return;
                 console.error(`[${GM.info.script.name}] Error in playlist logic:`, error);
                 const apiName = error.apiName || 'API';
                 const errorMessage = error.status === 503 ? L10n.getString('errorApiRateLimit', { apiName }) : L10n.getString('errorProcessing');
