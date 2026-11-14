@@ -15,6 +15,70 @@ LIB_DIR = REPO_ROOT / "lib"
 REQUIRE_RE = re.compile(r'^[ \t]*//[ \t]*@require[ \t]+(?:\.\./)?lib/([^\s]+)', re.MULTILINE)
 USERSCRIPT_HEADER_RE = re.compile(r'//[ \t]*==UserScript==.*?//[ \t]*==/UserScript==\s*', re.DOTALL)
 CLOSURE_START_RE = re.compile(r'(\(\s*function\s*\([^)]*\)\s*\{|\(\s*\(\)\s*=>\s*\{)')
+VERSION_RE = re.compile(r'^[ \t]*//[ \t]*@version[ \t]+(\S+)', re.MULTILINE)
+
+
+def extract_version(script_text):
+    """Extracts the @version metadata value from a userscript header, or None."""
+    match = VERSION_RE.search(script_text)
+    return match.group(1).strip() if match else None
+
+
+def _git_output(args, check=True):
+    """Runs a git command and returns CompletedProcess with UTF-8 text output."""
+    return subprocess.run(
+        ["git", *args],
+        capture_output=True, text=True, check=check, encoding="utf-8"
+    )
+
+
+def verify_version_bumps(main_branch, dist_branch):
+    """Ensures new scripts have @version and modified scripts bumped @version relative to dist."""
+    main_tip_hash = _git_output(["rev-parse", main_branch]).stdout.strip()
+    main_ls = _git_output(["ls-tree", "-r", "--name-only", main_branch, "--", "src/"])
+    expected_scripts = [
+        line.strip() for line in main_ls.stdout.splitlines()
+        if line.strip().endswith(".user.js")
+    ]
+
+    lib_cache = {}
+    missing_version = []
+    unbumped = []
+    for script_path in sorted(expected_scripts):
+        main_res = _git_output(["show", f"{main_branch}:{script_path}"], check=False)
+        if main_res.returncode != 0:
+            continue
+
+        main_ver = extract_version(main_res.stdout)
+        dist_res = _git_output(["show", f"{dist_branch}:{script_path}"], check=False)
+        if dist_res.returncode != 0:
+            if not main_ver:
+                missing_version.append(script_path)
+            continue
+
+        expected_inlined, _ = inline_script_content(
+            main_res.stdout,
+            commit_hash=main_tip_hash,
+            lib_cache=lib_cache
+        )
+        if expected_inlined == dist_res.stdout:
+            continue
+
+        dist_ver = extract_version(dist_res.stdout)
+        if not main_ver or main_ver == dist_ver:
+            unbumped.append((script_path, dist_ver))
+
+    if missing_version or unbumped:
+        if missing_version:
+            print(f"Error: {len(missing_version)} new script(s) on '{main_branch}' are missing @version:", file=sys.stderr)
+            for path in missing_version:
+                print(f"  - {path}", file=sys.stderr)
+        if unbumped:
+            print(f"Error: {len(unbumped)} modified script(s) on '{main_branch}' have not bumped @version relative to '{dist_branch}':", file=sys.stderr)
+            for path, ver in unbumped:
+                print(f"  - {path} (still @version {ver})", file=sys.stderr)
+        return False
+    return True
 
 def clean_lib_content(lib_text):
     """Strips the UserScript header from library file so only the executable code remains."""
@@ -224,7 +288,7 @@ def sync_dist_branch(main_branch="main", dist_branch="dist"):
             subprocess.run(["git", "branch", dist_branch, root_commit], check=True)
             subprocess.run(["git", "worktree", "add", init_wt_dir, dist_branch], check=True)
             try:
-                build_all_inlined_scripts(init_wt_dir)
+                build_all_inlined_scripts(init_wt_dir, source_root=Path.cwd())
                 subprocess.run(["git", "-C", init_wt_dir, "add", "-A"], check=True)
                 subprocess.run([
                     "git", "-C", init_wt_dir, "commit", "--amend",
@@ -242,6 +306,9 @@ def sync_dist_branch(main_branch="main", dist_branch="dist"):
     if not commits_to_sync:
         print(f"Branch '{dist_branch}' is already up-to-date with '{main_branch}'. No new commit needed.")
         return True
+
+    if not verify_version_bumps(main_branch, dist_branch):
+        return False
 
     print(f"Found {len(commits_to_sync)} commit(s) from '{main_branch}' to sync to '{dist_branch}'.")
 
@@ -439,7 +506,8 @@ if __name__ == "__main__":
         sys.exit(0)
 
     if args.sync_branch:
-        sync_dist_branch(args.main_branch, args.dist_branch)
+        ok = sync_dist_branch(args.main_branch, args.dist_branch)
+        sys.exit(0 if ok else 1)
     else:
         import tempfile
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmpdir:
