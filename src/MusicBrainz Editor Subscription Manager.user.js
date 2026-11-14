@@ -137,6 +137,12 @@
             }
         },
         {
+            id: 'restrictions',
+            header: 'Restrictions',
+            getValue: (e) => e.restrictions || '',
+            render: (e) => e.restrictions ? createStatusSpan(e.restrictions, 'darkorange', true) : ''
+        },
+        {
             id: 'status',
             header: 'Status',
             getValue: (e) => {
@@ -282,7 +288,7 @@
 
         const getMeta = (label) => [...doc.querySelectorAll('.profileinfo th')].find(th => th.textContent.trim() === label)?.nextElementSibling;
 
-        editor.restrictions = getMeta('Restrictions:')?.textContent.trim();
+        editor.restrictions = getMeta('Restrictions:')?.textContent.replace(/\s+/g, ' ').trim() || undefined;
         const dateStr = getMeta('Member since:')?.textContent.trim();
         if (dateStr) editor.memberSince = new Date(dateStr).toISOString();
 
