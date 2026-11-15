@@ -5,6 +5,8 @@ import sys
 import os
 import argparse
 import re
+import shutil
+import tempfile
 import urllib.parse
 from pathlib import Path
 
@@ -485,30 +487,29 @@ def do_release(non_interactive=False, json_output=False, bump_strategy="auto", s
     main_branch = get_main_branch_name(remote)
     commits_created = 0
 
-    # Check for uncommitted changes upfront to prevent stash pop conflicts later
-    dirty_lines = run_cmd("git status --porcelain").splitlines()
-    other_dirty = []
+    # Check for staged changes in unrelated files that could be swept into release commits
+    dirty_lines = get_git_stdout(["git", "status", "--porcelain"]).splitlines()
+    other_staged = []
     for line in dirty_lines:
-        trimmed = line.strip()
-        if not trimmed:
+        if len(line) < 4:
             continue
-        parts = trimmed.split(maxsplit=1)
-        if len(parts) < 2:
+        index_status = line[0]
+        if index_status in (" ", "?"):
             continue
-        filepath = parts[1].strip('"').replace('\\', '/')
+        filepath = line[3:].strip('"').replace('\\', '/')
         is_handled = (
             (filepath.startswith("src/") and filepath.endswith(".user.js")) or
             (filepath.startswith("docs/descriptions/") and filepath.endswith(".md")) or
             (filepath == "docs/USERSCRIPTS.md")
         )
         if not is_handled:
-            other_dirty.append(filepath)
+            other_staged.append(filepath)
 
-    if other_dirty:
-        print(f"\n{COLOR_YELLOW}{COLOR_BOLD}Warning: You have uncommitted changes in files not managed by the release workflow:{COLOR_RESET}")
-        for f in other_dirty:
+    if other_staged:
+        print(f"\n{COLOR_YELLOW}{COLOR_BOLD}Warning: You have staged changes in files not managed by the release workflow:{COLOR_RESET}")
+        for f in other_staged:
             print(f"  * {f}")
-        print("It is highly recommended to commit or stash them before releasing to avoid merge conflicts.")
+        print("It is highly recommended to unstage or commit them before releasing.")
         confirm = prompt_user("Do you want to proceed with the release anyway? (y/N): ", default='y', non_interactive=non_interactive, auto_choice='y').lower()
         if confirm != 'y':
             print(f"{COLOR_RED}Aborting.{COLOR_RESET}\n")
@@ -851,7 +852,16 @@ def do_release(non_interactive=False, json_output=False, bump_strategy="auto", s
             continue
         infra_changed_files.append(f)
 
-    is_full_release = (len(selected_scripts) == len(unreleased_info))
+    allowed_paths = sorted(
+        selected_rel_paths
+        | selected_desc_paths
+        | ({'docs/USERSCRIPTS.md'} if list_changed else set())
+    )
+    is_full_release = (
+        len(selected_scripts) == len(unreleased_info)
+        and not infra_changed_files
+        and not deleted_scripts
+    )
 
     mode_label = f"{COLOR_GREEN}[Fast-Forward Release]{COLOR_RESET}" if is_full_release else f"{COLOR_YELLOW}[Selective Rebase Release]{COLOR_RESET}"
     print(f"\n{COLOR_CYAN}{COLOR_BOLD}--- Finalizing Release Workflow {mode_label} ---{COLOR_RESET}")
@@ -859,24 +869,13 @@ def do_release(non_interactive=False, json_output=False, bump_strategy="auto", s
 
     if is_full_release:
         print(f"\n  * Releasing all unreleased scripts and commits from '{release_branch}' into '{main_branch}'.")
-        cmd = ['git', 'log', f'{main_branch}..HEAD', '--format=%H %s']
+        cmd = ['git', 'log', '--reverse', f'{main_branch}..HEAD', '--format=%H %s']
     else:
-        print(f"\n  * Commits to cherry-pick into '{main_branch}':")
-        paths = []
-        for script in selected_scripts:
-            paths.append(script['rel_path'])
-            if not script['rel_path'].startswith('lib/'):
-                script_base_name = script['full_path'].name.replace('.user.js', '')
-                desc_rel_path = f"docs/descriptions/{script_base_name}.md"
-                paths.append(desc_rel_path)
-
-        if list_changed:
-            paths.append('docs/USERSCRIPTS.md')
-
-        if paths:
-            cmd = ['git', 'log', f'{main_branch}..HEAD', '--format=%H %s', '--'] + paths
+        print(f"\n  * Commits to cherry-pick (selected files only) into '{main_branch}':")
+        if allowed_paths:
+            cmd = ['git', 'log', '--reverse', f'{main_branch}..HEAD', '--format=%H %s', '--'] + allowed_paths
         else:
-            cmd = ['git', 'log', f'{main_branch}..HEAD', '--format=%H %s']
+            cmd = ['git', 'log', '--reverse', f'{main_branch}..HEAD', '--format=%H %s']
 
     commit_lines = [line.strip() for line in get_git_stdout(cmd).splitlines() if line.strip()]
     commit_ids = [line.split(' ', 1)[0] for line in commit_lines]
@@ -956,47 +955,65 @@ def do_release(non_interactive=False, json_output=False, bump_strategy="auto", s
                 print(f"{COLOR_GREEN}Commits reverted. Workspace changes preserved and unstaged.{COLOR_RESET}\n")
         return
 
-    # Check if working tree has dirty/uncommitted changes
-    dirty = run_cmd("git status --porcelain").strip()
-    stashed = False
+    worktree_dir = None
 
     try:
-        if dirty:
-            print(f"\n{COLOR_YELLOW}Working directory is dirty. Stashing local changes...{COLOR_RESET}")
-            subprocess.run(['git', 'stash', '-u', '-m', 'workflow_release_stash'], check=True)
-            stashed = True
-
-        print(f"\n{COLOR_CYAN}Checking out {main_branch}...{COLOR_RESET}")
-        subprocess.run(['git', 'checkout', main_branch], check=True)
+        if release_branch != main_branch:
+            worktree_dir = tempfile.mkdtemp(prefix="workflow_release_wt_")
+            print(f"\n{COLOR_CYAN}Preparing isolated worktree for {main_branch}...{COLOR_RESET}")
+            subprocess.run(['git', 'worktree', 'add', worktree_dir, main_branch], check=True)
+            main_cwd = worktree_dir
+        else:
+            main_cwd = None
 
         if is_full_release:
-            print(f"\n{COLOR_CYAN}Fast-forward merging {release_branch} into {main_branch}...{COLOR_RESET}")
-            subprocess.run(['git', 'merge', '--ff-only', release_branch], check=True)
+            if release_branch != main_branch:
+                print(f"\n{COLOR_CYAN}Fast-forward merging {release_branch} into {main_branch}...{COLOR_RESET}")
+                subprocess.run(['git', 'merge', '--ff-only', release_branch], cwd=main_cwd, check=True)
         else:
             if commit_ids:
-                print(f"\n{COLOR_CYAN}Cherry-picking selected release commits into {main_branch}...{COLOR_RESET}")
+                print(f"\n{COLOR_CYAN}Applying selected release changes into {main_branch}...{COLOR_RESET}")
+                allowed_set = set(allowed_paths)
                 for commit_id in commit_ids:
-                    subprocess.run(['git', 'cherry-pick', commit_id], check=True)
+                    changed_in_commit = [
+                        f.strip()
+                        for f in get_git_stdout(['git', 'diff-tree', '--no-commit-id', '--name-only', '-r', commit_id]).splitlines()
+                        if f.strip()
+                    ]
+                    inside_paths = [f for f in changed_in_commit if f in allowed_set]
+                    outside_paths = [f for f in changed_in_commit if f not in allowed_set]
+                    if not inside_paths:
+                        continue
+                    if not outside_paths:
+                        subprocess.run(['git', 'cherry-pick', commit_id], cwd=main_cwd, check=True)
+                    else:
+                        patch_res = subprocess.run(
+                            ['git', 'diff-tree', '-p', '--root', '--binary', commit_id, '--'] + inside_paths,
+                            cwd=main_cwd,
+                            capture_output=True,
+                            check=True,
+                        )
+                        if patch_res.stdout.strip():
+                            subprocess.run(['git', 'apply', '--index'], cwd=main_cwd, input=patch_res.stdout, check=True)
+                            subprocess.run(['git', 'commit', '-C', commit_id], cwd=main_cwd, check=True)
             else:
                 print(f"\n{COLOR_YELLOW}No commits selected for cherry-pick. Skipping release commit application.{COLOR_RESET}")
 
         print(f"\n{COLOR_CYAN}Pushing {main_branch} to {remote}...{COLOR_RESET}")
-        subprocess.run(['git', 'push', remote, main_branch], check=True)
+        subprocess.run(['git', 'push', remote, main_branch], cwd=main_cwd, check=True)
 
-        print(f"\n{COLOR_CYAN}Checking out {release_branch}...{COLOR_RESET}")
-        subprocess.run(['git', 'checkout', release_branch], check=True)
-
-        print(f"\n{COLOR_CYAN}Syncing {release_branch} with {main_branch}...{COLOR_RESET}")
-        if is_full_release:
-            subprocess.run(['git', 'push', remote, release_branch, '--force-with-lease'], check=True)
-        else:
-            ff_res = subprocess.run(['git', 'merge', '--ff-only', main_branch], capture_output=True, text=True)
-            if ff_res.returncode != 0:
-                print(f"{COLOR_CYAN}Rebasing {release_branch} onto {main_branch} to maintain clean linear history...{COLOR_RESET}")
-                subprocess.run(['git', 'rebase', main_branch], check=True)
+        if release_branch != main_branch:
+            print(f"\n{COLOR_CYAN}Syncing {release_branch} with {main_branch}...{COLOR_RESET}")
+            if is_full_release:
                 subprocess.run(['git', 'push', remote, release_branch, '--force-with-lease'], check=True)
             else:
-                subprocess.run(['git', 'push', remote, release_branch], check=True)
+                ff_res = subprocess.run(['git', 'merge', '--ff-only', main_branch], capture_output=True, text=True)
+                if ff_res.returncode != 0:
+                    print(f"{COLOR_CYAN}Rebasing {release_branch} onto {main_branch} to maintain clean linear history...{COLOR_RESET}")
+                    subprocess.run(['git', 'rebase', '--autostash', main_branch], check=True)
+                    subprocess.run(['git', 'push', remote, release_branch, '--force-with-lease'], check=True)
+                else:
+                    subprocess.run(['git', 'push', remote, release_branch], check=True)
 
         print(f"\n{COLOR_GREEN}{COLOR_BOLD}Release completed successfully!{COLOR_RESET} (GitHub Actions will sync 'dist' from '{main_branch}'.)\n")
 
@@ -1038,15 +1055,9 @@ def do_release(non_interactive=False, json_output=False, bump_strategy="auto", s
         print(f"\n{COLOR_RED}{COLOR_BOLD}An error occurred during git operations: {e}{COLOR_RESET}")
         print(f"{COLOR_YELLOW}You may need to manually resolve branch status.{COLOR_RESET}\n")
     finally:
-        # Ensure we are back on release_branch and pop stash if stashed
-        curr_branch = run_cmd("git branch --show-current")
-        if curr_branch != release_branch:
-            print(f"\n{COLOR_CYAN}Returning to {release_branch} branch...{COLOR_RESET}")
-            subprocess.run(['git', 'checkout', release_branch], check=True)
-        if stashed:
-            print(f"\n{COLOR_YELLOW}Restoring stashed local changes...{COLOR_RESET}")
-            subprocess.run(['git', 'stash', 'pop'], check=True)
-            print()
+        if worktree_dir:
+            subprocess.run(['git', 'worktree', 'remove', '--force', worktree_dir], capture_output=True)
+            shutil.rmtree(worktree_dir, ignore_errors=True)
 
 def do_bump(bump_type="patch", scripts_filter="all", json_output=False):
     repo_root = Path(__file__).resolve().parent.parent
