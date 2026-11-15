@@ -1,6 +1,9 @@
 ---
 name: userscript-typescript-migration
-description: Systemic migration of JavaScript userscript repositories to modular TypeScript, multi-entry bundlers (vite-plugin-monkey), suite consolidation, and automated Greasy Fork distribution.
+description: >-
+  Migrate plain-JS userscripts to modular TypeScript with vite-plugin-monkey
+  multi-entry builds, suite consolidation, and Greasy Fork release automation.
+disable-model-invocation: true
 ---
 
 # Userscript TypeScript Migration & Suite Architecture
@@ -31,7 +34,7 @@ This skill provides the end-to-end engineering methodology for transforming a fl
 ### Installation
 
 ```bash
-npm install -D vite vite-plugin-monkey typescript @types/tampermonkey
+pnpm add -D vite vite-plugin-monkey typescript @types/tampermonkey
 ```
 
 ### Typical `vite.config.ts` Multi-Entry Setup
@@ -105,11 +108,14 @@ For scripts operating on similar pages or sharing domain logic:
 ### Phase 4: CI/CD & Greasy Fork Release Automation
 
 1. Set up a GitHub Action on tag push (`v*.*.*`):
-   - Runs `npm run lint`, `npm run typecheck`, and `npm test`.
-   - Runs `npm run build` to generate all `dist/*.user.js`.
+   - Runs `pnpm lint`, `pnpm typecheck`, and `pnpm test`.
+   - Runs `pnpm build` to generate all `dist/*.user.js`.
    - Creates a GitHub Release with attached `.user.js` assets.
    - Syncs to Greasy Fork via webhook or `greasyfork-deploy` action.
 
 ## Reference Documents
 
-1. [TypeScript Monorepo & Modern Build Architecture (rainz-box)](references/typescript_monorepo_build_architecture.md)
+Read only when designing the monorepo workspace layout or build pipeline:
+
+1. **Monorepo layout & modern build patterns:** Read [`references/typescript_monorepo_build_architecture.md`](references/typescript_monorepo_build_architecture.md).
+

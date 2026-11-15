@@ -100,14 +100,14 @@ Native MusicBrainz `guessFeat` logic in `musicbrainz-server` has several known p
 ## 4. Automated Test Suite
 
 A standalone regression test script is preserved in the repository at:
-[tests/test_guesscase_split_logic.js](file:///c:/Users/User/Documents/git/userscripts/tests/test_guesscase_split_logic.js)
+`tests/test_guesscase_split_logic.js`
 
 To run the suite and verify logic against all test cases, execute:
 ```bash
 node tests/test_guesscase_split_logic.js
 ```
 
-## 7. Track-to-Release Credit Synchronization (`syncTrackCreditsToRelease`)
+## 5. Track-to-Release Credit Synchronization (`syncTrackCreditsToRelease`)
 
 To mirror the single-track credit synchronization behavior (as seen in Harmony Enhancements' `syncTrackArtist`), `syncTrackCreditsToRelease(release)` automatically syncs track artist credits to the release artist credit under strict conditions:
 1. **Single-Track or Uniform Release**: Either the release has exactly 1 track, or all tracks across all mediums share the identical artist credit signature (`gid` or normalized name).

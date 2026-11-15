@@ -115,7 +115,7 @@ window.wvPPv6F2CSlh61xuq = function dQtWDT6$eUTCaQ6vg(GM) {
 
 ---
 
-## 8. State Management & Asynchronous Storage Patterns
+## 7. State Management & Asynchronous Storage Patterns
 
 ### The Synchronous UI vs. Asynchronous Storage Dilemma
 
@@ -156,7 +156,7 @@ Multiple scripts in the repository handle state via in-memory objects serialized
 - **Failure Mechanism**: Reads the monolithic cache once during `init()` into `newReportCache`. It then enters a long asynchronous sequential fetch loop (with `REQUEST_DELAY = 1000`) that frequently takes 30–60+ seconds.
 - **The Race Scenario**: If Tab B updates or refreshes a report while Tab A's loop is still running, Tab A finishes its run and blindly calls `await GM.setValue(CENTRAL_CACHE_KEY, ...)` with its stale in-memory snapshot, completely obliterating Tab B's updates.
 - **Remediation**:
-  - **Patch (Read-Merge-Write)**: Immediately before writing at line 727, re-read `latest = await GM.getValue(CENTRAL_CACHE_KEY)`, shallow-merge reports by comparing `lastChecked` timestamps (`latestReport.lastChecked > inMemoryReport.lastChecked ? latestReport : inMemoryReport`), and write the merged payload.
+  - **Patch (Read-Merge-Write)**: Immediately before writing, re-read `latest = await GM.getValue(CENTRAL_CACHE_KEY)`, shallow-merge reports by comparing `lastChecked` timestamps (`latestReport.lastChecked > inMemoryReport.lastChecked ? latestReport : inMemoryReport`), and write the merged payload.
   - **Alternative**: Granular per-report keys (`UserJS.MusicBrainz.ReportsStatistics.Report.<ReportName>`) to eliminate cross-report collisions entirely.
 
 #### 2. `MusicBrainz Editor Subscription Manager` (`src/MusicBrainz Editor Subscription Manager.user.js`)
@@ -178,6 +178,10 @@ Multiple scripts in the repository handle state via in-memory objects serialized
 The in-memory cache pattern works reliably for single-tab workflows but has known architectural limitations:
 
 1. **Multi-Tab Divergence**: If tab A modifies storage, tab B's in-memory cache remains stale unless polled or synced.
+
+---
+
+## 8. External References
 
 - [Violentmonkey Metadata Block (`@grant`)](https://violentmonkey.github.io/api/metadata-block/#grant) — Explains default sandboxing, `@grant none` un-sandboxed behavior, and permission whitelisting.
 - **Tampermonkey**:

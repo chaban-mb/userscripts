@@ -10,7 +10,7 @@ description: Runtime code standards for userscripts, including async IIFE encaps
 - **Script Boundaries**: Primary source files reside in `src/*.user.js` and shared modules in `lib/*.js`.
 - **Minimal Grants**: Do not declare `@grant`s that the script does not use. If no privileged APIs are required, declare `// @grant none`.
 - **Closure Encapsulation**: Wrap scripts in an async IIFE closure `(async function () { 'use strict'; ... })();` to avoid leaking variables into target window contexts.
-- **Scaffolding & Lifecycle**: For initializing new scripts, menu registration patterns, and release workflows, see skill [userscript-workflow](../skills/userscript-workflow/SKILL.md).
+- **Scaffolding & Lifecycle**: For initializing new scripts and menu registration patterns, see skill [userscript-workflow](../skills/userscript-workflow/SKILL.md). For branching, commits, and releases, see skill [git-workflow](../skills/git-workflow/SKILL.md).
 
 ---
 
@@ -54,6 +54,5 @@ description: Runtime code standards for userscripts, including async IIFE encaps
 
 ## 5. UI Interaction & Menu Registration
 
-- **Menu Icons**: Format toggleable menu commands with Ballot Box icons `☑` (U+2611) and `☐` (U+2610).
-- **Dynamic Re-Registration**: For the full dynamic menu update pattern, see [userscript-workflow](../skills/userscript-workflow/SKILL.md#menu-commands-gmregistermenucommand).
+- **Menu Commands**: For ballot box iconography (`☑`/`☐`) and the dynamic re-registration pattern, see [userscript-workflow](../skills/userscript-workflow/SKILL.md#menu-commands-gmregistermenucommand).
 - **Localization**: Use English for all menu items, settings labels, and UI elements.

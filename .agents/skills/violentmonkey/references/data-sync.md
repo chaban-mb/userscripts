@@ -64,7 +64,7 @@ Violentmonkey serializes user overrides configured in the script settings UI:
    * Overridden `custom.injectInto` or `custom.runAt` will sync across devices and override script headers.
 
 3. **Development vs. Production Sync Conflicts:**
-   * When deploying development builds via `scripts_write` on a machine connected to Violentmonkey sync, changes may sync to other connected profiles.
+   * When installing or tracking development versions on a machine connected to Violentmonkey sync, changes may sync to other connected profiles.
    * Setting `config.shouldUpdate: 0` freezes automated remote updates, preventing auto-updates from clobbering development versions.
 
 4. **Dependency Resolution on Fresh Profiles & Restores:**

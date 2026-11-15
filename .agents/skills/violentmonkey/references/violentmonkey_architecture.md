@@ -6,7 +6,7 @@ This document details the internal architecture, storage model, and messaging pr
 
 ## 1. Storage Architecture (`Jn` / `Hn`)
 
-Violentmonkey persists all data via `chrome.storage.local`, backed by LevelDB on disk at:
+Violentmonkey persists all data via `chrome.storage.local`, backed by LevelDB on disk (Windows) at:
 `%LOCALAPPDATA%\Google\Chrome\User Data\Default\Local Extension Settings\jinjaccalgkegednnccohejagnlnfdag`
 
 Storage is partitioned into discrete namespaces using key prefixes:
