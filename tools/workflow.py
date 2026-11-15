@@ -37,7 +37,7 @@ def get_git_stdout(args):
 
 def parse_commit_scopes():
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    scopes_path = os.path.normpath(os.path.join(script_dir, "..", ".agents", "rules", "references", "commit-scopes.md"))
+    scopes_path = os.path.normpath(os.path.join(script_dir, "..", ".agents", "skills", "git-workflow", "references", "commit-scopes.md"))
     mapping = {}
     if os.path.exists(scopes_path):
         try:
@@ -1129,7 +1129,7 @@ def generate_slug_for_new_script(name):
 
 def add_script_to_commit_scopes(file_name, slug):
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    scopes_path = os.path.normpath(os.path.join(script_dir, "..", ".agents", "rules", "references", "commit-scopes.md"))
+    scopes_path = os.path.normpath(os.path.join(script_dir, "..", ".agents", "skills", "git-workflow", "references", "commit-scopes.md"))
     if not os.path.exists(scopes_path):
         return False
     try:
