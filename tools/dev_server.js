@@ -14,6 +14,7 @@
  *   node tools/dev_server.js                  # Start server on default port 8080
  *   node tools/dev_server.js --port 3000      # Custom port
  *   node tools/dev_server.js --no-tag         # Serve scripts without injecting dev metadata
+ *   node tools/dev_server.js --stop           # Stop any running dev server on the target port and exit
  *   node tools/dev_server.js --help           # Show CLI usage and tracking instructions
  */
 
@@ -54,6 +55,7 @@ OPTIONS:
   --name-tag <tag>    Custom suffix appended to @name (implies --separate)
   --no-tag            Serve raw script without injecting dev metadata
   --kill, --force     Terminate any existing process occupying the port before starting
+  --stop              Terminate any existing process occupying the port and exit
   --find-port         Automatically select the next available port if requested port is in use
   --help, -h          Show this help screen and exit
 
@@ -84,6 +86,7 @@ const NO_TAG = ARGS.includes('--no-tag');
 const SEPARATE = ARGS.includes('--separate');
 const NAME_TAG = getArgValue('--name-tag') || (SEPARATE ? '[DEV]' : '');
 const KILL_OCCUPANT = ARGS.includes('--kill') || ARGS.includes('--force');
+const STOP_SERVER = ARGS.includes('--stop');
 const FIND_PORT = ARGS.includes('--find-port');
 
 let currentPort = PORT;
@@ -137,6 +140,21 @@ function killProcess(pid) {
   } catch {
     return false;
   }
+}
+
+function stopServerOnPort(port) {
+  const occupant = getPortOccupant(port);
+  if (occupant && occupant.pid !== process.pid) {
+    console.log(`\x1b[33m[DevServer]\x1b[0m Stopping \x1b[36m${occupant.name}\x1b[0m (PID: \x1b[36m${occupant.pid}\x1b[0m) on port ${port}...`);
+    killProcess(occupant.pid);
+  } else {
+    console.log(`\x1b[33m[DevServer]\x1b[0m No server running on port ${port}.`);
+  }
+  process.exit(0);
+}
+
+if (STOP_SERVER) {
+  stopServerOnPort(PORT);
 }
 
 function preparePort(port) {
