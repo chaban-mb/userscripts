@@ -1,10 +1,10 @@
 ---
 name: userscript-workflow
 description: >-
-  Manages userscript scaffolding (`tools/workflow.py init`), `GM.registerMenuCommand`
-  patterns, `@grant` architecture, and Greasy Fork publishing info. Use when
-  initializing a new userscript, registering GM menu commands, or generating
-  publishing announcements.
+  Manages userscript scaffolding, `GM.registerMenuCommand` patterns, `@grant`
+  architecture, and Greasy Fork publishing info. Use when initializing a new
+  userscript, registering GM menu commands, debugging `@grant` permissions or
+  GM3->GM4 migration, or generating publishing announcements.
 ---
 
 # Userscript Workflow & Lifecycle
@@ -26,7 +26,7 @@ This automatically:
 
 - Scaffolds `src/<Script Name>.user.js` from `templates/userscript.template.js` with complete metadata headers.
 - Scaffolds `docs/descriptions/<Script Name>.md` from `templates/description.template.md`.
-- Registers the canonical slug in [`.agents/skills/git-workflow/references/commit-scopes.md`](../git-workflow/references/commit-scopes.md).
+- Registers the canonical slug in `commit-scopes.md` (managed by the `git-workflow` skill / `tools/workflow.py init`).
 - Optionally creates and checks out the topic branch `<slug>/feat/initial-setup` off `dev`.
 
 **Done when:** `src/<Script Name>.user.js` and `docs/descriptions/<Script Name>.md` exist and the slug is registered in `commit-scopes.md`.
@@ -39,11 +39,18 @@ Use ballot box iconography for toggle states and dynamic re-registration:
 - **Inactive / Disabled**: `☐ <Command Label>` (U+2610)
 - **Value Displays**: `<Setting Name>: <Value>` (e.g. `Theme: Dark`)
 
-Read [`references/userscript_grant_architecture.md`](references/userscript_grant_architecture.md) when debugging `@grant` permissions, GM storage isolation, or cross-tab sync; skip for simple DOM/UI scripts.
-
 ### Dynamic Re-Registration Pattern
 
-Script managers do not update menu labels in-place automatically. To update a label when toggled without requiring a page reload:
+Script managers do not update menu labels in-place automatically. Declare the required `@grant` directives in the metadata header:
+
+```javascript
+// @grant        GM.registerMenuCommand
+// @grant        GM.unregisterMenuCommand
+// @grant        GM.getValue
+// @grant        GM.setValue
+```
+
+Then re-register all commands on toggle so labels update without requiring a page reload:
 
 ```javascript
 let registeredMenuCommandIDs = [];
@@ -69,6 +76,15 @@ async function setupMenuCommands() {
     registeredMenuCommandIDs.push(id);
 }
 ```
+
+**Done when:** All four `GM.*` grants are declared in the metadata block, menu commands toggle between `☑` and `☐` without a page reload, and state persists across reloads.
+
+## @grant & Storage Architecture
+
+Read [`references/userscript_grant_architecture.md`](references/userscript_grant_architecture.md) when debugging `@grant` permissions, GM3->GM4 migration, GM storage isolation, or cross-tab sync; skip for simple DOM/UI scripts.
+
+- **NEVER** assume Tampermonkey's `GM_*` / `GM.*` auto-aliasing works in Violentmonkey — VM strictly enforces the exact `@grant` syntax declared in the root script header (even for `@require`d libraries).
+- **NEVER** blindly search-and-replace `GM_` with `GM.` without auditing callers for `await` — GM4 storage (`GM.getValue`, `GM.setValue`) returns a `Promise`, which is always truthy in conditionals if unawaited.
 
 ## Publishing Assistant
 
