@@ -3,7 +3,7 @@
     "Stop": [
       {
         "type": "command",
-        "command": "node tools/check_markdown_hook.js",
+        "command": "node ../tools/check_markdown_hook.js",
         "timeout": 20
       }
     ]
