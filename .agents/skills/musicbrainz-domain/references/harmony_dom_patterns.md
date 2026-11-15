@@ -67,69 +67,7 @@ findLabelElements: (index = null) => {
 
 ---
 
----
-
-## 3. Archived Implementation: Explicit Companion-Scoped Resolution
-
-*(Preserved for historical reference in case specific companion script attribute inspection is ever needed).*
-
-`javascript
-/**
- * Finds DOM elements matching an active or injected release label via explicit third-party selectors.
- * @param {string} labelName - The label name to find.
- * @param {number} [index] - The primary/injected label index if applicable.
- * @returns {HTMLElement[]}
- */
-findLabelElementsExplicit: (labelName, index = null) => {
-    const elements = [];
-    const primarySpans = AppState.dom.labelListElements
-        ? Array.from(AppState.dom.labelListElements)
-        : Array.from(document.querySelectorAll('ul.release-labels:not(.inline) li span.entity-links'));
-
-    // 1. Direct index match within primary release labels
-    if (index !== null && primarySpans[index]) {
-        elements.push(primarySpans[index]);
-        return elements;
-    }
-
-    const cleanTarget = (labelName || '').trim().toLowerCase();
-    const labelsRow = UI_UTILS.findReleaseInfoRow('Labels');
-
-    // 2. Injected companion labels (e.g., HBR injected labels)
-    if (labelsRow) {
-        const injectedSpans = Array.from(labelsRow.querySelectorAll('.entity-links')).filter(span => isThirdPartyElement(span));
-        if (cleanTarget) {
-            for (const span of injectedSpans) {
-                if (span.textContent.trim().toLowerCase() === cleanTarget) {
-                    elements.push(span);
-                }
-            }
-        }
-        if (elements.length === 0 && index !== null && index >= primarySpans.length) {
-            const injectedIndex = index - primarySpans.length;
-            if (injectedSpans[injectedIndex]) {
-                elements.push(injectedSpans[injectedIndex]);
-            }
-        }
-        if (elements.length > 0) return elements;
-    }
-
-    // 3. Fallback: match by name strictly within primary release labels
-    if (cleanTarget) {
-        for (const span of primarySpans) {
-            if (span.textContent.trim().toLowerCase() === cleanTarget) {
-                elements.push(span);
-            }
-        }
-    }
-
-    return elements;
-};
-`
-
----
-
-## 4. Field Modification Badges (Consolidated BadgeHost Pattern)
+## 3. Field Modification Badges (Consolidated BadgeHost Pattern)
 
 When elements (such as release labels) are modified by multiple enhancements (e.g. `mapLabelMbids` / `setNoLabel` overwriting the label name, and `removeBarcodeCatalogNumbers` stripping barcode-matching catalog numbers):
 
@@ -151,7 +89,7 @@ When elements (such as release labels) are modified by multiple enhancements (e.
 
 ---
 
-## 5. Self-Release Label Nuances (`setNoLabel`)
+## 4. Self-Release Label Nuances (`setNoLabel`)
 
 ### Catalog Number Guard
 
@@ -164,7 +102,7 @@ When elements (such as release labels) are modified by multiple enhancements (e.
 
 ---
 
-## 6. Provider Error Banners & Compact "Not Found" Badges (`compactNotFoundMessages`)
+## 5. Provider Error Banners & Compact "Not Found" Badges (`compactNotFoundMessages`)
 
 ### Background & Problem (kellnerd/harmony#265)
 

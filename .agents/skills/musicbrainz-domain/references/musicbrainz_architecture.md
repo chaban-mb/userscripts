@@ -2,6 +2,27 @@
 
 This file contains critical context for writing userscripts targeting MusicBrainz.org.
 
+## Table of Contents
+
+1. [UI Architecture (Knockout.js vs DOM)](#1-ui-architecture-knockoutjs-vs-dom)
+2. [Source Code References](#2-source-code-references)
+3. [API Documentation & Limits](#3-api-documentation--limits)
+4. [Search Syntax](#4-search-syntax)
+5. [URL Relationships (`link_type`)](#5-url-relationships-link_type)
+6. [Release Editor (Knockout.js Observables)](#6-release-editor-knockoutjs-observables)
+7. [Relationship Editor (React / Redux — `MB.relationshipEditor`)](#7-relationship-editor-react--redux--mbrelationshipeditor)
+8. [Safe Inputs (React/Knockout Undo-Safe Text Updates)](#8-safe-inputs-reactknockout-undo-safe-text-updates)
+9. [React Hydration & Seeding Injection Detection](#9-react-hydration--seeding-injection-detection)
+10. [Standalone Entity Editing Context & Delegated Event Interception](#10-standalone-entity-editing-context--delegated-event-interception)
+11. [Native Guess Case & Guess Feat Mechanics](#11-native-guess-case--guess-feat-mechanics)
+12. [Complete MusicBrainz Editing UI Architecture & Frontend API Reference](#12-complete-musicbrainz-editing-ui-architecture--frontend-api-reference)
+    - [A. Global `window.MB` Namespace](#a-the-global-windowmb-namespace) | [B. Constants, Type IDs & Attribute GIDs](#b-core-constants-type-ids--attribute-gids) | [C. Programmatic Read & Write Patterns](#c-programmatic-read--write-patterns)
+    - [D. Edit Payload Generation](#d-edit-payload-generation-mbreleaseeditoredits--submission-lifecycle) | [E. Dry Run & Interception](#e-dry-run--interception-patterns) | [F. Seeding vs. Hydration](#f-seeding-vs-client-side-hydration-schema-differences)
+    - [G. Relationship Editor (`React + Redux`)](#g-relationship-editor-architecture-react--redux) | [H. Cover Art (`MB.Art`)](#h-cover-art-subsystem-mbart) | [I. Entity Autocomplete](#i-entity-autocomplete-helper-architecture--programmatic-selection-injection)
+    - [J. Entity Merge Strategies](#j-entity-merge-strategies-releasemergestrategy) | [K. Video Flag Architecture](#k-video-flag-architecture--attribute-manipulation-external-links) | [L. Pre-Submission No-Op Audit](#l-universal-pre-submission-no-op-audit--pending-edit-detection-techniques)
+    - [M. Lexical Closures & Data Accessibility](#m-javascript-lexical-closures--musicbrainz-data-accessibility-rules) | [N. Inter-Script Communication (`UserJS:MusicBrainz`)](#n-inter-script-communication-standards-userjsmusicbrainz-draft--evolving)
+    - [12.1 Form Input Dirty Detection & Lifecycle Nuances](#121-form-input-dirty-detection--lifecycle-nuances)
+
 ## 1. UI Architecture (Knockout.js vs DOM)
 
 MusicBrainz heavily relies on **Knockout.js** and **React** for its modern UI components (especially the Release Editor).
@@ -153,16 +174,43 @@ To verify or update the schema when the server architecture evolves, refer to th
 * **Release, Medium, Track fields & Knockout models**: [`root/static/scripts/release-editor/fields.js`](https://github.com/metabrainz/musicbrainz-server/blob/master/root/static/scripts/release-editor/fields.js)
 * **Base entity class schemas**: [`root/static/scripts/common/entity.js`](https://github.com/metabrainz/musicbrainz-server/blob/master/root/static/scripts/common/entity.js)
 
-## 7. Relationship Editor (React / Redux Action Dispatcher)
+## 7. Relationship Editor (React / Redux — `MB.relationshipEditor`)
 
-The Relationship Editor relies on React/Redux-like dispatchers. Instead of interacting with the DOM, dispatch relationship additions or updates directly into the reducer.
+The Relationship Editor relies on React/Redux-like dispatchers. Instead of interacting with the DOM, dispatch relationship additions or updates directly into the reducer (see also [Section 12.G](#g-relationship-editor-architecture-react--redux) for the `window.MB.relationshipEditor` API summary).
 
 * **Source References**:
   * `root/static/scripts/relationship-editor/components/RelationshipEditor.js` (Binds `MB.relationshipEditor.dispatch`, `MB.relationshipEditor.state`, `MB.relationshipEditor.getRelationshipStateId`, `MB.tree`).
   * `root/static/scripts/relationship-editor/types/actions.js` (Defines `update-relationship-state` action type schema).
   * `root/static/scripts/relationship-editor/utility/getRelationshipStateId.js` (Generates relationship state IDs).
   * `root/static/scripts/relationship-editor/components/RelationshipDialogContent.js` (Binds `MB.relationshipEditor.relationshipDialogDispatch`).
-* **Mount Waiting**: Wait/poll for `window.MB.relationshipEditor.state.entity` to be populated.
+
+### Mounting Paradigms Across Entity Types
+
+MusicBrainz modernized relationship editing into React components with two distinct mounting architectures:
+
+1. **Standalone Release Relationship Editor (`/release/*/edit-relationships`)**:
+   * Container element: `<div class="release-relationship-editor">`
+   * Mounting: Mounted directly as a ReactDOM root container.
+   * Properties: Contains React root properties (`__reactContainer$*` and `_reactListening*`).
+2. **Inline Entity Edit Forms (`/event/*/edit`, `/artist/*/edit`, `/label/*/edit`, etc.)**:
+   * Container element: `<fieldset id="relationship-editor">` with `<div class="relationship-editor-fieldset-content">`.
+   * Mounting: Embedded as a child component inside the parent form's React tree (e.g. `EventEditForm`, `ArtistEditForm`).
+   * Nuance: The `<fieldset>` does **not** have class `.relationship-editor` or `_reactListening*` properties because React root listeners attach to `document`.
+
+### Universal Readiness Detection
+
+To reliably detect when the relationship editor is mounted and operational across all pages:
+
+* **Container Selector**:
+  ```css
+  #relationship-editor, .relationship-editor, #release-relationship-editor, .release-relationship-editor, .relationship-editor-fieldset-content
+  ```
+* **Readiness Invariant**: Check `typeof window.MB?.relationshipEditor?.dispatch === 'function'` and wait/poll for `window.MB.relationshipEditor.state.entity` to be populated. When `dispatch` is mounted, the relationship editor state, tree iterators (`MB.tree`), and reducer are fully initialized and capable of receiving actions.
+
+### State & Action Dispatch Patterns
+
+* **State Tree**: `window.MB.relationshipEditor.state.relationshipsBySource` is stored as an immutable weight-balanced tree (`MB.tree.iterate(...)`).
+* **Fiber Props**: Child button elements (`.remove-item`, `.edit-item`) store their bound props on React Fiber nodes (`__reactFiber$*`), exposing `relationship`, `source`, and `dispatch`.
 * **Dispatching Relationships**: Call `window.MB.relationshipEditor.dispatch()` with:
 
   ```javascript
@@ -193,6 +241,7 @@ The Relationship Editor relies on React/Redux-like dispatchers. Instead of inter
   });
   ```
 
+* **Remove / Restore Toggle**: Dispatching `{ type: 'remove-relationship', relationship: rel }` toggles `_status` between active (`0`) and removed (`3`).
 * **Attributes Tree**: Build target attributes using `window.MB.tree.fromDistinctAscArray(sortedAttributeObjs)`.
 
 ## 8. Safe Inputs (React/Knockout Undo-Safe Text Updates)
@@ -474,7 +523,7 @@ To safely test, dump, or verify edit payloads without making persistent changes 
 
 * **Source Reference**: `root/static/scripts/relationship-editor/` (React components in `components/`, state reducers in `state.js`, actions in `actions.js`, binary tree utilities in `root/static/scripts/common/utility/tree.js`).
 
-On release relationship editing pages (`/release/<mbid>/edit-relationships`), MusicBrainz uses a **React + Redux** architecture rather than Knockout viewmodels.
+On release relationship editing pages (`/release/<mbid>/edit-relationships`) and inline entity edit forms, MusicBrainz uses a **React + Redux** architecture rather than Knockout viewmodels. See [Section 7](#7-relationship-editor-react--redux--mbrelationshipeditor) for mounting paradigms, readiness detection, and action dispatch patterns.
 
 * **Namespace Access**: `window.MB.relationshipEditor`
 * **Core API Surface**:
@@ -574,38 +623,7 @@ During release merges (`/release/merge` and `/release/merge_queue`), MusicBrainz
 
 ---
 
----
-
 ### K. Video Flag Architecture & Attribute Manipulation (External Links)
-
-* **Source References**:
-  * `root/static/scripts/common/constants.js`: `VIDEO_ATTRIBUTE_GID = '112054d5-e706-4dd8-99ea-09aabee36cd6'` (ID: `582`).
-  * `root/static/scripts/external-links-editor/state.js`: External links state machine (`guessNewUrlType`, `pushSeededUrl`).
-  * `root/static/scripts/external-links-editor/components/ExternalLinkRelationship.js`: `handleVideoChange` dispatching `set-video` action.
-  * `root/static/scripts/edit/MB/edit.js`: `MBEdit.fields.recording` & `MBEdit.fields.track` serialization.
-  * `root/static/scripts/release-editor/edits.js`: `MBEdit.fields.medium` tracklist serialization for Release Editor edits payload.
-
-* **MetaBrainz Ticket References**:
-  * **[MBS-12287](https://tickets.metabrainz.org/browse/MBS-12287)**: Seeding external link attributes (e.g. `video`) via URL query parameters is not supported by `pushSeededUrl` in `state.js`.
-  * **[MBS-7017](https://tickets.metabrainz.org/browse/MBS-7017)**: Setting track recording `video` flag from Release Editor is not implemented in `MBEdit.fields.track` payload.
-
-* **Behavior & Limitations Across MusicBrainz Editors**:
-
-  1. **Standalone Recording Creation (`/recording/create`)**:
-     * **Mechanism**: Natively supports `edit-recording.video = 1` in GET URL parameters or POST form body. Form renders `#id-edit-recording.video` checkbox for recording video status.
-
-  2. **External Links Editor (`#external-links-editor`)**:
-     * **React Redux State Model**: The external links editor is a React component. Standard DOM `.click()` or synthetic DOM `change` events do NOT update React's internal Redux state.
-     * **Seeding Limitation ([MBS-12287](https://tickets.metabrainz.org/browse/MBS-12287))**: When URLs are seeded via query parameters or POST form data WITH explicit `link_type` (e.g., `urls.0.link_type=85`), MusicBrainz skips `guessNewUrlType()` and defaults `relationship.video = false`.
-     * **Global React Editor Reference**:
-       * In Release Editor: `window.MB.releaseEditor.externalLinks.externalLinksEditorRef.current`
-       * In Standalone Editors / Modals: `window.MB.sourceExternalLinksEditor.current`
-     * **Programmatic Input Setting**:
-       * For text inputs (`input[type="url"]` / `.value`): Use `Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, value)` + `input.dispatchEvent(new Event('input', { bubbles: true }))`.
-
----
-
-### L. Video Flag Architecture & Attribute Manipulation (External Links)
 
 * **Source References**:
   * `root/static/scripts/common/constants.js`: `VIDEO_ATTRIBUTE_GID = '112054d5-e706-4dd8-99ea-09aabee36cd6'` (ID: `582`).
@@ -686,21 +704,21 @@ flowchart TD
 * **Why DOM Highlights reflect true reconciled state**:
   Because React's internal `useReducer` state closure is private, the DOM elements (`.rel-add`, `.rel-edit`, `.rel-remove`) represent the **only public, live reconciled output** rendered by React. Reverting a removal or changing a link type back to original removes these classes from the HTML table rows, ensuring 100% **double-toggle and revert immunity**.
 
-#### 3. Form Inputs & Repeatable Fields (`FormData Engine`)
+#### 4. Form Inputs & Repeatable Fields (`FormData Engine`)
 
 * **Mechanism**: Captures `new FormData(form)` snapshots on page load for all form elements (`form[action*="/edit"]`, etc.).
 * **Order & Index Independence**: Indexed array keys (e.g. `edit-recording.isrcs.0`, `edit-recording.isrcs.3`) are normalized to their base group key (`edit-recording.isrcs`), non-empty values are extracted, and array values are sorted before comparison.
 * **Shadow Input Filtering**: Evaluates `.removed` hidden flag pairs (`isrcs.N.removed = "1"`) generated by MusicBrainz React components (`FormRowTextList`), excluding removed items from active values.
 * **Exclusions**: Security tokens (`csrf`, `confirm`, `tag`) and user edit notes (`edit_note`, `edit-note`) are strictly excluded so typing an edit note alone does not register as a pending edit.
 
-#### 4. Artwork Pages (`/release/*/add-cover-art`, `/event/*/add-event-art`, `/reorder-cover-art`, `/reorder-event-art`)
+#### 5. Artwork Pages (`/release/*/add-cover-art`, `/event/*/add-event-art`, `/reorder-cover-art`, `/reorder-event-art`)
 
 * Both `#add-cover-art-submit` (Release) and `#add-event-art-submit` (Event) buttons are natively `disabled="disabled"` on `/add-cover-art` / `/add-event-art` until files/images are staged (`root/static/scripts/edit/MB/Art.js`). If `disabled === true` when submission is triggered, 0 images are staged.
 * **Artwork Reordering (`/reorder-cover-art`, `/reorder-event-art`)**: jQuery UI `.sortable()` and arrow buttons (`←` / `→`) reorder `<div class="editimage thumb-position">` elements directly in the DOM tree. The numeric `input.position` form fields are NOT updated until form submit.
 * **DOM Element Sequence Tracking**: Pending reorder edits are detected by capturing the DOM element sequence of artwork IDs (`input.id` inside `div.editimage`) into a special `__art_sequence` key. `__art_sequence` is explicitly exempted from array sorting so element order shifts trigger dirty state, while moving an artwork back to its original position restores clean state.
 * Supported routes include `/add-cover-art`, `/reorder-cover-art`, `/add-event-art`, `/reorder-event-art`, `/edit-event-art/`, and `/remove-event-art/`.
 
-#### 5. Seeded vs. Unseeded Session Scoping
+#### 6. Seeded vs. Unseeded Session Scoping
 
 * Pre-submission no-op auto-closing must ONLY trigger on sessions/tabs containing explicit seeding parameters:
   * `edit-[a-z-]+.*`: Standard MusicBrainz `HTML::FormHandler` names from `lib/MusicBrainz/Server/Form/` (e.g., `edit-recording.*`, `edit-artist.*`, `edit-release-group.*`, `edit-work.*`, `edit-label.*`, `edit-place.*`, `edit-area.*`, `edit-event.*`, `edit-series.*`, `edit-instrument.*`, `edit-genre.*`, `edit-url.*`, `edit-annotation.*`, `edit-alias.*`, `edit-cover-art.*`, `edit-event-art.*`). Used by Harmony, Picard, and web importers.
@@ -708,7 +726,7 @@ flowchart TD
   * `#seed-urls-v1`: URL hash JSON payload format used by rinsuki's `Seed URLs to Release Recordings`.
 * **Unseeded sessions** (opened manually by the user without URL parameters) with 0 edits skip submission and remain open to preserve the user's manual editing session.
 
-#### 6. Post-Submission No-Op Detection (Server Fallback)
+#### 7. Post-Submission No-Op Detection (Server Fallback)
 
 * When an edit is submitted to the server that produces no changes, MusicBrainz renders a warning banner rather than creating an edit.
 * **Server Architecture (`musicbrainz-server`)**:
@@ -730,7 +748,7 @@ flowchart TD
 
 ---
 
-### 12.M JavaScript Lexical Closures & MusicBrainz Data Accessibility Rules
+### M. JavaScript Lexical Closures & MusicBrainz Data Accessibility Rules
 
 #### 1. Same-Origin Privacy & Lexical Closures
 
@@ -755,7 +773,7 @@ flowchart TD
 
 ---
 
-### M. Inter-Script Communication Standards (`UserJS:MusicBrainz`) [Draft / Evolving]
+### N. Inter-Script Communication Standards (`UserJS:MusicBrainz`) [Draft / Evolving]
 
 > [!NOTE]
 > This communication specification defines standard contracts for same-tab DOM events and cross-tab broadcasts. Structures are provisional and will evolve alongside new scripts and features.
@@ -863,45 +881,4 @@ To avoid timing race conditions where userscripts modify inputs before baseline 
    * Always ignore CSRF tokens, tags, and edit notes (`edit_note`, `edit-note`). Submitting with only an edit note changed is rejected by MusicBrainz as a no-op edit (*"The data you have submitted does not make any changes to the data already present."*).
 3. **Protect Baseline Snapshots**:
    * If using `FormData` diffing (for dynamically added inputs or hidden fields like artwork sequence reordering), **never** overwrite an existing form's baseline snapshot during `load` or `mb-hydration` if the form already contains dirty elements (`isNativeFormDirty(form)`).
-
----
-
-## 13. React Relationship Editor Architecture (`MB.relationshipEditor`)
-
-### Mounting Paradigms Across Entity Types
-
-MusicBrainz modernized relationship editing into React components with two distinct mounting architectures:
-
-1. **Standalone Release Relationship Editor (`/release/*/edit-relationships`)**:
-   * Container element: `<div class="release-relationship-editor">`
-   * Mounting: Mounted directly as a ReactDOM root container.
-   * Properties: Contains React root properties (`__reactContainer$*` and `_reactListening*`).
-
-2. **Inline Entity Edit Forms (`/event/*/edit`, `/artist/*/edit`, `/label/*/edit`, etc.)**:
-   * Container element: `<fieldset id="relationship-editor">` with `<div class="relationship-editor-fieldset-content">`.
-   * Mounting: Embedded as a child component inside the parent form's React tree (e.g. `EventEditForm`, `ArtistEditForm`).
-   * Nuance: The `<fieldset>` does **not** have class `.relationship-editor` or `_reactListening*` properties because React root listeners attach to `document`.
-
-### Universal Readiness Detection
-
-To reliably detect when the relationship editor is mounted and operational across all pages:
-
-* **Container Selector**:
-
-  ```css
-  #relationship-editor, .relationship-editor, #release-relationship-editor, .release-relationship-editor, .relationship-editor-fieldset-content
-  ```
-
-* **Readiness Invariant**:
-  Check `typeof window.MB?.relationshipEditor?.dispatch === 'function'`.
-  When `dispatch` is mounted, the relationship editor state, tree iterators (`MB.tree`), and reducer are fully initialized and capable of receiving actions.
-
-### State & Action Dispatch Patterns
-
-* **State Tree**: `window.MB.relationshipEditor.state.relationshipsBySource` is stored as an immutable weight-balanced tree (`MB.tree.iterate(...)`).
-* **Fiber Props**: Child button elements (`.remove-item`, `.edit-item`) store their bound props on React Fiber nodes (`__reactFiber$*`), exposing `relationship`, `source`, and `dispatch`.
-* **Remove / Restore Toggle**:
-  Dispatching `{ type: 'remove-relationship', relationship: rel }` toggles the status:
-  * From active (`_status: 0`) to removed (`_status: 3`).
-  * From removed (`_status: 3`) back to active (`_status: 0`).
 
