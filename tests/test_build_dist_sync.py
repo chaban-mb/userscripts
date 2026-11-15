@@ -192,6 +192,103 @@ class BuildDistSyncVersionGuardTests(unittest.TestCase):
             ).stdout
             self.assertIn("@version     1.0.0", dist_new)
 
+    def _setup_synced_demo_repo(self, repo: Path) -> Path:
+        self._init_repo(repo)
+        script = repo / "src" / "Demo Script.user.js"
+        self._write_script(script, "Demo Script", "1.0.0", "console.log('v1');")
+        self._commit_all(repo, "feat(demo): initial script")
+        self.assertEqual(self._run_sync(repo).returncode, 0)
+
+        self._write_script(script, "Demo Script", "1.0.1", "console.log('v1.1');")
+        self._commit_all(repo, "fix(demo): baseline sync")
+        self.assertEqual(self._run_sync(repo).returncode, 0)
+        return script
+
+    def _dist_subjects(self, repo: Path, rel_path: str) -> list[str]:
+        return subprocess.run(
+            ["git", "log", "--format=%s", "dist", "--", rel_path],
+            cwd=repo, check=True, capture_output=True, text=True, encoding="utf-8",
+        ).stdout.strip().splitlines()
+
+    def _dist_show(self, repo: Path, rel_path: str) -> str:
+        return subprocess.run(
+            ["git", "show", f"dist:{rel_path}"],
+            cwd=repo, check=True, capture_output=True, text=True, encoding="utf-8",
+        ).stdout
+
+    def test_folds_version_bump_commit_into_preceding_substantive_commit(self) -> None:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
+            repo = Path(tmp)
+            script = self._setup_synced_demo_repo(repo)
+
+            self._write_script(script, "Demo Script", "1.0.1", "console.log('v2');")
+            self._commit_all(repo, "feat(demo): add new feature")
+
+            self._write_script(script, "Demo Script", "1.1.0", "console.log('v2');")
+            self._commit_all(repo, "chore(demo): bump version to 1.1.0")
+
+            res = self._run_sync(repo)
+            self.assertEqual(res.returncode, 0, res.stderr)
+            self.assertEqual(
+                self._dist_subjects(repo, "src/Demo Script.user.js"),
+                [
+                    "feat(demo): add new feature",
+                    "fix(demo): baseline sync",
+                    "chore(dist): initialize standalone userscripts",
+                ],
+            )
+            dist_script = self._dist_show(repo, "src/Demo Script.user.js")
+            self.assertIn("@version     1.1.0", dist_script)
+            self.assertIn("console.log('v2');", dist_script)
+
+    def test_preserves_multiple_substantive_commits_and_folds_bump_into_last(self) -> None:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
+            repo = Path(tmp)
+            script = self._setup_synced_demo_repo(repo)
+
+            self._write_script(script, "Demo Script", "1.0.1", "console.log('v2');")
+            self._commit_all(repo, "feat(demo): add part 1")
+
+            self._write_script(script, "Demo Script", "1.0.1", "console.log('v3');")
+            self._commit_all(repo, "fix(demo): refine part 2")
+
+            self._write_script(script, "Demo Script", "1.1.0", "console.log('v3');")
+            self._commit_all(repo, "chore(demo): bump version to 1.1.0")
+
+            res = self._run_sync(repo)
+            self.assertEqual(res.returncode, 0, res.stderr)
+            self.assertEqual(
+                self._dist_subjects(repo, "src/Demo Script.user.js"),
+                [
+                    "fix(demo): refine part 2",
+                    "feat(demo): add part 1",
+                    "fix(demo): baseline sync",
+                    "chore(dist): initialize standalone userscripts",
+                ],
+            )
+            dist_script = self._dist_show(repo, "src/Demo Script.user.js")
+            self.assertIn("@version     1.1.0", dist_script)
+            self.assertIn("console.log('v3');", dist_script)
+
+    def test_preserves_standalone_version_bump_commit(self) -> None:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
+            repo = Path(tmp)
+            script = self._setup_synced_demo_repo(repo)
+
+            self._write_script(script, "Demo Script", "1.0.2", "console.log('v1.1');")
+            self._commit_all(repo, "chore(demo): bump version to 1.0.2")
+
+            res = self._run_sync(repo)
+            self.assertEqual(res.returncode, 0, res.stderr)
+            self.assertEqual(
+                self._dist_subjects(repo, "src/Demo Script.user.js"),
+                [
+                    "chore(demo): bump version to 1.0.2",
+                    "fix(demo): baseline sync",
+                    "chore(dist): initialize standalone userscripts",
+                ],
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

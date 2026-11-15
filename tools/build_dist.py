@@ -5,6 +5,7 @@ import sys
 import subprocess
 import shutil
 import tempfile
+from dataclasses import dataclass, field
 from pathlib import Path
 
 # Paths
@@ -16,6 +17,7 @@ REQUIRE_RE = re.compile(r'^[ \t]*//[ \t]*@require[ \t]+(?:\.\./)?lib/([^\s]+)', 
 USERSCRIPT_HEADER_RE = re.compile(r'//[ \t]*==UserScript==.*?//[ \t]*==/UserScript==\s*', re.DOTALL)
 CLOSURE_START_RE = re.compile(r'(\(\s*function\s*\([^)]*\)\s*\{|\(\s*\(\)\s*=>\s*\{)')
 VERSION_RE = re.compile(r'^[ \t]*//[ \t]*@version[ \t]+(\S+)', re.MULTILINE)
+VERSION_BUMP_SUBJECT_RE = re.compile(r'^chore(?:\([^)]+\))?:\s*bump version\b', re.IGNORECASE)
 
 
 def extract_version(script_text):
@@ -244,6 +246,104 @@ def find_commits_to_sync(main_branch="main", dist_branch="dist", with_mode=False
         clean_commits = [tip] if tip else []
         return (clean_commits, True) if with_mode else clean_commits
 
+@dataclass
+class CommitPlanEntry:
+    commit_hash: str
+    full_sync: bool
+    subject: str
+    body: str
+    author: str
+    date: str
+    scripts_to_update: set[str]
+    scripts_to_delete: set[str]
+    libs_changed: set[str] = field(default_factory=set)
+    source_commits: dict[str, str] = field(default_factory=dict)
+
+
+def _is_pure_version_bump_for_script(commit_hash, script_path):
+    """Returns True if commit_hash only modified @version in script_path."""
+    before = _git_output(["show", f"{commit_hash}^:{script_path}"], check=False)
+    after = _git_output(["show", f"{commit_hash}:{script_path}"], check=False)
+    if before.returncode != 0 or after.returncode != 0:
+        return False
+    return VERSION_RE.sub("", before.stdout) == VERSION_RE.sub("", after.stdout)
+
+
+def _collect_commit_changes(commit_hash, full_sync=False):
+    """Collects metadata and affected userscripts for a single commit on main."""
+    subject = _git_output(["log", "-1", "--format=%s", commit_hash]).stdout.strip()
+    body = _git_output(["log", "-1", "--format=%b", commit_hash]).stdout.strip()
+    author = _git_output(["log", "-1", "--format=%an <%ae>", commit_hash]).stdout.strip()
+    date = _git_output(["log", "-1", "--format=%ad", commit_hash]).stdout.strip()
+
+    scripts_to_update = set()
+    scripts_to_delete = set()
+    libs_changed = set()
+
+    if full_sync:
+        ls_res = _git_output(["ls-tree", "-r", "--name-only", commit_hash, "--", "src/"])
+        scripts_to_update = {line.strip() for line in ls_res.stdout.splitlines() if line.strip().endswith(".user.js")}
+    else:
+        diff_res = _git_output(
+            ["diff-tree", "--root", "--no-commit-id", "--name-status", "--no-renames", "-r", "-m", commit_hash, "--", "src/", "lib/"]
+        )
+        for line in diff_res.stdout.splitlines():
+            parts = line.strip().split(maxsplit=1)
+            if len(parts) != 2:
+                continue
+            status, file_path = parts[0], parts[1].replace("\\", "/")
+            if file_path.startswith("src/") and file_path.endswith(".user.js"):
+                if status == "D":
+                    scripts_to_delete.add(file_path)
+                else:
+                    scripts_to_update.add(file_path)
+            elif file_path.startswith("lib/"):
+                libs_changed.add(Path(file_path).name)
+
+        for lib_name in libs_changed:
+            grep_res = _git_output(["grep", "-l", f"lib/{lib_name}", commit_hash, "--", "src/"], check=False)
+            if grep_res.returncode != 0:
+                continue
+            for match_line in grep_res.stdout.splitlines():
+                _, _, matched_path = match_line.strip().partition(":")
+                matched_path = matched_path.replace("\\", "/").strip()
+                if matched_path.startswith("src/") and matched_path.endswith(".user.js"):
+                    scripts_to_update.add(matched_path)
+
+    return CommitPlanEntry(
+        commit_hash=commit_hash,
+        full_sync=full_sync,
+        subject=subject,
+        body=body,
+        author=author,
+        date=date,
+        scripts_to_update=scripts_to_update,
+        scripts_to_delete=scripts_to_delete,
+        libs_changed=libs_changed,
+    )
+
+
+def _fold_version_bumps(plan):
+    """Folds pure version-bump commits into each script's latest preceding substantive commit."""
+    for idx, entry in enumerate(plan):
+        if entry.scripts_to_delete or entry.libs_changed or not VERSION_BUMP_SUBJECT_RE.match(entry.subject):
+            continue
+
+        for script_path in list(entry.scripts_to_update):
+            if not _is_pure_version_bump_for_script(entry.commit_hash, script_path):
+                continue
+            for prev_idx in range(idx - 1, -1, -1):
+                prev_entry = plan[prev_idx]
+                if VERSION_BUMP_SUBJECT_RE.match(prev_entry.subject):
+                    continue
+                if script_path in prev_entry.scripts_to_update:
+                    prev_entry.source_commits[script_path] = entry.commit_hash
+                    entry.scripts_to_update.discard(script_path)
+                    break
+
+    return [e for e in plan if e.scripts_to_update or e.scripts_to_delete or e.full_sync]
+
+
 def sync_dist_branch(main_branch="main", dist_branch="dist"):
     """
     Builds inlined userscripts from main_branch onto a dedicated dist branch,
@@ -319,85 +419,39 @@ def sync_dist_branch(main_branch="main", dist_branch="dist"):
             wt_src = wt_path / "src"
             wt_src.mkdir(parents=True, exist_ok=True)
 
+            commit_plan = _fold_version_bumps([
+                _collect_commit_changes(commit_hash, full_sync=(is_full_sync and idx == 0))
+                for idx, commit_hash in enumerate(commits_to_sync)
+            ])
+
             committed_count = 0
-            for idx, commit_hash in enumerate(commits_to_sync):
-                full_sync_this_commit = is_full_sync and (idx == 0)
-
-                subject = subprocess.run(["git", "log", "-1", "--format=%s", commit_hash], capture_output=True, text=True, check=True, encoding="utf-8").stdout.strip()
-                body = subprocess.run(["git", "log", "-1", "--format=%b", commit_hash], capture_output=True, text=True, check=True, encoding="utf-8").stdout.strip()
-                author = subprocess.run(["git", "log", "-1", "--format=%an <%ae>", commit_hash], capture_output=True, text=True, check=True, encoding="utf-8").stdout.strip()
-                date = subprocess.run(["git", "log", "-1", "--format=%ad", commit_hash], capture_output=True, text=True, check=True, encoding="utf-8").stdout.strip()
-
-                scripts_to_update = set()
-                scripts_to_delete = set()
-
-                if full_sync_this_commit:
-                    ls_res = subprocess.run(
-                        ["git", "ls-tree", "-r", "--name-only", commit_hash, "--", "src/"],
-                        capture_output=True, text=True, check=True, encoding="utf-8"
-                    )
-                    current_scripts = {line.strip() for line in ls_res.stdout.splitlines() if line.strip().endswith(".user.js")}
-                    scripts_to_update = current_scripts
+            for entry in commit_plan:
+                if entry.full_sync:
                     existing_names = {p.name for p in wt_src.glob("*.user.js")}
-                    expected_names = {Path(s).name for s in current_scripts}
+                    expected_names = {Path(s).name for s in entry.scripts_to_update}
                     for removed_name in (existing_names - expected_names):
                         (wt_src / removed_name).unlink(missing_ok=True)
-                else:
-                    diff_res = subprocess.run(
-                        ["git", "diff-tree", "--root", "--no-commit-id", "--name-status", "--no-renames", "-r", "-m", commit_hash, "--", "src/", "lib/"],
-                        capture_output=True, text=True, check=True, encoding="utf-8"
-                    )
-                    diff_lines = [l.strip() for l in diff_res.stdout.splitlines() if l.strip()]
-                    libs_changed = set()
 
-                    for line in diff_lines:
-                        parts = line.split(maxsplit=1)
-                        if len(parts) != 2:
-                            continue
-                        status, file_path = parts[0], parts[1].replace("\\", "/")
-                        if file_path.startswith("src/") and file_path.endswith(".user.js"):
-                            if status == "D":
-                                scripts_to_delete.add(file_path)
-                            else:
-                                scripts_to_update.add(file_path)
-                        elif file_path.startswith("lib/"):
-                            libs_changed.add(Path(file_path).name)
-
-                    if libs_changed:
-                        for lib_name in libs_changed:
-                            grep_res = subprocess.run(
-                                ["git", "grep", "-l", f"lib/{lib_name}", commit_hash, "--", "src/"],
-                                capture_output=True, text=True, encoding="utf-8"
-                            )
-                            if grep_res.returncode == 0:
-                                for match_line in grep_res.stdout.splitlines():
-                                    match_line = match_line.strip()
-                                    if not match_line:
-                                        continue
-                                    _, _, matched_path = match_line.partition(":")
-                                    matched_path = matched_path.replace("\\", "/")
-                                    if matched_path.startswith("src/") and matched_path.endswith(".user.js"):
-                                        scripts_to_update.add(matched_path)
-
-                for del_script in scripts_to_delete:
+                for del_script in entry.scripts_to_delete:
                     target = wt_src / Path(del_script).name
                     if target.exists():
                         target.unlink()
-                    scripts_to_update.discard(del_script)
+                    entry.scripts_to_update.discard(del_script)
 
-                if scripts_to_update:
+                if entry.scripts_to_update:
                     lib_cache = {}
-                    for script_path in sorted(scripts_to_update):
+                    for script_path in sorted(entry.scripts_to_update):
+                        src_commit = entry.source_commits.get(script_path, entry.commit_hash)
                         show_res = subprocess.run(
-                            ["git", "show", f"{commit_hash}:{script_path}"],
+                            ["git", "show", f"{src_commit}:{script_path}"],
                             capture_output=True, text=True, encoding="utf-8"
                         )
                         if show_res.returncode != 0:
                             continue
                         inlined_content, _ = inline_script_content(
                             show_res.stdout,
-                            commit_hash=commit_hash,
-                            lib_cache=lib_cache
+                            commit_hash=src_commit,
+                            lib_cache=lib_cache if src_commit == entry.commit_hash else None
                         )
                         target = wt_src / Path(script_path).name
                         target.write_text(inlined_content, encoding="utf-8")
@@ -406,17 +460,17 @@ def sync_dist_branch(main_branch="main", dist_branch="dist"):
 
                 diff_cached = subprocess.run(["git", "-C", worktree_dir, "diff", "--cached", "--quiet"], capture_output=True)
                 if diff_cached.returncode != 0:
-                    commit_msg = subject
-                    if body:
-                        commit_msg += f"\n\n{body}"
+                    commit_msg = entry.subject
+                    if entry.body:
+                        commit_msg += f"\n\n{entry.body}"
 
-                    print(f"Committing inlined scripts on '{dist_branch}': '{subject}'...")
+                    print(f"Committing inlined scripts on '{dist_branch}': '{entry.subject}'...")
                     env = os.environ.copy()
                     subprocess.run([
                         "git", "-C", worktree_dir, "commit",
                         "-m", commit_msg,
-                        "--author", author,
-                        "--date", date
+                        "--author", entry.author,
+                        "--date", entry.date
                     ], env=env, check=True)
                     committed_count += 1
 
