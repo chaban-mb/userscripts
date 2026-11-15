@@ -133,3 +133,23 @@ These recipes can be run directly in the DevTools console on `chrome-extension:/
   location.reload();
 })();
 ```
+
+---
+
+## 5. Track External Edits & ETag Polling
+
+Violentmonkey's **"Track external edits"** feature keeps an installed userscript synchronized with an external source file while its installation/confirm tab remains open.
+
+### Upstream Violentmonkey Behavior
+
+- **HTTP / `localhost` mode**: Violentmonkey keeps the confirm/install tab open and polls the script URL, relying on conditional HTTP requests (`ETag` / `If-None-Match` → `304 Not Modified` vs `200 OK`) and `Cache-Control` headers to detect changes without re-downloading unchanged content.
+- **`file://` mode**: On Chrome 133+ (Violentmonkey 2.16+), Violentmonkey uses `FileSystemObserver` for OS-level file change events without polling; other browsers (e.g., Firefox) rely on keeping the local file tab open. Caveats: `file://*/*` may be blocked by Violentmonkey's default blacklist, and `@resource` / `@require` dependencies can remain cached across reloads.
+
+### `tools/dev_server.js` Conformance
+
+`tools/dev_server.js` implements the HTTP polling contract expected by Violentmonkey:
+- Computes a composite `ETag` (`"${stat.mtimeMs.toString(36)}-${hash}-${mode}"`, where `mode` is `'notag'`, `'sep'`, or `'inplace'`).
+- Sets `Cache-Control: no-cache, must-revalidate` on both userscript and `lib/` responses.
+- Returns `304 Not Modified` when the request's `If-None-Match` header matches the current `ETag`, and `200 OK` with the transformed script otherwise.
+- Serves `lib/*.js` directly for `@require` resolution.
+

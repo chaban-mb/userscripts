@@ -23,7 +23,7 @@ Read [`references/violentmonkey_architecture.md`](references/violentmonkey_archi
    ```
 
 2. **Check which modified scripts need tracking**:
-   - Inspect installed scripts (e.g., via `scripts_list`) to see which modified scripts already have an active `-dev.<hash>` (on `dev`) or `-dev.<branch>.<hash>` (on topic branches) `@version`.
+   - Inspect installed scripts (requires MCP Authorization below; e.g., via `scripts_list`) to see which modified scripts already have an active `-dev.<hash>` (on `dev`) or `-dev.<branch>.<hash>` (on topic branches) `@version`.
 3. **Open the dashboard & track untracked scripts**:
    - Open `http://localhost:8080/` in the browser if not already open.
    - Present only the untracked scripts and ask the user to click **"Track in Violentmonkey"** once.
@@ -61,13 +61,13 @@ Requires one manual approval per browser session:
 
 ### Match Verification (`scripts_test_match`)
 
-- Verify target URLs return `matched: true` and excluded URLs return `matched: false`.
+- Run `scripts_test_match(id, url)` against target and excluded URLs, asserting `matched: true` on targets and `matched: false` on exclusions.
 - **`@exclude` Glob Nuance**: While `@match` covers the apex domain with `*.`, `@exclude` uses glob matching where `*.` requires a subdomain. Use `*://*domain.tld/*` to match both apex and subdomains.
 
 ### Tab Injection & Logs (`tabs_list`, `tab_scripts`, `script_logs`)
 
 - Use `tabs_list` and `tab_scripts` to confirm which scripts injected into a granted tab.
-- Use `script_logs` alongside browser console logs to inspect userscript output.
+- Use `script_logs` alongside browser console logs: `script_logs` captures userscript-context logs even when the page console is isolated (e.g., sandboxed `@grant` contexts).
 
 **Done when:** The target script's enabled state, `-dev` version, `@match` result, or tab injection/logs are verified against observed tool output.
 
@@ -75,6 +75,6 @@ Requires one manual approval per browser session:
 
 | Rationalization | Reality |
 | :--- | :--- |
-| "Writing directly via MCP (`scripts_write` / `scripts_set_enabled`) is faster than `localhost:8080`." | Bypassing `dev_server.js` breaks *"Track external edits"*, skips `@require` resolution, and desyncs extension storage from git. |
+| "Editing directly in Violentmonkey's UI instead of `localhost:8080` is faster." | Bypassing `dev_server.js` breaks *"Track external edits"*, skips `@require` resolution, and desyncs extension storage from git. |
 | "I'll just print `localhost:8080` instead of opening it." | If the dashboard isn't open, the user has an extra manual step; open `http://localhost:8080/` if not already open. |
 | "I'll leave `dev_server.js` running in case they test more." | Orphaned dev servers hold port 8080 and serve stale branches; always run `node tools/dev_server.js --stop` when work finishes. |
