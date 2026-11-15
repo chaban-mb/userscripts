@@ -1,6 +1,6 @@
 ---
 trigger: glob
-globs: *.js
+globs: **/*.js
 description: Modern JavaScript standards, asynchronous error handling, declarative data structures, and code hygiene.
 ---
 
