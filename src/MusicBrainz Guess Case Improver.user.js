@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MusicBrainz: Guess Case Improver
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      0.11.0
+// @version      0.11.1
 // @tag          ai-created
 // @description  Improves the native "Guess Case" for release, recording and track titles with advanced artist and ETI parsing. Also removes artist from title and duplicate artists after using "Guess feat. artists" on tracklists.
 // @author       chaban
@@ -1372,6 +1372,16 @@
         button.dataset.enhanced = 'true';
     }
 
+    const reactGuessCaseClickHandlers = new WeakMap();
+    // Capture at window level so scripts that stop click propagation there (e.g. Apollo Editor)
+    // do not bypass handleClick and leave activePreview stuck true until mouseleave.
+    window.addEventListener('click', (event) => {
+        const button = event.target?.closest?.('.guesscase-title[data-enhanced="true"]');
+        if (!button) return;
+        const handler = reactGuessCaseClickHandlers.get(button);
+        if (handler) handler(event);
+    }, true);
+
     /**
      * @summary Enhances a React-based "Guess Case" button with advanced rules and hover previews.
      * @param {HTMLElement} button - The Guess Case button element.
@@ -1424,16 +1434,17 @@
 
         const handleMouseLeave = () => {
             if (activePreview) {
+                activePreview = false;
                 const originalValue = pristineValues.get(input);
                 setInputValue(input, originalValue);
                 input.classList.remove('preview');
-                activePreview = false;
             }
         };
 
         const handleClick = () => {
             log('"Guess Case" click detected.');
             activePreview = false;
+            input.classList.remove('preview');
             const originalValue = pristineValues.get(input);
 
             setTimeout(() => {
@@ -1446,7 +1457,7 @@
             }, 0);
         };
 
-        button.addEventListener('click', handleClick);
+        reactGuessCaseClickHandlers.set(button, handleClick);
         button.addEventListener('mouseenter', handleMouseEnter);
         button.addEventListener('mouseleave', handleMouseLeave);
 
