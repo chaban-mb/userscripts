@@ -25,7 +25,7 @@ test('resolveChangedScripts marks direct src edits and lib @require dependents',
   const contents = {
     'A.user.js': '// ==UserScript==\n// @name A\n// ==/UserScript==',
     'B.user.js': '// ==UserScript==\n// @name B\n// @require ../lib/Helper.js\n// ==/UserScript==',
-    'C.user.js': '// ==UserScript==\n// @name C\n// @require https://raw.githubusercontent.com/chaban-mb/userscripts/main/lib/Helper.js\n// ==/UserScript==',
+    'C.user.js': '// ==UserScript==\n// @name C\n// @require https://raw.githubusercontent.com/chaban-mb/userscripts/main/lib/Helper.js?v=1\n// ==/UserScript==',
     'D.user.js': '// ==UserScript==\n// @name D\n// ==/UserScript==',
   };
   const map = resolveChangedScripts(
@@ -63,4 +63,15 @@ test('renderDashboard with changedOnly and zero changed scripts shows empty stat
   });
   assert.match(html, /No changed userscripts/i);
   assert.match(html, /href="\/\?changed=0"/);
+});
+
+test('renderDashboard escapes HTML special characters in script metadata', () => {
+  const html = renderDashboard('localhost:8080', 8080, {
+    changedOnly: false,
+    changedMap: new Map([['A.user.js', ['modified']]]),
+    files: ['A.user.js'],
+    readScript: () => '// ==UserScript==\n// @name Foo & <Bar>\n// @version 1.0.0\n// ==/UserScript==',
+  });
+  assert.match(html, /Foo &amp; &lt;Bar&gt;/);
+  assert.doesNotMatch(html, /<Bar>/);
 });

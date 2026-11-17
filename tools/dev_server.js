@@ -259,9 +259,9 @@ function resolveChangedScripts(changedPaths, files, readScript) {
       const raw = readScript(file);
       const requireMatches = raw.matchAll(/^\/\/\s*@require\s+(.+)$/gm);
       for (const m of requireMatches) {
-        const reqUrl = m[1].trim();
+        const cleanReqUrl = m[1].trim().split(/[?#]/)[0];
         for (const libName of changedLibs) {
-          if (reqUrl.endsWith(`/lib/${libName}`) || reqUrl === `lib/${libName}`) {
+          if (cleanReqUrl.endsWith(`/lib/${libName}`) || cleanReqUrl === `lib/${libName}`) {
             addReason(file, `lib:${libName}`);
           }
         }
@@ -328,27 +328,36 @@ function transformUserscript(rawCode, isSeparate = false) {
   return code;
 }
 
+function escapeHtml(str) {
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 function renderScriptCard(entry) {
   const reasonBadges = entry.reasons
-    .map((r) => `<span style="background: #fff8c5; color: #9a6700; font-size: 11px; font-weight: 500; padding: 2px 6px; border-radius: 4px; margin-left: 6px; border: 1px solid #d4a72c;">${r}</span>`)
+    .map((r) => `<span style="background: #fff8c5; color: #9a6700; font-size: 11px; font-weight: 500; padding: 2px 6px; border-radius: 4px; margin-left: 6px; border: 1px solid #d4a72c;">${escapeHtml(r)}</span>`)
     .join('');
 
   return `
       <div style="background: #ffffff; border: 1px solid ${entry.changed ? '#d4a72c' : '#e1e4e8'}; border-radius: 8px; padding: 16px 20px; margin-bottom: 12px; display: flex; align-items: center; justify-content: space-between; box-shadow: 0 1px 3px rgba(0,0,0,0.04);">
         <div>
           <div style="font-size: 16px; font-weight: 600; color: #0366d6;">
-            ${entry.name} <span style="background: #ddf4ff; color: #0969da; font-size: 11px; font-weight: 500; padding: 2px 6px; border-radius: 4px; margin-left: 6px; border: 1px solid #b6e3ff;">IN-PLACE TRACKING</span>${reasonBadges}
+            ${escapeHtml(entry.name)} <span style="background: #ddf4ff; color: #0969da; font-size: 11px; font-weight: 500; padding: 2px 6px; border-radius: 4px; margin-left: 6px; border: 1px solid #b6e3ff;">IN-PLACE TRACKING</span>${reasonBadges}
           </div>
           <div style="font-size: 13px; color: #586069; margin-top: 4px;">
-            v${entry.devVersion} &bull; <code>${entry.file}</code>
+            v${escapeHtml(entry.devVersion)} &bull; <code>${escapeHtml(entry.file)}</code>
           </div>
           <div style="font-size: 12px; margin-top: 6px;">
-            <a href="${entry.separateUrl}" style="color: #6e7781; text-decoration: underline; margin-right: 12px;">Track as separate [DEV] script</a>
-            <a href="${entry.restoreUrl}" target="_blank" style="color: #6e7781; text-decoration: underline;">Restore release version &rarr;</a>
+            <a href="${escapeHtml(entry.separateUrl)}" style="color: #6e7781; text-decoration: underline; margin-right: 12px;">Track as separate [DEV] script</a>
+            <a href="${escapeHtml(entry.restoreUrl)}" target="_blank" style="color: #6e7781; text-decoration: underline;">Restore release version &rarr;</a>
           </div>
         </div>
         <div>
-          <a href="${entry.url}" style="background: #2ea44f; color: white; text-decoration: none; padding: 8px 14px; border-radius: 6px; font-size: 13px; font-weight: 500; display: inline-block;">
+          <a href="${escapeHtml(entry.url)}" style="background: #2ea44f; color: white; text-decoration: none; padding: 8px 14px; border-radius: 6px; font-size: 13px; font-weight: 500; display: inline-block;">
             Track in Violentmonkey &rarr;
           </a>
         </div>
@@ -357,15 +366,16 @@ function renderScriptCard(entry) {
 }
 
 function renderDashboard(reqHost, port = currentPort, options = {}) {
-  const files = fs.readdirSync(SRC_DIR).filter((f) => f.endsWith('.user.js'));
+  const files = options.files ?? fs.readdirSync(SRC_DIR).filter((f) => f.endsWith('.user.js'));
+  const readScript = options.readScript ?? ((f) => fs.readFileSync(path.join(SRC_DIR, f), 'utf8'));
   const { branch, hash } = getGitInfo();
   const changedOnly = options.changedOnly ?? CHANGED_ONLY;
   const changedMap = options.changedMap ?? resolveChangedScripts(
     getGitChangedPaths(branch).paths,
     files,
-    (f) => fs.readFileSync(path.join(SRC_DIR, f), 'utf8')
+    readScript
   );
-  const entries = buildScriptEntries(files, reqHost, branch, hash, changedMap);
+  const entries = buildScriptEntries(files, reqHost, branch, hash, changedMap, readScript);
   const changedEntries = entries.filter((e) => e.changed);
   const otherEntries = entries.filter((e) => !e.changed);
 

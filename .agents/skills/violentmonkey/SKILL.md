@@ -25,9 +25,9 @@ Read [`references/violentmonkey_architecture.md`](references/violentmonkey_archi
 2. **Check which modified scripts need tracking**:
    - Query `http://localhost:8080/api/scripts` (or open `http://localhost:8080/?changed=1`) and inspect installed scripts via `scripts_list` (requires MCP Authorization below) to see which changed scripts already have an active `-dev.<hash>` (on `dev`) or `-dev.<branch>.<hash>` (on topic branches) `@version`.
 3. **Track untracked scripts**:
-   - **If `chrome-devtools` has `--categoryExtensions` enabled** (`## Extension Pages` is visible in `list_pages`):
+   - **If `chrome-devtools` has `--categoryExtensions` enabled** (`## Extension Service Workers` or `## Extension Pages` is visible in `list_pages`, or `list_extensions` is available):
      - Open `http://localhost:8080/<script>.user.js` via `new_page("about:blank")` → `navigate_page(pageId, type: "url", url: ...)` (or click **"Track in Violentmonkey"** on `http://localhost:8080/?changed=1`).
-     - Locate the opened Violentmonkey `confirm/index.html` tab under `## Extension Pages`, `take_snapshot`, and click **`Track external edits`**, **`Reload tab`**, and **`Confirm installation`**.
+     - Locate the opened Violentmonkey `confirm/index.html` tab under `## Extension Pages`, `take_snapshot`, and click **`Track external edits`**, **`Reload tab`**, and **`Confirm installation`**. (Note: `net::ERR_ABORTED` on the `.user.js` navigation is expected as Violentmonkey intercepts it into `confirm/index.html`.)
    - **Fallback (without `--categoryExtensions`):** Open `http://localhost:8080/?changed=1` in the browser, present only the untracked scripts, and ask the user to click **"Track in Violentmonkey"** once and enable **"Track external edits"** + **"Reload tab"**.
    - Keep the tracking tab open while editing. Note: `localhost` tracking overwrites `custom.lastInstallURL`, so `@updateURL`/`@downloadURL` must stay intact in `dev_server.js` to preserve upstream GitHub updates.
    - **Done when:** Every modified script shows an active `-dev.<hash>` or `-dev.<branch>.<hash>` `@version` in Violentmonkey.
