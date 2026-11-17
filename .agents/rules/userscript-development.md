@@ -25,12 +25,13 @@ description: Runtime code standards for userscripts, including async IIFE encaps
 ## 3. Storage Architecture, Origin Isolation & Key Naming
 
 - **Storage Key Naming Standard**: To avoid key collisions across shared namespaces (such as localStorage or extension-wide GM_setValue / GM_getValue), all userscripts MUST adhere to the standardized hierarchy:
-  UserJS.<SiteName>.<ScriptName>.<FieldName>
+  `UserJS.<SiteName>.<ScriptName>.<FieldName>` (for non-site-specific / multi-site scripts, omit `<SiteName>`: `UserJS.<ScriptName>.<FieldName>`)
   - Examples:
-    - UserJS.MusicBrainz.SubscriberSpamFilter.Cache
-    - UserJS.MusicBrainz.EditorSubscriptionManager.Settings
-    - UserJS.ListenBrainz.ExtendedListenControls
-    - UserJS.MusicBrainz.GuessCaseImprover.CustomEtiPhrases
+    - `UserJS.MusicBrainz.SubscriberSpamFilter.Cache`
+    - `UserJS.MusicBrainz.EditorSubscriptionManager.Settings`
+    - `UserJS.ListenBrainz.ExtendedListenControls`
+    - `UserJS.MusicBrainz.GuessCaseImprover.CustomEtiPhrases`
+    - `UserJS.BookmarkletToolbar.Layout`
 - **Cross-Origin & Beta Domain Boundaries**:
   - localStorage and IndexedDB are strictly bound to the Same-Origin Policy. Data stored on musicbrainz.org is completely inaccessible from beta.musicbrainz.org.
   - When state must persist across production and beta domains, use **GM.setValue / GM.getValue** (extension-level storage spanning all matched origins).
