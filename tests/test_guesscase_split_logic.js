@@ -53,10 +53,15 @@ const domMock = {
     addEventListener: () => { },
 };
 
+const windowListeners = { capture: {}, bubble: {} };
 const windowMock = {
     location: { pathname: '/recording/create' },
     document: domMock,
     navigator: { userAgent: 'node' },
+    addEventListener: (type, fn, useCapture) => {
+        const phase = useCapture ? windowListeners.capture : windowListeners.bubble;
+        (phase[type] = phase[type] || []).push(fn);
+    },
 };
 
 const EventMock = class {
@@ -2194,6 +2199,112 @@ if (mbServerAvailable) {
 } else {
     logSection('--- Scenario C: Skipped (musicbrainz-server not available at expected path) ---');
 }
+
+logSection('--- Scenario D: Apollo Editor Conflict (Release Title Guess Case) ---');
+
+runTestCase('60. [Regression] Release title guess case should not revert on mouseleave when Apollo stops click propagation at window capture', () => {
+    const originalSetTimeout = context.setTimeout;
+    const queuedTimers = [];
+    context.setTimeout = (cb) => {
+        queuedTimers.push(cb);
+    };
+    const flushTimers = () => {
+        while (queuedTimers.length) {
+            const cb = queuedTimers.shift();
+            cb();
+        }
+    };
+
+    try {
+        const inputListeners = {};
+        const classes = new Set();
+        const input = {
+            id: 'name',
+            name: 'name',
+            value: 'some title (Official Video)',
+            classList: {
+                add: (c) => classes.add(c),
+                remove: (c) => classes.delete(c),
+                contains: (c) => classes.has(c),
+            },
+            focus: () => {},
+            setSelectionRange: () => {},
+            addEventListener: (type, fn) => {
+                (inputListeners[type] = inputListeners[type] || []).push(fn);
+            },
+            dispatchEvent: (ev) => {
+                for (const fn of (inputListeners[ev.type] || [])) {
+                    fn(ev);
+                }
+            },
+        };
+
+        const buttonListeners = {};
+        const button = {
+            dataset: {},
+            title: 'Guess case',
+            closest: (sel) => (sel === '.row, td' ? { querySelector: () => input } : sel.includes('.guesscase-title') ? button : null),
+            addEventListener: (type, fn) => {
+                (buttonListeners[type] = buttonListeners[type] || []).push(fn);
+            },
+        };
+
+        // Simulate Apollo Editor's window-level capture click handler registered before Guess Case Improver
+        windowListeners.capture.click = windowListeners.capture.click || [];
+        const apolloClickHandler = (e) => {
+            if (e.target !== button) return;
+            e.stopPropagation();
+            e.preventDefault();
+            input.value = 'Some Title (Official Video)';
+            input.dispatchEvent({ type: 'input', isTrusted: false, bubbles: true });
+            input.dispatchEvent({ type: 'change', isTrusted: false, bubbles: true });
+        };
+        windowListeners.capture.click.unshift(apolloClickHandler);
+
+        lib.enhanceReactGuessCase(button);
+
+        // 1. Hover button (Apollo previews, then Guess Case Improver previews)
+        input.value = 'Some Title (Official Video)';
+        for (const fn of (buttonListeners.mouseenter || [])) {
+            fn({ type: 'mouseenter', buttons: 0 });
+        }
+        flushTimers();
+        assert.strictEqual(input.value, 'Some Title (official video)', 'Preview applies advanced rules');
+
+        // 2. Click button (dispatched at window capture first, then button if not stopped)
+        let stopped = false;
+        const clickEvent = {
+            type: 'click',
+            target: button,
+            stopPropagation: () => { stopped = true; },
+            preventDefault: () => {},
+        };
+        for (const fn of (windowListeners.capture.click || [])) {
+            fn(clickEvent);
+        }
+        if (!stopped) {
+            for (const fn of (buttonListeners.click || [])) {
+                fn(clickEvent);
+            }
+        }
+        flushTimers();
+        assert.strictEqual(input.value, 'Some Title (official video)', 'Click applies advanced rules');
+
+        // 3. Pointer leaves button
+        for (const fn of (buttonListeners.mouseleave || [])) {
+            fn({ type: 'mouseleave' });
+        }
+        flushTimers();
+
+        this.finalValue = input.value;
+        this.hasPreviewClass = classes.has('preview');
+    } finally {
+        context.setTimeout = originalSetTimeout;
+    }
+}, () => {
+    assert.strictEqual(this.finalValue, 'Some Title (official video)', 'Value must not revert to original on mouseleave');
+    assert.strictEqual(this.hasPreviewClass, false, 'Preview class should be removed after click');
+});
 
 if (!isVerbose) process.stdout.write('\n\n');
 if (failedTestsCount === 0) {
