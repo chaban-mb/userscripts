@@ -23,11 +23,13 @@ Read [`references/violentmonkey_architecture.md`](references/violentmonkey_archi
    ```
 
 2. **Check which modified scripts need tracking**:
-   - Inspect installed scripts (requires MCP Authorization below; e.g., via `scripts_list`) to see which modified scripts already have an active `-dev.<hash>` (on `dev`) or `-dev.<branch>.<hash>` (on topic branches) `@version`.
-3. **Open the dashboard & track untracked scripts**:
-   - Open `http://localhost:8080/` in the browser if not already open.
-   - Present only the untracked scripts and ask the user to click **"Track in Violentmonkey"** once.
-   - In the Violentmonkey installation tab (first-time setup per script), enable **"Track external edits"** (ETag polling of `src/` and `lib/`) and **"Reload tab"**, and keep the tracking tab open while editing.
+   - Query `http://localhost:8080/api/scripts` (or open `http://localhost:8080/?changed=1`) and inspect installed scripts via `scripts_list` (requires MCP Authorization below) to see which changed scripts already have an active `-dev.<hash>` (on `dev`) or `-dev.<branch>.<hash>` (on topic branches) `@version`.
+3. **Track untracked scripts**:
+   - **If `chrome-devtools` has `--categoryExtensions` enabled** (`## Extension Pages` is visible in `list_pages`):
+     - Open `http://localhost:8080/<script>.user.js` via `new_page("about:blank")` → `navigate_page(pageId, type: "url", url: ...)` (or click **"Track in Violentmonkey"** on `http://localhost:8080/?changed=1`).
+     - Locate the opened Violentmonkey `confirm/index.html` tab under `## Extension Pages`, `take_snapshot`, and click **`Track external edits`**, **`Reload tab`**, and **`Confirm installation`**.
+   - **Fallback (without `--categoryExtensions`):** Open `http://localhost:8080/?changed=1` in the browser, present only the untracked scripts, and ask the user to click **"Track in Violentmonkey"** once and enable **"Track external edits"** + **"Reload tab"**.
+   - Keep the tracking tab open while editing. Note: `localhost` tracking overwrites `custom.lastInstallURL`, so `@updateURL`/`@downloadURL` must stay intact in `dev_server.js` to preserve upstream GitHub updates.
    - **Done when:** Every modified script shows an active `-dev.<hash>` or `-dev.<branch>.<hash>` `@version` in Violentmonkey.
 4. **Verify live behavior**:
    - Open or reload target tabs (using `/chrome-devtools` or browser automation) and check console output, DOM state, and script logs.
@@ -42,14 +44,18 @@ Read [`references/violentmonkey_architecture.md`](references/violentmonkey_archi
 
 ## MCP Authorization Protocol
 
-Requires one manual approval per browser session:
+Requires one approval per browser session:
 
 1. **Check Status**: Call `vm_status`. If `connected: true`, proceed.
-2. **Open Authorization Tab**: If `connected: false`, open `connectUrl` in a new browser tab (`net::ERR_ABORTED` is expected—the extension redirects to `#settings/mcp`).
-3. **Prompt User**: Ask the user to click **`[Approve]`** in the opened Violentmonkey settings tab.
+2. **Open Authorization Tab**: If `connected: false`, call `new_page("about:blank")` to get a `pageId`, then `navigate_page(pageId, type: "url", url: connectUrl)` (`net::ERR_ABORTED` is expected—using `navigate_page` keeps the tab open so Violentmonkey redirects to `#settings/mcp` instead of `new_page` closing it).
+3. **Approve**: If `--categoryExtensions` is enabled (`#settings/mcp` appears under `## Extension Pages`), `take_snapshot` and click **`[Approve]`**; otherwise ask the user to click **`[Approve]`** in the opened Violentmonkey settings tab.
 4. **Verify & Cleanup**: Poll `vm_status` until `connected: true`, then close the authorization tab.
 
 **Done when:** `vm_status` returns `connected: true`.
+
+## MCP Write Guard
+
+- **Never use `violentmonkey` MCP for full code writes** (`scripts_write` must remain disabled in `mcp_config.json`). Sync code changes through `tools/dev_server.js` + **"Track external edits"**; use `violentmonkey` MCP only for diagnostics and lightweight state toggles (such as enabling/disabling scripts).
 
 ## Diagnostic Workflows
 
