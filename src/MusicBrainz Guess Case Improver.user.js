@@ -164,7 +164,7 @@
      * @param {string} text - The raw input title.
      * @returns {{ core: string, featured: object[], etis: string[], joinPhrase: string|null }}
      */
-    function parseTitleStructure(text, knownArtists) {
+    function parseTitleStructure(text, knownArtists, preservedAtArtists = knownArtists) {
         if (!text) return { core: '', featured: [], etis: [], joinPhrase: null };
 
         let current = text.trim();
@@ -196,7 +196,7 @@
             }
 
             const guestStr = featMatch[2] ? featMatch[2].trim() : '';
-            const parsedGuests = parseArtistsAndJoins(guestStr, knownArtists);
+            const parsedGuests = parseArtistsAndJoins(guestStr, knownArtists, preservedAtArtists);
             featured.push(...parsedGuests);
 
             current = current.replace(fullFeatClause, ' ').replace(/\s+/g, ' ').trim();
@@ -429,7 +429,7 @@
      * @param {string} artistPartString - The string part containing one or more artists.
      * @returns {{name: string, joinPhrase: string}[]} Array of parsed artist and join phrase objects.
      */
-    function parseArtistsAndJoins(artistPartString, knownArtists) {
+    function parseArtistsAndJoins(artistPartString, knownArtists, preservedAtArtists = knownArtists) {
         if (!artistPartString) return [];
 
         if (knownArtists && knownArtists.length > 0) {
@@ -437,7 +437,7 @@
             const isKnown = knownArtists.some(art => cleanStringForComparison(art) === cleanPart);
             if (isKnown) {
                 return [{
-                    name: cleanTokenBoundaries(artistPartString, knownArtists),
+                    name: cleanTokenBoundaries(artistPartString, preservedAtArtists),
                     joinPhrase: ''
                 }];
             }
@@ -446,7 +446,7 @@
         const names = artistPartString.split(JOIN_PHRASE_PATTERN);
         const joins = artistPartString.match(JOIN_PHRASE_PATTERN) ?? [];
         return names.map((name, index) => ({
-            name: cleanTokenBoundaries(name, knownArtists),
+            name: cleanTokenBoundaries(name, preservedAtArtists),
             joinPhrase: joins[index] ?? ''
         })).filter(item => item.name !== '');
     }
@@ -498,7 +498,11 @@
 
         // Explicitly check if the match has a real entity database link (non-empty ID)
         const hasRealArtistEntity = match?.artist && (match.artist.id || match.artist.gid);
-        const useExistingName = match && (
+        const isDirtyNativeStub = match && !hasRealArtistEntity && (
+            DIRECTIONAL_ISOLATES_PATTERN.test(match.name || '') ||
+            (/^@[^\s@]+$/.test((match.name || '').trim()) && !ta.name.startsWith('@'))
+        );
+        const useExistingName = match && !isDirtyNativeStub && (
             cleanStringForComparison(match.name) === cleanTA ||
             parseArtistNamesFromString(match.name).length === 1
         ) && !isPrefixWithSeparator(match.name, ta.name);
@@ -1570,9 +1574,25 @@
         if (!title) return { finalTitle: title, updatedACNames: acNames, modified: false };
 
         const resolvedKnownArtists = [...new Set([...knownArtists, ...pristineArtists, ...editorArtists])];
+        const pristineLowerSet = new Set(pristineArtists.map(a => a.replace(DIRECTIONAL_ISOLATES_PATTERN, '').trim().toLowerCase()));
+        const linkedACNamesSet = new Set(
+            (acNames ?? [])
+                .filter(n => n.artist && (n.artist.id || n.artist.gid))
+                .flatMap(n => [n.name, n.artist?.name, n.artist?.sort_name].filter(Boolean))
+                .map(a => a.replace(DIRECTIONAL_ISOLATES_PATTERN, '').trim().toLowerCase())
+        );
+        const unlinkedOnlyACNamesSet = new Set(
+            (acNames ?? [])
+                .filter(n => !n.artist || (!n.artist.id && !n.artist.gid))
+                .map(n => (n.name || '').replace(DIRECTIONAL_ISOLATES_PATTERN, '').trim().toLowerCase())
+                .filter(name => name && !pristineLowerSet.has(name) && !linkedACNamesSet.has(name))
+        );
+        const preservedAtArtists = resolvedKnownArtists.filter(
+            art => !unlinkedOnlyACNamesSet.has((art || '').replace(DIRECTIONAL_ISOLATES_PATTERN, '').trim().toLowerCase())
+        );
 
         // --- Stage 1: Parse Title Structure (core, featured, etis, joinPhrase) ---
-        const structure = parseTitleStructure(title, resolvedKnownArtists);
+        const structure = parseTitleStructure(title, resolvedKnownArtists, preservedAtArtists);
         const parts = structure.core.split(SEPARATOR_PATTERN).map(p => p.trim()).filter(Boolean);
 
         let currentAC = acNames ? acNames.map(n => ({ ...n })) : null;
@@ -1599,7 +1619,7 @@
                     art => cleanStringForComparison(art) === cleanStringForComparison(rawArtistPart)
                 );
                 const artistPart = isExactKnownArtist ? rawArtistPart : stripArtistAttributionPrefix(rawArtistPart);
-                let parsedTitleArtists = parseArtistsAndJoins(artistPart, resolvedKnownArtists);
+                let parsedTitleArtists = parseArtistsAndJoins(artistPart, resolvedKnownArtists, preservedAtArtists);
                 const titleParts = parts.filter((_, index) => index !== artistPartIndex);
                 const newCoreTitle = titleParts.join(' - ');
 
