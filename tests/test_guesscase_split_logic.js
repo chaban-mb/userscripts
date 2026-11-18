@@ -1969,6 +1969,32 @@ runTestCase('64. [Synthetic] Non-artist single-part title containing Cover by is
     assert.strictEqual(res.modified, false);
 }, () => {});
 
+// Case 65
+runTestCase('65. [Synthetic] Cover @handles and isolates extract ordered AC with MBID preserved and unlinked native stub cleaned', () => {
+    const rawTitle = 'Bring Me To Life  - Evanescence | Cover by \u2068@CottontailVAMusic\u2069 & \u2068@Yoclesh\u2069 ft. @CougarMacDowall';
+    const res = lib.transformEntityTitleAndCredits({
+        title: rawTitle,
+        acNames: [
+            { name: 'Yoclesh', joinPhrase: ' ft. ', artist: { id: 123, gid: 'f91bd091-1168-4582-95de-432548b7c926', name: 'Yoclesh' } },
+            { name: '@CougarMacDowall', joinPhrase: '', artist: null }
+        ],
+        knownArtists: ['Yoclesh', '@CougarMacDowall'],
+        pristineArtists: ['Yoclesh'],
+        editorArtists: ['Yoclesh', '@CougarMacDowall']
+    });
+    assert.strictEqual(res.finalTitle, 'Bring Me To Life - Evanescence');
+    assert.strictEqual(res.updatedACNames.length, 3);
+    assert.strictEqual(res.updatedACNames[0].name, 'CottontailVAMusic');
+    assert.strictEqual(res.updatedACNames[0].joinPhrase, ' & ');
+    assert.strictEqual(res.updatedACNames[0].artist, null);
+    assert.strictEqual(res.updatedACNames[1].name, 'Yoclesh');
+    assert.strictEqual(res.updatedACNames[1].joinPhrase, ' ft. ');
+    assert.strictEqual(res.updatedACNames[1].artist?.gid, 'f91bd091-1168-4582-95de-432548b7c926');
+    assert.strictEqual(res.updatedACNames[2].name, 'CougarMacDowall');
+    assert.strictEqual(res.updatedACNames[2].joinPhrase, '');
+    assert.strictEqual(res.updatedACNames[2].artist, null);
+}, () => {});
+
 console.log('\n--- Scenario B: Knockout Observable is Unavailable (DOM Fallback) ---');
 
 
@@ -2260,6 +2286,37 @@ if (mbServerAvailable) {
         assert.strictEqual(ac[0].joinPhrase.trim(), 'feat.');
         assert.strictEqual(ac[1].name, 'KNVWN');
         assert.strictEqual(ac[1].joinPhrase, '');
+    });
+
+    // Case 66
+    runTestCase('66. [E2E] Standalone recording Cover by @handles and directional isolates with seeded Yoclesh MBID', () => {
+        const rawTitle = 'Bring Me To Life  - Evanescence | Cover by \u2068@CottontailVAMusic\u2069 & \u2068@Yoclesh\u2069 ft. @CougarMacDowall';
+        const initialACNames = [
+            { name: 'Yoclesh', joinPhrase: '', artist: { id: 123, gid: 'f91bd091-1168-4582-95de-432548b7c926', name: 'Yoclesh' } }
+        ];
+
+        const postNativeEntity = buildPostGuessFeatEntity(rawTitle, initialACNames);
+
+        lib.cleanEntityModel({
+            model: postNativeEntity,
+            originalTitle: rawTitle,
+            originalArtists: ['Yoclesh'],
+            input: { value: postNativeEntity.name(), dispatchEvent: () => {} }
+        });
+        this.entity = postNativeEntity;
+    }, () => {
+        const ac = this.entity.artistCredit().names;
+        assert.strictEqual(this.entity.name(), 'Bring Me To Life - Evanescence');
+        assert.strictEqual(ac.length, 3);
+        assert.strictEqual(ac[0].name, 'CottontailVAMusic');
+        assert.strictEqual(ac[0].joinPhrase, ' & ');
+        assert.strictEqual(ac[0].artist, null);
+        assert.strictEqual(ac[1].name, 'Yoclesh');
+        assert.strictEqual(ac[1].joinPhrase, ' ft. ');
+        assert.strictEqual(ac[1].artist?.gid, 'f91bd091-1168-4582-95de-432548b7c926');
+        assert.strictEqual(ac[2].name, 'CougarMacDowall');
+        assert.strictEqual(ac[2].joinPhrase, '');
+        assert.strictEqual(ac[2].artist, null);
     });
 
 } else {
