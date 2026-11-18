@@ -28,15 +28,22 @@ description: >-
 python tools/workflow.py check --json
 
 # 2. Simulate release without creating commits or modifying files
-python tools/workflow.py release --dry-run
+python tools/workflow.py release --dry-run --non-interactive
 
 # 3. Validate @version headers, rebase onto main, and push to main
 python tools/workflow.py release --non-interactive --push
 
-# 4. Release committed non-script / infrastructure files only (e.g. LICENSE, docs, tools)
+# 4. Include accompanying non-script files (e.g. tests/test_*.js, docs) or release files only
 python tools/workflow.py release --files <path1,path2|all> --non-interactive --push
 # Add `--scripts none` if modified userscripts also exist on `dev` and should stay unreleased
 ```
+
+- **Include tests and other docs when releasing a script:** By default, `workflow.py release` only copies the script files (`src/*.user.js`) and their `docs/descriptions/*.md` files to `main`, leaving tests (`tests/*`) and other docs behind on `dev`. If your dry-run lists accompanying test or doc files under *"remaining on 'dev'"*, commit them first and pass `--files <path1,path2>` (without `--scripts none`) so they go to `main` together.
+- **How uncommitted changes work during a release:**
+  - **Uncommitted `--files` targets:** Stops the release — commit or stash them first.
+  - **Uncommitted `src/*.user.js` (and `docs/descriptions/*.md`):** Automatically staged and committed as part of the release.
+  - **Staged changes in other files:** Shows a warning and asks whether to continue (auto-continues when using `--non-interactive`).
+  - **Unstaged or untracked files on `dev`:** Left untouched via `--autostash` during rebase, **unless** a separate `main` worktree has uncommitted or untracked files (which stops the release).
 
 Pushing to `main` triggers GitHub Actions to inline shared `lib/` dependencies and sync the `dist` branch (only when `src/**` or `lib/**` changed).
 
