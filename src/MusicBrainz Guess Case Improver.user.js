@@ -69,6 +69,7 @@
     // ====================================================================================
 
     const JOIN_PHRASE_PATTERN = /\s*\b(?:featuring|feat|ft|vs)\b\.?\s*|\s*(?:[,，、&・×/])\s*|\s+(?:and|x)\s+/gi;
+    const DIRECTIONAL_ISOLATES_PATTERN = /[\u200E\u200F\u202A-\u202E\u2066-\u2069]/g;
     const SEPARATOR_PATTERN = /\s+[-–—/|]\s+|\s+[-–—/|]\s*|\s*[-–—/|]\s+(?=.)|(?<=[\u3040-\u30ff\u4e00-\u9fff\uac00-\ud7af\uff00-\uffef])[-–—/|]|[-–—/|](?=[\u3040-\u30ff\u4e00-\u9fff\uac00-\ud7af\uff00-\uffef])/g;
     const BRACKET_EXCEPTION_PATTERN = /\[(untitled|unknown|data track|silence)\]/gi;
     const FEAT_PATTERN = /\s*\b(?:featuring|feat\.?|ft\.?|with)(?!\w)/i;
@@ -95,6 +96,8 @@
     function cleanStringForComparison(str) {
         if (!str) return '';
         return str
+            .replace(DIRECTIONAL_ISOLATES_PATTERN, '') // strip Unicode directional/isolate marks
+            .replace(/(?:^|\s)@+(?=\S)/g, ' ')      // ignore leading @ on handles without altering mid-word @
             .normalize('NFD')
             .replace(/[\u0300-\u036f]/g, '')        // strip combining diacritics (e.g. à → a)
             .replace(/[\u2010-\u2015\u2212\-]/g, '') // normalize and strip hyphens/dashes
@@ -119,14 +122,31 @@
     // ====================================================================================
 
     /**
-     * @summary Trims wrapping structural punctuation and spaces from token boundaries.
+     * @summary Trims directional isolates, wrapping structural punctuation, spaces, and @handle prefixes from token boundaries.
      * @param {string} str - The token string to clean.
+     * @param {string[]} [knownArtists=[]] - Known artists used to preserve legitimate @-prefixed artist names.
      * @returns {string} The cleaned token.
      */
-    function cleanTokenBoundaries(str) {
+    function cleanTokenBoundaries(str, knownArtists = []) {
         if (!str) return '';
-        // Trim at the very end to guarantee no trailing spaces remain after bracket replacement
-        return str.trim().replace(/^[+(\[【]+|[+\)\]】]+$/g, '').trim();
+        // Strip directional isolates and wrapping brackets/spaces before checking for @handle syntax
+        let cleaned = str
+            .replace(DIRECTIONAL_ISOLATES_PATTERN, '')
+            .trim()
+            .replace(/^[+(\[【]+|[+\)\]】]+$/g, '')
+            .trim();
+        if (/^@[^\s@]+$/.test(cleaned)) {
+            const cleanedLower = cleaned.toLowerCase();
+            const isKnownWithAt = Array.isArray(knownArtists) && knownArtists.some(art => {
+                if (typeof art !== 'string') return false;
+                const cleanArt = art.replace(DIRECTIONAL_ISOLATES_PATTERN, '').trim().toLowerCase();
+                return cleanArt.startsWith('@') && cleanArt === cleanedLower;
+            });
+            if (!isKnownWithAt) {
+                cleaned = cleaned.slice(1);
+            }
+        }
+        return cleaned;
     }
 
     /**
@@ -409,7 +429,7 @@
             const isKnown = knownArtists.some(art => cleanStringForComparison(art) === cleanPart);
             if (isKnown) {
                 return [{
-                    name: cleanTokenBoundaries(artistPartString),
+                    name: cleanTokenBoundaries(artistPartString, knownArtists),
                     joinPhrase: ''
                 }];
             }
@@ -418,7 +438,7 @@
         const names = artistPartString.split(JOIN_PHRASE_PATTERN);
         const joins = artistPartString.match(JOIN_PHRASE_PATTERN) ?? [];
         return names.map((name, index) => ({
-            name: cleanTokenBoundaries(name),
+            name: cleanTokenBoundaries(name, knownArtists),
             joinPhrase: joins[index] ?? ''
         })).filter(item => item.name !== '');
     }

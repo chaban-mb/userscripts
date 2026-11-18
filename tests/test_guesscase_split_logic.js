@@ -1903,6 +1903,45 @@ runTestCase('60. [Synthetic] propagateGidsFromTracksToRelease propagates GIDs to
     assert.strictEqual(releaseNames[0].artist?.gid, 'artist-a-gid', 'GID was propagated to unlinked artist stub');
 }, () => {});
 
+// Case 61
+runTestCase('61. [Unit] cleanTokenBoundaries strips directional isolates and @handles unless known with @', () => {
+    assert.strictEqual(lib.cleanTokenBoundaries('\u2068@CottontailVAMusic\u2069'), 'CottontailVAMusic', 'Strips isolates and leading @');
+    assert.strictEqual(lib.cleanTokenBoundaries('\u2068@Home\u2069', ['@Home']), '@Home', 'Preserves @ when knownArtists literally includes @Home');
+    assert.strictEqual(lib.cleanTokenBoundaries('Artist@Home'), 'Artist@Home', 'Leaves mid-string @ untouched');
+
+    // Mid-string @ must not be collapsed during comparison matching
+    const res = lib.transformEntityTitleAndCredits({
+        title: 'Artist@Home - Song',
+        acNames: [{ name: 'ArtistHome', joinPhrase: '', artist: null }],
+        pristineArtists: ['ArtistHome'],
+        editorArtists: ['ArtistHome']
+    });
+    assert.strictEqual(res.finalTitle, 'Artist@Home - Song', 'Mid-string @ should not match ArtistHome');
+}, () => {});
+
+// Case 62
+runTestCase('62. [Synthetic] Directional isolates and @handle match seeded artist and clean feat handles', () => {
+    const struct = lib.parseTitleStructure('Song ft. @CougarMacDowall', []);
+    assert.strictEqual(struct.featured.length, 1);
+    assert.strictEqual(struct.featured[0].name, 'CougarMacDowall');
+    assert.strictEqual(struct.joinPhrase, ' ft. ');
+
+    const res = lib.transformEntityTitleAndCredits({
+        title: 'Song | \u2068@CottontailVAMusic\u2069 & \u2068@Yoclesh\u2069',
+        acNames: [{ name: 'Yoclesh', joinPhrase: '', artist: { id: 1, gid: 'yoclesh-gid', name: 'Yoclesh' } }],
+        pristineArtists: ['Yoclesh'],
+        editorArtists: ['Yoclesh']
+    });
+    assert.strictEqual(res.finalTitle, 'Song');
+    assert.strictEqual(res.updatedACNames.length, 2);
+    assert.strictEqual(res.updatedACNames[0].name, 'CottontailVAMusic');
+    assert.strictEqual(res.updatedACNames[0].joinPhrase, ' & ');
+    assert.strictEqual(res.updatedACNames[0].artist, null);
+    assert.strictEqual(res.updatedACNames[1].name, 'Yoclesh');
+    assert.strictEqual(res.updatedACNames[1].joinPhrase, '');
+    assert.strictEqual(res.updatedACNames[1].artist?.gid, 'yoclesh-gid');
+}, () => {});
+
 console.log('\n--- Scenario B: Knockout Observable is Unavailable (DOM Fallback) ---');
 
 
