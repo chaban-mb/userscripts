@@ -24,10 +24,11 @@ Read [`references/violentmonkey_architecture.md`](references/violentmonkey_archi
 
 2. **Check which modified scripts need tracking**:
    - Query `http://localhost:8080/api/scripts` (or open `http://localhost:8080/?changed=1`) and inspect installed scripts via `scripts_list` (requires MCP Authorization below) to see which changed scripts already have an active `-dev.<hash>` (on `dev`) or `-dev.<branch>.<hash>` (on topic branches) `@version`.
+   - Skip calling `list_pages` upfront: `new_page` and `navigate_page` already report `## Pages` and `## Extension Pages` (`--categoryExtensions`).
 3. **Track untracked scripts**:
-   - **If `chrome-devtools` has `--categoryExtensions` enabled** (`## Extension Service Workers` or `## Extension Pages` is visible in `list_pages`, or `list_extensions` is available):
-     - Open `http://localhost:8080/<script>.user.js` via `new_page("about:blank")` → `navigate_page(pageId, type: "url", url: ...)` (or click **"Track in Violentmonkey"** on `http://localhost:8080/?changed=1`).
-     - Locate the opened Violentmonkey `confirm/index.html` tab under `## Extension Pages`, `take_snapshot`, and click **`Track external edits`**, **`Reload tab`**, and **`Confirm installation`**. (Note: `net::ERR_ABORTED` on the `.user.js` navigation is expected as Violentmonkey intercepts it into `confirm/index.html`.)
+   - **If `chrome-devtools` has `--categoryExtensions` enabled** (`## Extension Service Workers` or `## Extension Pages` is visible in `new_page`/`navigate_page`/`list_pages`, or `list_extensions` is available):
+     - Open `http://localhost:8080/?changed=1` (reusing the auth tab or via `new_page`), then use `evaluate_script` (avoid `take_snapshot` on extension/code-heavy pages) to click the **"Track in Violentmonkey"** link matching the target script (`navigate_page` directly to `.user.js` can render raw source instead of triggering Violentmonkey's installer).
+     - Once the tab navigates to Violentmonkey `confirm/index.html`, use `evaluate_script` to click the button whose text includes `Track external edits` (single click confirms install and keeps tracking open; avoid `take_snapshot` so the full script source isn't serialized).
    - **Fallback (without `--categoryExtensions`):** Open `http://localhost:8080/?changed=1` in the browser, present only the untracked scripts, and ask the user to click **"Track in Violentmonkey"** once and enable **"Track external edits"** + **"Reload tab"**.
    - Keep the tracking tab open while editing. Note: `localhost` tracking overwrites `custom.lastInstallURL`, so `@updateURL`/`@downloadURL` must stay intact in `dev_server.js` to preserve upstream GitHub updates.
    - **Done when:** Every modified script shows an active `-dev.<hash>` or `-dev.<branch>.<hash>` `@version` in Violentmonkey.
@@ -48,8 +49,8 @@ Requires one approval per browser session:
 
 1. **Check Status**: Call `vm_status`. If `connected: true`, proceed.
 2. **Open Authorization Tab**: If `connected: false`, call `new_page("about:blank")` to get a `pageId`, then `navigate_page(pageId, type: "url", url: connectUrl)` (`net::ERR_ABORTED` is expected—using `navigate_page` keeps the tab open so Violentmonkey redirects to `#settings/mcp` instead of `new_page` closing it).
-3. **Approve**: If `--categoryExtensions` is enabled (`#settings/mcp` appears under `## Extension Pages`), `take_snapshot` and click **`[Approve]`**; otherwise ask the user to click **`[Approve]`** in the opened Violentmonkey settings tab.
-4. **Verify & Cleanup**: Poll `vm_status` until `connected: true`, then close the authorization tab.
+3. **Approve**: If `#settings/mcp` appears under `## Extension Pages` in the `navigate_page` response, click **`Approve`** immediately via `evaluate_script` (`Array.from(document.querySelectorAll('button')).find(b => b.textContent.trim() === 'Approve')?.click()`) instead of `take_snapshot`; otherwise ask the user to click **`[Approve]`**.
+4. **Verify & Reuse**: Verify `vm_status` returns `connected: true` (in parallel with reusing `pageId` to navigate to `http://localhost:8080/?changed=1`, or close `pageId` if no script needs tracking).
 
 **Done when:** `vm_status` returns `connected: true`.
 
