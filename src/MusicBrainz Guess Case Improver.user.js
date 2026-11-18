@@ -150,6 +150,20 @@
     }
 
     /**
+     * @summary Strips attribution prefixes such as "Cover by " from candidate artist segments.
+     * @param {string} str - The candidate artist segment.
+     * @returns {string} The segment without leading cover attribution text.
+     */
+    function stripArtistAttributionPrefix(str) {
+        if (!str) return '';
+        return str
+            .replace(DIRECTIONAL_ISOLATES_PATTERN, '')
+            .trim()
+            .replace(/^(?:cover(?:ed)?)\s+by\s+/i, '')
+            .trim();
+    }
+
+    /**
      * @summary Deeply parses a title string to unpack layout-dependent blocks before split evaluation.
      * @param {string} text - The raw input title.
      * @returns {{ core: string, featured: object[], etis: string[], joinPhrase: string|null }}
@@ -845,12 +859,13 @@
      */
     function findArtistPartIndex(parts, pristineLower, editorLower) {
         const getMatchCount = (part, artistList) => {
-            const cleanPart = cleanStringForComparison(part);
+            const candidate = stripArtistAttributionPrefix(part);
+            const cleanPart = cleanStringForComparison(candidate);
             if (artistList.some(art => cleanStringForComparison(art) === cleanPart)) {
                 return 1;
             }
 
-            const artistsInPart = parseArtistNamesFromString(part);
+            const artistsInPart = parseArtistNamesFromString(candidate);
             return artistsInPart.filter(name => {
                 const cleanName = cleanStringForComparison(name);
                 return artistList.some(art => cleanStringForComparison(art) === cleanName);
@@ -1595,7 +1610,11 @@
                 : -1;
 
             if (artistPartIndex !== -1) {
-                const artistPart = parts[artistPartIndex];
+                const rawArtistPart = parts[artistPartIndex];
+                const isExactKnownArtist = resolvedKnownArtists.some(
+                    art => cleanStringForComparison(art) === cleanStringForComparison(rawArtistPart)
+                );
+                const artistPart = isExactKnownArtist ? rawArtistPart : stripArtistAttributionPrefix(rawArtistPart);
                 let parsedTitleArtists = parseArtistsAndJoins(artistPart, resolvedKnownArtists);
                 const titleParts = parts.filter((_, index) => index !== artistPartIndex);
                 const newCoreTitle = titleParts.join(' - ');

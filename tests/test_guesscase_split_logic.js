@@ -1942,6 +1942,33 @@ runTestCase('62. [Synthetic] Directional isolates and @handle match seeded artis
     assert.strictEqual(res.updatedACNames[1].artist?.gid, 'yoclesh-gid');
 }, () => {});
 
+// Case 63
+runTestCase('63. [Synthetic] Cover by attribution prefix is stripped from extracted artist segment', () => {
+    const res = lib.transformEntityTitleAndCredits({
+        title: 'Song | Cover by @Yoclesh',
+        acNames: [{ name: 'Yoclesh', joinPhrase: '', artist: { id: 1, gid: 'yoclesh-gid', name: 'Yoclesh' } }],
+        pristineArtists: ['Yoclesh'],
+        editorArtists: ['Yoclesh']
+    });
+    assert.strictEqual(res.finalTitle, 'Song');
+    assert.strictEqual(res.updatedACNames.length, 1);
+    assert.strictEqual(res.updatedACNames[0].name, 'Yoclesh');
+    assert.strictEqual(res.updatedACNames[0].joinPhrase, '');
+    assert.strictEqual(res.updatedACNames[0].artist?.gid, 'yoclesh-gid');
+}, () => {});
+
+// Case 64
+runTestCase('64. [Synthetic] Non-artist single-part title containing Cover by is left untouched', () => {
+    const res = lib.transformEntityTitleAndCredits({
+        title: 'Under Cover by Night',
+        acNames: [{ name: 'Unknown Artist', joinPhrase: '', artist: null }],
+        pristineArtists: ['Unknown Artist'],
+        editorArtists: ['Unknown Artist']
+    });
+    assert.strictEqual(res.finalTitle, 'Under Cover by Night');
+    assert.strictEqual(res.modified, false);
+}, () => {});
+
 console.log('\n--- Scenario B: Knockout Observable is Unavailable (DOM Fallback) ---');
 
 
