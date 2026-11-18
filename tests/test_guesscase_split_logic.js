@@ -1995,6 +1995,118 @@ runTestCase('65. [Synthetic] Cover @handles and isolates extract ordered AC with
     assert.strictEqual(res.updatedACNames[2].artist, null);
 }, () => {});
 
+// Case 67
+runTestCase('67. [Synthetic] mergeArtistCredits cleans @handles and isolates when primary artist is absent from title', () => {
+    const res = lib.transformEntityTitleAndCredits({
+        title: 'Song ft. \u2068@Yoclesh\u2069 & @CougarMacDowall',
+        acNames: [
+            { name: 'SomeArtist', joinPhrase: ' ft. ', artist: { id: 1, gid: 'some-gid', name: 'SomeArtist' } },
+            { name: '\u2068@Yoclesh\u2069', joinPhrase: ' & ', artist: null },
+            { name: '@CougarMacDowall', joinPhrase: '', artist: null }
+        ],
+        knownArtists: ['SomeArtist', '\u2068@Yoclesh\u2069', '@CougarMacDowall'],
+        pristineArtists: ['SomeArtist'],
+        editorArtists: ['SomeArtist', '\u2068@Yoclesh\u2069', '@CougarMacDowall']
+    });
+    assert.strictEqual(res.finalTitle, 'Song');
+    assert.strictEqual(res.updatedACNames.length, 3);
+    assert.strictEqual(res.updatedACNames[0].name, 'SomeArtist');
+    assert.strictEqual(res.updatedACNames[0].joinPhrase, ' ft. ');
+    assert.strictEqual(res.updatedACNames[1].name, 'Yoclesh');
+    assert.strictEqual(res.updatedACNames[1].joinPhrase, ' & ');
+    assert.strictEqual(res.updatedACNames[2].name, 'CougarMacDowall');
+    assert.strictEqual(res.updatedACNames[2].joinPhrase, '');
+}, () => {});
+
+// Case 68
+runTestCase('68. [Synthetic] mapParsedToCurrentArtist strips isolates and @ even when native guessFeat linked an MB artist via similarity.js', () => {
+    const res = lib.transformEntityTitleAndCredits({
+        title: 'Song ft. \u2068@Yoclesh\u2069 & \u2068@CottontailVAMusic\u2069',
+        acNames: [
+            { name: 'SomeArtist', joinPhrase: ' ft. ', artist: { id: 1, gid: 'some-gid', name: 'SomeArtist' } },
+            { name: '\u2068@Yoclesh\u2069', joinPhrase: ' & ', artist: { id: 123, gid: 'f91bd091-1168-4582-95de-432548b7c926', name: 'Yoclesh' } },
+            { name: '\u2068@CottontailVAMusic\u2069', joinPhrase: '', artist: null }
+        ],
+        knownArtists: ['SomeArtist', 'Yoclesh', '\u2068@Yoclesh\u2069', '\u2068@CottontailVAMusic\u2069'],
+        pristineArtists: ['SomeArtist'],
+        editorArtists: ['SomeArtist', 'Yoclesh', '\u2068@Yoclesh\u2069', '\u2068@CottontailVAMusic\u2069']
+    });
+    assert.strictEqual(res.finalTitle, 'Song');
+    assert.strictEqual(res.updatedACNames.length, 3);
+    assert.strictEqual(res.updatedACNames[1].name, 'Yoclesh');
+    assert.strictEqual(res.updatedACNames[1].artist?.gid, 'f91bd091-1168-4582-95de-432548b7c926');
+    assert.strictEqual(res.updatedACNames[2].name, 'CottontailVAMusic');
+}, () => {});
+
+// Case 69
+runTestCase('69. [Synthetic] Preserves seeded @Home across standalone recording Guess Feat (getCurrentArtistNames -> parseArtistNamesFromString -> cleanEntityModel)', () => {
+    const origSetTimeout = context.setTimeout;
+    const queuedTimers = [];
+    context.setTimeout = (cb) => { queuedTimers.push(cb); };
+    try {
+        const input = { value: 'Song - @Home ft. @Guest', dispatchEvent: () => {} };
+        const buttonListeners = {};
+        const button = {
+            dataset: {},
+            closest: () => ({ querySelector: () => input }),
+            addEventListener: (type, fn) => {
+                (buttonListeners[type] = buttonListeners[type] || []).push(fn);
+            }
+        };
+        const sourceEntity = {
+            name: makeObservable('Song - @Home ft. @Guest'),
+            artistCredit: makeObservable({
+                names: [{ name: '@Home', joinPhrase: '', artist: null }]
+            })
+        };
+        context.window.MB = {
+            getSourceEntityInstance: () => sourceEntity
+        };
+
+        lib.enhanceReleaseGuessFeat(button);
+        // Click triggers capture of originalTitle and originalArtists via getCurrentArtistNames()
+        for (const fn of (buttonListeners.click || [])) {
+            fn({});
+        }
+        // Simulate native guessFeat running before the 100ms timeout
+        input.value = 'Song - @Home';
+        sourceEntity.name('Song - @Home');
+        sourceEntity.artistCredit({
+            names: [
+                { name: '@Home', joinPhrase: ' ft. ', artist: null },
+                { name: '@Guest', joinPhrase: '', artist: null }
+            ]
+        });
+        while (queuedTimers.length) {
+            queuedTimers.shift()();
+        }
+
+        const updated = sourceEntity.artistCredit().names;
+        assert.strictEqual(sourceEntity.name(), 'Song');
+        assert.strictEqual(updated.length, 2);
+        assert.strictEqual(updated[0].name, '@Home', 'Seeded @Home must keep leading @');
+        assert.strictEqual(updated[0].joinPhrase, ' ft. ');
+        assert.strictEqual(updated[1].name, 'Guest', 'Unseeded @Guest handle must strip @');
+    } finally {
+        context.setTimeout = origSetTimeout;
+        delete context.window.MB;
+    }
+}, () => {});
+
+// Case 70
+runTestCase('70. [Synthetic] Literal artist named "Cover by Night" is matched intact before attribution stripping', () => {
+    const res = lib.transformEntityTitleAndCredits({
+        title: 'My Song - Cover by Night',
+        acNames: [{ name: 'Cover by Night', joinPhrase: '', artist: null }],
+        knownArtists: ['Cover by Night'],
+        pristineArtists: ['Cover by Night'],
+        editorArtists: ['Cover by Night']
+    });
+    assert.strictEqual(res.finalTitle, 'My Song');
+    assert.strictEqual(res.updatedACNames.length, 1);
+    assert.strictEqual(res.updatedACNames[0].name, 'Cover by Night');
+}, () => {});
+
 console.log('\n--- Scenario B: Knockout Observable is Unavailable (DOM Fallback) ---');
 
 
