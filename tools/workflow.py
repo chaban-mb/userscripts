@@ -482,7 +482,92 @@ def prompt_user(prompt_msg, default='', non_interactive=False, auto_choice=None)
     res = input(prompt_msg).strip()
     return res if res else str(default)
 
-def do_release(non_interactive=False, json_output=False, bump_strategy="auto", scripts_filter="all", custom_commit_type=None, custom_commit_msg=None, dry_run=False, apply_push=False):
+def get_committed_non_script_files(main_branch="main", userscripts=None):
+    """Return sorted committed non-script paths differing between main_branch and HEAD."""
+    userscript_set = set(userscripts or [])
+    script_basenames = {Path(u).name.replace('.user.js', '') for u in userscript_set}
+    diff_lines = get_git_stdout(['git', 'diff', '--name-only', f'{main_branch}..HEAD']).splitlines()
+    non_script_files = []
+    for raw_path in diff_lines:
+        path = raw_path.strip().replace('\\', '/')
+        if not path:
+            continue
+        if path in userscript_set or path == 'docs/USERSCRIPTS.md':
+            continue
+        if path.endswith('.user.js') or (path.startswith('lib/') and path.endswith('.js')):
+            continue
+        if path.startswith('docs/descriptions/') and path.endswith('.md'):
+            base = Path(path).name.replace('.md', '')
+            if base in script_basenames:
+                continue
+        non_script_files.append(path)
+    return sorted(set(non_script_files))
+
+
+def resolve_selected_infra_paths(committed_infra_files, files_filter=None, non_interactive=False):
+    """Resolve and validate committed non-script paths for release.
+
+    Returns (selected_paths, ok). selected_paths is None on user abort or error.
+    """
+    if files_filter is not None:
+        raw_tokens = [t.strip().replace('\\', '/') for t in files_filter.split(',') if t.strip()]
+        if not raw_tokens:
+            print(f"{COLOR_RED}Error: --files cannot be empty.{COLOR_RESET}\n")
+            return None, False
+        if any(t.lower() in ('all', 'a') for t in raw_tokens):
+            selected = set(committed_infra_files)
+        else:
+            available = set(committed_infra_files)
+            selected = set()
+            invalid = []
+            for token in raw_tokens:
+                if token.isdigit():
+                    idx = int(token) - 1
+                    if 0 <= idx < len(committed_infra_files):
+                        selected.add(committed_infra_files[idx])
+                    else:
+                        invalid.append(token)
+                elif token in available:
+                    selected.add(token)
+                else:
+                    invalid.append(token)
+            if invalid:
+                print(f"{COLOR_RED}Error: Path(s) not found in committed non-script changes vs main: {', '.join(invalid)}{COLOR_RESET}\n")
+                return None, False
+    else:
+        if non_interactive:
+            print(f"{COLOR_RED}Error: Only non-userscript changes exist. Pass --files <paths|all> in non-interactive mode.{COLOR_RESET}\n")
+            return None, False
+        print(f"\n{COLOR_CYAN}{COLOR_BOLD}Available non-script files for release:{COLOR_RESET}")
+        for idx, rel_path in enumerate(committed_infra_files, 1):
+            print(f"  {idx}) {rel_path}")
+        print(f"\n{COLOR_CYAN}{COLOR_BOLD}Select files to release:{COLOR_RESET}")
+        print("  Enter numbers or paths separated by commas (e.g. 1,2 or LICENSE)")
+        print("  Enter 'all' to release all listed files")
+        print("  Enter 'q' to quit")
+        choice = prompt_user(f"{COLOR_BOLD}Choice:{COLOR_RESET} ", default='', non_interactive=False)
+        if not choice or choice.lower() in ('q', 'quit', 'exit'):
+            print(f"{COLOR_RED}Aborting.{COLOR_RESET}\n")
+            return None, True
+        return resolve_selected_infra_paths(committed_infra_files, files_filter=choice, non_interactive=False)
+
+    if not selected:
+        print(f"{COLOR_RED}Error: No non-script files matched selection.{COLOR_RESET}\n")
+        return None, False
+
+    dirty_selected = [
+        path for path in sorted(selected)
+        if get_git_stdout(['git', 'status', '--porcelain', '--', path]).strip()
+    ]
+    if dirty_selected:
+        print(f"{COLOR_RED}Error: Selected --files path(s) have uncommitted workspace changes: {', '.join(dirty_selected)}{COLOR_RESET}")
+        print(f"{COLOR_YELLOW}Commit or stash changes on those files before releasing.{COLOR_RESET}\n")
+        return None, False
+
+    return selected, True
+
+
+def do_release(non_interactive=False, json_output=False, bump_strategy="auto", scripts_filter="all", files_filter=None, custom_commit_type=None, custom_commit_msg=None, dry_run=False, apply_push=False):
     remote = get_git_remote()
     main_branch = get_main_branch_name(remote)
     commits_created = 0
@@ -545,108 +630,135 @@ def do_release(non_interactive=False, json_output=False, bump_strategy="auto", s
 
     repo_root = Path(__file__).resolve().parent.parent
     userscripts = get_unreleased_userscripts(repo_root=repo_root, main_branch=main_branch, check_workspace=True)
+    scripts_disabled = str(scripts_filter).strip().lower() in ('none', 'n')
+    committed_infra_files = get_committed_non_script_files(main_branch=main_branch, userscripts=userscripts)
 
-    if not userscripts:
-        print(f"\n{COLOR_CYAN}No unreleased changes found in src/ or lib/ compared to {main_branch}.{COLOR_RESET}\n")
-        return
+    if (not userscripts or scripts_disabled) and not committed_infra_files:
+        if files_filter is not None:
+            print(f"\n{COLOR_RED}Error: No committed non-script changes found compared to {main_branch} for --files.{COLOR_RESET}\n")
+            return 1
+        print(f"\n{COLOR_CYAN}No unreleased changes found compared to {main_branch}.{COLOR_RESET}\n")
+        return 0
 
-    print("Checking unreleased userscripts...")
-    unreleased_info = []
-    deleted_scripts = []
-    mapping = parse_commit_scopes()
-
-    for rel_path_str in userscripts:
-        full_path = repo_root / rel_path_str
-        if not full_path.exists():
-            deleted_scripts.append(rel_path_str)
-            continue
-
-        try:
-            current_content = full_path.read_text(encoding='utf-8')
-        except Exception as e:
-            print(f"Error reading {rel_path_str}: {e}")
-            continue
-
-        curr_ver, curr_name = extract_version_and_name(current_content)
-        display_name = curr_name or full_path.name
-        if rel_path_str.startswith('lib/'):
-            display_name = f"[LIB] {display_name}"
-
-        main_content = get_main_file_content(rel_path_str, main_branch)
-        main_ver = None
-        if main_content is not None:
-            main_ver, _ = extract_version_and_name(main_content)
-
-        needs_bump = (main_ver is not None) and (curr_ver == main_ver)
-
-        unreleased_info.append({
-            'rel_path': rel_path_str,
-            'full_path': full_path,
-            'name': display_name,
-            'curr_version': curr_ver,
-            'main_version': main_ver,
-            'needs_bump': needs_bump,
-            'slug': get_slug(rel_path_str, mapping)
-        })
-
-    if not unreleased_info and not deleted_scripts:
-        print(f"\n{COLOR_CYAN}No unreleased changes found in src/ or lib/ compared to {main_branch}.{COLOR_RESET}\n")
-        return
-
-    if deleted_scripts:
-        print(f"\n{COLOR_RED}{COLOR_BOLD}Deleted script(s) (will be removed on {main_branch}):{COLOR_RESET}")
-        for d in deleted_scripts:
-            print(f"  * {COLOR_RED}[DELETED]{COLOR_RESET} {d}")
-
-    if not unreleased_info:
-        print(f"\n{COLOR_CYAN}No modified/new scripts to select. Only deleted script(s) detected.{COLOR_RESET}")
-        proceed = prompt_user("Proceed with releasing deletion(s)? (y/N): ", default='y', non_interactive=non_interactive, auto_choice='y').lower()
-        if proceed != 'y':
-            print(f"{COLOR_RED}Aborting.{COLOR_RESET}\n")
-            return
+    selected_infra_paths = set()
+    if not userscripts or scripts_disabled:
+        unreleased_info = []
+        deleted_scripts = []
         selected_scripts = []
+        selected_infra_paths, ok = resolve_selected_infra_paths(
+            committed_infra_files,
+            files_filter=files_filter,
+            non_interactive=non_interactive,
+        )
+        if selected_infra_paths is None:
+            return 0 if ok else 1
     else:
-        print(f"\n{COLOR_CYAN}{COLOR_BOLD}Available scripts for release:{COLOR_RESET}")
-        for idx, info in enumerate(unreleased_info, 1):
-            if info['main_version'] is None:
-                status_str = f"{COLOR_CYAN}[NEW]{COLOR_RESET}"
-            elif info['needs_bump']:
-                status_str = f"{COLOR_RED}{COLOR_BOLD}[BUMP NEEDED]{COLOR_RESET}"
-            else:
-                status_str = f"{COLOR_GREEN}{COLOR_BOLD}[BUMPED]{COLOR_RESET}"
-            ver_str = f"({info['main_version']} -> {info['curr_version']})" if info['main_version'] else f"(New: {info['curr_version']})"
-            print(f"  {idx}) {status_str} {info['name']} {ver_str}")
+        print("Checking unreleased userscripts...")
+        unreleased_info = []
+        deleted_scripts = []
+        mapping = parse_commit_scopes()
 
-        print(f"\n{COLOR_CYAN}{COLOR_BOLD}Select scripts to release:{COLOR_RESET}")
-        print("  Enter numbers separated by commas (e.g. 1,3)")
-        print("  Enter 'all' to release all scripts")
-        print("  Enter 'q' to quit")
+        for rel_path_str in userscripts:
+            full_path = repo_root / rel_path_str
+            if not full_path.exists():
+                deleted_scripts.append(rel_path_str)
+                continue
 
-        choice = prompt_user(f"{COLOR_BOLD}Choice:{COLOR_RESET} ", default=scripts_filter, non_interactive=non_interactive, auto_choice=scripts_filter).lower()
-        if choice in ['q', 'quit', 'exit']:
-            print(f"{COLOR_RED}Aborting.{COLOR_RESET}\n")
-            return
-
-        selected_indices = []
-        if choice in ['all', 'a'] or (choice == '' and len(unreleased_info) == 1):
-            selected_indices = list(range(len(unreleased_info)))
-        else:
             try:
-                selected_indices = [int(i.strip()) - 1 for i in choice.split(',') if i.strip()]
-            except ValueError:
-                print(f"{COLOR_RED}Invalid input. Aborting.{COLOR_RESET}\n")
-                return
+                current_content = full_path.read_text(encoding='utf-8')
+            except Exception as e:
+                print(f"Error reading {rel_path_str}: {e}")
+                continue
 
-        selected_scripts = []
-        for idx in selected_indices:
-            if 0 <= idx < len(unreleased_info):
-                selected_scripts.append(unreleased_info[idx])
+            curr_ver, curr_name = extract_version_and_name(current_content)
+            display_name = curr_name or full_path.name
+            if rel_path_str.startswith('lib/'):
+                display_name = f"[LIB] {display_name}"
+
+            main_content = get_main_file_content(rel_path_str, main_branch)
+            main_ver = None
+            if main_content is not None:
+                main_ver, _ = extract_version_and_name(main_content)
+
+            needs_bump = (main_ver is not None) and (curr_ver == main_ver)
+
+            unreleased_info.append({
+                'rel_path': rel_path_str,
+                'full_path': full_path,
+                'name': display_name,
+                'curr_version': curr_ver,
+                'main_version': main_ver,
+                'needs_bump': needs_bump,
+                'slug': get_slug(rel_path_str, mapping)
+            })
+
+        if not unreleased_info and not deleted_scripts:
+            print(f"\n{COLOR_CYAN}No unreleased changes found in src/ or lib/ compared to {main_branch}.{COLOR_RESET}\n")
+            return 0
+
+        if deleted_scripts:
+            print(f"\n{COLOR_RED}{COLOR_BOLD}Deleted script(s) (will be removed on {main_branch}):{COLOR_RESET}")
+            for d in deleted_scripts:
+                print(f"  * {COLOR_RED}[DELETED]{COLOR_RESET} {d}")
+
+        if not unreleased_info:
+            print(f"\n{COLOR_CYAN}No modified/new scripts to select. Only deleted script(s) detected.{COLOR_RESET}")
+            proceed = prompt_user("Proceed with releasing deletion(s)? (y/N): ", default='y', non_interactive=non_interactive, auto_choice='y').lower()
+            if proceed != 'y':
+                print(f"{COLOR_RED}Aborting.{COLOR_RESET}\n")
+                return 0
+            selected_scripts = []
+        else:
+            print(f"\n{COLOR_CYAN}{COLOR_BOLD}Available scripts for release:{COLOR_RESET}")
+            for idx, info in enumerate(unreleased_info, 1):
+                if info['main_version'] is None:
+                    status_str = f"{COLOR_CYAN}[NEW]{COLOR_RESET}"
+                elif info['needs_bump']:
+                    status_str = f"{COLOR_RED}{COLOR_BOLD}[BUMP NEEDED]{COLOR_RESET}"
+                else:
+                    status_str = f"{COLOR_GREEN}{COLOR_BOLD}[BUMPED]{COLOR_RESET}"
+                ver_str = f"({info['main_version']} -> {info['curr_version']})" if info['main_version'] else f"(New: {info['curr_version']})"
+                print(f"  {idx}) {status_str} {info['name']} {ver_str}")
+
+            print(f"\n{COLOR_CYAN}{COLOR_BOLD}Select scripts to release:{COLOR_RESET}")
+            print("  Enter numbers separated by commas (e.g. 1,3)")
+            print("  Enter 'all' to release all scripts")
+            print("  Enter 'q' to quit")
+
+            choice = prompt_user(f"{COLOR_BOLD}Choice:{COLOR_RESET} ", default=scripts_filter, non_interactive=non_interactive, auto_choice=scripts_filter).lower()
+            if choice in ['q', 'quit', 'exit']:
+                print(f"{COLOR_RED}Aborting.{COLOR_RESET}\n")
+                return 0
+
+            selected_indices = []
+            if choice in ['all', 'a'] or (choice == '' and len(unreleased_info) == 1):
+                selected_indices = list(range(len(unreleased_info)))
             else:
-                print(f"{COLOR_YELLOW}Invalid index {idx + 1}. Skipping.{COLOR_RESET}")
+                try:
+                    selected_indices = [int(i.strip()) - 1 for i in choice.split(',') if i.strip()]
+                except ValueError:
+                    print(f"{COLOR_RED}Invalid input. Aborting.{COLOR_RESET}\n")
+                    return 0
 
-        if not selected_scripts:
-            print(f"{COLOR_YELLOW}No scripts selected.{COLOR_RESET}\n")
-            return
+            selected_scripts = []
+            for idx in selected_indices:
+                if 0 <= idx < len(unreleased_info):
+                    selected_scripts.append(unreleased_info[idx])
+                else:
+                    print(f"{COLOR_YELLOW}Invalid index {idx + 1}. Skipping.{COLOR_RESET}")
+
+            if not selected_scripts:
+                print(f"{COLOR_YELLOW}No scripts selected.{COLOR_RESET}\n")
+                return 0
+
+        if files_filter is not None:
+            selected_infra_paths, ok = resolve_selected_infra_paths(
+                committed_infra_files,
+                files_filter=files_filter,
+                non_interactive=non_interactive,
+            )
+            if selected_infra_paths is None:
+                return 0 if ok else 1
 
     valid_scripts = []
     for script in selected_scripts:
@@ -732,9 +844,9 @@ def do_release(non_interactive=False, json_output=False, bump_strategy="auto", s
         valid_scripts.append(script)
 
     selected_scripts = valid_scripts
-    if not selected_scripts:
+    if not selected_scripts and not selected_infra_paths:
         print(f"\n{COLOR_RED}No scripts were successfully prepared or bumped for release. Aborting release workflow.{COLOR_RESET}\n")
-        return
+        return 1
 
     if not dry_run:
         # Phase 2 & 3: Stage and fold version bumps into unreleased commits
@@ -828,35 +940,34 @@ def do_release(non_interactive=False, json_output=False, bump_strategy="auto", s
             print(f"[DRY-RUN] Would fold version bump into unreleased commits for {script['name']}.")
 
     # Rebuild Markdown list of userscripts and commit it if changed
-    print("\nRebuilding userscripts list (docs/USERSCRIPTS.md)...")
-    do_build()
-
     list_changed = False
-    if not dry_run:
-        # Check if docs/USERSCRIPTS.md is modified
-        list_changed = bool(run_cmd("git status --porcelain docs/USERSCRIPTS.md"))
-        if list_changed:
-            print("Staging and committing updated USERSCRIPTS.md...")
-            subprocess.run(['git', 'add', 'docs/USERSCRIPTS.md'], check=True)
-            subprocess.run(['git', 'commit', '-m', "chore(docs): update userscripts list"], check=True)
-            commits_created += 1
+    if selected_scripts or deleted_scripts:
+        print("\nRebuilding userscripts list (docs/USERSCRIPTS.md)...")
+        do_build()
+
+        if not dry_run:
+            # Check if docs/USERSCRIPTS.md is modified
+            list_changed = bool(run_cmd("git status --porcelain docs/USERSCRIPTS.md"))
+            if list_changed:
+                print("Staging and committing updated USERSCRIPTS.md...")
+                subprocess.run(['git', 'add', 'docs/USERSCRIPTS.md'], check=True)
+                subprocess.run(['git', 'commit', '-m', "chore(docs): update userscripts list"], check=True)
+                commits_created += 1
 
     # Detect all changed files between main and HEAD
-    all_changed_files = [f.strip() for f in get_git_stdout(['git', 'diff', '--name-only', f'{main_branch}..HEAD']).splitlines() if f.strip()]
+    all_changed_files = [f.strip().replace('\\', '/') for f in get_git_stdout(['git', 'diff', '--name-only', f'{main_branch}..HEAD']).splitlines() if f.strip()]
     selected_rel_paths = {s['rel_path'] for s in selected_scripts}
     selected_desc_paths = {f"docs/descriptions/{s['full_path'].name.replace('.user.js', '')}.md" for s in selected_scripts if not s['rel_path'].startswith('lib/')}
-    
-    infra_changed_files = []
-    for f in all_changed_files:
-        if f in selected_rel_paths or f in selected_desc_paths or f == 'docs/USERSCRIPTS.md':
-            continue
-        infra_changed_files.append(f)
 
-    allowed_paths = sorted(
+    allowed_paths_set = (
         selected_rel_paths
         | selected_desc_paths
+        | selected_infra_paths
         | ({'docs/USERSCRIPTS.md'} if list_changed else set())
     )
+    allowed_paths = sorted(allowed_paths_set)
+    infra_changed_files = [f for f in all_changed_files if f not in allowed_paths_set]
+
     is_full_release = (
         len(selected_scripts) == len(unreleased_info)
         and not infra_changed_files
@@ -1054,10 +1165,12 @@ def do_release(non_interactive=False, json_output=False, bump_strategy="auto", s
     except subprocess.CalledProcessError as e:
         print(f"\n{COLOR_RED}{COLOR_BOLD}An error occurred during git operations: {e}{COLOR_RESET}")
         print(f"{COLOR_YELLOW}You may need to manually resolve branch status.{COLOR_RESET}\n")
+        return 1
     finally:
         if worktree_dir:
             subprocess.run(['git', 'worktree', 'remove', '--force', worktree_dir], capture_output=True)
             shutil.rmtree(worktree_dir, ignore_errors=True)
+    return 0
 
 def do_bump(bump_type="patch", scripts_filter="all", json_output=False):
     repo_root = Path(__file__).resolve().parent.parent
@@ -1405,7 +1518,8 @@ Examples:
     release_parser.add_argument("--dry-run", "-n", action="store_true", help="Simulate release workflow without creating commits or modifying files")
     release_parser.add_argument("--json", action="store_true", help="Output JSON results")
     release_parser.add_argument("--bump-type", choices=["patch", "minor", "major", "none", "auto"], default="auto", help="Bump strategy in automated mode (default: auto)")
-    release_parser.add_argument("--scripts", default="all", help="Comma-separated script numbers/paths or 'all' (default: all)")
+    release_parser.add_argument("--scripts", default="all", help="Comma-separated script numbers/paths, 'all', or 'none' (default: all)")
+    release_parser.add_argument("--files", "-f", default=None, help="Comma-separated committed non-script file paths or 'all' to release")
     release_parser.add_argument("--commit-type", "-t", default=None, help="Custom commit type override for new commits (e.g. fix, feat, refactor)")
     release_parser.add_argument("--commit-msg", "-m", default=None, help="Custom commit description override for new commits")
 
@@ -1447,16 +1561,17 @@ Examples:
         elif args.command == "publish-info" or args.command == "announce":
             sys.exit(print_publish_info(args.name, greasyfork_id=args.greasyfork_id))
         elif args.command == "release":
-            do_release(
+            sys.exit(do_release(
                 non_interactive=args.non_interactive,
                 json_output=args.json,
                 bump_strategy=args.bump_type,
                 scripts_filter=args.scripts,
+                files_filter=args.files,
                 custom_commit_type=args.commit_type,
                 custom_commit_msg=args.commit_msg,
                 dry_run=args.dry_run,
                 apply_push=args.push
-            )
+            ))
         elif args.command == "build":
             do_build()
     except KeyboardInterrupt:
