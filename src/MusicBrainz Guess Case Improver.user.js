@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MusicBrainz: Guess Case Improver
 // @namespace    https://musicbrainz.org/user/chaban
-// @version      0.11.1
+// @version      0.11.2
 // @tag          ai-created
 // @description  Improves the native "Guess Case" for release, recording and track titles with advanced artist and ETI parsing. Also removes artist from title and duplicate artists after using "Guess feat. artists" on tracklists.
 // @author       chaban
@@ -420,7 +420,12 @@
     function parseArtistNamesFromString(artistString) {
         if (!artistString) return [];
         return artistString.split(JOIN_PHRASE_PATTERN)
-            .map(name => cleanTokenBoundaries(name).toLowerCase())
+            .map(name => name
+                .replace(DIRECTIONAL_ISOLATES_PATTERN, '')
+                .trim()
+                .replace(/^[+(\[【]+|[+\)\]】]+$/g, '')
+                .trim()
+                .toLowerCase())
             .filter(Boolean);
     }
 
@@ -498,11 +503,14 @@
 
         // Explicitly check if the match has a real entity database link (non-empty ID)
         const hasRealArtistEntity = match?.artist && (match.artist.id || match.artist.gid);
-        const isDirtyNativeStub = match && !hasRealArtistEntity && (
-            DIRECTIONAL_ISOLATES_PATTERN.test(match.name || '') ||
-            (/^@[^\s@]+$/.test((match.name || '').trim()) && !ta.name.startsWith('@'))
-        );
-        const useExistingName = match && !isDirtyNativeStub && (
+        const matchName = match?.name || '';
+        const matchHasIsolates = matchName.replace(DIRECTIONAL_ISOLATES_PATTERN, '') !== matchName;
+        const linkedArtistHasAt = (match?.artist?.name || '').replace(DIRECTIONAL_ISOLATES_PATTERN, '').trim().startsWith('@');
+        const isDirtyAtHandle = /^@[^\s@]+$/.test(matchName.replace(DIRECTIONAL_ISOLATES_PATTERN, '').trim()) &&
+            !ta.name.startsWith('@') &&
+            !linkedArtistHasAt;
+        const isDirtyName = Boolean(match && (matchHasIsolates || isDirtyAtHandle));
+        const useExistingName = match && !isDirtyName && (
             cleanStringForComparison(match.name) === cleanTA ||
             parseArtistNamesFromString(match.name).length === 1
         ) && !isPrefixWithSeparator(match.name, ta.name);
@@ -555,7 +563,19 @@
             const newTitleArtists = parsedTitleArtists.filter(ta => !knownNamesLower.includes(cleanStringForComparison(ta.name)));
 
             if (newTitleArtists.length === 0) {
-                return currentNames;
+                let changed = false;
+                const cleanedNames = currentNames.map(n => {
+                    const cleanN = cleanStringForComparison(n.name);
+                    const matchingTA = parsedTitleArtists.find(ta => cleanStringForComparison(ta.name) === cleanN);
+                    if (!matchingTA) return n;
+                    const mapped = mapParsedToCurrentArtist(matchingTA, [n]);
+                    if (mapped.name !== n.name) {
+                        changed = true;
+                        return { ...n, name: mapped.name };
+                    }
+                    return n;
+                });
+                return changed ? cleanedNames : currentNames;
             }
 
             const titleNamesLower = parsedTitleArtists.map(ta => cleanStringForComparison(ta.name));
@@ -852,6 +872,11 @@
      */
     function findArtistPartIndex(parts, pristineLower, editorLower) {
         const getMatchCount = (part, artistList) => {
+            const cleanRawPart = cleanStringForComparison(part);
+            if (artistList.some(art => cleanStringForComparison(art) === cleanRawPart)) {
+                return 1;
+            }
+
             const candidate = stripArtistAttributionPrefix(part);
             const cleanPart = cleanStringForComparison(candidate);
             if (artistList.some(art => cleanStringForComparison(art) === cleanPart)) {
@@ -1575,20 +1600,19 @@
 
         const resolvedKnownArtists = [...new Set([...knownArtists, ...pristineArtists, ...editorArtists])];
         const pristineLowerSet = new Set(pristineArtists.map(a => a.replace(DIRECTIONAL_ISOLATES_PATTERN, '').trim().toLowerCase()));
-        const linkedACNamesSet = new Set(
+        const linkedEntityNamesSet = new Set(
             (acNames ?? [])
                 .filter(n => n.artist && (n.artist.id || n.artist.gid))
-                .flatMap(n => [n.name, n.artist?.name, n.artist?.sort_name].filter(Boolean))
+                .flatMap(n => (n.artist?.name ? [n.artist.name, n.artist.sort_name] : [n.name]).filter(Boolean))
                 .map(a => a.replace(DIRECTIONAL_ISOLATES_PATTERN, '').trim().toLowerCase())
         );
-        const unlinkedOnlyACNamesSet = new Set(
+        const dirtyStubAtNamesSet = new Set(
             (acNames ?? [])
-                .filter(n => !n.artist || (!n.artist.id && !n.artist.gid))
                 .map(n => (n.name || '').replace(DIRECTIONAL_ISOLATES_PATTERN, '').trim().toLowerCase())
-                .filter(name => name && !pristineLowerSet.has(name) && !linkedACNamesSet.has(name))
+                .filter(name => name.startsWith('@') && !pristineLowerSet.has(name) && !linkedEntityNamesSet.has(name))
         );
         const preservedAtArtists = resolvedKnownArtists.filter(
-            art => !unlinkedOnlyACNamesSet.has((art || '').replace(DIRECTIONAL_ISOLATES_PATTERN, '').trim().toLowerCase())
+            art => !dirtyStubAtNamesSet.has((art || '').replace(DIRECTIONAL_ISOLATES_PATTERN, '').trim().toLowerCase())
         );
 
         // --- Stage 1: Parse Title Structure (core, featured, etis, joinPhrase) ---
