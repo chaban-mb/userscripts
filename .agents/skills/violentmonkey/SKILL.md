@@ -27,8 +27,8 @@ Read [`references/violentmonkey_architecture.md`](references/violentmonkey_archi
    - Skip calling `list_pages` upfront: `new_page` and `navigate_page` already report `## Pages` and `## Extension Pages` (`--categoryExtensions`).
 3. **Track untracked scripts**:
    - **If `chrome-devtools` has `--categoryExtensions` enabled** (`## Extension Service Workers` or `## Extension Pages` is visible in `new_page`/`navigate_page`/`list_pages`, or `list_extensions` is available):
-     - Open `http://localhost:8080/?changed=1` (reusing the auth tab or via `new_page`), then use `evaluate_script` (avoid `take_snapshot` on extension/code-heavy pages) to click the **"Track in Violentmonkey"** link matching the target script (`navigate_page` directly to `.user.js` can render raw source instead of triggering Violentmonkey's installer).
-     - Once the tab navigates to Violentmonkey `confirm/index.html`, use `evaluate_script` to click the button whose text includes `Track external edits` (single click confirms install and keeps tracking open; avoid `take_snapshot` so the full script source isn't serialized).
+     - Open `http://localhost:8080/?changed=1` (reusing the auth tab or via `new_page`), then run `evaluate_script` to click the **"Track in Violentmonkey"** link matching the target script (direct `.user.js` navigation can render raw source instead of triggering Violentmonkey's installer).
+     - Once the tab navigates to Violentmonkey `confirm/index.html`, run `evaluate_script` to click the button whose text includes `Track external edits` (single click confirms install and keeps tracking open).
    - **Fallback (without `--categoryExtensions`):** Open `http://localhost:8080/?changed=1` in the browser, present only the untracked scripts, and ask the user to click **"Track in Violentmonkey"** once and enable **"Track external edits"** + **"Reload tab"**.
    - Keep the tracking tab open while editing. Note: `localhost` tracking overwrites `custom.lastInstallURL`, so `@updateURL`/`@downloadURL` must stay intact in `dev_server.js` to preserve upstream GitHub updates.
    - **Done when:** Every modified script shows an active `-dev.<hash>` or `-dev.<branch>.<hash>` `@version` in Violentmonkey.
@@ -49,8 +49,8 @@ Requires one approval per browser session:
 
 1. **Check Status**: Call `vm_status`. If `connected: true`, proceed.
 2. **Open Authorization Tab**: If `connected: false`, call `new_page("about:blank")` to get a `pageId`, then `navigate_page(pageId, type: "url", url: connectUrl)` (`net::ERR_ABORTED` is expected—using `navigate_page` keeps the tab open so Violentmonkey redirects to `#settings/mcp` instead of `new_page` closing it).
-3. **Approve**: If `#settings/mcp` appears under `## Extension Pages` in the `navigate_page` response, click **`Approve`** immediately via `evaluate_script` (`Array.from(document.querySelectorAll('button')).find(b => b.textContent.trim() === 'Approve')?.click()`) instead of `take_snapshot`; otherwise ask the user to click **`[Approve]`**.
-4. **Verify & Reuse**: Verify `vm_status` returns `connected: true` (in parallel with reusing `pageId` to navigate to `http://localhost:8080/?changed=1`, or close `pageId` if no script needs tracking).
+3. **Approve**: If `#settings/mcp` appears under `## Extension Pages` in the `navigate_page` response, click **`Approve`** directly via `evaluate_script` (`Array.from(document.querySelectorAll('button')).find(b => b.textContent.trim() === 'Approve')?.click()`); otherwise ask the user to click **`[Approve]`**.
+4. **Verify & Reuse**: Verify `vm_status` returns `connected: true` (in parallel with navigating `pageId` to `http://localhost:8080/?changed=1` if `/api/scripts` shows changed scripts to track, or closing `pageId` otherwise).
 
 **Done when:** `vm_status` returns `connected: true`.
 
