@@ -600,6 +600,35 @@ def do_release(non_interactive=False, json_output=False, bump_strategy="auto", s
             print(f"{COLOR_RED}Aborting.{COLOR_RESET}\n")
             return
 
+    repo_root = Path(__file__).resolve().parent.parent
+    userscripts = get_unreleased_userscripts(repo_root=repo_root, main_branch=main_branch, check_workspace=True)
+    scripts_disabled = str(scripts_filter).strip().lower() in ('none', 'n')
+    committed_infra_files = get_committed_non_script_files(main_branch=main_branch, userscripts=userscripts)
+
+    if (not userscripts or scripts_disabled) and not committed_infra_files:
+        if files_filter is not None:
+            print(f"\n{COLOR_RED}Error: No committed non-script changes found compared to {main_branch} for --files.{COLOR_RESET}\n")
+            return 1
+        print(f"\n{COLOR_CYAN}No unreleased changes found compared to {main_branch}.{COLOR_RESET}\n")
+        return 0
+
+    selected_infra_paths = set()
+    if files_filter is not None:
+        selected_infra_paths, ok = resolve_selected_infra_paths(
+            committed_infra_files,
+            files_filter=files_filter,
+            non_interactive=non_interactive,
+        )
+        if selected_infra_paths is None:
+            return 0 if ok else 1
+    elif (not userscripts or scripts_disabled) and non_interactive:
+        _, ok = resolve_selected_infra_paths(
+            committed_infra_files,
+            files_filter=None,
+            non_interactive=True,
+        )
+        return 0 if ok else 1
+
     curr_branch = run_cmd("git branch --show-current")
     release_branch = curr_branch
     merged_feature_branch = None
@@ -619,39 +648,27 @@ def do_release(non_interactive=False, json_output=False, bump_strategy="auto", s
                 print(f"{COLOR_RED}Merge conflict occurred merging '{curr_branch}' into dev! Aborting.{COLOR_RESET}")
                 subprocess.run(['git', 'merge', '--abort'], capture_output=True)
                 subprocess.run(['git', 'checkout', curr_branch], capture_output=True)
-                return
+                return 0
             merged_feature_branch = curr_branch
             release_branch = "dev"
         elif choice == '2':
             pass
         else:
             print(f"{COLOR_RED}Aborting.{COLOR_RESET}\n")
-            return
+            return 0
 
-    repo_root = Path(__file__).resolve().parent.parent
-    userscripts = get_unreleased_userscripts(repo_root=repo_root, main_branch=main_branch, check_workspace=True)
-    scripts_disabled = str(scripts_filter).strip().lower() in ('none', 'n')
-    committed_infra_files = get_committed_non_script_files(main_branch=main_branch, userscripts=userscripts)
-
-    if (not userscripts or scripts_disabled) and not committed_infra_files:
-        if files_filter is not None:
-            print(f"\n{COLOR_RED}Error: No committed non-script changes found compared to {main_branch} for --files.{COLOR_RESET}\n")
-            return 1
-        print(f"\n{COLOR_CYAN}No unreleased changes found compared to {main_branch}.{COLOR_RESET}\n")
-        return 0
-
-    selected_infra_paths = set()
     if not userscripts or scripts_disabled:
         unreleased_info = []
         deleted_scripts = []
         selected_scripts = []
-        selected_infra_paths, ok = resolve_selected_infra_paths(
-            committed_infra_files,
-            files_filter=files_filter,
-            non_interactive=non_interactive,
-        )
-        if selected_infra_paths is None:
-            return 0 if ok else 1
+        if files_filter is None:
+            selected_infra_paths, ok = resolve_selected_infra_paths(
+                committed_infra_files,
+                files_filter=None,
+                non_interactive=non_interactive,
+            )
+            if selected_infra_paths is None:
+                return 0 if ok else 1
     else:
         print("Checking unreleased userscripts...")
         unreleased_info = []
@@ -702,12 +719,16 @@ def do_release(non_interactive=False, json_output=False, bump_strategy="auto", s
                 print(f"  * {COLOR_RED}[DELETED]{COLOR_RESET} {d}")
 
         if not unreleased_info:
-            print(f"\n{COLOR_CYAN}No modified/new scripts to select. Only deleted script(s) detected.{COLOR_RESET}")
-            proceed = prompt_user("Proceed with releasing deletion(s)? (y/N): ", default='y', non_interactive=non_interactive, auto_choice='y').lower()
-            if proceed != 'y':
-                print(f"{COLOR_RED}Aborting.{COLOR_RESET}\n")
-                return 0
-            selected_scripts = []
+            if selected_infra_paths:
+                deleted_scripts = []
+                selected_scripts = []
+            else:
+                print(f"\n{COLOR_CYAN}No modified/new scripts to select. Only deleted script(s) detected.{COLOR_RESET}")
+                proceed = prompt_user("Proceed with releasing deletion(s)? (y/N): ", default='y', non_interactive=non_interactive, auto_choice='y').lower()
+                if proceed != 'y':
+                    print(f"{COLOR_RED}Aborting.{COLOR_RESET}\n")
+                    return 0
+                selected_scripts = []
         else:
             print(f"\n{COLOR_CYAN}{COLOR_BOLD}Available scripts for release:{COLOR_RESET}")
             for idx, info in enumerate(unreleased_info, 1):
@@ -750,15 +771,6 @@ def do_release(non_interactive=False, json_output=False, bump_strategy="auto", s
             if not selected_scripts:
                 print(f"{COLOR_YELLOW}No scripts selected.{COLOR_RESET}\n")
                 return 0
-
-        if files_filter is not None:
-            selected_infra_paths, ok = resolve_selected_infra_paths(
-                committed_infra_files,
-                files_filter=files_filter,
-                non_interactive=non_interactive,
-            )
-            if selected_infra_paths is None:
-                return 0 if ok else 1
 
     valid_scripts = []
     for script in selected_scripts:
@@ -941,7 +953,7 @@ def do_release(non_interactive=False, json_output=False, bump_strategy="auto", s
 
     # Rebuild Markdown list of userscripts and commit it if changed
     list_changed = False
-    if selected_scripts or deleted_scripts:
+    if selected_scripts:
         print("\nRebuilding userscripts list (docs/USERSCRIPTS.md)...")
         do_build()
 
