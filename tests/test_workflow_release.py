@@ -586,6 +586,56 @@ class WorkflowReleaseTests(unittest.TestCase):
             self.assertEqual(self._run(["git", "branch", "--show-current"], cwd=repo).stdout.strip(), "topic/license")
             self.assertEqual(self._run(["git", "rev-parse", "dev"], cwd=repo).stdout.strip(), dev_before)
 
+    def test_release_reuses_existing_clean_main_worktree(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="wf_rel_") as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            _, repo = self._setup_repo(tmp_path)
+            main_wt = tmp_path / "main_wt"
+
+            self._run(["git", "checkout", "dev"], cwd=repo)
+            self._run(["git", "worktree", "add", str(main_wt), "main"], cwd=repo)
+
+            (repo / "LICENSE").write_text("Copyright (c) 2025 chaban\n", encoding="utf-8")
+            self._run(["git", "add", "LICENSE"], cwd=repo)
+            self._run(["git", "commit", "-m", "docs(repo): add LICENSE"], cwd=repo)
+            main_before = self._run(["git", "rev-parse", "origin/main"], cwd=repo).stdout.strip()
+
+            (main_wt / "dirty.txt").write_text("uncommitted\n", encoding="utf-8")
+            res_dirty_wt = self._run(
+                [
+                    sys.executable,
+                    str(repo / "tools" / "workflow.py"),
+                    "release",
+                    "--non-interactive",
+                    "--files",
+                    "LICENSE",
+                    "--push",
+                ],
+                cwd=repo,
+                check=False,
+            )
+            self.assertNotEqual(res_dirty_wt.returncode, 0)
+            self.assertEqual(self._run(["git", "rev-parse", "origin/main"], cwd=repo).stdout.strip(), main_before)
+
+            (main_wt / "dirty.txt").unlink()
+            res = self._run(
+                [
+                    sys.executable,
+                    str(repo / "tools" / "workflow.py"),
+                    "release",
+                    "--non-interactive",
+                    "--files",
+                    "LICENSE",
+                    "--push",
+                ],
+                cwd=repo,
+                check=False,
+            )
+            self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
+            self.assertTrue(main_wt.exists())
+            self.assertEqual(self._run(["git", "show", "origin/main:LICENSE"], cwd=repo).stdout.strip(), "Copyright (c) 2025 chaban")
+            self.assertEqual((main_wt / "LICENSE").read_text(encoding="utf-8").strip(), "Copyright (c) 2025 chaban")
+
 
 if __name__ == "__main__":
     unittest.main()

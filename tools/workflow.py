@@ -482,6 +482,21 @@ def prompt_user(prompt_msg, default='', non_interactive=False, auto_choice=None)
     res = input(prompt_msg).strip()
     return res if res else str(default)
 
+def find_checked_out_worktree(branch_name):
+    """Return the path of an existing worktree with branch_name checked out, or None."""
+    porcelain = get_git_stdout(['git', 'worktree', 'list', '--porcelain'])
+    current_wt = None
+    for line in porcelain.splitlines():
+        if line.startswith('worktree '):
+            current_wt = line.split(' ', 1)[1].strip()
+        elif line.startswith('branch ') and current_wt:
+            if line.split(' ', 1)[1].strip() == f'refs/heads/{branch_name}':
+                return current_wt
+        elif not line.strip():
+            current_wt = None
+    return None
+
+
 def get_committed_non_script_files(main_branch="main", userscripts=None):
     """Return sorted committed non-script paths differing between main_branch and HEAD."""
     userscript_set = set(userscripts or [])
@@ -1082,10 +1097,19 @@ def do_release(non_interactive=False, json_output=False, bump_strategy="auto", s
 
     try:
         if release_branch != main_branch:
-            worktree_dir = tempfile.mkdtemp(prefix="workflow_release_wt_")
-            print(f"\n{COLOR_CYAN}Preparing isolated worktree for {main_branch}...{COLOR_RESET}")
-            subprocess.run(['git', 'worktree', 'add', worktree_dir, main_branch], check=True)
-            main_cwd = worktree_dir
+            existing_wt = find_checked_out_worktree(main_branch)
+            if existing_wt:
+                if get_git_stdout(['git', '-C', existing_wt, 'status', '--porcelain']).strip():
+                    print(f"\n{COLOR_RED}{COLOR_BOLD}Error: '{main_branch}' is checked out with uncommitted changes at '{existing_wt}'.{COLOR_RESET}")
+                    print(f"{COLOR_YELLOW}Clean or commit that worktree before releasing.{COLOR_RESET}\n")
+                    return 1
+                print(f"\n{COLOR_CYAN}Using existing clean worktree for {main_branch} at {existing_wt}...{COLOR_RESET}")
+                main_cwd = existing_wt
+            else:
+                worktree_dir = tempfile.mkdtemp(prefix="workflow_release_wt_")
+                print(f"\n{COLOR_CYAN}Preparing isolated worktree for {main_branch}...{COLOR_RESET}")
+                subprocess.run(['git', 'worktree', 'add', worktree_dir, main_branch], check=True)
+                main_cwd = worktree_dir
         else:
             main_cwd = None
 
