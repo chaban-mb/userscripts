@@ -1072,7 +1072,11 @@ test('Library search matches local/pack sources, cards use ellipsis/hover expans
         'utf8'
     );
     assert.match(uiSource, /\.bt-library-grid\s*\{[^}]*align-items:\s*start;/s);
-    assert.match(uiSource, /\.bt-library-card:hover\s+\.bt-card-title[\s\S]*white-space:\s*normal;/);
+    assert.doesNotMatch(
+        uiSource,
+        /\.bt-library-card:hover\s+\.bt-card-title[\s\S]*?white-space:\s*normal;/
+    );
+    assert.match(uiSource, /\.bt-card-tooltip\s*\{/);
     assert.match(
         uiSource,
         /\.bt-action-btn-primary:hover\s*\{[^}]*background:\s*var\(--bt-primary-hover\);/s
@@ -1141,6 +1145,93 @@ test('Library search matches local/pack sources, cards use ellipsis/hover expans
         .filter((el) => el.dataset.scriptId);
     assert.equal(paletteLocal.length, 1);
     assert.equal(paletteLocal[0].dataset.scriptId, 'local:tracklist');
+
+    ui.destroy();
+});
+
+test('Library cards keep single-line ellipsis and show instant tooltip only when truncated, flipping near sticky header and suppressing on drag/popover', () => {
+    const { doc, win } = createDomEnvironment('https://musicbrainz.org/release/123');
+    const ui = UI.createToolbarUI({
+        doc,
+        win,
+        initialState: createSampleState('https://musicbrainz.org/release/123'),
+        callbacks: {},
+    });
+
+    ui.openManager();
+    const overlayRoot = ui.getOverlayShadowRoot();
+    const stickySection = overlayRoot.querySelector('.bt-sticky-section');
+    const libraryGrid = overlayRoot.getElementById('library-grid');
+    assert.ok(stickySection);
+    assert.ok(libraryGrid);
+
+    stickySection.getBoundingClientRect = () => ({ top: 0, bottom: 80, left: 0, right: 800, width: 800, height: 80 });
+
+    const cards = overlayRoot.querySelectorAll('.bt-library-card');
+    assert.ok(cards.length >= 2);
+
+    const firstCard = cards[0];
+    const firstTitle = firstCard.querySelector('.bt-card-title');
+    const firstTooltip = firstCard.querySelector('.bt-card-tooltip');
+    assert.ok(firstTooltip);
+    assert.equal(firstTooltip.getAttribute('aria-hidden'), 'true');
+    assert.equal(firstTooltip.textContent, firstTitle.textContent);
+
+    // Truncated title near sticky header flips tooltip below
+    firstTitle.scrollWidth = 320;
+    firstTitle.clientWidth = 180;
+    firstCard.getBoundingClientRect = () => ({ top: 100, bottom: 134, left: 0, right: 400, width: 400, height: 34 });
+    firstCard.dispatchEvent({ type: 'mouseenter', bubbles: false });
+    assert.equal(firstCard.dataset.truncated, 'true');
+    assert.equal(firstCard.dataset.tooltipPos, 'bottom');
+    assert.equal(firstCard.dataset.tooltipSuppressed, 'false');
+
+    // Truncated title with clearance places tooltip above
+    firstCard.getBoundingClientRect = () => ({ top: 200, bottom: 234, left: 0, right: 400, width: 400, height: 34 });
+    firstCard.dispatchEvent({ type: 'mouseenter', bubbles: false });
+    assert.equal(firstCard.dataset.tooltipPos, 'top');
+
+    // Non-truncated short title does not trigger tooltip
+    const secondCard = cards[1];
+    const secondTitle = secondCard.querySelector('.bt-card-title');
+    secondTitle.scrollWidth = 120;
+    secondTitle.clientWidth = 180;
+    secondCard.getBoundingClientRect = () => ({ top: 242, bottom: 276, left: 0, right: 400, width: 400, height: 34 });
+    secondCard.dispatchEvent({ type: 'mouseenter', bubbles: false });
+    assert.equal(secondCard.dataset.truncated, 'false');
+
+    // Active drag marks grid dragging and suppresses tooltip on hover
+    firstCard.dispatchEvent({ type: 'dragstart', bubbles: true });
+    assert.equal(libraryGrid.dataset.dragging, 'true');
+    secondTitle.scrollWidth = 300;
+    secondCard.dispatchEvent({ type: 'mouseenter', bubbles: false });
+    assert.equal(secondCard.dataset.tooltipSuppressed, 'true');
+
+    firstCard.dispatchEvent({ type: 'dragend', bubbles: true });
+    assert.equal(libraryGrid.dataset.dragging, undefined);
+    secondCard.dispatchEvent({ type: 'mouseenter', bubbles: false });
+    assert.equal(secondCard.dataset.tooltipSuppressed, 'false');
+
+    // Opening info popover suppresses tooltip on that card
+    const infoBtn = overlayRoot
+        .querySelectorAll('.bt-library-card')[0]
+        .querySelectorAll('button')
+        .find((b) => b.textContent === 'ⓘ');
+    assert.ok(infoBtn);
+    infoBtn.click();
+    const rerenderedFirst = overlayRoot.querySelectorAll('.bt-library-card')[0];
+    assert.equal(rerenderedFirst.dataset.tooltipSuppressed, 'true');
+
+    // Missing layout metrics on focusin do not throw
+    const lastCard = overlayRoot.querySelectorAll('.bt-library-card')[1];
+    const lastTitle = lastCard.querySelector('.bt-card-title');
+    delete lastTitle.scrollWidth;
+    delete lastTitle.clientWidth;
+    lastCard.getBoundingClientRect = undefined;
+    assert.doesNotThrow(() => {
+        lastCard.dispatchEvent({ type: 'focusin', bubbles: true });
+    });
+    assert.equal(lastCard.dataset.truncated, 'false');
 
     ui.destroy();
 });
