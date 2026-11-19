@@ -1612,6 +1612,109 @@ test('Folder dropdown opens upward (bt-dropdown-up) on bottom-* snap zones and d
     ui.destroy();
 });
 
+test('clampDropdownToViewport clamps overflow via marginLeft on center/left anchors and marginRight on right-anchored dropdowns', () => {
+    const { doc, win } = createDomEnvironment('https://musicbrainz.org/release/123');
+    win.innerWidth = 412;
+    win.innerHeight = 924;
+
+    let activeDropdownRect = null;
+    const origCreateElement = doc.createElement.bind(doc);
+    doc.createElement = (tag) => {
+        const el = origCreateElement(tag);
+        if (String(tag).toLowerCase() === 'div') {
+            const origRect = el.getBoundingClientRect.bind(el);
+            el.getBoundingClientRect = () =>
+                el.classList.contains('bt-dropdown') && activeDropdownRect
+                    ? activeDropdownRect
+                    : origRect();
+        }
+        return el;
+    };
+
+    const ui = UI.createToolbarUI({
+        doc,
+        win,
+        initialState: createSampleState({
+            url: 'https://musicbrainz.org/release/123',
+            settings: {
+                hotkey: 'Alt+B',
+                dockSiteExpanded: { 'https://musicbrainz.org': true },
+                dockSitePositions: { 'https://musicbrainz.org': 'bottom-center' },
+            },
+        }),
+        callbacks: {},
+    });
+
+    const toolbarRoot = ui.getToolbarShadowRoot();
+
+    // 1. bottom-center overflowing right edge (420 > 412 - 8) shifts inward via marginLeft
+    activeDropdownRect = { left: 230, right: 420, width: 190, top: 700, bottom: 840, height: 140 };
+    toolbarRoot.querySelector('[data-folder-id="folder:edit"]').click();
+    let dropdown = toolbarRoot.querySelector('.bt-dropdown');
+    assert.ok(dropdown);
+    assert.equal(dropdown.classList.contains('bt-dropdown-center'), true);
+    assert.equal(dropdown.style.marginLeft, '-16px');
+    assert.ok(!dropdown.style.marginRight);
+
+    // 2. top-left overflowing left (< 8) and overflowing right (> 404) shifts via marginLeft
+    activeDropdownRect = { left: -10, right: 180, width: 190, top: 50, bottom: 190, height: 140 };
+    ui.update({
+        settings: {
+            hotkey: 'Alt+B',
+            dockSiteExpanded: { 'https://musicbrainz.org': true },
+            dockSitePositions: { 'https://musicbrainz.org': 'top-left' },
+        },
+    });
+    dropdown = toolbarRoot.querySelector('.bt-dropdown');
+    assert.ok(dropdown);
+    assert.equal(dropdown.classList.contains('bt-dropdown-left'), true);
+    assert.equal(dropdown.style.marginLeft, '18px');
+    assert.ok(!dropdown.style.marginRight);
+
+    activeDropdownRect = { left: 230, right: 428, width: 198, top: 50, bottom: 190, height: 140 };
+    ui.update({
+        settings: {
+            hotkey: 'Alt+B',
+            dockSiteExpanded: { 'https://musicbrainz.org': true },
+            dockSitePositions: { 'https://musicbrainz.org': 'top-left' },
+        },
+    });
+    dropdown = toolbarRoot.querySelector('.bt-dropdown');
+    assert.equal(dropdown.style.marginLeft, '-24px');
+    assert.ok(!dropdown.style.marginRight);
+
+    // 3. bottom-right overflowing left edge (rect.left = -20 < 8) must shift right via marginRight (-28px), NOT marginLeft
+    activeDropdownRect = { left: -20, right: 170, width: 190, top: 700, bottom: 840, height: 140 };
+    ui.update({
+        settings: {
+            hotkey: 'Alt+B',
+            dockSiteExpanded: { 'https://musicbrainz.org': true },
+            dockSitePositions: { 'https://musicbrainz.org': 'bottom-right' },
+        },
+    });
+    dropdown = toolbarRoot.querySelector('.bt-dropdown');
+    assert.ok(dropdown);
+    assert.equal(dropdown.classList.contains('bt-dropdown-right'), true);
+    assert.equal(dropdown.style.marginRight, '-28px');
+    assert.ok(!dropdown.style.marginLeft);
+
+    // 4. top-right overflowing right edge (420 > 412 - 8) shifts inward via positive marginRight (16px)
+    activeDropdownRect = { left: 230, right: 420, width: 190, top: 50, bottom: 190, height: 140 };
+    ui.update({
+        settings: {
+            hotkey: 'Alt+B',
+            dockSiteExpanded: { 'https://musicbrainz.org': true },
+            dockSitePositions: { 'https://musicbrainz.org': 'top-right' },
+        },
+    });
+    dropdown = toolbarRoot.querySelector('.bt-dropdown');
+    assert.equal(dropdown.classList.contains('bt-dropdown-right'), true);
+    assert.equal(dropdown.style.marginRight, '16px');
+    assert.ok(!dropdown.style.marginLeft);
+
+    ui.destroy();
+});
+
 test('Hiding dock on current origin unmounts toolbarHost while Manager and Command Palette keep toggle reachable', () => {
     const { doc, win } = createDomEnvironment('https://musicbrainz.org/release/123');
     const stateChanges = [];
