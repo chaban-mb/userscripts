@@ -33,4 +33,5 @@ description: Modern JavaScript standards, asynchronous error handling, declarati
 
 - **Clean Baseline Principle**: Never write production code to compensate for dirty or contaminated browser DOM state (e.g., elements injected by previous script runs or cancelled tests). Reload the target tab to restore a clean baseline rather than introducing defensive workarounds into production code.
 - **Zero Transient Artifacts**: Production code must never contain temporary inspection helpers or scratch hacks.
+- **Trusted Types & Safe DOM Sinks**: Host pages may enforce strict Trusted Types (`require-trusted-types-for 'script'`, e.g., YouTube). Never assign strings to HTML or script injection sinks (`innerHTML`, `outerHTML`, `insertAdjacentHTML`, `document.write`), including `.innerHTML = ''` for clearing. Clear containers via `replaceChildren()` (falling back to `removeChild(firstChild)`), build DOM nodes with `createElement()` / `textContent` / `append()`, and wrap inline `<script>` payloads in a `trustedTypes` (`createPolicy` -> `createScript`) fallback.
 
