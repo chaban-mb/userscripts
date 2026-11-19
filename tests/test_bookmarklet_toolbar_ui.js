@@ -1076,7 +1076,9 @@ test('Library search matches local/pack sources, cards use ellipsis/hover expans
         uiSource,
         /\.bt-library-card:hover\s+\.bt-card-title[\s\S]*?white-space:\s*normal;/
     );
-    assert.match(uiSource, /\.bt-card-tooltip\s*\{/);
+    assert.match(uiSource, /\.bt-card-tooltip\s*\{[^}]*z-index:\s*5;/s);
+    assert.match(uiSource, /\.bt-library-card:hover\s*\{[^}]*z-index:\s*9;/s);
+    assert.match(uiSource, /\.bt-library-card:focus-within\s*\{[^}]*z-index:\s*8;/s);
     assert.match(
         uiSource,
         /\.bt-action-btn-primary:hover\s*\{[^}]*background:\s*var\(--bt-primary-hover\);/s
@@ -1191,6 +1193,12 @@ test('Library cards keep single-line ellipsis and show instant tooltip only when
     firstCard.dispatchEvent({ type: 'mouseenter', bubbles: false });
     assert.equal(firstCard.dataset.tooltipPos, 'top');
 
+    // Multi-line wrapped tooltip flips below when card clearance is < tooltipHeight + 10
+    firstTooltip.getBoundingClientRect = () => ({ top: 68, bottom: 120, left: 40, right: 360, width: 320, height: 52 });
+    firstCard.getBoundingClientRect = () => ({ top: 130, bottom: 164, left: 0, right: 400, width: 400, height: 34 });
+    firstCard.dispatchEvent({ type: 'mouseenter', bubbles: false });
+    assert.equal(firstCard.dataset.tooltipPos, 'bottom');
+
     // Non-truncated short title does not trigger tooltip
     const secondCard = cards[1];
     const secondTitle = secondCard.querySelector('.bt-card-title');
@@ -1211,6 +1219,14 @@ test('Library cards keep single-line ellipsis and show instant tooltip only when
     assert.equal(libraryGrid.dataset.dragging, undefined);
     secondCard.dispatchEvent({ type: 'mouseenter', bubbles: false });
     assert.equal(secondCard.dataset.tooltipSuppressed, 'false');
+
+    // Dropping a card clears grid.dataset.dragging even without a subsequent dragend
+    const toolbarStrip = overlayRoot.getElementById('toolbar-strip');
+    assert.ok(toolbarStrip);
+    firstCard.dispatchEvent({ type: 'dragstart', bubbles: true });
+    assert.equal(libraryGrid.dataset.dragging, 'true');
+    toolbarStrip.dispatchEvent({ type: 'drop', bubbles: true });
+    assert.equal(libraryGrid.dataset.dragging, undefined);
 
     // Opening info popover suppresses tooltip on that card
     const infoBtn = overlayRoot
