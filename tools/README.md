@@ -135,6 +135,7 @@ node tools/dev_server.js
 | `--host <ip>` | `127.0.0.1` (or `process.env.HOST`) | Server host IP. |
 | `--separate` | `false` | Tag `@name` with `[DEV]` to install side-by-side as a separate script. |
 | `--name-tag <tag>` | `[DEV]` (when `--separate`) | Custom suffix appended to the `@name` metadata field. |
+| `--no-inline` | `false` | Keep relative `../lib/*.js` `@require` directives instead of inlining them on the fly. |
 | `--no-tag` | `false` | Serve raw source files without injecting dev `@version` metadata. |
 | `--kill`, `--force` | `false` | Terminate any existing process occupying the port before starting. |
 | `--find-port` | `false` | Automatically select the next available port if requested port is in use. |
@@ -224,10 +225,17 @@ Key subcommands:
 
 ## Distribution Builder (`build_dist.py`)
 
-Inlines local `lib/` dependencies and rewrites update URLs for standalone distribution on `dist` (invoked automatically by `.github/workflows/dist.yml` on pushes to `main`, or locally as a dry-run / `--print`).
+Inlines local `lib/` dependencies and rewrites update URLs for standalone distribution on `dist` (invoked automatically by `.github/workflows/dist.yml` on pushes to `main`, or locally via dry-run, `--print`, or `--out`).
 
 ```bash
+# Dry-run across all scripts
 python tools/build_dist.py
+
+# Build a single standalone script into local dist/ folder
+python tools/build_dist.py --out dist --script "src/Site Bookmarklet Toolbar.user.js"
+
+# Build all standalone scripts into local dist/ folder
+python tools/build_dist.py --out dist
 ```
 
 ---

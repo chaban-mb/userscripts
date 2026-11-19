@@ -59,7 +59,7 @@ Pushing to `main` triggers GitHub Actions to inline shared `lib/` dependencies a
 | Rationalization | Reality / Required Action |
 | :--- | :--- |
 | "It's a one-line fix, I'll push straight to `main`." | Run `python tools/workflow.py release --dry-run` then `--non-interactive --push` (or `--files <path>` for non-script files) so checks and branch isolation run. |
-| "I'll edit `dist/*.user.js` directly to test quickly." | Edit `src/*.user.js` or `lib/*.js` only; run `tools/build_dist.py` if you need a local `dist/` build. |
+| "I'll edit `dist/*.user.js` directly to test quickly." | Edit `src/*.user.js` or `lib/*.js` only; run `python tools/build_dist.py --out dist --script "<path>"` if you need a local `dist/` build. |
 | "Every commit on my topic branch needs a new `@version`." | Bump `@version` only at the start or end of the topic branch, or let `workflow.py release` fold it. |
 | "I'll abbreviate the script name as the scope." | Look up the exact `<script-slug>` in `references/commit-scopes.md`; `workflow.py` relies on exact scope matching. |
 

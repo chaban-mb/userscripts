@@ -10,7 +10,7 @@ description: >-
 
 # Violentmonkey Live-Sync & Diagnostics
 
-Sync local script edits to Violentmonkey through `tools/dev_server.js` with **"Track external edits"** so `@require` resolution and extension storage stay consistent with git. Use `/chrome-devtools` for general browser tab, DOM, and console inspection.
+Sync local script edits to Violentmonkey through `tools/dev_server.js` with **"Track external edits"** so changes work across Violentmonkey Sync (via on-the-fly `../lib/*.js` inlining and live `lib/` ETag tracking) and keep extension storage consistent with git. Use `/chrome-devtools` for general browser tab, DOM, and console inspection.
 
 ## Live Sync & Testing (`dev_server.js`)
 
