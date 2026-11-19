@@ -1046,12 +1046,20 @@ test('UI avoids innerHTML so strict TrustedHTML sites (e.g. YouTube) work cleanl
     ui.openManager();
 
     const overlayRoot = ui.getOverlayShadowRoot();
-    const infoBtn = overlayRoot
+    const cardsBeforePopover = overlayRoot.querySelectorAll('.bt-library-card');
+    assert.ok(cardsBeforePopover.length > 0);
+    for (const card of cardsBeforePopover) {
+        assert.equal(card.querySelector('.bt-subtitle'), null);
+    }
+
+    const infoBtn = cardsBeforePopover[0]
         .querySelectorAll('button')
         .find((b) => b.textContent === 'ⓘ');
     assert.ok(infoBtn);
     infoBtn.click();
-    assert.ok(overlayRoot.querySelector('.bt-popover'));
+    const popover = overlayRoot.querySelectorAll('.bt-library-card')[0].querySelector('.bt-popover');
+    assert.ok(popover);
+    assert.ok(popover.textContent.includes('*://*.musicbrainz.org/*'));
 
     ui.destroy();
 });
