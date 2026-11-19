@@ -605,3 +605,83 @@ test('matchesHotkey and formatHotkeyEvent enforce modifiers, ignore modifier-onl
         true
     );
 });
+
+test('DOCK_SNAP_ZONES, DOCK_EXPAND_MODES, getSiteOrigin, normalizeSettings, and per-site shouldMountToolbar hide check', () => {
+    assert.deepEqual(Core.DOCK_SNAP_ZONES, [
+        'top-left',
+        'top-center',
+        'top-right',
+        'bottom-left',
+        'bottom-center',
+        'bottom-right',
+    ]);
+    assert.equal(Object.isFrozen(Core.DOCK_SNAP_ZONES), true);
+
+    assert.deepEqual(Core.DOCK_EXPAND_MODES, ['both', 'click', 'hover']);
+    assert.equal(Object.isFrozen(Core.DOCK_EXPAND_MODES), true);
+
+    assert.equal(
+        Core.getSiteOrigin('https://musicbrainz.org/release/123?foo=1'),
+        'https://musicbrainz.org'
+    );
+    assert.equal(Core.getSiteOrigin('http://localhost:3000/app'), 'http://localhost:3000');
+    assert.equal(Core.getSiteOrigin(''), '');
+    assert.equal(Core.getSiteOrigin(null), '');
+    assert.equal(Core.getSiteOrigin('not-a-url'), '');
+    assert.equal(Core.getSiteOrigin('about:blank'), '');
+
+    assert.deepEqual(Core.normalizeSettings(null), {
+        hotkey: 'Alt+B',
+        dockExpandMode: 'both',
+        dockSitePositions: {},
+        dockSiteExpanded: {},
+        dockSiteHidden: {},
+    });
+
+    assert.deepEqual(
+        Core.normalizeSettings({
+            hotkey: 'Ctrl+K',
+            dockExpandMode: 'invalid',
+            dockSitePositions: {
+                'https://a.test': 'top-left',
+                'https://b.test': 'bad-zone',
+            },
+            dockSiteExpanded: { 'https://a.test': true },
+            dockSiteHidden: { 'https://c.test': true },
+        }),
+        {
+            hotkey: 'Ctrl+K',
+            dockExpandMode: 'both',
+            dockSitePositions: { 'https://a.test': 'top-left' },
+            dockSiteExpanded: { 'https://a.test': true },
+            dockSiteHidden: { 'https://c.test': true },
+        }
+    );
+
+    const scriptsMap = Core.buildScriptsMap(
+        {},
+        {
+            'local:mb': {
+                id: 'local:mb',
+                source: 'local',
+                name: 'MB Helper',
+                match: ['*://*.musicbrainz.org/*'],
+                code: 'void 0;',
+            },
+        }
+    );
+    const layout = [{ type: 'script', scriptId: 'local:mb' }];
+
+    assert.equal(
+        Core.shouldMountToolbar(layout, scriptsMap, 'https://musicbrainz.org/release/123', {
+            dockSiteHidden: { 'https://musicbrainz.org': true },
+        }),
+        false
+    );
+    assert.equal(
+        Core.shouldMountToolbar(layout, scriptsMap, 'https://beta.musicbrainz.org/release/123', {
+            dockSiteHidden: { 'https://musicbrainz.org': true },
+        }),
+        true
+    );
+});
