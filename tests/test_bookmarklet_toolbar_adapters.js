@@ -204,75 +204,55 @@ function createMockWindow() {
     };
 }
 
-test('resolveMountAdapter selects musicbrainz adapter for *.musicbrainz.org and *.musicbrainz.eu when header DOM exists, and fallback otherwise', () => {
+test('resolveMountAdapter always returns the generic fallback dock adapter across MusicBrainz and other sites', () => {
     const mbDoc = createMockMBDocument({ includeHeader: true, includeSearch: true });
 
     const a1 = Adapters.resolveMountAdapter('https://musicbrainz.org/release/abc', mbDoc);
-    assert.equal(a1.id, 'musicbrainz');
+    assert.equal(a1.id, 'fallback');
 
     const a2 = Adapters.resolveMountAdapter('https://beta.musicbrainz.org/artist/abc', mbDoc);
-    assert.equal(a2.id, 'musicbrainz');
+    assert.equal(a2.id, 'fallback');
 
     const a3 = Adapters.resolveMountAdapter('https://musicbrainz.eu/recording/123', mbDoc);
-    assert.equal(a3.id, 'musicbrainz');
+    assert.equal(a3.id, 'fallback');
 
-    // Non-MB site falls back even if similar DOM exists
     const ytAdapter = Adapters.resolveMountAdapter('https://www.youtube.com/watch?v=123', mbDoc);
     assert.equal(ytAdapter.id, 'fallback');
 
-    // MB URL without .header .right .top (e.g. 502 error page) falls back to fallback adapter
     const errorPageDoc = createMockMBDocument({ includeHeader: false });
     const errAdapter = Adapters.resolveMountAdapter('https://musicbrainz.org/release/abc', errorPageDoc);
     assert.equal(errAdapter.id, 'fallback');
 
-    // MB URL with .header .right .top but missing .search-container falls back
-    const missingSearchDoc = createMockMBDocument({ includeHeader: true, includeSearch: false });
-    const noSearchAdapter = Adapters.resolveMountAdapter('https://musicbrainz.org/release/abc', missingSearchDoc);
-    assert.equal(noSearchAdapter.id, 'fallback');
+    assert.equal(Adapters.SITE_ADAPTERS.length, 1);
+    assert.equal(Adapters.SITE_ADAPTERS.musicbrainz, undefined);
 });
 
-test('musicbrainz.mount inserts host directly before .search-container without perturbing surrounding MB elements, is idempotent, and unmounts cleanly', () => {
+test('fallback.mount on MusicBrainz mounts fixed dock on document.body without mutating .header .right .top', () => {
     const doc = createMockMBDocument({ includeHeader: true, includeSearch: true });
     const { topRow, bottomRow, linksContainer, searchContainer } = doc._elements;
     const hostEl = createMockElement('DIV', 'bt-host');
 
-    const mbAdapter = Adapters.resolveMountAdapter('https://musicbrainz.org/release/abc', doc);
-    assert.equal(mbAdapter.id, 'musicbrainz');
-
     topRow.style.cssText = 'color: rgb(17, 24, 39);';
     topRow.style.display = 'block';
 
-    mbAdapter.mount(doc, hostEl);
+    const adapter = Adapters.resolveMountAdapter('https://musicbrainz.org/release/abc', doc);
+    assert.equal(adapter.id, 'fallback');
 
-    // Order in .header .right .top must be: [linksContainer, hostEl, searchContainer]
-    assert.deepEqual(topRow.children, [linksContainer, hostEl, searchContainer]);
-    assert.equal(linksContainer.textContent, 'User Links');
-    assert.equal(searchContainer.textContent, 'Search Input');
-    assert.equal(bottomRow.textContent, 'Bottom Nav Links');
+    assert.equal(adapter.mount(doc, hostEl), true);
+    assert.equal(hostEl.parentNode, doc.body);
+    assert.equal(hostEl.style.position, 'fixed');
+    assert.equal(hostEl.style.zIndex, '2147483640');
 
-    // Flex styles applied on topRow and hostEl
-    assert.equal(topRow.style.display, 'flex');
-    assert.equal(topRow.style.alignItems, 'center');
-    assert.equal(hostEl.style.display, 'inline-flex');
-    assert.equal(hostEl.style.flex, '1 1 auto');
-    assert.equal(hostEl.style.minWidth, '0');
-
-    // Re-mounting is idempotent and does not overwrite the saved original topRow styles
-    mbAdapter.mount(doc, hostEl);
-    assert.deepEqual(topRow.children, [linksContainer, hostEl, searchContainer]);
-
-    // Unmount removes hostEl cleanly and restores topRow's original inline style.cssText
-    mbAdapter.unmount(doc, hostEl);
+    // .header .right .top children and inline styles remain untouched
     assert.deepEqual(topRow.children, [linksContainer, searchContainer]);
-    assert.equal(hostEl.parentNode, null);
     assert.equal(topRow.style.cssText, 'color: rgb(17, 24, 39);');
     assert.equal(topRow.style.display, 'block');
-    assert.equal(topRow.style.alignItems, '');
+    assert.equal(bottomRow.textContent, 'Bottom Nav Links');
 
-    // Re-mounting after unmount restores exact position before .search-container
-    mbAdapter.mount(doc, hostEl);
-    assert.deepEqual(topRow.children, [linksContainer, hostEl, searchContainer]);
-    assert.equal(topRow.style.display, 'flex');
+    adapter.unmount(doc, hostEl);
+    assert.equal(hostEl.parentNode, null);
+    assert.deepEqual(topRow.children, [linksContainer, searchContainer]);
+    assert.equal(topRow.style.cssText, 'color: rgb(17, 24, 39);');
 });
 
 test('fallback.mount attaches fixed bottom-right host to document.body or document.documentElement and unmounts cleanly', () => {

@@ -692,9 +692,13 @@ test('Running on unmatched URL (https://example.com/) syncs bundled pack (25 scr
     assert.equal(doc.querySelector('#userjs-bt-overlay-host'), null);
     assert.equal(doc.body.children.length, 0);
 
-    // 4. GM.registerMenuCommand registered both menu items
+    // 4. GM.registerMenuCommand registered all three menu items
     const captions = menuCommands.map((m) => m.caption);
-    assert.deepEqual(captions, ['Open Command Palette', 'Open Bookmarklet Manager']);
+    assert.deepEqual(captions, [
+        'Open Command Palette',
+        'Open Bookmarklet Manager',
+        'Toggle Dock on This Site',
+    ]);
 
     // 5. Invoking 'Open Command Palette' lazily mounts overlay Shadow DOM while toolbar stays unmounted
     menuCommands[0].onClick();
@@ -748,10 +752,12 @@ test('Entrypoint mounts toolbar on matched URL, handles global hotkeys safely, p
     new vm.Script(inlinedCode).runInContext(context);
     await flushAsync();
 
-    // 1. Toolbar mounted in MusicBrainz header because approve_all_edits is pinned and matches musicbrainz.org
+    // 1. Toolbar mounted as generic fixed dock on doc.body (leaving MusicBrainz header untouched)
     const toolbarHost = doc.querySelector('#userjs-bt-toolbar-host');
     assert.ok(toolbarHost, 'Expected toolbar host to mount on matched MusicBrainz URL');
-    assert.equal(toolbarHost.parentNode.className, 'top');
+    assert.equal(toolbarHost.parentNode, doc.body);
+    const mbTopRow = doc.querySelector('.header .right .top');
+    assert.equal(mbTopRow.children.length, 2);
 
     //Overlay not mounted until opened
     assert.equal(doc.querySelector('#userjs-bt-overlay-host'), null);
@@ -801,7 +807,13 @@ test('Entrypoint mounts toolbar on matched URL, handles global hotkeys safely, p
         bubbles: true,
     });
     await flushAsync();
-    assert.deepEqual(store.get('UserJS.BookmarkletToolbar.Settings'), { hotkey: 'Shift+B' });
+    assert.deepEqual(store.get('UserJS.BookmarkletToolbar.Settings'), {
+        hotkey: 'Shift+B',
+        dockExpandMode: 'both',
+        dockSitePositions: {},
+        dockSiteExpanded: {},
+        dockSiteHidden: {},
+    });
     assert.equal(
         overlayHost.shadowRoot.getElementById('palette-backdrop').classList.contains('hidden'),
         true
@@ -856,4 +868,66 @@ test('Entrypoint mounts toolbar on matched URL, handles global hotkeys safely, p
     win.dispatchEvent({ type: 'popstate' });
     await flushAsync();
     assert.ok(doc.querySelector('#userjs-bt-toolbar-host'));
+});
+
+test('Toggle Dock on This Site menu command flips dockSiteHidden[origin], persists settings, and unmounts/remounts dock', async () => {
+    const inlinedCode = buildInlinedUserscript();
+    const { doc, win, MockMutationObserver } = createDomEnvironment(
+        'https://musicbrainz.org/release/123',
+        { includeMbHeader: true }
+    );
+
+    const { GM, store, menuCommands } = createMockGM({
+        'UserJS.BookmarkletToolbar.Layout': [
+            { type: 'script', scriptId: 'pack:chaban-bookmarklets/approve_all_edits' },
+        ],
+    });
+
+    const context = vm.createContext({
+        window: win,
+        document: doc,
+        location: win.location,
+        history: win.history,
+        MutationObserver: MockMutationObserver,
+        GM,
+        URL,
+        Blob,
+        console: {
+            debug() {},
+            info() {},
+            warn() {},
+            error() {},
+        },
+        setTimeout,
+        clearTimeout,
+        structuredClone,
+    });
+
+    new vm.Script(inlinedCode).runInContext(context);
+    await flushAsync();
+
+    // Initially mounted on doc.body
+    assert.ok(doc.querySelector('#userjs-bt-toolbar-host'));
+    assert.equal(doc.querySelector('#userjs-bt-toolbar-host').parentNode, doc.body);
+
+    const toggleCmd = menuCommands.find((m) => m.caption === 'Toggle Dock on This Site');
+    assert.ok(toggleCmd, 'Expected Toggle Dock on This Site menu command');
+
+    // First toggle hides dock for https://musicbrainz.org
+    toggleCmd.onClick();
+    await flushAsync();
+
+    assert.equal(doc.querySelector('#userjs-bt-toolbar-host'), null);
+    const savedAfterHide = store.get('UserJS.BookmarkletToolbar.Settings');
+    assert.equal(savedAfterHide.dockSiteHidden['https://musicbrainz.org'], true);
+
+    // Second toggle shows dock again for https://musicbrainz.org
+    toggleCmd.onClick();
+    await flushAsync();
+
+    const remountedHost = doc.querySelector('#userjs-bt-toolbar-host');
+    assert.ok(remountedHost, 'Expected dock to remount after second toggle');
+    assert.equal(remountedHost.parentNode, doc.body);
+    const savedAfterShow = store.get('UserJS.BookmarkletToolbar.Settings');
+    assert.equal(savedAfterShow.dockSiteHidden['https://musicbrainz.org'], false);
 });

@@ -136,19 +136,12 @@
 
         const state = {
             url: getCurrentUrl(),
-            settings: {
-                hotkey: 'Alt+B',
-                ...(isPlainObject(rawSettings) ? rawSettings : {}),
-            },
+            settings: Core.normalizeSettings(rawSettings),
             localScripts: isPlainObject(rawLocalScripts) ? { ...rawLocalScripts } : {},
             layout: Array.isArray(rawLayout) ? rawLayout : [],
             recents: isPlainObject(rawRecents) ? { ...rawRecents } : {},
             packs: {},
         };
-
-        if (typeof state.settings.hotkey !== 'string' || !state.settings.hotkey.trim()) {
-            state.settings.hotkey = 'Alt+B';
-        }
 
         const packSyncPromises = [];
         for (let i = 0; i < BundledPacks.length; i += 1) {
@@ -202,16 +195,7 @@
         }
 
         async function saveSettings(nextSettings) {
-            state.settings = {
-                hotkey: 'Alt+B',
-                ...(isPlainObject(nextSettings) ? nextSettings : {}),
-            };
-            if (
-                typeof state.settings.hotkey !== 'string' ||
-                !state.settings.hotkey.trim()
-            ) {
-                state.settings.hotkey = 'Alt+B';
-            }
+            state.settings = Core.normalizeSettings(nextSettings);
             await safeSetValue(Core.STORAGE_KEYS.settings, state.settings);
         }
 
@@ -323,6 +307,38 @@
                     ui.update({ url: state.url });
                     ui.openManager();
                 });
+                GM.registerMenuCommand('Toggle Dock on This Site', () => {
+                    state.url = getCurrentUrl();
+                    const origin = Core.getSiteOrigin(state.url);
+                    if (!origin) {
+                        return;
+                    }
+                    const nextHidden = !state.settings?.dockSiteHidden?.[origin];
+                    const nextSettings = Core.normalizeSettings({
+                        ...state.settings,
+                        dockSiteHidden: {
+                            ...(state.settings?.dockSiteHidden || {}),
+                            [origin]: nextHidden,
+                        },
+                    });
+                    void saveSettings(nextSettings);
+                    if (
+                        Core.shouldMountToolbar(
+                            state.layout,
+                            getScriptsMap(),
+                            state.url,
+                            state.settings
+                        )
+                    ) {
+                        if (!uiInstance) {
+                            getUI();
+                        } else {
+                            uiInstance.update({ url: state.url, settings: state.settings });
+                        }
+                    } else if (uiInstance) {
+                        uiInstance.update({ url: state.url, settings: state.settings });
+                    }
+                });
             } catch (err) {
                 log.warn('Failed to register menu commands:', err);
             }
@@ -404,7 +420,14 @@
         }
 
         // Fast-path check on startup: only instantiate and mount Toolbar if at least one placed script matches current URL
-        if (Core.shouldMountToolbar(state.layout, getScriptsMap(), state.url)) {
+        if (
+            Core.shouldMountToolbar(
+                state.layout,
+                getScriptsMap(),
+                state.url,
+                state.settings
+            )
+        ) {
             getUI();
         }
 
@@ -422,7 +445,8 @@
             const shouldMount = Core.shouldMountToolbar(
                 state.layout,
                 getScriptsMap(),
-                state.url
+                state.url,
+                state.settings
             );
 
             if (shouldMount) {
@@ -432,11 +456,11 @@
                     const host = uiInstance.getToolbarHost();
                     const hostDetached = !host || !host.parentNode;
                     if (urlChanged || !uiInstance.isToolbarMounted() || hostDetached) {
-                        uiInstance.update({ url: state.url });
+                        uiInstance.update({ url: state.url, settings: state.settings });
                     }
                 }
             } else if (uiInstance && (urlChanged || uiInstance.isToolbarMounted())) {
-                uiInstance.update({ url: state.url });
+                uiInstance.update({ url: state.url, settings: state.settings });
             }
         }
 
