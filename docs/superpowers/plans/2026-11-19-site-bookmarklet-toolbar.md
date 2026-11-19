@@ -44,14 +44,14 @@
 - Consumes: `d:\Documents\git\userscripts\.worktrees\bookmarklets-manifest\src\*.js` (all 22 source files)
 - Produces:
   - `buildManifest({ srcDir, version })` returning `{ schemaVersion: 1, id: 'chaban-bookmarklets', name, version, description, homepage, scripts }`
-  - Valid `bookmarklets.json` file in `d:\Documents\git\userscripts\.worktrees\bookmarklets-manifest\bookmarklets.json` (24 script entries: 18 direct files + 6 expanded same-tab/new-tab pairs + `universalSwitcher` only from `entity_subpage_transformers.js`).
+  - Valid `bookmarklets.json` file in `d:\Documents\git\userscripts\.worktrees\bookmarklets-manifest\bookmarklets.json` (25 script entries: 18 direct files + 6 expanded same-tab/new-tab pairs + `universalSwitcher` only from `entity_subpage_transformers.js`).
 
 - [ ] **Step 1: Write the failing test in `d:\Documents\git\userscripts\.worktrees\bookmarklets-manifest\tests\test_build_manifest.mjs`**
 
 Assert against `buildManifest()`:
 
 - Top-level fields: `schemaVersion === 1`, `id === 'chaban-bookmarklets'`, non-empty `name`, `version`, `description`, `homepage`.
-- Script count is 24: expanded pairs exist for `open_in_harmony` / `open_in_harmony_new_tab`, `sambl_artist` / `sambl_artist_new_tab`, `convert_to_sambl_links` / `convert_to_sambl_links_new_tab`; `entity_subpage_transformers` contributes only `universal_switcher` (not individual entity subpage IIFEs).
+- Script count is 25: expanded pairs exist for `open_in_harmony` / `open_in_harmony_new_tab`, `sambl_artist` / `sambl_artist_new_tab`, `convert_to_sambl_links` / `convert_to_sambl_links_new_tab`; `entity_subpage_transformers` contributes only `universal_switcher` (not individual entity subpage IIFEs).
 - Every script has non-empty `id`, `name`, `description`, non-empty `match` array of strings, and `code` that compiles cleanly under `new vm.Script(script.code)`.
 - Same-tab vs new-tab expanded `code` actually invoke `false` vs `true` respectively (no identical duplicate payloads).
 
@@ -118,7 +118,7 @@ Support CLI args `--source` (defaulting to `../bookmarklets/bookmarklets.json`),
 Run:
 `python d:\Documents\git\userscripts\.worktrees\site-bookmarklet-toolbar\tools\sync_bookmarklets_pack.py --source d:\Documents\git\userscripts\.worktrees\bookmarklets-manifest\bookmarklets.json`
 `python -m unittest d:\Documents\git\userscripts\.worktrees\site-bookmarklet-toolbar\tests\test_sync_bookmarklets_pack.py -v`
-Expected: `lib/BookmarkletToolbarPacks.js` generated with 24 scripts; all tests PASS.
+Expected: `lib/BookmarkletToolbarPacks.js` generated with 25 scripts; all tests PASS.
 
 - [ ] **Step 5: Commit in `d:\Documents\git\userscripts`**
 
@@ -318,7 +318,7 @@ Test in Node VM + mock `GM`:
 
 - Verify `tools/build_dist.py`'s `inline_userscript('src/Site Bookmarklet Toolbar.user.js')` succeeds cleanly, removes `../lib/*` `@require` lines, rewrites URLs to `dist/`, keeps all library code strictly INSIDE the outer `(function () { 'use strict'; ... })();` closure, and compiles with `new vm.Script(inlinedCode)`.
 - Run the script on an unmatched URL (`https://example.com/`) with fresh empty `GM` storage:
-  - Asserts `UserJS.BookmarkletToolbar.Pack.chaban-bookmarklets` is synced (24 scripts) while `Layout` remains `[]` (no auto-pinning).
+  - Asserts `UserJS.BookmarkletToolbar.Pack.chaban-bookmarklets` is synced (25 scripts) while `Layout` remains `[]` (no auto-pinning).
   - Asserts **zero** toolbar DOM host elements are appended to the page (fast-path exit).
   - Asserts `GM.registerMenuCommand` registered both **Open Command Palette** and **Open Bookmarklet Manager**.
 
