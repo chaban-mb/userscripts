@@ -732,12 +732,11 @@ Backups exported from the Manager (**Export** / **Import**) use schema version `
 
 Importing a backup uses **Replace** semantics, validating all `@match` patterns and layout nodes before replacing your active `LocalScripts` and `Layout`.
 
-### Page-Context Execution, CSP & Trusted Types
+### Page-Context Execution & CSP Limitations
 
 Bookmarklets frequently inspect or invoke host-page globals (such as `window.MB._releaseEditor` in the MusicBrainz release editor). To support full page-context access without unsafe `@grant unsafeWindow` coupling, `executeScriptInPage` normalizes `javascript:` URLs and executes code via an ephemeral inline `<script>` element in the page document.
 
 - **Strict CSP Sites:** If a host page enforces a restrictive Content Security Policy (such as `Content-Security-Policy: script-src 'none'` without `'unsafe-inline'`), the browser will block inline `<script>` execution and fire a `securitypolicyviolation` event. The toolbar captures this violation, logs a warning with the `[Bookmarklet Toolbar]` prefix, and displays a non-blocking Shadow DOM toast (`Bookmarklet error: Blocked by page Content Security Policy (...)`).
-- **Trusted Types Sites:** The Shadow DOM UI is built strictly via DOM APIs without `.innerHTML`, and script injection uses a `userjs-bt-toolbar` `TrustedTypes` policy (`createScript`) when `window.trustedTypes` is available. If a host page locks down `trusted-types` policy creation (`require-trusted-types-for 'script'`), the failure is caught cleanly and surfaced via the same console warning and Shadow DOM toast without breaking page scripts.
 
 ### Site Mount Adapter Interface
 

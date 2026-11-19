@@ -46,6 +46,7 @@ This table maps userscripts and codebase components to their canonical commit sc
 | `MusicBrainz Uncheck checkboxes with Esc.user.js` | `mb-uncheck-checkboxes-esc` |
 | `MusicBrainz Warn on significant length differences during recording merge.user.js` | `mb-warn-recording-length-diff` |
 | `SecondHandSongs to MusicBrainz Linker.user.js` | `secondhandsongs-linker` |
+| `Site Bookmarklet Toolbar.user.js` | `bookmarklet-toolbar` |
 | `SoundCloud Metadata Inspector.user.js` | `soundcloud-inspector` |
 | `Spotify MusicBrainz importer.user.js` | `spotify-importer` |
 | `Spotify Release List MusicBrainz Checker.user.js` | `spotify-release-list-musicbrainz-checker` |

@@ -385,3 +385,32 @@ test('executeScriptInPage injects normalized inline <script>, removes it immedia
     assert.equal(runtimeErrors[0], resErr.error);
     assert.equal(doc.head.children.length, 0);
 });
+
+test('executeScriptInPage captures asynchronous securitypolicyviolation queued by Blink after appendChild returns', async () => {
+    const doc = createMockMBDocument({ includeHeader: false });
+    const win = createMockWindow();
+
+    doc.head._onAppendChild = () => {
+        setTimeout(() => {
+            doc.dispatchEvent({
+                type: 'securitypolicyviolation',
+                blockedURI: 'inline',
+                violatedDirective: 'script-src-elem',
+                effectiveDirective: 'script-src-elem',
+            });
+        }, 5);
+    };
+
+    const asyncCspErrors = [];
+    Adapters.executeScriptInPage('javascript:window.__blocked=1', {
+        doc,
+        win,
+        onError: (msg) => asyncCspErrors.push(msg),
+    });
+
+    await new Promise((r) => setTimeout(r, 25));
+
+    assert.equal(asyncCspErrors.length, 1);
+    assert.match(asyncCspErrors[0], /Blocked by page Content Security Policy \(script-src-elem\)/);
+    assert.equal(doc._listeners.get('securitypolicyviolation')?.size || 0, 0);
+});
