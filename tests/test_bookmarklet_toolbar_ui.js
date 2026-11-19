@@ -105,6 +105,16 @@ function createDomEnvironment(initialUrl = 'https://musicbrainz.org/release/123/
             this.children = [];
             this._listeners = new Map();
         }
+        get firstChild() {
+            return this.children[0] || null;
+        }
+        replaceChildren(...nodes) {
+            for (const child of [...this.children]) {
+                child.parentNode = null;
+            }
+            this.children.length = 0;
+            this.append(...nodes);
+        }
         appendChild(child) {
             if (!child) {
                 return child;
@@ -993,6 +1003,55 @@ test('Manager supports Editor modal prefill/validation, In-UI Delete Confirmatio
     ui.openPalette();
     assert.equal(overlayRoot.getElementById('import-backdrop').classList.contains('hidden'), true);
     assert.equal(overlayRoot.getElementById('palette-backdrop').classList.contains('hidden'), false);
+
+    ui.destroy();
+});
+
+test('UI avoids innerHTML so strict TrustedHTML sites (e.g. YouTube) work cleanly', () => {
+    const fs = require('node:fs');
+    const path = require('node:path');
+    const uiSource = fs.readFileSync(
+        path.join(__dirname, '..', 'lib', 'BookmarkletToolbarUI.js'),
+        'utf8'
+    );
+    assert.equal(/\.\s*innerHTML\s*=/.test(uiSource), false);
+
+    const { doc, win } = createDomEnvironment('https://www.youtube.com/watch?v=dQw4w9WgXcQ');
+    const origCreateElement = doc.createElement.bind(doc);
+    doc.createElement = (tag) => {
+        const el = origCreateElement(tag);
+        Object.defineProperty(el, 'innerHTML', {
+            configurable: true,
+            get() {
+                return '';
+            },
+            set() {
+                throw new TypeError("This document requires 'TrustedHTML' assignment.");
+            },
+        });
+        return el;
+    };
+
+    const ui = UI.createToolbarUI({
+        doc,
+        win,
+        initialState: {
+            ...createSampleState('https://www.youtube.com/watch?v=dQw4w9WgXcQ'),
+            layout: [{ type: 'script', scriptId: 'pack:chaban-bookmarklets/approve_all_edits' }],
+        },
+        callbacks: {},
+    });
+
+    ui.openPalette();
+    ui.openManager();
+
+    const overlayRoot = ui.getOverlayShadowRoot();
+    const infoBtn = overlayRoot
+        .querySelectorAll('button')
+        .find((b) => b.textContent === 'ⓘ');
+    assert.ok(infoBtn);
+    infoBtn.click();
+    assert.ok(overlayRoot.querySelector('.bt-popover'));
 
     ui.destroy();
 });
