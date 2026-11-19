@@ -274,6 +274,9 @@ function createDomEnvironment(initialUrl = 'https://musicbrainz.org/release/123/
         getElementById(id) {
             return this.querySelector(`#${id}`);
         }
+        elementFromPoint() {
+            return null;
+        }
     }
 
     class MockElement extends MockNode {
@@ -318,6 +321,16 @@ function createDomEnvironment(initialUrl = 'https://musicbrainz.org/release/123/
             this.shadowRoot = null;
             this.ownerDocument = null;
             this._rect = { left: 0, top: 0, width: 100, height: 28 };
+            this._capturedPointers = new Set();
+        }
+        setPointerCapture(pointerId) {
+            this._capturedPointers.add(pointerId);
+        }
+        releasePointerCapture(pointerId) {
+            this._capturedPointers.delete(pointerId);
+        }
+        hasPointerCapture(pointerId) {
+            return this._capturedPointers.has(pointerId);
         }
         get className() {
             return this._className;
@@ -412,6 +425,8 @@ function createDomEnvironment(initialUrl = 'https://musicbrainz.org/release/123/
     const winListeners = new Map();
     const win = {
         location: { href: initialUrl },
+        innerWidth: 1280,
+        innerHeight: 720,
         _listeners: winListeners,
         addEventListener(type, fn) {
             if (!winListeners.has(type)) {
@@ -438,6 +453,12 @@ function createDomEnvironment(initialUrl = 'https://musicbrainz.org/release/123/
     doc.defaultView = win;
     doc.activeElement = null;
     doc.createElement = createMockElement;
+    doc.createElementNS = (ns, tag) => {
+        const el = createMockElement(tag);
+        el.namespaceURI = ns;
+        return el;
+    };
+    doc.elementFromPoint = () => null;
     doc.head = createMockElement('HEAD');
     doc.body = createMockElement('BODY');
     doc.documentElement = createMockElement('HTML');
@@ -776,7 +797,12 @@ test('Toolbar renders displayLabel, ⚠ indicator for removed scripts, folder dr
     const ui = UI.createToolbarUI({
         doc,
         win,
-        initialState: createSampleState(),
+        initialState: createSampleState({
+            settings: {
+                hotkey: 'Alt+B',
+                dockSiteExpanded: { 'https://musicbrainz.org': true },
+            },
+        }),
         callbacks: {
             onRunScript(scriptId) {
                 ranScripts.push(scriptId);
@@ -837,7 +863,7 @@ test('Command Palette groups Recently Run, Matching Library, and searchable Open
     assert.deepEqual(groupHeaders, ['Recently Run', 'Matching Library', 'Actions']);
 
     const items = paletteList.querySelectorAll('.bt-palette-item');
-    assert.equal(items.length, 5);
+    assert.equal(items.length, 6);
     assert.equal(items[0].classList.contains('bt-palette-item-active'), true);
 
     // ArrowDown moves selection to index 1, calls scrollIntoView on the active item, and Enter runs that script
@@ -1017,9 +1043,7 @@ test('UI avoids innerHTML so strict TrustedHTML sites (e.g. YouTube) work cleanl
     assert.equal(/\.\s*innerHTML\s*=/.test(uiSource), false);
 
     const { doc, win } = createDomEnvironment('https://www.youtube.com/watch?v=dQw4w9WgXcQ');
-    const origCreateElement = doc.createElement.bind(doc);
-    doc.createElement = (tag) => {
-        const el = origCreateElement(tag);
+    const guardTrustedHtml = (el) => {
         Object.defineProperty(el, 'innerHTML', {
             configurable: true,
             get() {
@@ -1031,14 +1055,30 @@ test('UI avoids innerHTML so strict TrustedHTML sites (e.g. YouTube) work cleanl
         });
         return el;
     };
+    const origCreateElement = doc.createElement.bind(doc);
+    doc.createElement = (tag) => guardTrustedHtml(origCreateElement(tag));
+    const origCreateElementNS = doc.createElementNS.bind(doc);
+    doc.createElementNS = (ns, tag) => guardTrustedHtml(origCreateElementNS(ns, tag));
+
+    const ytState = createSampleState({
+        url: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+        localScripts: {
+            'local:yt': {
+                id: 'local:yt',
+                source: 'local',
+                name: 'YT Helper',
+                description: 'YouTube helper',
+                match: ['*://*.youtube.com/*'],
+                code: 'void 0;',
+            },
+        },
+        layout: [{ type: 'script', scriptId: 'local:yt' }],
+    });
 
     const ui = UI.createToolbarUI({
         doc,
         win,
-        initialState: {
-            ...createSampleState('https://www.youtube.com/watch?v=dQw4w9WgXcQ'),
-            layout: [{ type: 'script', scriptId: 'pack:chaban-bookmarklets/approve_all_edits' }],
-        },
+        initialState: ytState,
         callbacks: {},
     });
 
@@ -1090,7 +1130,13 @@ test('Library search matches local/pack sources, cards use ellipsis/hover expans
     const ui = UI.createToolbarUI({
         doc,
         win,
-        initialState: createSampleState('https://musicbrainz.org/release/123'),
+        initialState: createSampleState({
+            url: 'https://musicbrainz.org/release/123',
+            settings: {
+                hotkey: 'Alt+B',
+                dockSiteExpanded: { 'https://musicbrainz.org': true },
+            },
+        }),
         callbacks: {},
     });
 
@@ -1156,7 +1202,13 @@ test('Library cards keep single-line ellipsis and show instant tooltip only when
     const ui = UI.createToolbarUI({
         doc,
         win,
-        initialState: createSampleState('https://musicbrainz.org/release/123'),
+        initialState: createSampleState({
+            url: 'https://musicbrainz.org/release/123',
+            settings: {
+                hotkey: 'Alt+B',
+                dockSiteExpanded: { 'https://musicbrainz.org': true },
+            },
+        }),
         callbacks: {},
     });
 
@@ -1251,4 +1303,595 @@ test('Library cards keep single-line ellipsis and show instant tooltip only when
 
     ui.destroy();
 });
+
+test('Dock defaults to bottom-center and collapsed with Bookmark Bolt SVG until expanded', () => {
+    const { doc, win } = createDomEnvironment('https://musicbrainz.org/release/123');
+    const ui = UI.createToolbarUI({
+        doc,
+        win,
+        initialState: createSampleState({
+            url: 'https://musicbrainz.org/release/123',
+        }),
+        callbacks: {},
+    });
+
+    assert.equal(ui.isToolbarMounted(), true);
+    const toolbarHost = ui.getToolbarHost();
+    const toolbarRoot = ui.getToolbarShadowRoot();
+    const dockContainer = toolbarRoot.getElementById('bt-toolbar-container');
+
+    assert.equal(dockContainer.classList.contains('bt-toolbar-dock'), true);
+    assert.equal(dockContainer.classList.contains('bt-toolbar-inline'), false);
+    assert.equal(toolbarHost.dataset.snapZone, 'bottom-center');
+    assert.equal(toolbarHost.style.bottom, '16px');
+    assert.equal(toolbarHost.style.left, '50%');
+    assert.equal(toolbarHost.style.transform, 'translateX(-50%)');
+
+    const handle = toolbarRoot.querySelector('.bt-dock-handle');
+    assert.ok(handle, 'Expected .bt-dock-handle button');
+    assert.equal(handle.getAttribute('aria-expanded'), 'false');
+
+    const svg = handle.querySelector('svg');
+    assert.ok(svg, 'Expected Bookmark Bolt <svg> inside .bt-dock-handle');
+    assert.equal(svg.namespaceURI, 'http://www.w3.org/2000/svg');
+    assert.equal(svg.getAttribute('viewBox'), '0 0 16 16');
+    assert.ok(handle.querySelector('[data-removed-badge="true"]'), 'Expected removed badge dot on collapsed handle');
+
+    // Collapsed dock hides script/folder/palette buttons
+    assert.equal(toolbarRoot.querySelectorAll('[data-script-id]').length, 0);
+    assert.equal(toolbarRoot.querySelectorAll('[data-folder-id]').length, 0);
+    assert.equal(toolbarRoot.querySelector('[data-action="open-palette"]'), null);
+
+    // Expanding via dockSiteExpanded reveals buttons
+    ui.update({
+        settings: {
+            hotkey: 'Alt+B',
+            dockSiteExpanded: { 'https://musicbrainz.org': true },
+        },
+    });
+    assert.equal(toolbarRoot.querySelector('.bt-dock-handle').getAttribute('aria-expanded'), 'true');
+    assert.ok(toolbarRoot.querySelector('[data-script-id="pack:chaban-bookmarklets/approve_all"]'));
+    assert.ok(toolbarRoot.querySelector('[data-folder-id="folder:edit"]'));
+    assert.ok(toolbarRoot.querySelector('[data-action="open-palette"]'));
+
+    ui.destroy();
+});
+
+test('Clicking .bt-dock-handle toggles dockSiteExpanded[origin] and Manager controls switch between both, click, and hover modes', () => {
+    const { doc, win } = createDomEnvironment('https://musicbrainz.org/release/123');
+    const stateChanges = [];
+    const ui = UI.createToolbarUI({
+        doc,
+        win,
+        initialState: createSampleState({
+            url: 'https://musicbrainz.org/release/123',
+        }),
+        callbacks: {
+            onStateChange(partial) {
+                stateChanges.push(partial);
+            },
+        },
+    });
+
+    const toolbarRoot = ui.getToolbarShadowRoot();
+    const dockContainer = toolbarRoot.getElementById('bt-toolbar-container');
+
+    // 1. Default 'both' mode: hover expands temporarily without state change, leave collapses
+    dockContainer.dispatchEvent({ type: 'mouseenter', bubbles: false });
+    assert.ok(toolbarRoot.querySelector('[data-script-id="pack:chaban-bookmarklets/approve_all"]'));
+    assert.equal(stateChanges.length, 0);
+
+    dockContainer.dispatchEvent({ type: 'mouseleave', bubbles: false });
+    assert.equal(toolbarRoot.querySelectorAll('[data-script-id]').length, 0);
+
+    // Clicking handle toggles pinned expanded state and persists via onStateChange
+    toolbarRoot.querySelector('.bt-dock-handle').click();
+    assert.equal(stateChanges.at(-1).settings.dockSiteExpanded['https://musicbrainz.org'], true);
+    assert.ok(toolbarRoot.querySelector('[data-script-id="pack:chaban-bookmarklets/approve_all"]'));
+
+    // Clicking again unpins and collapses immediately
+    toolbarRoot.querySelector('.bt-dock-handle').click();
+    assert.equal(stateChanges.at(-1).settings.dockSiteExpanded['https://musicbrainz.org'], false);
+    assert.equal(toolbarRoot.querySelectorAll('[data-script-id]').length, 0);
+
+    // 2. Switch to 'click' mode via Manager header selector: hover does NOT expand
+    ui.openManager();
+    const overlayRoot = ui.getOverlayShadowRoot();
+    const clickModeBtn = overlayRoot.querySelector('[data-dock-expand-mode="click"]');
+    assert.ok(clickModeBtn, 'Expected click expand mode button in Manager header');
+    clickModeBtn.click();
+    assert.equal(stateChanges.at(-1).settings.dockExpandMode, 'click');
+
+    dockContainer.dispatchEvent({ type: 'mouseenter', bubbles: false });
+    assert.equal(toolbarRoot.querySelectorAll('[data-script-id]').length, 0);
+    toolbarRoot.querySelector('.bt-dock-handle').click();
+    assert.ok(toolbarRoot.querySelector('[data-script-id="pack:chaban-bookmarklets/approve_all"]'));
+
+    // 3. Switch to 'hover' mode via Manager header selector: hover expands, click does not emit dockSiteExpanded
+    const hoverModeBtn = overlayRoot.querySelector('[data-dock-expand-mode="hover"]');
+    assert.ok(hoverModeBtn, 'Expected hover expand mode button in Manager header');
+    hoverModeBtn.click();
+    assert.equal(stateChanges.at(-1).settings.dockExpandMode, 'hover');
+    assert.equal(toolbarRoot.querySelectorAll('[data-script-id]').length, 0);
+
+    const beforeHoverClicks = stateChanges.length;
+    dockContainer.dispatchEvent({ type: 'mouseenter', bubbles: false });
+    assert.ok(toolbarRoot.querySelector('[data-script-id="pack:chaban-bookmarklets/approve_all"]'));
+    toolbarRoot.querySelector('.bt-dock-handle').click();
+    assert.equal(stateChanges.length, beforeHoverClicks);
+    dockContainer.dispatchEvent({ type: 'mouseleave', bubbles: false });
+    assert.equal(toolbarRoot.querySelectorAll('[data-script-id]').length, 0);
+
+    ui.destroy();
+});
+
+test('Pointer-dragging .bt-dock-handle snaps to nearest of 6 zones beyond 6px, toggles on <= 6px jitter, and cleans up snap guides on pointercancel', () => {
+    const { doc, win } = createDomEnvironment('https://musicbrainz.org/release/123');
+    win.innerWidth = 412;
+    win.innerHeight = 924;
+
+    const stateChanges = [];
+    const ui = UI.createToolbarUI({
+        doc,
+        win,
+        initialState: createSampleState({
+            url: 'https://musicbrainz.org/release/123',
+        }),
+        callbacks: {
+            onStateChange(partial) {
+                stateChanges.push(partial);
+            },
+        },
+    });
+
+    const toolbarHost = ui.getToolbarHost();
+    const toolbarRoot = ui.getToolbarShadowRoot();
+    const handle = toolbarRoot.querySelector('.bt-dock-handle');
+
+    // 1. Drag > 6px toward top-right shows 6 snap zones, highlights top-right, and snaps on pointerup without toggling expand
+    handle.dispatchEvent({
+        type: 'pointerdown',
+        pointerId: 1,
+        button: 0,
+        pointerType: 'touch',
+        clientX: 206,
+        clientY: 890,
+        bubbles: true,
+    });
+    handle.dispatchEvent({
+        type: 'pointermove',
+        pointerId: 1,
+        pointerType: 'touch',
+        clientX: 380,
+        clientY: 36,
+        bubbles: true,
+    });
+
+    const overlayRoot = ui.getOverlayShadowRoot();
+    assert.ok(overlayRoot, 'Expected overlayShadow mounted for snap guides');
+    const snapOverlay = overlayRoot.querySelector('.bt-dock-snap-overlay');
+    assert.ok(snapOverlay, 'Expected .bt-dock-snap-overlay during dock drag');
+    const zones = snapOverlay.querySelectorAll('.bt-dock-snap-zone');
+    assert.equal(zones.length, 6);
+    const topRightZone = snapOverlay.querySelector('[data-snap-zone="top-right"]');
+    assert.ok(topRightZone);
+    assert.equal(topRightZone.classList.contains('bt-dock-snap-zone-active'), true);
+
+    handle.dispatchEvent({
+        type: 'pointerup',
+        pointerId: 1,
+        pointerType: 'touch',
+        clientX: 380,
+        clientY: 36,
+        bubbles: true,
+    });
+
+    assert.equal(overlayRoot.querySelector('.bt-dock-snap-overlay'), null);
+    assert.equal(stateChanges.at(-1).settings.dockSitePositions['https://musicbrainz.org'], 'top-right');
+    assert.notEqual(stateChanges.at(-1).settings.dockSiteExpanded['https://musicbrainz.org'], true);
+    assert.equal(toolbarHost.dataset.snapZone, 'top-right');
+    assert.equal(toolbarHost.style.top, '16px');
+    assert.equal(toolbarHost.style.right, '16px');
+
+    // 2. Movement <= 6px triggers click toggle only (does not open snap guides or change position)
+    const activeHandle = toolbarRoot.querySelector('.bt-dock-handle');
+    activeHandle.dispatchEvent({
+        type: 'pointerdown',
+        pointerId: 2,
+        button: 0,
+        pointerType: 'touch',
+        clientX: 380,
+        clientY: 36,
+        bubbles: true,
+    });
+    activeHandle.dispatchEvent({
+        type: 'pointermove',
+        pointerId: 2,
+        pointerType: 'touch',
+        clientX: 383,
+        clientY: 40,
+        bubbles: true,
+    });
+    assert.equal(overlayRoot.querySelector('.bt-dock-snap-overlay'), null);
+
+    activeHandle.dispatchEvent({
+        type: 'pointerup',
+        pointerId: 2,
+        pointerType: 'touch',
+        clientX: 383,
+        clientY: 40,
+        bubbles: true,
+    });
+    assert.equal(stateChanges.at(-1).settings.dockSiteExpanded['https://musicbrainz.org'], true);
+    assert.equal(stateChanges.at(-1).settings.dockSitePositions['https://musicbrainz.org'], 'top-right');
+
+    // 3. pointercancel cleans up snap guides and keeps previous snap position
+    const changesBeforeCancel = stateChanges.length;
+    const cancelHandle = toolbarRoot.querySelector('.bt-dock-handle');
+    cancelHandle.dispatchEvent({
+        type: 'pointerdown',
+        pointerId: 3,
+        button: 0,
+        pointerType: 'touch',
+        clientX: 380,
+        clientY: 36,
+        bubbles: true,
+    });
+    cancelHandle.dispatchEvent({
+        type: 'pointermove',
+        pointerId: 3,
+        pointerType: 'touch',
+        clientX: 30,
+        clientY: 880,
+        bubbles: true,
+    });
+    assert.ok(overlayRoot.querySelector('.bt-dock-snap-overlay'));
+
+    cancelHandle.dispatchEvent({
+        type: 'pointercancel',
+        pointerId: 3,
+        pointerType: 'touch',
+        clientX: 30,
+        clientY: 880,
+        bubbles: true,
+    });
+    assert.equal(overlayRoot.querySelector('.bt-dock-snap-overlay'), null);
+    assert.equal(stateChanges.length, changesBeforeCancel);
+    assert.equal(toolbarHost.dataset.snapZone, 'top-right');
+
+    ui.destroy();
+});
+
+test('Folder dropdown opens upward (bt-dropdown-up) on bottom-* snap zones and downward on top-* snap zones with horizontal alignment', () => {
+    const { doc, win } = createDomEnvironment('https://musicbrainz.org/release/123');
+    const ui = UI.createToolbarUI({
+        doc,
+        win,
+        initialState: createSampleState({
+            url: 'https://musicbrainz.org/release/123',
+            settings: {
+                hotkey: 'Alt+B',
+                dockSiteExpanded: { 'https://musicbrainz.org': true },
+                dockSitePositions: { 'https://musicbrainz.org': 'bottom-center' },
+            },
+        }),
+        callbacks: {},
+    });
+
+    const toolbarRoot = ui.getToolbarShadowRoot();
+    toolbarRoot.querySelector('[data-folder-id="folder:edit"]').click();
+    let dropdown = toolbarRoot.querySelector('.bt-dropdown');
+    assert.ok(dropdown);
+    assert.equal(dropdown.classList.contains('bt-dropdown-up'), true);
+    assert.equal(dropdown.classList.contains('bt-dropdown-center'), true);
+
+    ui.update({
+        settings: {
+            hotkey: 'Alt+B',
+            dockSiteExpanded: { 'https://musicbrainz.org': true },
+            dockSitePositions: { 'https://musicbrainz.org': 'top-left' },
+        },
+    });
+    dropdown = toolbarRoot.querySelector('.bt-dropdown');
+    assert.ok(dropdown);
+    assert.equal(dropdown.classList.contains('bt-dropdown-up'), false);
+    assert.equal(dropdown.classList.contains('bt-dropdown-left'), true);
+
+    ui.update({
+        settings: {
+            hotkey: 'Alt+B',
+            dockSiteExpanded: { 'https://musicbrainz.org': true },
+            dockSitePositions: { 'https://musicbrainz.org': 'top-right' },
+        },
+    });
+    dropdown = toolbarRoot.querySelector('.bt-dropdown');
+    assert.ok(dropdown);
+    assert.equal(dropdown.classList.contains('bt-dropdown-up'), false);
+    assert.equal(dropdown.classList.contains('bt-dropdown-right'), true);
+
+    ui.destroy();
+});
+
+test('Hiding dock on current origin unmounts toolbarHost while Manager and Command Palette keep toggle reachable', () => {
+    const { doc, win } = createDomEnvironment('https://musicbrainz.org/release/123');
+    const stateChanges = [];
+    const ui = UI.createToolbarUI({
+        doc,
+        win,
+        initialState: createSampleState({
+            url: 'https://musicbrainz.org/release/123',
+        }),
+        callbacks: {
+            onStateChange(partial) {
+                stateChanges.push(partial);
+            },
+        },
+    });
+
+    assert.equal(ui.isToolbarMounted(), true);
+
+    ui.openManager();
+    const overlayRoot = ui.getOverlayShadowRoot();
+    const toggleBtn = overlayRoot.getElementById('btn-toggle-dock-site');
+    assert.ok(toggleBtn, 'Expected #btn-toggle-dock-site in Manager header');
+    assert.match(toggleBtn.textContent, /Hide dock on this site/i);
+
+    toggleBtn.click();
+    assert.equal(stateChanges.at(-1).settings.dockSiteHidden['https://musicbrainz.org'], true);
+    assert.equal(ui.isToolbarMounted(), false);
+    assert.equal(doc.querySelector('#userjs-bt-toolbar-host'), null);
+    assert.match(toggleBtn.textContent, /Show dock on this site/i);
+
+    // Re-enable via Command Palette action
+    ui.openPalette();
+    const paletteSearch = overlayRoot.getElementById('palette-search');
+    paletteSearch.value = 'dock';
+    paletteSearch.dispatchEvent({ type: 'input', bubbles: true });
+
+    const paletteList = overlayRoot.getElementById('palette-list');
+    const dockAction = paletteList
+        .querySelectorAll('.bt-palette-item')
+        .find((el) => el.dataset.commandId === 'toggle-dock-site');
+    assert.ok(dockAction, 'Expected toggle-dock-site action in Command Palette');
+    assert.match(dockAction.textContent, /Show Dock on Current Site/i);
+
+    dockAction.click();
+    assert.equal(stateChanges.at(-1).settings.dockSiteHidden['https://musicbrainz.org'], false);
+    assert.equal(ui.isToolbarMounted(), true);
+    assert.ok(doc.querySelector('#userjs-bt-toolbar-host'));
+
+    ui.destroy();
+});
+
+test('Responsive CSS rules cover 412px modals, palette items, popovers, wrapping headers, fluid search, and touch-action handles', () => {
+    const fs = require('node:fs');
+    const path = require('node:path');
+    const uiSource = fs.readFileSync(
+        path.join(__dirname, '..', 'lib', 'BookmarkletToolbarUI.js'),
+        'utf8'
+    );
+
+    assert.match(uiSource, /\.bt-manager-body\s*\{[^}]*overflow-x:\s*hidden;[^}]*min-width:\s*0;/s);
+    assert.match(uiSource, /\.bt-modal\s*\{[^}]*min-width:\s*0;/s);
+    assert.match(uiSource, /calc\(100vw\s*-\s*24px\)/);
+    assert.match(uiSource, /100dvh/);
+    assert.match(uiSource, /\.bt-palette-item\s*\{[^}]*min-width:\s*0;[^}]*overflow:\s*hidden;/s);
+    assert.match(uiSource, /\.bt-popover\s*\{[^}]*max-width:\s*calc\(100vw\s*-\s*48px\);/s);
+    assert.match(uiSource, /\.bt-grip\s*\{[^}]*touch-action:\s*none;/s);
+    assert.match(uiSource, /\.bt-dock-handle\s*\{[^}]*touch-action:\s*none;/s);
+    assert.doesNotMatch(uiSource, /mgrSearch\.style\.width\s*=\s*'236px'/);
+
+    const { doc, win } = createDomEnvironment('https://musicbrainz.org/release/123');
+    const ui = UI.createToolbarUI({
+        doc,
+        win,
+        initialState: createSampleState({
+            url: 'https://musicbrainz.org/release/123',
+        }),
+        callbacks: {},
+    });
+    ui.openManager();
+    const overlayRoot = ui.getOverlayShadowRoot();
+    const mgrSearch = overlayRoot.getElementById('mgr-search');
+    assert.equal(mgrSearch.classList.contains('bt-mgr-search'), true);
+    const header = overlayRoot.querySelector('.bt-modal-header');
+    assert.ok(header.querySelectorAll('.bt-row-wrap').length >= 2);
+    ui.destroy();
+});
+
+test('Pointer-event touch drag on Library card .bt-grip pins script to Toolbar and cleans up ghost pill and feedback on pointercancel', () => {
+    const { doc, win } = createDomEnvironment('https://musicbrainz.org/release/123');
+    const stateChanges = [];
+    const ui = UI.createToolbarUI({
+        doc,
+        win,
+        initialState: createSampleState({
+            url: 'https://musicbrainz.org/release/123',
+        }),
+        callbacks: {
+            onStateChange(partial) {
+                stateChanges.push(partial);
+            },
+        },
+    });
+
+    ui.openManager();
+    const overlayRoot = ui.getOverlayShadowRoot();
+    const libraryGrid = overlayRoot.getElementById('library-grid');
+    const toolbarStrip = overlayRoot.getElementById('toolbar-strip');
+    const dragHint = overlayRoot.getElementById('drag-hint');
+
+    const unpinnedCard = overlayRoot.querySelector('[data-library-card="pack:chaban-bookmarklets/pseudo_release"]');
+    assert.ok(unpinnedCard);
+    const grip = unpinnedCard.querySelector('.bt-grip');
+    assert.ok(grip);
+
+    overlayRoot.elementFromPoint = (x, y) => (y <= 150 ? toolbarStrip : unpinnedCard);
+
+    // 1. Touch drag > 6px over #toolbar-strip shows ghost pill and drop feedback, and pins on pointerup
+    grip.dispatchEvent({
+        type: 'pointerdown',
+        pointerId: 10,
+        button: 0,
+        pointerType: 'touch',
+        clientX: 40,
+        clientY: 420,
+        bubbles: true,
+    });
+    grip.dispatchEvent({
+        type: 'pointermove',
+        pointerId: 10,
+        pointerType: 'touch',
+        clientX: 160,
+        clientY: 110,
+        bubbles: true,
+    });
+
+    const ghost = overlayRoot.querySelector('.bt-touch-ghost');
+    assert.ok(ghost, 'Expected floating .bt-touch-ghost pill during touch drag');
+    assert.match(ghost.textContent, /Convert to pseudo-release/);
+    assert.equal(libraryGrid.dataset.dragging, 'true');
+    assert.equal(toolbarStrip.classList.contains('drop-active-zone'), true);
+
+    grip.dispatchEvent({
+        type: 'pointerup',
+        pointerId: 10,
+        pointerType: 'touch',
+        clientX: 160,
+        clientY: 110,
+        bubbles: true,
+    });
+
+    assert.equal(overlayRoot.querySelector('.bt-touch-ghost'), null);
+    assert.equal(libraryGrid.dataset.dragging, undefined);
+    assert.equal(toolbarStrip.classList.contains('drop-active-zone'), false);
+    const latestLayoutChange = stateChanges.filter((c) => c.layout).pop();
+    assert.ok(latestLayoutChange, 'Expected layout state change after dropping script onto Toolbar');
+    assert.ok(
+        latestLayoutChange.layout.some(
+            (node) => node.type === 'script' && node.scriptId === 'pack:chaban-bookmarklets/pseudo_release'
+        )
+    );
+
+    // 2. pointercancel mid-drag cleans up ghost pill, drop feedback, and leaves layout unchanged
+    const changesBeforeCancel = stateChanges.length;
+    const secondCard = overlayRoot.querySelector('[data-library-card="local:tracklist"]');
+    const secondGrip = secondCard.querySelector('.bt-grip');
+    overlayRoot.elementFromPoint = (x, y) => (y <= 150 ? toolbarStrip : secondCard);
+
+    secondGrip.dispatchEvent({
+        type: 'pointerdown',
+        pointerId: 11,
+        button: 0,
+        pointerType: 'touch',
+        clientX: 40,
+        clientY: 460,
+        bubbles: true,
+    });
+    secondGrip.dispatchEvent({
+        type: 'pointermove',
+        pointerId: 11,
+        pointerType: 'touch',
+        clientX: 160,
+        clientY: 110,
+        bubbles: true,
+    });
+    assert.ok(overlayRoot.querySelector('.bt-touch-ghost'));
+    assert.equal(toolbarStrip.classList.contains('drop-active-zone'), true);
+
+    secondGrip.dispatchEvent({
+        type: 'pointercancel',
+        pointerId: 11,
+        pointerType: 'touch',
+        clientX: 160,
+        clientY: 110,
+        bubbles: true,
+    });
+
+    assert.equal(overlayRoot.querySelector('.bt-touch-ghost'), null);
+    assert.equal(libraryGrid.dataset.dragging, undefined);
+    assert.equal(toolbarStrip.classList.contains('drop-active-zone'), false);
+    assert.equal(dragHint.textContent, UI.DEFAULT_DRAG_HINT);
+    assert.equal(stateChanges.length, changesBeforeCancel);
+
+    // 3. Touch drag on a Toolbar script pill onto a Folder pill moves script into folder, while tapping ★ unpin button still clicks normally
+    const toolbarScriptPill = overlayRoot.querySelector('[data-toolbar-script="pack:chaban-bookmarklets/approve_all"]');
+    const folderPill = overlayRoot.querySelector('[data-folder-pill="folder:edit"]');
+    assert.ok(toolbarScriptPill && folderPill);
+
+    overlayRoot.elementFromPoint = () => folderPill.firstChild || folderPill;
+    toolbarScriptPill.dispatchEvent({
+        type: 'pointerdown',
+        pointerId: 12,
+        button: 0,
+        pointerType: 'touch',
+        clientX: 80,
+        clientY: 110,
+        bubbles: true,
+    });
+    toolbarScriptPill.dispatchEvent({
+        type: 'pointermove',
+        pointerId: 12,
+        pointerType: 'touch',
+        clientX: 220,
+        clientY: 110,
+        bubbles: true,
+    });
+    assert.equal(folderPill.classList.contains('drop-active-folder'), true);
+    toolbarScriptPill.dispatchEvent({
+        type: 'pointerup',
+        pointerId: 12,
+        pointerType: 'touch',
+        clientX: 220,
+        clientY: 110,
+        bubbles: true,
+    });
+
+    const movedLayout = stateChanges.filter((c) => c.layout).pop().layout;
+    const editFolder = movedLayout.find((n) => n.type === 'folder' && n.id === 'folder:edit');
+    assert.ok(editFolder.items.some((it) => it.scriptId === 'pack:chaban-bookmarklets/approve_all'));
+
+    ui.destroy();
+});
+
+test('Non-HTTP(S) URLs (about:blank / file://) handle Manager and Command Palette dock controls safely without throwing', () => {
+    const { doc, win } = createDomEnvironment('about:blank');
+    const state = createSampleState({
+        url: 'about:blank',
+        localScripts: {
+            'local:all': {
+                id: 'local:all',
+                source: 'local',
+                name: 'All Sites',
+                description: 'Runs everywhere',
+                match: ['<all_urls>'],
+                code: 'void 0;',
+            },
+        },
+        layout: [{ type: 'script', scriptId: 'local:all' }],
+    });
+
+    const ui = UI.createToolbarUI({
+        doc,
+        win,
+        initialState: state,
+        callbacks: {},
+    });
+
+    assert.equal(ui.isToolbarMounted(), false);
+
+    // Manager disables per-site hide button cleanly when origin is unavailable
+    ui.openManager();
+    const overlayRoot = ui.getOverlayShadowRoot();
+    const toggleBtn = overlayRoot.getElementById('btn-toggle-dock-site');
+    assert.equal(toggleBtn.disabled, true);
+    assert.doesNotThrow(() => toggleBtn.click());
+
+    // Command Palette also opens without throwing on originless URL
+    assert.doesNotThrow(() => ui.openPalette());
+
+    ui.destroy();
+});
+
+
 

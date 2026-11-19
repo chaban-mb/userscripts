@@ -522,6 +522,11 @@ function createDomEnvironment(initialUrl = 'https://example.com/', { includeMbHe
     doc.defaultView = win;
     doc.activeElement = null;
     doc.createElement = createMockElement;
+    doc.createElementNS = (ns, tag) => {
+        const el = createMockElement(tag);
+        el.namespaceURI = ns;
+        return el;
+    };
     doc.head = createMockElement('HEAD');
     doc.body = createMockElement('BODY');
     doc.documentElement = createMockElement('HTML');
@@ -839,7 +844,17 @@ test('Entrypoint mounts toolbar on matched URL, handles global hotkeys safely, p
         'Expected Shift+B inside an editable input to be ignored'
     );
 
-    // 3. Running a script from Toolbar records execution in Recents and injects <script> into doc.head
+    // 3. Expanding the collapsed dock and running a script records execution in Recents and injects <script> into doc.head
+    const dockHandle = toolbarHost.shadowRoot.querySelector('.bt-dock-handle');
+    assert.ok(dockHandle, 'Expected .bt-dock-handle in collapsed dock');
+    assert.ok(dockHandle.querySelector('svg'), 'Expected Bookmark Bolt SVG in .bt-dock-handle');
+    assert.equal(
+        toolbarHost.shadowRoot.querySelector('[data-script-id="pack:chaban-bookmarklets/approve_all_edits"]'),
+        null
+    );
+    dockHandle.click();
+    await flushAsync();
+
     const appendedScripts = [];
     doc.head._onAppendChild = (el) => {
         appendedScripts.push(el.textContent);
