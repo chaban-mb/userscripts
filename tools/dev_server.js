@@ -8,11 +8,13 @@
  *   - Appends "[DEV]" to @name (when requested via --separate)
  *   - Injects git branch and short commit hash into @version (e.g. 1.28.0-dev.branch.hash or 1.28.0-dev.hash on dev)
  *   - Preserves original @updateURL and @downloadURL so scripts can cleanly update to stable upstream releases
- *   - Serves dependencies from lib/ for @require resolution
+ *   - Inlines local ../lib/*.js @require dependencies on-the-fly so scripts work across Violentmonkey Sync and reload on lib edits
+ *   - Serves raw libraries from /lib/ when --no-inline or ?raw=1 is used
  *
  * Usage:
  *   node tools/dev_server.js                  # Start server on default port 8080
  *   node tools/dev_server.js --port 3000      # Custom port
+ *   node tools/dev_server.js --no-inline      # Keep relative ../lib/ @require directives instead of inlining
  *   node tools/dev_server.js --no-tag         # Serve scripts without injecting dev metadata
  *   node tools/dev_server.js --stop           # Stop any running dev server on the target port and exit
  *   node tools/dev_server.js --help           # Show CLI usage and tracking instructions
@@ -53,6 +55,7 @@ OPTIONS:
   --host <ip>         Server host (default: 127.0.0.1, or process.env.HOST)
   --separate          Install as a separate script by appending [DEV] to @name
   --name-tag <tag>    Custom suffix appended to @name (implies --separate)
+  --no-inline         Keep relative ../lib/*.js @require directives instead of inlining them
   --no-tag            Serve raw script without injecting dev metadata
   --changed           Default dashboard to show only git-changed scripts
   --kill, --force     Terminate any existing process occupying the port before starting
@@ -84,6 +87,7 @@ HOW TO TRACK SCRIPTS IN VIOLENTMONKEY:
 const PORT = parseInt(getArgValue('--port') || getArgValue('-p') || process.env.PORT || '8080', 10);
 const HOST = getArgValue('--host') || process.env.HOST || '127.0.0.1';
 const NO_TAG = ARGS.includes('--no-tag');
+const NO_INLINE = ARGS.includes('--no-inline');
 const CHANGED_ONLY = ARGS.includes('--changed');
 const SEPARATE = ARGS.includes('--separate');
 const NAME_TAG = getArgValue('--name-tag') || (SEPARATE ? '[DEV]' : '');
@@ -297,6 +301,100 @@ function buildScriptEntries(files, reqHost, branch, hash, changedMap, readScript
   });
 }
 
+const LOCAL_REQUIRE_RE = /^[ \t]*\/\/[ \t]*@require[ \t]+(?:\.\.\/)?lib\/([^\s?#]+)(?:[?#][^\s]*)?[ \t]*(?:\r?\n)?/gm;
+const USERSCRIPT_HEADER_RE = /\/\/[ \t]*==UserScript==[\s\S]*?\/\/[ \t]*==\/UserScript==\s*/;
+const CLOSURE_START_RE = /(\(\s*function\s*\([^)]*\)\s*\{|\(\s*\(\)\s*=>\s*\{)/;
+
+function extractLocalLibNames(scriptText) {
+  const libs = [];
+  const seen = new Set();
+  for (const match of String(scriptText).matchAll(new RegExp(LOCAL_REQUIRE_RE.source, 'gm'))) {
+    const filename = match[1].trim();
+    if (filename && !seen.has(filename)) {
+      seen.add(filename);
+      libs.push(filename);
+    }
+  }
+  return libs;
+}
+
+function cleanLibContent(libText) {
+  return String(libText).replace(USERSCRIPT_HEADER_RE, '').trim();
+}
+
+function inlineLocalLibs(scriptText, options = {}) {
+  const libDir = options.libDir || LIB_DIR;
+  const readLib = options.readLib || ((filename) => {
+    const fullPath = path.join(libDir, filename);
+    return fs.existsSync(fullPath) ? fs.readFileSync(fullPath, 'utf8') : null;
+  });
+
+  const inlinedLibs = [];
+  const libBlocks = [];
+  const rawLibs = extractLocalLibNames(scriptText);
+
+  for (const libFilename of rawLibs) {
+    const rawLibText = readLib(libFilename);
+    if (rawLibText == null) {
+      console.warn(`[DevServer] Warning: Library file not found: lib/${libFilename}`);
+      continue;
+    }
+    const cleaned = cleanLibContent(rawLibText);
+    libBlocks.push(`    // --- Inlined Library: lib/${libFilename} ---\n${cleaned}\n    // --- End Inlined Library ---`);
+    inlinedLibs.push(libFilename);
+  }
+
+  let transformed = String(scriptText).replace(new RegExp(LOCAL_REQUIRE_RE.source, 'gm'), '');
+  transformed = transformed.replace(/(\r?\n){3,}/g, '\n\n');
+
+  if (libBlocks.length > 0) {
+    const combinedLibCode = libBlocks.join('\n\n');
+    const closureMatch = CLOSURE_START_RE.exec(transformed);
+    if (closureMatch) {
+      const idx = closureMatch.index + closureMatch[0].length;
+      const strictMatch = transformed.slice(idx).match(/^\s*('use strict'|"use strict");?/);
+      const insertPos = strictMatch ? idx + strictMatch[0].length : idx;
+      transformed = `${transformed.slice(0, insertPos)}\n\n${combinedLibCode}\n${transformed.slice(insertPos)}`;
+    } else {
+      const headerEnd = transformed.indexOf('// ==/UserScript==');
+      if (headerEnd !== -1) {
+        const lineEnd = transformed.indexOf('\n', headerEnd);
+        if (lineEnd !== -1) {
+          transformed = `${transformed.slice(0, lineEnd + 1)}\n${combinedLibCode}\n\n${transformed.slice(lineEnd + 1)}`;
+        } else {
+          transformed = `${transformed}\n\n${combinedLibCode}`;
+        }
+      } else {
+        transformed = `${combinedLibCode}\n\n${transformed}`;
+      }
+    }
+  }
+
+  return { code: transformed, inlinedLibs };
+}
+
+function computeScriptEtag(scriptMtimeMs, rawCode, options = {}) {
+  const branch = options.branch || 'local';
+  const hash = options.hash || 'draft';
+  const noTag = options.noTag ?? NO_TAG;
+  const isSeparate = Boolean(options.isSeparate);
+  const inlineLibs = options.inlineLibs ?? !NO_INLINE;
+  const libDir = options.libDir || LIB_DIR;
+  const getLibMtimeMs = options.getLibMtimeMs || ((filename) => {
+    const fullPath = path.join(libDir, filename);
+    return fs.existsSync(fullPath) ? fs.statSync(fullPath).mtimeMs : 0;
+  });
+
+  const base = `${Number(scriptMtimeMs).toString(36)}-${hash}-${branch}-${noTag ? 'notag' : isSeparate ? 'sep' : 'inplace'}-${inlineLibs ? 'inline' : 'raw'}`;
+  if (!inlineLibs) return `"${base}"`;
+
+  const libNames = extractLocalLibNames(rawCode);
+  if (libNames.length === 0) return `"${base}"`;
+
+  const libStamps = libNames.map((name) => `${name}:${Number(getLibMtimeMs(name) || 0).toString(36)}`).join(',');
+  return `"${base}-${libStamps}"`;
+}
+
 function formatDevVersion(version, branch, hash) {
   const cleanVer = version.split('-dev')[0].split('+dev')[0];
   const hasBranch = branch && branch !== 'dev' && branch !== 'HEAD';
@@ -304,26 +402,33 @@ function formatDevVersion(version, branch, hash) {
   return `${cleanVer}-dev.${devTag}`;
 }
 
-function transformUserscript(rawCode, isSeparate = false) {
-  if (NO_TAG) return rawCode;
-
-  const { branch, hash } = getGitInfo();
+function transformUserscript(rawCode, isSeparate = false, options = {}) {
+  const noTag = options.noTag ?? NO_TAG;
+  const inlineLibs = options.inlineLibs ?? !NO_INLINE;
   let code = rawCode;
-  const tagToUse = isSeparate ? (NAME_TAG || '[DEV]') : NAME_TAG;
 
-  // 1. Tag @name only if separate mode is requested
-  if (tagToUse) {
-    code = code.replace(/^(\/\/\s*@name\s+)(.+)$/m, (match, prefix, name) => {
-      const trimmed = name.trim();
-      if (trimmed.includes(tagToUse)) return match;
-      return `${prefix}${trimmed} ${tagToUse}`;
+  if (!noTag) {
+    const { branch, hash } = options.gitInfo || getGitInfo();
+    const tagToUse = isSeparate ? (NAME_TAG || '[DEV]') : NAME_TAG;
+
+    // 1. Tag @name only if separate mode is requested
+    if (tagToUse) {
+      code = code.replace(/^(\/\/\s*@name\s+)(.+)$/m, (match, prefix, name) => {
+        const trimmed = name.trim();
+        if (trimmed.includes(tagToUse)) return match;
+        return `${prefix}${trimmed} ${tagToUse}`;
+      });
+    }
+
+    // 2. Tag @version with branch and commit hash for exact identification
+    code = code.replace(/^(\/\/\s*@version\s+)(\S+)$/m, (match, prefix, ver) => {
+      return `${prefix}${formatDevVersion(ver, branch, hash)}`;
     });
   }
 
-  // 2. Tag @version with branch and commit hash for exact identification
-  code = code.replace(/^(\/\/\s*@version\s+)(\S+)$/m, (match, prefix, ver) => {
-    return `${prefix}${formatDevVersion(ver, branch, hash)}`;
-  });
+  if (inlineLibs) {
+    code = inlineLocalLibs(code, options).code;
+  }
 
   return code;
 }
@@ -446,7 +551,7 @@ function renderDashboard(reqHost, port = currentPort, options = {}) {
             <li>Click <strong>Track in Violentmonkey &rarr;</strong> on the script you want to edit.</li>
             <li>In the Violentmonkey installer tab that opens, check <code>[x] Track external edits</code> and <code>[x] Reload tab</code>.</li>
             <li>Keep the installer/editor tab open. Violentmonkey polls this server using HTTP 304 ETags.</li>
-            <li>Edit and save the userscript locally in your editor. Violentmonkey will automatically pull the changes and reload your test page!</li>
+            <li>Edit and save the userscript (or any required <code>lib/*.js</code>) locally. Local <code>../lib/</code> dependencies are inlined on the fly so scripts work across Violentmonkey Sync and live-reload automatically!</li>
           </ol>
         </div>
 
@@ -529,7 +634,10 @@ const server = http.createServer((req, res) => {
     const stat = fs.statSync(localFilePath);
     const { branch, hash } = getGitInfo();
     const isSeparate = parsedUrl.searchParams.get('separate') === '1';
-    const etag = `"${stat.mtimeMs.toString(36)}-${hash}-${NO_TAG ? 'notag' : isSeparate ? 'sep' : 'inplace'}"`;
+    const isRaw = parsedUrl.searchParams.get('raw') === '1';
+    const inlineLibs = !NO_INLINE && !isRaw;
+    const rawContent = fs.readFileSync(localFilePath, 'utf8');
+    const etag = computeScriptEtag(stat.mtimeMs, rawContent, { branch, hash, isSeparate, inlineLibs });
 
     if (req.headers['if-none-match'] === etag) {
       res.writeHead(304, {
@@ -540,8 +648,10 @@ const server = http.createServer((req, res) => {
       return;
     }
 
-    const rawContent = fs.readFileSync(localFilePath, 'utf8');
-    const transformedContent = transformUserscript(rawContent, isSeparate);
+    const transformedContent = transformUserscript(rawContent, isSeparate, {
+      inlineLibs,
+      gitInfo: { branch, hash },
+    });
 
     res.writeHead(200, {
       'Content-Type': 'application/javascript; charset=utf-8',
@@ -635,4 +745,8 @@ module.exports = {
   resolveChangedScripts,
   buildScriptEntries,
   renderDashboard,
+  extractLocalLibNames,
+  inlineLocalLibs,
+  computeScriptEtag,
+  transformUserscript,
 };

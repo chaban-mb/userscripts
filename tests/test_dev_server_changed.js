@@ -5,6 +5,10 @@ const {
   resolveChangedScripts,
   buildScriptEntries,
   renderDashboard,
+  extractLocalLibNames,
+  inlineLocalLibs,
+  computeScriptEtag,
+  transformUserscript,
 } = require('../tools/dev_server.js');
 
 test('parsePorcelainPaths unquotes paths and handles renames', () => {
@@ -74,4 +78,70 @@ test('renderDashboard escapes HTML special characters in script metadata', () =>
   });
   assert.match(html, /Foo &amp; &lt;Bar&gt;/);
   assert.doesNotMatch(html, /<Bar>/);
+});
+
+test('inlineLocalLibs and transformUserscript inline relative ../lib/ requires inside closure while preserving remote @requires', () => {
+  const raw = [
+    '// ==UserScript==',
+    '// @name        Demo Script',
+    '// @version     1.2.3',
+    '// @require     ../lib/Alpha.js',
+    '// @require     https://cdn.example.com/vendor.js',
+    '// @updateURL   https://github.com/chaban-mb/userscripts/raw/main/src/Demo%20Script.user.js',
+    '// @downloadURL https://github.com/chaban-mb/userscripts/raw/main/src/Demo%20Script.user.js',
+    '// ==/UserScript==',
+    '',
+    '(function () {',
+    "    'use strict';",
+    '    console.info(Alpha);',
+    '})();',
+  ].join('\n');
+
+  const libs = {
+    'Alpha.js': '// ==UserScript==\n// @name Alpha\n// ==/UserScript==\nconst Alpha = 42;\n',
+  };
+
+  assert.deepEqual(extractLocalLibNames(raw), ['Alpha.js']);
+
+  const transformed = transformUserscript(raw, false, {
+    inlineLibs: true,
+    gitInfo: { branch: 'feat', hash: 'abc1234' },
+    readLib: (name) => libs[name] ?? null,
+  });
+
+  assert.match(transformed, /@version\s+1\.2\.3-dev\.feat\.abc1234/);
+  assert.doesNotMatch(transformed, /\.\.\/lib\/Alpha\.js/);
+  assert.match(transformed, /@require\s+https:\/\/cdn\.example\.com\/vendor\.js/);
+  assert.match(transformed, /@updateURL\s+https:\/\/github\.com\/chaban-mb\/userscripts\/raw\/main\/src\/Demo%20Script\.user\.js/);
+  assert.match(transformed, /const Alpha = 42;/);
+  assert.doesNotMatch(transformed, /@name Alpha/);
+
+  const strictPos = transformed.indexOf("'use strict';");
+  const libPos = transformed.indexOf('const Alpha = 42;');
+  const endClosurePos = transformed.lastIndexOf('})();');
+  assert.ok(strictPos < libPos && libPos < endClosurePos);
+
+  const rawMode = transformUserscript(raw, false, {
+    inlineLibs: false,
+    gitInfo: { branch: 'feat', hash: 'abc1234' },
+  });
+  assert.match(rawMode, /@require\s+\.\.\/lib\/Alpha\.js/);
+  assert.doesNotMatch(rawMode, /const Alpha = 42;/);
+});
+
+test('computeScriptEtag changes when a required lib file mtime changes', () => {
+  const raw = '// ==UserScript==\n// @name A\n// @require ../lib/Alpha.js\n// ==/UserScript==';
+  const etag1 = computeScriptEtag(1000, raw, {
+    branch: 'dev',
+    hash: 'abc1234',
+    inlineLibs: true,
+    getLibMtimeMs: () => 2000,
+  });
+  const etag2 = computeScriptEtag(1000, raw, {
+    branch: 'dev',
+    hash: 'abc1234',
+    inlineLibs: true,
+    getLibMtimeMs: () => 3000,
+  });
+  assert.notEqual(etag1, etag2);
 });
