@@ -167,6 +167,49 @@ function createTestServer() {
             return;
         }
 
+        if (url.pathname === '/trusted-types') {
+            res.writeHead(200, {
+                'Content-Type': 'text/html; charset=utf-8',
+                'Content-Security-Policy': "require-trusted-types-for 'script'",
+            });
+            res.end(`<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Trusted Types Page</title>
+<script>
+    window.MB = {
+        _releaseEditor: {
+            _tab: '#information',
+            _tabCalls: [],
+            activeTabID() {
+                return this._tab;
+            },
+            nextTab() {
+                this._tab = '#tracklist';
+                this._tabCalls.push('nextTab');
+                return this._tab;
+            },
+        },
+    };
+</script>
+</head>
+<body>
+    <div class="header">
+        <div class="right">
+            <div class="top">
+                <div class="links-container">User</div>
+                <div class="search-container"><input type="text"></div>
+            </div>
+            <div class="bottom">Nav</div>
+        </div>
+    </div>
+    <h1>Trusted Types Test Frame</h1>
+</body>
+</html>`);
+            return;
+        }
+
         res.writeHead(404, { 'Content-Type': 'text/plain' });
         res.end('Not found');
     });
@@ -881,6 +924,62 @@ test('Real Headless Chrome E2E Verification for Site Bookmarklet Toolbar', async
             cspExecResult.toastText,
             /Bookmarklet error: Blocked by page Content Security Policy/i
         );
+
+        // =====================================================================
+        // Scenario 7: Strict Trusted Types page (`require-trusted-types-for 'script'`)
+        // verifies UI rendering (Toolbar, Command Palette, Manager, Library ⓘ popover)
+        // and script execution work cleanly without TrustedHTML / TrustedScript TypeErrors.
+        // =====================================================================
+        await navigateAndInject(`http://musicbrainz.org:${port}/trusted-types`);
+
+        const trustedTypesResult = await evaluate(`(async () => {
+            const toolbarHost = document.getElementById('userjs-bt-toolbar-host');
+            const paletteBtn = toolbarHost?.shadowRoot?.querySelector('[data-action="open-palette"]');
+            paletteBtn?.click();
+
+            const overlayHost = document.getElementById('userjs-bt-overlay-host');
+            const sr = overlayHost?.shadowRoot;
+            const paletteVisible = Boolean(
+                sr?.getElementById('palette-backdrop') &&
+                !sr.getElementById('palette-backdrop').classList.contains('hidden')
+            );
+            const paletteItemsCount = sr?.querySelectorAll('#palette-list .bt-palette-item').length || 0;
+
+            window.__invokeGmMenu('Open Bookmarklet Manager');
+            const managerVisible = Boolean(
+                sr?.getElementById('manager-backdrop') &&
+                !sr.getElementById('manager-backdrop').classList.contains('hidden')
+            );
+            const firstCard = sr?.querySelector('#library-grid [data-library-card]');
+            const infoBtn = firstCard
+                ? [...firstCard.querySelectorAll('button')].find((b) => b.textContent === 'ⓘ')
+                : null;
+            infoBtn?.click();
+            const popoverText = sr?.querySelector('#library-grid [data-library-card] .bt-popover')?.textContent || '';
+
+            sr?.querySelector('#manager-backdrop .bt-close')?.click();
+            const probeBtn = toolbarHost?.shadowRoot?.querySelector('[data-script-id="local:mb_release_editor_probe"]');
+            probeBtn?.click();
+            await new Promise((r) => setTimeout(r, 40));
+
+            return {
+                paletteVisible,
+                paletteItemsCount,
+                managerVisible,
+                hasPopoverMatches: popoverText.includes('*://'),
+                probeResult: window.__mbProbeResult || null,
+            };
+        })()`);
+
+        assert.equal(trustedTypesResult.paletteVisible, true);
+        assert.ok(trustedTypesResult.paletteItemsCount > 0);
+        assert.equal(trustedTypesResult.managerVisible, true);
+        assert.equal(trustedTypesResult.hasPopoverMatches, true);
+        assert.deepEqual(trustedTypesResult.probeResult, {
+            before: '#information',
+            after: '#tracklist',
+            calls: ['nextTab'],
+        });
     } finally {
         await cdp.close();
         await new Promise((resolve) => server.close(resolve));
