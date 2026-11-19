@@ -86,6 +86,7 @@ HOW TO TRACK SCRIPTS IN VIOLENTMONKEY:
 
 const PORT = parseInt(getArgValue('--port') || getArgValue('-p') || process.env.PORT || '8080', 10);
 const HOST = getArgValue('--host') || process.env.HOST || '127.0.0.1';
+const ROOT_OVERRIDE = getArgValue('--root');
 const NO_TAG = ARGS.includes('--no-tag');
 const NO_INLINE = ARGS.includes('--no-inline');
 const CHANGED_ONLY = ARGS.includes('--changed');
@@ -174,7 +175,7 @@ function preparePort(port) {
   }
 }
 
-const REPO_ROOT = path.resolve(__dirname, '..');
+const REPO_ROOT = path.resolve(ROOT_OVERRIDE || path.resolve(__dirname, '..'));
 const SRC_DIR = path.join(REPO_ROOT, 'src');
 const LIB_DIR = path.join(REPO_ROOT, 'lib');
 
