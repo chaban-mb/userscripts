@@ -384,6 +384,9 @@ function createDomEnvironment(initialUrl = 'https://musicbrainz.org/release/123/
             }
         }
         select() {}
+        scrollIntoView(options) {
+            this._lastScrollIntoView = options || true;
+        }
         click() {
             this.dispatchEvent({ type: 'click', bubbles: true });
         }
@@ -658,7 +661,7 @@ test('bindDropTarget separates neutral self-hover from disallowed folder nesting
     assert.equal(hintEl.classList.contains('bt-hint-blocked'), false);
     assert.equal(dropEl.classList.contains('drop-active-folder'), false);
 
-    // 2. Disallowed folder nesting returns { blocked: true } -> displays explicit blocked message
+    // 2. Disallowed folder nesting returns { blocked: true } -> displays explicit blocked message, and ondragleave clears it when leaving the drawer
     dragState.dragPayload = { kind: 'toolbar-folder', folderId: 'folder:other', index: 2 };
     const dt2 = { dropEffect: 'move' };
     dropEl.ondragover({
@@ -670,6 +673,17 @@ test('bindDropTarget separates neutral self-hover from disallowed folder nesting
     assert.equal(hintEl.textContent, 'Folders cannot be nested inside folders');
     assert.equal(hintEl.classList.contains('bt-hint-blocked'), true);
     assert.equal(dropEl.classList.contains('drop-active-folder'), false);
+    assert.equal(dragState.activeHintKey, 'drawer-folder:edit');
+
+    const outsideBlockedEl = doc.createElement('DIV');
+    root.appendChild(outsideBlockedEl);
+    dropEl.ondragleave({
+        relatedTarget: outsideBlockedEl,
+        stopPropagation() {},
+    });
+    assert.equal(hintEl.textContent, UI.DEFAULT_DRAG_HINT);
+    assert.equal(hintEl.classList.contains('bt-hint-blocked'), false);
+    assert.equal(dragState.activeHintKey, null);
 
     // 3. Valid drop target sets drop-active-folder and active hint, and relatedTarget inside dropEl does NOT prematurely clear feedback
     dragState.dragPayload = { kind: 'library-script', scriptId: 'local:tracklist' };
@@ -816,10 +830,11 @@ test('Command Palette groups Recently Run, Matching Library, and searchable Open
     assert.equal(items.length, 5);
     assert.equal(items[0].classList.contains('bt-palette-item-active'), true);
 
-    // ArrowDown moves selection to index 1, Enter runs that script
+    // ArrowDown moves selection to index 1, calls scrollIntoView on the active item, and Enter runs that script
     searchInput.dispatchEvent({ type: 'keydown', key: 'ArrowDown', bubbles: true });
     const updatedItems = paletteList.querySelectorAll('.bt-palette-item');
     assert.equal(updatedItems[1].classList.contains('bt-palette-item-active'), true);
+    assert.deepEqual(updatedItems[1]._lastScrollIntoView, { block: 'nearest' });
 
     searchInput.dispatchEvent({ type: 'keydown', key: 'Enter', bubbles: true });
     assert.equal(ranScripts.length, 1);
@@ -868,7 +883,21 @@ test('Manager supports Editor modal prefill/validation, In-UI Delete Confirmatio
     convertBtn.click();
     assert.ok(overlayRoot.querySelector('[data-library-card="local:old_removed"]'));
 
-    // 3. Delete local script via In-UI Delete Confirmation Modal (never window.confirm)
+    // 2b. Editing a converted local script via saveEditorForm preserves its default label property
+    const convertedForEdit = overlayRoot.querySelector('[data-library-card="local:old_removed"]');
+    const editConvertedBtn = convertedForEdit.querySelectorAll('button').find((b) => b.textContent === '✎');
+    assert.ok(editConvertedBtn);
+    editConvertedBtn.click();
+    assert.equal(overlayRoot.getElementById('editor-backdrop').classList.contains('hidden'), false);
+    overlayRoot.getElementById('ed-desc').value = 'Updated converted description';
+    overlayRoot.getElementById('editor-form').dispatchEvent({ type: 'submit', bubbles: true });
+    assert.equal(overlayRoot.getElementById('editor-backdrop').classList.contains('hidden'), true);
+    const latestLocalChange = stateChanges.filter((c) => c.localScripts).pop();
+    assert.ok(latestLocalChange);
+    assert.equal(latestLocalChange.localScripts['local:old_removed'].label, 'Legacy');
+    assert.equal(latestLocalChange.localScripts['local:old_removed'].description, 'Updated converted description');
+
+    // 3. Delete local script via In-UI Delete Confirmation Modal (never window.confirm), with Cancel button support
     const convertedCard = overlayRoot.querySelector('[data-library-card="local:old_removed"]');
     const deleteBtn = convertedCard.querySelectorAll('button').find((b) => b.textContent === '🗑');
     deleteBtn.click();
@@ -876,6 +905,16 @@ test('Manager supports Editor modal prefill/validation, In-UI Delete Confirmatio
     const confirmBackdrop = overlayRoot.getElementById('confirm-backdrop');
     assert.equal(confirmBackdrop.classList.contains('hidden'), false);
     assert.match(overlayRoot.getElementById('confirm-title').textContent, /Delete Local Script/);
+    // Clicking Cancel dismisses confirm modal without deleting
+    overlayRoot.getElementById('confirm-cancel').click();
+    assert.equal(confirmBackdrop.classList.contains('hidden'), true);
+    assert.ok(overlayRoot.querySelector('[data-library-card="local:old_removed"]'));
+    // Re-open confirm modal and click Delete
+    overlayRoot
+        .querySelector('[data-library-card="local:old_removed"]')
+        .querySelectorAll('button')
+        .find((b) => b.textContent === '🗑')
+        .click();
     overlayRoot.getElementById('confirm-action').click();
     assert.equal(confirmBackdrop.classList.contains('hidden'), true);
     assert.equal(overlayRoot.querySelector('[data-library-card="local:old_removed"]'), null);
@@ -940,6 +979,20 @@ test('Manager supports Editor modal prefill/validation, In-UI Delete Confirmatio
     assert.equal(ui.isRecordingHotkey(), false);
     assert.equal(hkBtn.textContent, 'Shortcut: Ctrl+Shift+K');
     assert.ok(stateChanges.some((c) => c.settings && c.settings.hotkey === 'Ctrl+Shift+K'));
+
+    // 7. openPalette() dismisses any open Editor or Import sub-modal
+    overlayRoot.getElementById('btn-new-local').click();
+    assert.equal(editorBackdrop.classList.contains('hidden'), false);
+    ui.openPalette();
+    assert.equal(editorBackdrop.classList.contains('hidden'), true);
+    assert.equal(overlayRoot.getElementById('palette-backdrop').classList.contains('hidden'), false);
+
+    ui.openManager();
+    overlayRoot.getElementById('btn-import-open').click();
+    assert.equal(overlayRoot.getElementById('import-backdrop').classList.contains('hidden'), false);
+    ui.openPalette();
+    assert.equal(overlayRoot.getElementById('import-backdrop').classList.contains('hidden'), true);
+    assert.equal(overlayRoot.getElementById('palette-backdrop').classList.contains('hidden'), false);
 
     ui.destroy();
 });

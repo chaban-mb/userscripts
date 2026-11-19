@@ -453,18 +453,22 @@
             win.addEventListener('hashchange', scheduleUrlCheck);
         }
 
-        if (win.history && !win.history._btHistoryWrapped) {
-            win.history._btHistoryWrapped = true;
-            for (const method of ['pushState', 'replaceState']) {
-                const original = win.history[method];
-                if (typeof original === 'function') {
-                    win.history[method] = function (...args) {
-                        const result = original.apply(this, args);
-                        scheduleUrlCheck();
-                        return result;
-                    };
+        try {
+            if (win.history && !win.history._btHistoryWrapped) {
+                win.history._btHistoryWrapped = true;
+                for (const method of ['pushState', 'replaceState']) {
+                    const original = win.history[method];
+                    if (typeof original === 'function') {
+                        win.history[method] = function (...args) {
+                            const result = original.apply(this, args);
+                            scheduleUrlCheck();
+                            return result;
+                        };
+                    }
                 }
             }
+        } catch {
+            // Ignore read-only History prototype/properties in restricted environments
         }
 
         const ObserverCtor =

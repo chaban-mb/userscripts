@@ -450,11 +450,23 @@ test('convertRemovedPackScriptToLocal and removeOrphanedPackScriptFully update p
     assert.equal(removedFully.layout[1].items.length, 0);
 });
 
-test('normalizeBookmarkletCode strips javascript:, decodes URI-encoded bookmarklets, and preserves raw modulo % operators', () => {
+test('normalizeBookmarkletCode strips javascript:, decodes URI-encoded bookmarklets, and preserves raw modulo % operators and percent-encoded URLs inside JS string literals', () => {
     const encoded = 'javascript:(function()%7Bconst%20x%20%3D%201%3B%20alert(x)%3B%7D)()';
     assert.equal(
         Core.normalizeBookmarkletCode(encoded),
         '(function(){const x = 1; alert(x);})()'
+    );
+
+    const encodedSimple = 'javascript:(function()%7Balert(1)%3B%7D)()';
+    assert.equal(
+        Core.normalizeBookmarkletCode(encodedSimple),
+        '(function(){alert(1);})()'
+    );
+
+    const encodedArrow = 'javascript:(()%20%3D%3E%20%7B%20console.log(1)%3B%20%7D)()';
+    assert.equal(
+        Core.normalizeBookmarkletCode(encodedArrow),
+        '(() => { console.log(1); })()'
     );
 
     const encodedWithoutScheme = '(function()%7Breturn%2042%3B%7D)()';
@@ -467,6 +479,19 @@ test('normalizeBookmarkletCode strips javascript:, decodes URI-encoded bookmarkl
     assert.equal(
         Core.normalizeBookmarkletCode(rawWithModulo),
         '(function() {\n    if (x % 2 === 0 && y % 20 === 0) {\n        console.log("100% ok");\n    }\n})();'
+    );
+
+    const rawUrlWithEncodedQuotesAndSemicolon =
+        'window.open("https://musicbrainz.org/search?query=%22" + q + "%22&limit=100%3B")';
+    assert.equal(
+        Core.normalizeBookmarkletCode(rawUrlWithEncodedQuotesAndSemicolon),
+        rawUrlWithEncodedQuotesAndSemicolon
+    );
+
+    const rawModuloReturningEncodedToken = 'if (x % 2 === 0 && y % 20 === 0) return "%3D";';
+    assert.equal(
+        Core.normalizeBookmarkletCode(rawModuloReturningEncodedToken),
+        rawModuloReturningEncodedToken
     );
 });
 
@@ -526,9 +551,22 @@ test('buildExportEnvelope and parseAndValidateImport validate schema v1 and reje
         },
     };
     assert.throws(() => Core.parseAndValidateImport(JSON.stringify(badScriptEnvelope)), /match/i);
+
+    // Reject duplicate folder IDs across layout nodes
+    const duplicateFolderIdEnvelope = {
+        ...envelope,
+        layout: [
+            { type: 'folder', id: 'folder:dup', name: 'One', items: [] },
+            { type: 'folder', id: 'folder:dup', name: 'Two', items: [] },
+        ],
+    };
+    assert.throws(
+        () => Core.parseAndValidateImport(JSON.stringify(duplicateFolderIdEnvelope)),
+        /Duplicate folder id "folder:dup"/i
+    );
 });
 
-test('matchesHotkey and formatHotkeyEvent enforce modifiers and ignore modifier-only presses', () => {
+test('matchesHotkey and formatHotkeyEvent enforce modifiers, ignore modifier-only presses, and support Plus (+) key', () => {
     assert.equal(Core.formatHotkeyEvent({ key: 'Alt', altKey: true }), null);
     assert.equal(Core.formatHotkeyEvent({ key: 'Control', ctrlKey: true }), null);
     assert.equal(Core.formatHotkeyEvent({ key: 'b', altKey: false, ctrlKey: false, shiftKey: false }), null);
@@ -540,6 +578,10 @@ test('matchesHotkey and formatHotkeyEvent enforce modifiers and ignore modifier-
     assert.equal(
         Core.formatHotkeyEvent({ key: 'k', altKey: false, ctrlKey: true, shiftKey: true }),
         'Ctrl+Shift+K'
+    );
+    assert.equal(
+        Core.formatHotkeyEvent({ key: '+', altKey: false, ctrlKey: true, shiftKey: true }),
+        'Ctrl+Shift+Plus'
     );
 
     assert.equal(
@@ -553,5 +595,13 @@ test('matchesHotkey and formatHotkeyEvent enforce modifiers and ignore modifier-
     assert.equal(
         Core.matchesHotkey({ key: 'b', altKey: false, ctrlKey: false, shiftKey: false }, 'Alt+B'),
         false
+    );
+    assert.equal(
+        Core.matchesHotkey({ key: '+', altKey: false, ctrlKey: true, shiftKey: true }, 'Ctrl+Shift+Plus'),
+        true
+    );
+    assert.equal(
+        Core.matchesHotkey({ key: '+', altKey: false, ctrlKey: true, shiftKey: true }, 'Ctrl+Shift++'),
+        true
     );
 });

@@ -239,6 +239,9 @@ test('musicbrainz.mount inserts host directly before .search-container without p
     const mbAdapter = Adapters.resolveMountAdapter('https://musicbrainz.org/release/abc', doc);
     assert.equal(mbAdapter.id, 'musicbrainz');
 
+    topRow.style.cssText = 'color: rgb(17, 24, 39);';
+    topRow.style.display = 'block';
+
     mbAdapter.mount(doc, hostEl);
 
     // Order in .header .right .top must be: [linksContainer, hostEl, searchContainer]
@@ -254,18 +257,22 @@ test('musicbrainz.mount inserts host directly before .search-container without p
     assert.equal(hostEl.style.flex, '1 1 auto');
     assert.equal(hostEl.style.minWidth, '0');
 
-    // Re-mounting is idempotent
+    // Re-mounting is idempotent and does not overwrite the saved original topRow styles
     mbAdapter.mount(doc, hostEl);
     assert.deepEqual(topRow.children, [linksContainer, hostEl, searchContainer]);
 
-    // Unmount removes hostEl cleanly without touching linksContainer or searchContainer
+    // Unmount removes hostEl cleanly and restores topRow's original inline style.cssText
     mbAdapter.unmount(doc, hostEl);
     assert.deepEqual(topRow.children, [linksContainer, searchContainer]);
     assert.equal(hostEl.parentNode, null);
+    assert.equal(topRow.style.cssText, 'color: rgb(17, 24, 39);');
+    assert.equal(topRow.style.display, 'block');
+    assert.equal(topRow.style.alignItems, '');
 
     // Re-mounting after unmount restores exact position before .search-container
     mbAdapter.mount(doc, hostEl);
     assert.deepEqual(topRow.children, [linksContainer, hostEl, searchContainer]);
+    assert.equal(topRow.style.display, 'flex');
 });
 
 test('fallback.mount attaches fixed bottom-right host to document.body or document.documentElement and unmounts cleanly', () => {
@@ -413,4 +420,59 @@ test('executeScriptInPage captures asynchronous securitypolicyviolation queued b
     assert.equal(asyncCspErrors.length, 1);
     assert.match(asyncCspErrors[0], /Blocked by page Content Security Policy \(script-src-elem\)/);
     assert.equal(doc._listeners.get('securitypolicyviolation')?.size || 0, 0);
+});
+
+test('executeScriptInPage catches Trusted Types TypeError on scriptEl.textContent assignment, cleans up listeners, and ignores non-script CSP violations', () => {
+    const doc = createMockMBDocument({ includeHeader: false });
+    const win = createMockWindow();
+
+    // Unrelated img-src CSP violation with empty blockedURI is ignored
+    doc.head._onAppendChild = () => {
+        doc.dispatchEvent({
+            type: 'securitypolicyviolation',
+            blockedURI: '',
+            violatedDirective: 'img-src',
+            effectiveDirective: 'img-src',
+        });
+    };
+    const imgErrors = [];
+    const resImg = Adapters.executeScriptInPage('javascript:void 0', {
+        doc,
+        win,
+        onError: (msg) => imgErrors.push(msg),
+    });
+    assert.deepEqual(resImg, { ok: true });
+    assert.equal(imgErrors.length, 0);
+
+    // Simulate Trusted Types TypeError thrown when assigning string to scriptEl.textContent
+    const origCreateElement = doc.createElement.bind(doc);
+    doc.createElement = (tag) => {
+        const el = origCreateElement(tag);
+        if (String(tag).toUpperCase() === 'SCRIPT') {
+            Object.defineProperty(el, 'textContent', {
+                get() {
+                    return '';
+                },
+                set() {
+                    throw new TypeError("Failed to set the 'textContent' property on 'Node': This document requires 'TrustedScript' assignment.");
+                },
+            });
+        }
+        return el;
+    };
+
+    const ttErrors = [];
+    const resTt = Adapters.executeScriptInPage('javascript:alert(1)', {
+        doc,
+        win,
+        onError: (msg) => ttErrors.push(msg),
+    });
+
+    assert.equal(resTt.ok, false);
+    assert.match(resTt.error, /TrustedScript/);
+    assert.equal(ttErrors.length, 1);
+    assert.equal(ttErrors[0], resTt.error);
+    assert.equal(doc.head.children.length, 0);
+    assert.equal(doc._listeners.get('securitypolicyviolation')?.size || 0, 0);
+    assert.equal(win._listeners.get('error')?.size || 0, 0);
 });
