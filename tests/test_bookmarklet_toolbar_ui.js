@@ -1064,3 +1064,84 @@ test('UI avoids innerHTML so strict TrustedHTML sites (e.g. YouTube) work cleanl
     ui.destroy();
 });
 
+test('Library search matches local/pack sources, cards use ellipsis/hover expansion, primary hover keeps purple bg, Import buttons sit in footer, and openManager closes toolbar dropdown', () => {
+    const fs = require('node:fs');
+    const path = require('node:path');
+    const uiSource = fs.readFileSync(
+        path.join(__dirname, '..', 'lib', 'BookmarkletToolbarUI.js'),
+        'utf8'
+    );
+    assert.match(uiSource, /\.bt-library-grid\s*\{[^}]*align-items:\s*start;/s);
+    assert.match(uiSource, /\.bt-library-card:hover\s+\.bt-card-title[\s\S]*white-space:\s*normal;/);
+    assert.match(
+        uiSource,
+        /\.bt-action-btn-primary:hover\s*\{[^}]*background:\s*var\(--bt-primary-hover\);/s
+    );
+    assert.match(uiSource, /color-scheme:\s*light;/);
+    assert.match(uiSource, /color-scheme:\s*dark;/);
+
+    const { doc, win } = createDomEnvironment('https://musicbrainz.org/release/123');
+    const ui = UI.createToolbarUI({
+        doc,
+        win,
+        initialState: createSampleState('https://musicbrainz.org/release/123'),
+        callbacks: {},
+    });
+
+    // Open toolbar folder dropdown, then openManager should close it
+    const toolbarRoot = ui.getToolbarShadowRoot();
+    const folderTrigger = toolbarRoot
+        .querySelectorAll('button')
+        .find((b) => b.textContent.includes('Edit'));
+    assert.ok(folderTrigger);
+    folderTrigger.click();
+    assert.ok(toolbarRoot.querySelector('.bt-dropdown'));
+
+    ui.openManager();
+    assert.equal(toolbarRoot.querySelector('.bt-dropdown'), null);
+
+    const overlayRoot = ui.getOverlayShadowRoot();
+    const cards = overlayRoot.querySelectorAll('.bt-library-card');
+    assert.ok(cards.length >= 3);
+    assert.ok(cards[0].querySelector('.bt-card-title-row'));
+    assert.ok(cards[0].querySelector('.bt-card-title'));
+
+    // Search "local" finds Local Script(s) and excludes Pack scripts
+    const mgrSearch = overlayRoot.getElementById('mgr-search');
+    mgrSearch.value = 'local';
+    mgrSearch.dispatchEvent({ type: 'input', bubbles: true });
+    const localCards = overlayRoot.querySelectorAll('.bt-library-card');
+    assert.equal(localCards.length, 1);
+    assert.equal(localCards[0].dataset.libraryCard, 'local:tracklist');
+
+    // Search "pack" finds Pack scripts and excludes Local scripts
+    mgrSearch.value = 'pack';
+    mgrSearch.dispatchEvent({ type: 'input', bubbles: true });
+    const packCards = overlayRoot.querySelectorAll('.bt-library-card');
+    assert.equal(packCards.length, 3);
+    assert.equal(
+        packCards.some((c) => c.dataset.libraryCard === 'local:tracklist'),
+        false
+    );
+
+    // Import modal footer holds Paste Clipboard, Choose File, and Import & Replace together
+    const importApply = overlayRoot.getElementById('import-apply');
+    const importPaste = overlayRoot.getElementById('import-paste-clipboard');
+    const importChoose = overlayRoot.getElementById('import-choose-file');
+    assert.equal(importPaste.parentNode.parentNode, importApply.parentNode);
+    assert.equal(importChoose.parentNode.parentNode, importApply.parentNode);
+
+    // Command Palette search also matches "local"
+    ui.openPalette();
+    const paletteSearch = overlayRoot.getElementById('palette-search');
+    paletteSearch.value = 'local';
+    paletteSearch.dispatchEvent({ type: 'input', bubbles: true });
+    const paletteLocal = overlayRoot
+        .querySelectorAll('.bt-palette-item')
+        .filter((el) => el.dataset.scriptId);
+    assert.equal(paletteLocal.length, 1);
+    assert.equal(paletteLocal[0].dataset.scriptId, 'local:tracklist');
+
+    ui.destroy();
+});
+
