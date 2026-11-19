@@ -545,6 +545,41 @@ def sync_dist_branch(main_branch="main", dist_branch="dist"):
             subprocess.run(["git", "worktree", "remove", "--force", worktree_dir], capture_output=True)
             subprocess.run(["git", "worktree", "prune"], capture_output=True)
 
+def build_scripts_to_dir(output_dir, scripts=None, source_root=REPO_ROOT, rewrite_urls=True):
+    """Builds selected (or all) src/*.user.js scripts with inlined lib/ dependencies directly into output_dir."""
+    source_root_path = Path(source_root)
+    source_src = source_root_path / "src"
+    out_dir = Path(output_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    if scripts:
+        targets = []
+        for raw in scripts:
+            cand = Path(raw)
+            if not cand.is_absolute():
+                rel = source_root_path / cand
+                cand = rel if rel.exists() else (source_src / cand)
+            if not cand.exists():
+                raise FileNotFoundError(f"Userscript not found: {raw}")
+            targets.append(cand)
+    else:
+        targets = sorted(source_src.glob("*.user.js"))
+
+    results = {}
+    for script_path in targets:
+        raw_content = script_path.read_text(encoding="utf-8")
+        inlined_content, libs = inline_script_content(
+            raw_content,
+            repo_root=source_root_path,
+            rewrite_urls=rewrite_urls,
+        )
+        out_file = out_dir / script_path.name
+        out_file.write_text(inlined_content, encoding="utf-8")
+        results[script_path.name] = libs
+
+    return results
+
+
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser(description="Inlines local libraries for userscripts and updates the dist branch.")
@@ -552,11 +587,29 @@ if __name__ == "__main__":
     parser.add_argument("--main-branch", default="main", help="Source branch (default: main)")
     parser.add_argument("--dist-branch", default="dist", help="Target branch (default: dist)")
     parser.add_argument("--print", dest="print_script", default=None, help="Print inlined userscript content to stdout without rewriting URLs")
+    parser.add_argument("--out", dest="out_dir", default=None, help="Write standalone inlined userscript(s) into a local output directory (e.g. dist)")
+    parser.add_argument("--script", action="append", dest="scripts", default=None, help="Specific userscript(s) to build when using --out")
+    parser.add_argument("--no-rewrite-urls", action="store_true", help="Preserve existing @updateURL/@downloadURL instead of rewriting main -> dist when using --out")
     args = parser.parse_args()
 
     if args.print_script:
         content = inline_userscript(args.print_script, rewrite_urls=False)
         sys.stdout.write(content)
+        sys.exit(0)
+
+    if args.out_dir:
+        src_root = Path.cwd() if (Path.cwd() / "src").is_dir() else REPO_ROOT
+        res = build_scripts_to_dir(
+            args.out_dir,
+            scripts=args.scripts,
+            source_root=src_root,
+            rewrite_urls=not args.no_rewrite_urls,
+        )
+        out_path = Path(args.out_dir)
+        print(f"Built {len(res)} inlined script(s) to {out_path}:")
+        for script, libs in res.items():
+            detail = f"inlined {libs}" if libs else "standalone (no local libs)"
+            print(f"  * {script}: {detail}")
         sys.exit(0)
 
     if args.sync_branch:

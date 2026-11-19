@@ -289,6 +289,63 @@ class BuildDistSyncVersionGuardTests(unittest.TestCase):
                 ],
             )
 
+    def test_out_dir_builds_single_selected_script_and_respects_no_rewrite_urls(self) -> None:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
+            repo = Path(tmp)
+            out_dir = repo / "dist"
+            (repo / "lib").mkdir()
+            (repo / "lib" / "Helper.js").write_text(
+                "// ==UserScript==\n// @name Helper\n// ==/UserScript==\nconst helperVal = 7;\n",
+                encoding="utf-8",
+            )
+            (repo / "src").mkdir()
+            (repo / "src" / "Demo A.user.js").write_text(
+                "// ==UserScript==\n"
+                "// @name        Demo A\n"
+                "// @version     1.0.0\n"
+                "// @require     ../lib/Helper.js\n"
+                "// @updateURL   https://github.com/chaban-mb/userscripts/raw/main/src/Demo%20A.user.js\n"
+                "// @downloadURL https://github.com/chaban-mb/userscripts/raw/main/src/Demo%20A.user.js\n"
+                "// ==/UserScript==\n"
+                "(function () {\n"
+                "    'use strict';\n"
+                "    console.info(helperVal);\n"
+                "})();\n",
+                encoding="utf-8",
+            )
+            (repo / "src" / "Demo B.user.js").write_text(
+                "// ==UserScript==\n// @name Demo B\n// @version 1.0.0\n// ==/UserScript==\n",
+                encoding="utf-8",
+            )
+
+            res = subprocess.run(
+                [sys.executable, str(BUILD_DIST), "--out", str(out_dir), "--script", "src/Demo A.user.js"],
+                cwd=repo,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+            )
+            self.assertEqual(res.returncode, 0, res.stderr)
+            built_a = out_dir / "Demo A.user.js"
+            self.assertTrue(built_a.exists())
+            self.assertFalse((out_dir / "Demo B.user.js").exists())
+            text_a = built_a.read_text(encoding="utf-8")
+            self.assertIn("const helperVal = 7;", text_a)
+            self.assertNotIn("../lib/Helper.js", text_a)
+            self.assertIn("/raw/dist/src/Demo%20A.user.js", text_a)
+
+            out_raw = repo / "dist_raw"
+            res_raw = subprocess.run(
+                [sys.executable, str(BUILD_DIST), "--out", str(out_raw), "--script", "Demo A.user.js", "--no-rewrite-urls"],
+                cwd=repo,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+            )
+            self.assertEqual(res_raw.returncode, 0, res_raw.stderr)
+            text_raw = (out_raw / "Demo A.user.js").read_text(encoding="utf-8")
+            self.assertIn("/raw/main/src/Demo%20A.user.js", text_raw)
+
 
 if __name__ == "__main__":
     unittest.main()

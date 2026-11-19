@@ -4,3 +4,4 @@ AGENTS.md
 __pycache__/
 *.py[cod]
 skills-lock.json
+dist/
