@@ -3,6 +3,7 @@ Connects ListenBrainz's built-in **BrainzPlayer** directly to a private, Tailsca
 ### Why This Is Needed
 
 ListenBrainz uses a hybrid architecture for Navidrome:
+
 - **Setup & Validation (Server-Side):** When connecting a Navidrome instance in ListenBrainz Settings, ListenBrainz's backend performs a server-side `GET /rest/ping` check before saving. If your server lives exclusively inside a private network (e.g., a Tailscale tailnet, WireGuard VPN, or local LAN), this check fails and prevents enabling Navidrome in BrainzPlayer.
 - **BrainzPlayer Playback (100% Client-Side):** Once enabled, all track searches (`/rest/search3`), cover art (`/rest/getCoverArt`), and audio streaming (`/rest/stream`) happen **directly between your web browser and your Navidrome server**.
 
@@ -27,11 +28,13 @@ To satisfy ListenBrainz's backend `/rest/ping` validation and unlock the BrainzP
 Subsonic API token authentication (`t = md5(password + salt)`) does not expire as long as your password remains unchanged. Run the following Python 3 one-liner locally in your terminal—your password is hidden via `getpass`, never leaves your machine, and the generated JSON is **automatically copied to your clipboard** (via `clip` on Windows, `pbcopy` on macOS, or `wl-copy` / `xclip` / `xsel` on Linux):
 
 **Linux / macOS / Bash:**
+
 ```bash
 python3 -c 'import getpass, hashlib, json, secrets, shutil, subprocess; u = input("Navidrome URL: ").strip().rstrip("/"); n = input("Username: ").strip(); p = getpass.getpass("Password: "); s = secrets.token_hex(6); t = hashlib.md5((p + s).encode()).hexdigest(); j = json.dumps({"instance_url": u, "username": n, "salt": s, "md5_auth_token": t}); c = next((cmd for cmd in (["pbcopy"], ["wl-copy"], ["xclip", "-selection", "clipboard"], ["xsel", "--clipboard", "--input"], ["clip"]) if shutil.which(cmd[0])), None); r = subprocess.run(c, input=j.encode(), check=False) if c else None; print("\n" + j + ("\n(Copied to clipboard!)" if r and r.returncode == 0 else ""))'
 ```
 
 **Windows (PowerShell / CMD):**
+
 ```powershell
 python -c "import getpass, hashlib, json, secrets, shutil, subprocess; u = input('Navidrome URL: ').strip().rstrip('/'); n = input('Username: ').strip(); p = getpass.getpass('Password: '); s = secrets.token_hex(6); t = hashlib.md5((p + s).encode()).hexdigest(); j = json.dumps({'instance_url': u, 'username': n, 'salt': s, 'md5_auth_token': t}); c = next((cmd for cmd in (['clip'], ['pbcopy'], ['wl-copy'], ['xclip', '-selection', 'clipboard'], ['xsel', '--clipboard', '--input']) if shutil.which(cmd[0])), None); r = subprocess.run(c, input=j.encode(), check=False) if c else None; print('\n' + j + ('\n(Copied to clipboard!)' if r and r.returncode == 0 else ''))"
 ```
