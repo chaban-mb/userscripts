@@ -1779,7 +1779,7 @@ test('Responsive CSS rules cover 412px modals, palette items, popovers, wrapping
     assert.match(uiSource, /calc\(100vw\s*-\s*24px\)/);
     assert.match(uiSource, /100dvh/);
     assert.match(uiSource, /\.bt-palette-item\s*\{[^}]*min-width:\s*0;[^}]*overflow:\s*hidden;/s);
-    assert.match(uiSource, /\.bt-popover\s*\{[^}]*max-width:\s*calc\(100vw\s*-\s*48px\);/s);
+    assert.match(uiSource, /\.bt-popover\s*\{[^}]*max-width:\s*calc\(100vw\s*-\s*(?:16|48)px\);/s);
     assert.match(uiSource, /\.bt-grip\s*\{[^}]*touch-action:\s*none;/s);
     assert.match(uiSource, /\.bt-dock-handle\s*\{[^}]*touch-action:\s*none;/s);
     assert.doesNotMatch(uiSource, /mgrSearch\.style\.width\s*=\s*'236px'/);
@@ -1995,6 +1995,96 @@ test('Non-HTTP(S) URLs (about:blank / file://) handle Manager and Command Palett
 
     ui.destroy();
 });
+
+test('Manager modal is top-anchored with fixed height and info popovers use position:fixed with viewport flip/clamp and close on scroll', () => {
+    const fs = require('node:fs');
+    const path = require('node:path');
+    const uiSource = fs.readFileSync(
+        path.join(__dirname, '..', 'lib', 'BookmarkletToolbarUI.js'),
+        'utf8'
+    );
+
+    assert.match(
+        uiSource,
+        /\.bt-modal-lg\s*\{[^}]*height:\s*calc\(100vh\s*-\s*32px\);[^}]*height:\s*calc\(100dvh\s*-\s*32px\);/s
+    );
+    assert.match(
+        uiSource,
+        /\.bt-popover\s*\{[^}]*position:\s*fixed;[^}]*overflow-y:\s*auto;/s
+    );
+
+    const { doc, win } = createDomEnvironment('https://musicbrainz.org/release/123');
+    win.innerWidth = 800;
+    win.innerHeight = 600;
+
+    const origCreateElement = doc.createElement.bind(doc);
+    doc.createElement = (tag) => {
+        const el = origCreateElement(tag);
+        if (String(tag).toLowerCase() === 'div') {
+            const origRect = el.getBoundingClientRect.bind(el);
+            el.getBoundingClientRect = () =>
+                el.classList.contains('bt-popover') && !el.classList.contains('bt-pack-popover')
+                    ? { width: 288, height: 220 }
+                    : origRect();
+        }
+        return el;
+    };
+
+    const ui = UI.createToolbarUI({
+        doc,
+        win,
+        initialState: createSampleState({
+            url: 'https://musicbrainz.org/release/123',
+        }),
+        callbacks: {},
+    });
+
+    ui.openManager();
+    const overlayRoot = ui.getOverlayShadowRoot();
+    const managerBackdrop = overlayRoot.getElementById('manager-backdrop');
+    assert.ok(managerBackdrop);
+    assert.equal(
+        managerBackdrop.classList.contains('bt-backdrop-top') ||
+            /#manager-backdrop\s*\{[^}]*align-items:\s*flex-start;/s.test(uiSource),
+        true,
+        'Expected #manager-backdrop to use top alignment'
+    );
+
+    // Click ⓘ on a card near the bottom-right of an 800x600 viewport
+    const firstCard = overlayRoot.querySelectorAll('.bt-library-card')[0];
+    const infoBtn = firstCard.querySelectorAll('button').find((b) => b.textContent === 'ⓘ');
+    assert.ok(infoBtn);
+    infoBtn.getBoundingClientRect = () => ({
+        top: 540,
+        bottom: 560,
+        left: 600,
+        right: 620,
+        width: 20,
+        height: 20,
+    });
+    infoBtn.click();
+
+    const libraryGrid = overlayRoot.getElementById('library-grid');
+    const pop = libraryGrid.querySelector('.bt-popover');
+    assert.ok(pop, 'Expected .bt-popover to open when ⓘ is clicked');
+    const topPx = Number.parseFloat(pop.style.top);
+    const leftPx = Number.parseFloat(pop.style.left);
+    assert.ok(Number.isFinite(topPx) && topPx <= 316, `Expected pop.style.top <= 316px (flipped above 540px), got ${pop.style.top}`);
+    assert.equal(leftPx, 504, `Expected pop.style.left clamped to 504px (800 - 288 - 8), got ${pop.style.left}`);
+
+    // Scrolling .bt-manager-body closes state.openInfoId and removes the open .bt-popover
+    const managerBody = overlayRoot.querySelector('.bt-manager-body');
+    assert.ok(managerBody);
+    managerBody.dispatchEvent({ type: 'scroll', bubbles: false });
+    assert.equal(
+        libraryGrid.querySelector('.bt-popover'),
+        null,
+        'Scrolling .bt-manager-body must close any open script info popover'
+    );
+
+    ui.destroy();
+});
+
 
 
 
