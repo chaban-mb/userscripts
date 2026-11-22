@@ -2879,6 +2879,142 @@ test('bt-dock-animate-expand is applied only after overflow measurement and view
     ui.destroy();
 });
 
+test('positionPopoverInViewport resets maxHeight and runs after all library cards mount and managerBody.scrollTop restores', () => {
+    const { doc, win } = createDomEnvironment('https://musicbrainz.org/release/123');
+    win.innerWidth = 800;
+    win.innerHeight = 600;
+
+    let observedMaxHeightBeforeMeasure = null;
+    const directPop = doc.createElement('div');
+    directPop.className = 'bt-popover';
+    directPop.style.maxHeight = '120px';
+    directPop.getBoundingClientRect = () => {
+        observedMaxHeightBeforeMeasure = directPop.style.maxHeight;
+        return { width: 288, height: 220, top: 0, left: 0, right: 288, bottom: 220 };
+    };
+    const directBtn = doc.createElement('button');
+    directBtn.getBoundingClientRect = () => ({
+        top: 500,
+        bottom: 520,
+        left: 100,
+        right: 120,
+        width: 20,
+        height: 20,
+    });
+    UI.positionPopoverInViewport(directPop, directBtn, win, doc);
+    assert.equal(
+        observedMaxHeightBeforeMeasure,
+        '',
+        'positionPopoverInViewport must clear maxHeight before measuring popover rect'
+    );
+
+    const ui = UI.createToolbarUI({
+        doc,
+        win,
+        initialState: createSampleState({
+            url: 'https://musicbrainz.org/release/123',
+        }),
+        callbacks: {},
+    });
+
+    ui.openManager();
+    const overlayRoot = ui.getOverlayShadowRoot();
+    const managerBody = overlayRoot.querySelector('.bt-manager-body');
+    const libraryGrid = overlayRoot.getElementById('library-grid');
+    const expectedCards = libraryGrid.children.length;
+    assert.equal(expectedCards, 4);
+
+    // Model real browser behavior where emptying #library-grid clamps scrollTop back to 0
+    const origReplaceChildren = libraryGrid.replaceChildren.bind(libraryGrid);
+    libraryGrid.replaceChildren = (...nodes) => {
+        origReplaceChildren(...nodes);
+        if (nodes.length === 0) {
+            managerBody.scrollTop = 0;
+        }
+    };
+
+    let gridLenAtMeasure = null;
+    let scrollTopAtMeasure = null;
+    const firstInfoBtn = libraryGrid
+        .querySelectorAll('.bt-library-card')[0]
+        .querySelectorAll('button')
+        .find((b) => b.textContent === 'ⓘ');
+    assert.ok(firstInfoBtn);
+    firstInfoBtn.getBoundingClientRect = () => {
+        gridLenAtMeasure = libraryGrid.children.length;
+        scrollTopAtMeasure = managerBody.scrollTop;
+        return { top: 460, bottom: 480, left: 200, right: 220, width: 20, height: 20 };
+    };
+
+    managerBody.scrollTop = 180;
+    firstInfoBtn.click();
+
+    assert.equal(
+        gridLenAtMeasure,
+        expectedCards,
+        'positionPopoverInViewport must run after all library cards are appended'
+    );
+    assert.equal(
+        scrollTopAtMeasure,
+        180,
+        'positionPopoverInViewport must run after managerBody.scrollTop is restored'
+    );
+
+    ui.destroy();
+});
+
+test('Dropdown hover bridge CSS covers 6px gap and hover-mode mouseleave stays open while dropdown is open', () => {
+    const fs = require('node:fs');
+    const path = require('node:path');
+    const uiSource = fs.readFileSync(
+        path.join(__dirname, '..', 'lib', 'BookmarkletToolbarUI.js'),
+        'utf8'
+    );
+
+    assert.match(uiSource, /\.bt-dropdown::before\s*\{/);
+    assert.match(uiSource, /\.bt-dropdown-up::before\s*\{/);
+    assert.match(uiSource, /\.bt-dropdown-vertical\.bt-dropdown-side-right::before\s*\{/);
+    assert.match(uiSource, /\.bt-dropdown-vertical\.bt-dropdown-side-left::before\s*\{/);
+    assert.match(uiSource, /\.bt-dropdown-scroll\s*\{[^}]*overflow-y:\s*auto;/s);
+
+    const { doc, win } = createDomEnvironment('https://musicbrainz.org/release/123');
+    const ui = UI.createToolbarUI({
+        doc,
+        win,
+        initialState: createSampleState({
+            url: 'https://musicbrainz.org/release/123',
+            settings: {
+                hotkey: 'Alt+B',
+                dockExpandMode: 'hover',
+            },
+        }),
+        callbacks: {},
+    });
+
+    const toolbarRoot = ui.getToolbarShadowRoot();
+    const dockContainer = toolbarRoot.getElementById('bt-toolbar-container');
+
+    dockContainer.dispatchEvent({ type: 'mouseenter', bubbles: false });
+    const folderBtn = toolbarRoot.querySelector('[data-folder-id="folder:edit"]');
+    assert.ok(folderBtn);
+    folderBtn.click();
+    assert.ok(toolbarRoot.querySelector('.bt-dropdown'));
+
+    // Leaving toolbarContainer while a dropdown is open must not collapse hover-expanded dock
+    dockContainer.dispatchEvent({ type: 'mouseleave', bubbles: false });
+    assert.ok(
+        toolbarRoot.querySelector('.bt-dropdown'),
+        'Dropdown and hover-expanded dock must remain open on mouseleave while state.openDropdownId is set'
+    );
+
+    // Clicking outside the toolbar dismisses the dropdown and resets hover-expanded state
+    doc.body.click();
+    assert.equal(toolbarRoot.querySelector('.bt-dropdown'), null);
+    assert.equal(toolbarRoot.querySelectorAll('[data-script-id]').length, 0);
+
+    ui.destroy();
+});
+
 
 
 

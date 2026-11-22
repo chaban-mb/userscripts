@@ -985,6 +985,55 @@ test('Real Headless Chrome E2E Verification for Site Bookmarklet Toolbar', async
         assert.notEqual(scenario4.chipOverSelfHint, 'Folders cannot be nested inside folders');
         assert.equal(scenario4.chipHasAnyHighlight, false);
 
+        // Scenario 4b: Folder dropdown 6px hover bridge in 'hover' mode stays open across gap
+        const folderBridgeCoords = await evaluate(`(async () => {
+            const sr = document.getElementById('userjs-bt-overlay-host').shadowRoot;
+            sr.querySelector('[data-dock-expand-mode="hover"]').click();
+            sr.getElementById('manager-close').click();
+            await new Promise((r) => setTimeout(r, 30));
+            const th = document.getElementById('userjs-bt-toolbar-host');
+            const handleRect = th.shadowRoot.querySelector('.bt-dock-handle').getBoundingClientRect().toJSON();
+            return {
+                hx: handleRect.left + handleRect.width / 2,
+                hy: handleRect.top + handleRect.height / 2,
+            };
+        })()`);
+        await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: folderBridgeCoords.hx, y: folderBridgeCoords.hy });
+        await new Promise((r) => setTimeout(r, 30));
+        const folderDropdownCoords = await evaluate(`(async () => {
+            const th = document.getElementById('userjs-bt-toolbar-host');
+            const folderBtn = th.shadowRoot.querySelector('[data-folder-id]');
+            folderBtn.click();
+            await new Promise((r) => setTimeout(r, 30));
+            const fr = th.shadowRoot.querySelector('[data-folder-id]').getBoundingClientRect().toJSON();
+            const dr = th.shadowRoot.querySelector('.bt-dropdown').getBoundingClientRect().toJSON();
+            return {
+                fx: fr.left + fr.width / 2,
+                fy: fr.top + fr.height / 2,
+                gapY: fr.top - 3,
+                dy: dr.top + dr.height / 2,
+            };
+        })()`);
+        await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: folderDropdownCoords.fx, y: folderDropdownCoords.fy });
+        await new Promise((r) => setTimeout(r, 20));
+        await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: folderDropdownCoords.fx, y: folderDropdownCoords.gapY });
+        await new Promise((r) => setTimeout(r, 20));
+        await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: folderDropdownCoords.fx, y: folderDropdownCoords.dy });
+        await new Promise((r) => setTimeout(r, 20));
+        const folderBridgeResult = await evaluate(`(async () => {
+            const th = document.getElementById('userjs-bt-toolbar-host');
+            const hasDropdown = Boolean(th.shadowRoot.querySelector('.bt-dropdown'));
+            const expanded = th.shadowRoot.querySelector('.bt-dock-handle')?.getAttribute('aria-expanded') === 'true';
+            window.__invokeGmMenu('Open Bookmarklet Manager');
+            const sr = document.getElementById('userjs-bt-overlay-host').shadowRoot;
+            sr.querySelector('[data-dock-expand-mode="both"]').click();
+            await new Promise((r) => setTimeout(r, 20));
+            return { hasDropdown, expanded };
+        })()`);
+        assert.equal(folderBridgeResult.expanded, true, 'Hover bridge between folder button and .bt-dropdown must keep dock open');
+        assert.equal(folderBridgeResult.hasDropdown, true, 'Hover bridge between folder button and .bt-dropdown must keep dropdown open');
+        await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 10, y: 10 });
+
         // =====================================================================
         // Scenario 5: Export JSON -> Import JSON (Replace semantics) -> verify Local Scripts
         // and Layout replace cleanly and persist across reload.
@@ -1155,6 +1204,45 @@ test('Real Headless Chrome E2E Verification for Site Bookmarklet Toolbar', async
             infoBtn?.click();
             const popoverText = sr?.querySelector('#library-grid [data-library-card] .bt-popover')?.textContent || '';
 
+            // Scroll .bt-manager-body, open ⓘ on a visible lower card, verify viewport bounds + zero overlap with ⓘ, then scroll to close
+            const managerBody = sr?.querySelector('.bt-manager-body');
+            if (managerBody) {
+                managerBody.scrollTop = 0;
+            }
+            const scrollBefore = managerBody ? managerBody.scrollTop : 0;
+            if (managerBody) {
+                managerBody.scrollTop = Math.min(220, Math.max(80, managerBody.scrollHeight - managerBody.clientHeight));
+            }
+            await new Promise((r) => setTimeout(r, 40));
+
+            const stickyBottom = sr?.querySelector('.bt-sticky-section')?.getBoundingClientRect()?.bottom || 180;
+            const visibleTargetCard = [...(sr?.querySelectorAll('#library-grid [data-library-card]') || [])]
+                .find((card) => {
+                    const r = card.getBoundingClientRect();
+                    return r.top >= stickyBottom + 8 && r.bottom <= window.innerHeight - 40;
+                });
+            const targetCardId = visibleTargetCard?.dataset?.libraryCard || null;
+            const targetInfoBtn = visibleTargetCard
+                ? [...visibleTargetCard.querySelectorAll('button')].find((b) => b.textContent === 'ⓘ')
+                : null;
+            targetInfoBtn?.click();
+
+            const rerenderedCard = targetCardId
+                ? sr.querySelector('#library-grid [data-library-card="' + targetCardId + '"]')
+                : null;
+            const rerenderedInfoBtn = rerenderedCard
+                ? [...rerenderedCard.querySelectorAll('button')].find((b) => b.textContent === 'ⓘ')
+                : null;
+            const scrolledPop = rerenderedCard?.querySelector('.bt-popover') || null;
+            const scrolledPopRect = scrolledPop ? scrolledPop.getBoundingClientRect().toJSON() : null;
+            const scrolledBtnRect = rerenderedInfoBtn ? rerenderedInfoBtn.getBoundingClientRect().toJSON() : null;
+
+            if (managerBody) {
+                managerBody.scrollTop += 40;
+            }
+            await new Promise((r) => setTimeout(r, 50));
+            const popoverRemovedAfterScroll = sr?.querySelector('#library-grid .bt-popover') === null;
+
             sr?.querySelector('#manager-backdrop .bt-close')?.click();
             const probeBtn = toolbarHost?.shadowRoot?.querySelector('[data-script-id="local:mb_release_editor_probe"]');
             probeBtn?.click();
@@ -1165,6 +1253,12 @@ test('Real Headless Chrome E2E Verification for Site Bookmarklet Toolbar', async
                 paletteItemsCount,
                 managerVisible,
                 hasPopoverMatches: popoverText.includes('*://'),
+                viewportWidth: window.innerWidth,
+                viewportHeight: window.innerHeight,
+                scrollBefore,
+                scrolledPopRect,
+                scrolledBtnRect,
+                popoverRemovedAfterScroll,
                 probeResult: window.__mbProbeResult || null,
             };
         })()`);
@@ -1173,6 +1267,36 @@ test('Real Headless Chrome E2E Verification for Site Bookmarklet Toolbar', async
         assert.ok(trustedTypesResult.paletteItemsCount > 0);
         assert.equal(trustedTypesResult.managerVisible, true);
         assert.equal(trustedTypesResult.hasPopoverMatches, true);
+        assert.ok(trustedTypesResult.scrolledPopRect && trustedTypesResult.scrolledBtnRect, 'Expected visible scrolled card popover and info button rects');
+        assert.ok(
+            trustedTypesResult.scrolledPopRect.left >= 8 &&
+                trustedTypesResult.scrolledPopRect.right <= trustedTypesResult.viewportWidth - 8,
+            `Scrolled popover must clamp horizontally within [8, vw - 8], got left=${trustedTypesResult.scrolledPopRect.left}, right=${trustedTypesResult.scrolledPopRect.right}`
+        );
+        assert.ok(
+            trustedTypesResult.scrolledPopRect.top >= 8 &&
+                trustedTypesResult.scrolledPopRect.bottom <= trustedTypesResult.viewportHeight - 8,
+            `Scrolled popover must clamp vertically within [8, vh - 8], got top=${trustedTypesResult.scrolledPopRect.top}, bottom=${trustedTypesResult.scrolledPopRect.bottom}`
+        );
+        assert.equal(
+            trustedTypesResult.scrolledPopRect.bottom <= trustedTypesResult.scrolledBtnRect.top ||
+                trustedTypesResult.scrolledPopRect.top >= trustedTypesResult.scrolledBtnRect.bottom,
+            true,
+            `Scrolled popover must not vertically overlap its ⓘ button (pop=[${trustedTypesResult.scrolledPopRect.top}, ${trustedTypesResult.scrolledPopRect.bottom}], btn=[${trustedTypesResult.scrolledBtnRect.top}, ${trustedTypesResult.scrolledBtnRect.bottom}])`
+        );
+        const popGapPx =
+            trustedTypesResult.scrolledPopRect.top >= trustedTypesResult.scrolledBtnRect.bottom
+                ? trustedTypesResult.scrolledPopRect.top - trustedTypesResult.scrolledBtnRect.bottom
+                : trustedTypesResult.scrolledBtnRect.top - trustedTypesResult.scrolledPopRect.bottom;
+        assert.ok(
+            popGapPx <= 16,
+            `Scrolled popover must anchor adjacent to its ⓘ button (gap=${popGapPx}px, pop=[${trustedTypesResult.scrolledPopRect.top}, ${trustedTypesResult.scrolledPopRect.bottom}], btn=[${trustedTypesResult.scrolledBtnRect.top}, ${trustedTypesResult.scrolledBtnRect.bottom}])`
+        );
+        assert.equal(
+            trustedTypesResult.popoverRemovedAfterScroll,
+            true,
+            'Scrolling .bt-manager-body must close open script info popover'
+        );
         assert.deepEqual(trustedTypesResult.probeResult, {
             before: '#information',
             after: '#tracklist',
