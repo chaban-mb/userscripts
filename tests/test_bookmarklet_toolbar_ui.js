@@ -2342,6 +2342,9 @@ test('Dock renders two-tier center, left/right horizontal ordering, vertical cor
     assert.match(uiSource, /\.bt-dock-items-bar\s*\{[^}]*position:\s*absolute;/s);
     assert.match(uiSource, /200ms\s+cubic-bezier\(0\.22,\s*1,\s*0\.36,\s*1\)/);
     assert.match(uiSource, /@media\s*\(prefers-reduced-motion:\s*reduce\)/);
+    assert.doesNotMatch(uiSource, /\.bt-dock-vertical-list\s*,\s*[\s\S]*?\.bt-dock-anim-item/);
+    assert.match(uiSource, /\.bt-dock-animate-expand\.bt-dock-vertical\.bt-dock-edge-top\s+\.bt-dock-anim-item\s*\{/);
+    assert.match(uiSource, /\.bt-dock-animate-expand\.bt-dock-vertical\.bt-dock-edge-bottom\s+\.bt-dock-anim-item\s*\{/);
 
     const { doc, win } = createDomEnvironment('https://musicbrainz.org/release/123');
     win.innerWidth = 1280;
@@ -2806,6 +2809,72 @@ test('Pixel-budget More » overflow menu runs overflowed scripts, expands folder
     assert.equal(sideMenu.classList.contains('bt-dropdown-side-bottom'), true);
     assert.equal(sideMenu.style.marginRight, '-20px');
     assert.equal(sideMenu.style.marginBottom, '-14px');
+
+    ui.destroy();
+});
+
+test('bt-dock-animate-expand is applied only after overflow measurement and viewport clamping', () => {
+    const { doc, win } = createDomEnvironment('https://musicbrainz.org/release/123');
+    win.innerWidth = 412;
+    win.innerHeight = 924;
+
+    const observedAnimateFlagDuringMeasure = [];
+    let dockContainerRef = null;
+    const origCreateEl = doc.createElement.bind(doc);
+    doc.createElement = (tag) => {
+        const el = origCreateEl(tag);
+        if (String(tag).toLowerCase() === 'button') {
+            el.offsetWidth = 90;
+            el.offsetHeight = 26;
+            el.getBoundingClientRect = () => {
+                if (dockContainerRef && el.dataset.scriptId) {
+                    observedAnimateFlagDuringMeasure.push(
+                        dockContainerRef.classList.contains('bt-dock-animate-expand')
+                    );
+                }
+                return { left: 0, top: 0, width: 90, height: 26, right: 90, bottom: 26 };
+            };
+        }
+        return el;
+    };
+
+    const ui = UI.createToolbarUI({
+        doc,
+        win,
+        initialState: createSampleState({
+            url: 'https://musicbrainz.org/release/123',
+            settings: {
+                hotkey: 'Alt+B',
+                dockSiteExpanded: { 'https://musicbrainz.org': false },
+                dockSitePositions: { 'https://musicbrainz.org': 'bottom-center' },
+            },
+        }),
+        callbacks: {},
+    });
+
+    const toolbarRoot = ui.getToolbarShadowRoot();
+    dockContainerRef = toolbarRoot.getElementById('bt-toolbar-container');
+    assert.equal(dockContainerRef.classList.contains('bt-dock-animate-expand'), false);
+
+    // Transition collapsed -> expanded: measurement must see unscaled dock (no bt-dock-animate-expand),
+    // while final rendered container receives bt-dock-animate-expand afterwards.
+    toolbarRoot.querySelector('.bt-dock-handle').click();
+
+    assert.ok(observedAnimateFlagDuringMeasure.length >= 2, 'Expected script buttons to be measured');
+    assert.deepEqual(
+        observedAnimateFlagDuringMeasure,
+        observedAnimateFlagDuringMeasure.map(() => false),
+        'bt-dock-animate-expand must not be present during partitionDockOverflow measurement'
+    );
+    assert.equal(
+        dockContainerRef.classList.contains('bt-dock-animate-expand'),
+        true,
+        'bt-dock-animate-expand must be applied after measurement on collapsed -> expanded transition'
+    );
+
+    // Clicking folder while already expanded must not re-apply bt-dock-animate-expand
+    toolbarRoot.querySelector('[data-folder-id="folder:edit"]').click();
+    assert.equal(dockContainerRef.classList.contains('bt-dock-animate-expand'), false);
 
     ui.destroy();
 });
