@@ -620,6 +620,9 @@ test('DOCK_SNAP_ZONES, DOCK_EXPAND_MODES, getSiteOrigin, normalizeSettings, and 
     assert.deepEqual(Core.DOCK_EXPAND_MODES, ['both', 'click', 'hover']);
     assert.equal(Object.isFrozen(Core.DOCK_EXPAND_MODES), true);
 
+    assert.deepEqual(Core.DOCK_ORIENTATIONS, ['auto', 'horizontal', 'vertical']);
+    assert.equal(Object.isFrozen(Core.DOCK_ORIENTATIONS), true);
+
     assert.equal(
         Core.getSiteOrigin('https://musicbrainz.org/release/123?foo=1'),
         'https://musicbrainz.org'
@@ -633,7 +636,10 @@ test('DOCK_SNAP_ZONES, DOCK_EXPAND_MODES, getSiteOrigin, normalizeSettings, and 
     assert.deepEqual(Core.normalizeSettings(null), {
         hotkey: 'Alt+B',
         dockExpandMode: 'both',
+        dockDefaultPosition: 'bottom-center',
+        dockOrientation: 'auto',
         dockSitePositions: {},
+        dockSiteOrientations: {},
         dockSiteExpanded: {},
         dockSiteHidden: {},
     });
@@ -642,9 +648,16 @@ test('DOCK_SNAP_ZONES, DOCK_EXPAND_MODES, getSiteOrigin, normalizeSettings, and 
         Core.normalizeSettings({
             hotkey: 'Ctrl+K',
             dockExpandMode: 'invalid',
+            dockDefaultPosition: 'invalid-zone',
+            dockOrientation: 'diagonal',
             dockSitePositions: {
                 'https://a.test': 'top-left',
                 'https://b.test': 'bad-zone',
+            },
+            dockSiteOrientations: {
+                'https://musicbrainz.org/release/123': 'horizontal',
+                'https://bad.test': 'invalid',
+                'not-a-url': 'vertical',
             },
             dockSiteExpanded: { 'https://a.test': true },
             dockSiteHidden: { 'https://c.test': true },
@@ -652,9 +665,33 @@ test('DOCK_SNAP_ZONES, DOCK_EXPAND_MODES, getSiteOrigin, normalizeSettings, and 
         {
             hotkey: 'Ctrl+K',
             dockExpandMode: 'both',
+            dockDefaultPosition: 'bottom-center',
+            dockOrientation: 'auto',
             dockSitePositions: { 'https://a.test': 'top-left' },
+            dockSiteOrientations: { 'https://musicbrainz.org': 'horizontal' },
             dockSiteExpanded: { 'https://a.test': true },
             dockSiteHidden: { 'https://c.test': true },
+        }
+    );
+
+    assert.deepEqual(
+        Core.normalizeSettings({
+            dockDefaultPosition: 'top-right',
+            dockOrientation: 'vertical',
+            dockSiteOrientations: {
+                'https://musicbrainz.org': 'horizontal',
+                'https://bad.test': 'invalid',
+            },
+        }),
+        {
+            hotkey: 'Alt+B',
+            dockExpandMode: 'both',
+            dockDefaultPosition: 'top-right',
+            dockOrientation: 'vertical',
+            dockSitePositions: {},
+            dockSiteOrientations: { 'https://musicbrainz.org': 'horizontal' },
+            dockSiteExpanded: {},
+            dockSiteHidden: {},
         }
     );
 

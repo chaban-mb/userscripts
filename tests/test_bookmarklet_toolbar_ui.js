@@ -2085,6 +2085,243 @@ test('Manager modal is top-anchored with fixed height and info popovers use posi
     ui.destroy();
 });
 
+test('Library section acts as drop-back target to unpin toolbar-script and remove folder-item (HTML5 DnD and Touch Pointer DnD), ignoring library-script and toolbar-folder', () => {
+    const { doc, win } = createDomEnvironment('https://musicbrainz.org/release/123');
+    const stateChanges = [];
+    const ui = UI.createToolbarUI({
+        doc,
+        win,
+        initialState: createSampleState({
+            url: 'https://musicbrainz.org/release/123',
+        }),
+        callbacks: {
+            onStateChange(partial) {
+                stateChanges.push(partial);
+            },
+        },
+    });
+
+    ui.openManager();
+    const overlayRoot = ui.getOverlayShadowRoot();
+    const librarySection = overlayRoot.querySelector('.bt-library-section');
+    const dragHint = overlayRoot.getElementById('drag-hint');
+    assert.ok(librarySection);
+    assert.equal(librarySection.dataset.dropKey, 'library-unpin');
+
+    // 1. HTML5 DnD: toolbar-script pill hovered over a .bt-library-card inside .bt-library-section -> unpins on drop
+    const toolbarPill = overlayRoot.querySelector('[data-toolbar-script="pack:chaban-bookmarklets/approve_all"]');
+    const anyLibraryCard = overlayRoot.querySelector('.bt-library-card');
+    assert.ok(toolbarPill && anyLibraryCard);
+
+    toolbarPill.ondragstart({ dataTransfer: { effectAllowed: '', setData() {} } });
+    const dt1 = { dropEffect: 'none' };
+    anyLibraryCard.dispatchEvent({ type: 'dragover', dataTransfer: dt1, bubbles: true });
+    assert.equal(dt1.dropEffect, 'move');
+    assert.equal(librarySection.classList.contains('drop-active-zone'), true);
+    assert.equal(dragHint.textContent, 'Unpin "Approve All" from Toolbar');
+
+    anyLibraryCard.dispatchEvent({ type: 'drop', dataTransfer: dt1, bubbles: true });
+    assert.equal(librarySection.classList.contains('drop-active-zone'), false);
+    assert.equal(
+        overlayRoot.querySelector('[data-toolbar-script="pack:chaban-bookmarklets/approve_all"]'),
+        null,
+        'toolbar-script should be unpinned after dropping on library section'
+    );
+    const afterUnpinLayout = stateChanges.filter((c) => c.layout).pop().layout;
+    assert.equal(
+        afterUnpinLayout.some((n) => n.type === 'script' && n.scriptId === 'pack:chaban-bookmarklets/approve_all'),
+        false
+    );
+
+    // 2. HTML5 DnD: library-script and toolbar-folder over .bt-library-section are ignored (no-op)
+    const changesBeforeIgnored = stateChanges.length;
+    const libCard = overlayRoot.querySelector('[data-library-card="pack:chaban-bookmarklets/pseudo_release"]');
+    assert.ok(libCard);
+    libCard.ondragstart({ dataTransfer: { effectAllowed: '', setData() {} } });
+    const dtLib = { dropEffect: 'move' };
+    librarySection.dispatchEvent({ type: 'dragover', dataTransfer: dtLib, bubbles: true });
+    assert.equal(dtLib.dropEffect, 'none');
+    assert.equal(librarySection.classList.contains('drop-active-zone'), false);
+    assert.equal(dragHint.textContent, UI.DEFAULT_DRAG_HINT);
+    librarySection.dispatchEvent({ type: 'drop', dataTransfer: dtLib, bubbles: true });
+    libCard.ondragend();
+    assert.equal(stateChanges.length, changesBeforeIgnored);
+
+    const folderPill = overlayRoot.querySelector('[data-folder-pill="folder:edit"]');
+    assert.ok(folderPill);
+    folderPill.ondragstart({ dataTransfer: { effectAllowed: '', setData() {} } });
+    const dtFolder = { dropEffect: 'move' };
+    librarySection.dispatchEvent({ type: 'dragover', dataTransfer: dtFolder, bubbles: true });
+    assert.equal(dtFolder.dropEffect, 'none');
+    assert.equal(librarySection.classList.contains('drop-active-zone'), false);
+    assert.equal(dragHint.textContent, UI.DEFAULT_DRAG_HINT);
+    librarySection.dispatchEvent({ type: 'drop', dataTransfer: dtFolder, bubbles: true });
+    folderPill.ondragend();
+    assert.equal(stateChanges.length, changesBeforeIgnored);
+
+    // 3. HTML5 DnD: folder-item chip dragged onto .bt-library-section removes it from folder
+    const folderItemChip = overlayRoot.querySelector('[data-folder-item="local:tracklist"]');
+    assert.ok(folderItemChip);
+    folderItemChip.ondragstart({ dataTransfer: { effectAllowed: '', setData() {} } });
+    const dtChip = { dropEffect: 'none' };
+    librarySection.dispatchEvent({ type: 'dragover', dataTransfer: dtChip, bubbles: true });
+    assert.equal(dtChip.dropEffect, 'move');
+    assert.equal(librarySection.classList.contains('drop-active-zone'), true);
+    assert.equal(dragHint.textContent, 'Remove "mv t" from "Edit"');
+
+    librarySection.dispatchEvent({ type: 'drop', dataTransfer: dtChip, bubbles: true });
+    assert.equal(librarySection.classList.contains('drop-active-zone'), false);
+    assert.equal(overlayRoot.querySelector('[data-folder-item="local:tracklist"]'), null);
+    const afterRemoveChipLayout = stateChanges.filter((c) => c.layout).pop().layout;
+    const editFolderAfterHtml5 = afterRemoveChipLayout.find((n) => n.type === 'folder' && n.id === 'folder:edit');
+    assert.equal(
+        editFolderAfterHtml5.items.some((it) => it.scriptId === 'local:tracklist'),
+        false
+    );
+
+    // 4. Touch Pointer DnD: folder-item chip and toolbar-script pill work over .bt-library-card inside .bt-library-section
+    const remainingFolderChip = overlayRoot.querySelector('[data-folder-item="pack:chaban-bookmarklets/pseudo_release"]');
+    const hoverCard = overlayRoot.querySelector('.bt-library-card');
+    assert.ok(remainingFolderChip && hoverCard);
+    overlayRoot.elementFromPoint = () => hoverCard;
+
+    remainingFolderChip.dispatchEvent({
+        type: 'pointerdown',
+        pointerId: 31,
+        button: 0,
+        pointerType: 'touch',
+        clientX: 100,
+        clientY: 200,
+        bubbles: true,
+    });
+    remainingFolderChip.dispatchEvent({
+        type: 'pointermove',
+        pointerId: 31,
+        pointerType: 'touch',
+        clientX: 160,
+        clientY: 420,
+        bubbles: true,
+    });
+    assert.equal(librarySection.classList.contains('drop-active-zone'), true);
+    assert.equal(dragHint.textContent, 'Remove "Pseudo-release" from "Edit"');
+    remainingFolderChip.dispatchEvent({
+        type: 'pointerup',
+        pointerId: 31,
+        pointerType: 'touch',
+        clientX: 160,
+        clientY: 420,
+        bubbles: true,
+    });
+    assert.equal(librarySection.classList.contains('drop-active-zone'), false);
+    const afterTouchChipLayout = stateChanges.filter((c) => c.layout).pop().layout;
+    const editFolderAfterTouch = afterTouchChipLayout.find((n) => n.type === 'folder' && n.id === 'folder:edit');
+    assert.equal(editFolderAfterTouch.items.length, 0);
+
+    // Touch drag toolbar-script pill over .bt-library-card -> unpins
+    const freshHoverCard = overlayRoot.querySelector('.bt-library-card');
+    assert.ok(freshHoverCard);
+    overlayRoot.elementFromPoint = () => freshHoverCard;
+    const removedToolbarPill = overlayRoot.querySelector('[data-toolbar-script="pack:chaban-bookmarklets/old_removed"]');
+    assert.ok(removedToolbarPill);
+    removedToolbarPill.dispatchEvent({
+        type: 'pointerdown',
+        pointerId: 32,
+        button: 0,
+        pointerType: 'touch',
+        clientX: 120,
+        clientY: 110,
+        bubbles: true,
+    });
+    removedToolbarPill.dispatchEvent({
+        type: 'pointermove',
+        pointerId: 32,
+        pointerType: 'touch',
+        clientX: 160,
+        clientY: 420,
+        bubbles: true,
+    });
+    assert.equal(librarySection.classList.contains('drop-active-zone'), true);
+    assert.equal(dragHint.textContent, 'Unpin "Legacy" from Toolbar');
+    removedToolbarPill.dispatchEvent({
+        type: 'pointerup',
+        pointerId: 32,
+        pointerType: 'touch',
+        clientX: 160,
+        clientY: 420,
+        bubbles: true,
+    });
+    const afterTouchUnpinLayout = stateChanges.filter((c) => c.layout).pop().layout;
+    assert.equal(
+        afterTouchUnpinLayout.some((n) => n.type === 'script' && n.scriptId === 'pack:chaban-bookmarklets/old_removed'),
+        false
+    );
+
+    // Touch drag library-script and toolbar-folder over .bt-library-section are no-ops
+    const changesBeforeTouchIgnored = stateChanges.length;
+    const touchLibGrip = overlayRoot
+        .querySelector('[data-library-card="pack:chaban-bookmarklets/approve_all"]')
+        .querySelector('.bt-grip');
+    overlayRoot.elementFromPoint = () => librarySection;
+    touchLibGrip.dispatchEvent({
+        type: 'pointerdown',
+        pointerId: 33,
+        button: 0,
+        pointerType: 'touch',
+        clientX: 40,
+        clientY: 420,
+        bubbles: true,
+    });
+    touchLibGrip.dispatchEvent({
+        type: 'pointermove',
+        pointerId: 33,
+        pointerType: 'touch',
+        clientX: 160,
+        clientY: 420,
+        bubbles: true,
+    });
+    assert.equal(librarySection.classList.contains('drop-active-zone'), false);
+    touchLibGrip.dispatchEvent({
+        type: 'pointerup',
+        pointerId: 33,
+        pointerType: 'touch',
+        clientX: 160,
+        clientY: 420,
+        bubbles: true,
+    });
+    assert.equal(stateChanges.length, changesBeforeTouchIgnored);
+
+    const touchFolderPill = overlayRoot.querySelector('[data-folder-pill="folder:edit"]');
+    touchFolderPill.dispatchEvent({
+        type: 'pointerdown',
+        pointerId: 34,
+        button: 0,
+        pointerType: 'touch',
+        clientX: 180,
+        clientY: 110,
+        bubbles: true,
+    });
+    touchFolderPill.dispatchEvent({
+        type: 'pointermove',
+        pointerId: 34,
+        pointerType: 'touch',
+        clientX: 160,
+        clientY: 420,
+        bubbles: true,
+    });
+    assert.equal(librarySection.classList.contains('drop-active-zone'), false);
+    touchFolderPill.dispatchEvent({
+        type: 'pointerup',
+        pointerId: 34,
+        pointerType: 'touch',
+        clientX: 160,
+        clientY: 420,
+        bubbles: true,
+    });
+    assert.equal(stateChanges.length, changesBeforeTouchIgnored);
+
+    ui.destroy();
+});
+
 
 
 

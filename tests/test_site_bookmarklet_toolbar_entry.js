@@ -815,7 +815,10 @@ test('Entrypoint mounts toolbar on matched URL, handles global hotkeys safely, p
     assert.deepEqual(store.get('UserJS.BookmarkletToolbar.Settings'), {
         hotkey: 'Shift+B',
         dockExpandMode: 'both',
+        dockDefaultPosition: 'bottom-center',
+        dockOrientation: 'auto',
         dockSitePositions: {},
+        dockSiteOrientations: {},
         dockSiteExpanded: {},
         dockSiteHidden: {},
     });
