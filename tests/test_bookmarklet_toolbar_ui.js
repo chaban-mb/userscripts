@@ -1638,6 +1638,7 @@ test('clampDropdownToViewport clamps overflow via marginLeft on center/left anch
             url: 'https://musicbrainz.org/release/123',
             settings: {
                 hotkey: 'Alt+B',
+                dockOrientation: 'horizontal',
                 dockSiteExpanded: { 'https://musicbrainz.org': true },
                 dockSitePositions: { 'https://musicbrainz.org': 'bottom-center' },
             },
@@ -1661,6 +1662,7 @@ test('clampDropdownToViewport clamps overflow via marginLeft on center/left anch
     ui.update({
         settings: {
             hotkey: 'Alt+B',
+            dockOrientation: 'horizontal',
             dockSiteExpanded: { 'https://musicbrainz.org': true },
             dockSitePositions: { 'https://musicbrainz.org': 'top-left' },
         },
@@ -1675,6 +1677,7 @@ test('clampDropdownToViewport clamps overflow via marginLeft on center/left anch
     ui.update({
         settings: {
             hotkey: 'Alt+B',
+            dockOrientation: 'horizontal',
             dockSiteExpanded: { 'https://musicbrainz.org': true },
             dockSitePositions: { 'https://musicbrainz.org': 'top-left' },
         },
@@ -1688,6 +1691,7 @@ test('clampDropdownToViewport clamps overflow via marginLeft on center/left anch
     ui.update({
         settings: {
             hotkey: 'Alt+B',
+            dockOrientation: 'horizontal',
             dockSiteExpanded: { 'https://musicbrainz.org': true },
             dockSitePositions: { 'https://musicbrainz.org': 'bottom-right' },
         },
@@ -1703,6 +1707,7 @@ test('clampDropdownToViewport clamps overflow via marginLeft on center/left anch
     ui.update({
         settings: {
             hotkey: 'Alt+B',
+            dockOrientation: 'horizontal',
             dockSiteExpanded: { 'https://musicbrainz.org': true },
             dockSitePositions: { 'https://musicbrainz.org': 'top-right' },
         },
@@ -2318,6 +2323,489 @@ test('Library section acts as drop-back target to unpin toolbar-script and remov
         bubbles: true,
     });
     assert.equal(stateChanges.length, changesBeforeTouchIgnored);
+
+    ui.destroy();
+});
+
+test('Dock renders two-tier center, left/right horizontal ordering, vertical corner header/list ordering, and zero-shift/animation CSS', () => {
+    const fs = require('node:fs');
+    const path = require('node:path');
+    const uiSource = fs.readFileSync(
+        path.join(__dirname, '..', 'lib', 'BookmarkletToolbarUI.js'),
+        'utf8'
+    );
+
+    // Zero-shift & animation CSS invariants
+    assert.match(uiSource, /\.bt-toolbar-dock\s*\{[^}]*flex-wrap:\s*nowrap;[^}]*padding:\s*4px;/s);
+    assert.doesNotMatch(uiSource, /\.bt-toolbar-dock-collapsed\s*\{[^}]*padding:\s*4px\s+6px;/s);
+    assert.match(uiSource, /\.bt-dock-anchor-pill\s*\{[^}]*padding:\s*4px;/s);
+    assert.match(uiSource, /\.bt-dock-items-bar\s*\{[^}]*position:\s*absolute;/s);
+    assert.match(uiSource, /200ms\s+cubic-bezier\(0\.22,\s*1,\s*0\.36,\s*1\)/);
+    assert.match(uiSource, /@media\s*\(prefers-reduced-motion:\s*reduce\)/);
+
+    const { doc, win } = createDomEnvironment('https://musicbrainz.org/release/123');
+    win.innerWidth = 1280;
+    win.innerHeight = 800;
+
+    const ui = UI.createToolbarUI({
+        doc,
+        win,
+        initialState: createSampleState({
+            url: 'https://musicbrainz.org/release/123',
+            settings: {
+                hotkey: 'Alt+B',
+                dockSiteExpanded: { 'https://musicbrainz.org': true },
+                dockSitePositions: { 'https://musicbrainz.org': 'bottom-center' },
+            },
+        }),
+        callbacks: {},
+    });
+
+    const toolbarRoot = ui.getToolbarShadowRoot();
+    const dockContainer = toolbarRoot.getElementById('bt-toolbar-container');
+
+    const getBtnSummary = (rootEl) =>
+        rootEl.querySelectorAll('button').map((b) =>
+            b.classList.contains('bt-dock-handle')
+                ? 'HANDLE'
+                : b.dataset.action === 'open-palette'
+                  ? 'PALETTE'
+                  : b.dataset.action === 'open-overflow'
+                    ? 'MORE'
+                    : b.dataset.scriptId || b.dataset.folderId
+        );
+
+    // 1. bottom-center: two-tier (.bt-dock-anchor-pill with HANDLE + .bt-dock-items-bar with [⌘, ...scripts])
+    const anchorPill = dockContainer.querySelector('.bt-dock-anchor-pill');
+    const itemsBar = dockContainer.querySelector('.bt-dock-items-bar');
+    assert.ok(anchorPill, 'Expected .bt-dock-anchor-pill on bottom-center');
+    assert.ok(itemsBar, 'Expected .bt-dock-items-bar on expanded bottom-center');
+    assert.ok(anchorPill.querySelector('.bt-dock-handle'));
+    assert.equal(itemsBar.querySelector('.bt-dock-handle'), null);
+    assert.deepEqual(getBtnSummary(itemsBar), [
+        'PALETTE',
+        'pack:chaban-bookmarklets/approve_all',
+        'pack:chaban-bookmarklets/old_removed',
+        'folder:edit',
+    ]);
+
+    // Collapsed bottom-center keeps anchor pill and removes items bar
+    ui.update({
+        settings: {
+            hotkey: 'Alt+B',
+            dockSiteExpanded: { 'https://musicbrainz.org': false },
+            dockSitePositions: { 'https://musicbrainz.org': 'bottom-center' },
+        },
+    });
+    assert.ok(dockContainer.querySelector('.bt-dock-anchor-pill'));
+    assert.equal(dockContainer.querySelector('.bt-dock-items-bar'), null);
+
+    // 2. bottom-left horizontal: [⚡, ⌘, ...scripts]
+    ui.update({
+        settings: {
+            hotkey: 'Alt+B',
+            dockOrientation: 'horizontal',
+            dockSiteExpanded: { 'https://musicbrainz.org': true },
+            dockSitePositions: { 'https://musicbrainz.org': 'bottom-left' },
+        },
+    });
+    assert.equal(dockContainer.querySelector('.bt-dock-items-bar'), null);
+    assert.deepEqual(getBtnSummary(dockContainer), [
+        'HANDLE',
+        'PALETTE',
+        'pack:chaban-bookmarklets/approve_all',
+        'pack:chaban-bookmarklets/old_removed',
+        'folder:edit',
+    ]);
+
+    // 3. bottom-right horizontal: [...scripts, ⌘, ⚡]
+    ui.update({
+        settings: {
+            hotkey: 'Alt+B',
+            dockOrientation: 'horizontal',
+            dockSiteExpanded: { 'https://musicbrainz.org': true },
+            dockSitePositions: { 'https://musicbrainz.org': 'bottom-right' },
+        },
+    });
+    assert.deepEqual(getBtnSummary(dockContainer), [
+        'pack:chaban-bookmarklets/approve_all',
+        'pack:chaban-bookmarklets/old_removed',
+        'folder:edit',
+        'PALETTE',
+        'HANDLE',
+    ]);
+
+    // 4. top-right vertical: header [⌘, ⚡] FIRST (flex-end) + vertical script list SECOND
+    ui.update({
+        settings: {
+            hotkey: 'Alt+B',
+            dockOrientation: 'vertical',
+            dockSiteExpanded: { 'https://musicbrainz.org': true },
+            dockSitePositions: { 'https://musicbrainz.org': 'top-right' },
+        },
+    });
+    assert.equal(dockContainer.classList.contains('bt-dock-vertical'), true);
+    assert.equal(dockContainer.children.length, 2);
+    assert.equal(dockContainer.children[0].classList.contains('bt-dock-header'), true);
+    assert.equal(dockContainer.children[0].classList.contains('bt-dock-header-end'), true);
+    assert.equal(dockContainer.children[1].classList.contains('bt-dock-vertical-list'), true);
+    assert.deepEqual(getBtnSummary(dockContainer.children[0]), ['PALETTE', 'HANDLE']);
+    assert.deepEqual(getBtnSummary(dockContainer.children[1]), [
+        'pack:chaban-bookmarklets/approve_all',
+        'pack:chaban-bookmarklets/old_removed',
+        'folder:edit',
+    ]);
+
+    // 5. bottom-right vertical: vertical script list FIRST + header [⌘, ⚡] LAST (pinned to bottom-right)
+    ui.update({
+        settings: {
+            hotkey: 'Alt+B',
+            dockOrientation: 'vertical',
+            dockSiteExpanded: { 'https://musicbrainz.org': true },
+            dockSitePositions: { 'https://musicbrainz.org': 'bottom-right' },
+        },
+    });
+    assert.equal(dockContainer.children[0].classList.contains('bt-dock-vertical-list'), true);
+    assert.equal(dockContainer.children[1].classList.contains('bt-dock-header'), true);
+    assert.equal(dockContainer.children[1].classList.contains('bt-dock-header-end'), true);
+    assert.deepEqual(getBtnSummary(dockContainer.children[1]), ['PALETTE', 'HANDLE']);
+
+    // 6. bottom-left vertical: vertical script list FIRST + header [⚡, ⌘] LAST (flex-start)
+    ui.update({
+        settings: {
+            hotkey: 'Alt+B',
+            dockOrientation: 'vertical',
+            dockSiteExpanded: { 'https://musicbrainz.org': true },
+            dockSitePositions: { 'https://musicbrainz.org': 'bottom-left' },
+        },
+    });
+    assert.equal(dockContainer.children[0].classList.contains('bt-dock-vertical-list'), true);
+    assert.equal(dockContainer.children[1].classList.contains('bt-dock-header'), true);
+    assert.equal(dockContainer.children[1].classList.contains('bt-dock-header-start'), true);
+    assert.deepEqual(getBtnSummary(dockContainer.children[1]), ['HANDLE', 'PALETTE']);
+
+    ui.destroy();
+});
+
+test('Hybrid scope updates global defaults with per-site overrides, Auto rotates on resize/orientationchange, and destroy cleans listeners', () => {
+    const { doc, win } = createDomEnvironment('https://musicbrainz.org/release/123');
+    win.innerWidth = 1280;
+    win.innerHeight = 800;
+
+    const stateChanges = [];
+    const ui = UI.createToolbarUI({
+        doc,
+        win,
+        initialState: createSampleState({
+            url: 'https://musicbrainz.org/release/123',
+            localScripts: {
+                'local:all': {
+                    id: 'local:all',
+                    source: 'local',
+                    name: 'All Sites Helper',
+                    match: ['*://*/*'],
+                    code: 'void 0;',
+                },
+            },
+            layout: [
+                { type: 'script', scriptId: 'local:all' },
+                { type: 'script', scriptId: 'pack:chaban-bookmarklets/approve_all' },
+            ],
+        }),
+        callbacks: {
+            onStateChange(partial) {
+                stateChanges.push(partial);
+            },
+        },
+    });
+
+    const toolbarHost = ui.getToolbarHost();
+    const toolbarRoot = ui.getToolbarShadowRoot();
+    const dockContainer = toolbarRoot.getElementById('bt-toolbar-container');
+
+    // 1. Dragging handle to top-right saves BOTH dockSitePositions[origin] AND dockDefaultPosition
+    const handle = toolbarRoot.querySelector('.bt-dock-handle');
+    handle.dispatchEvent({
+        type: 'pointerdown',
+        pointerId: 1,
+        button: 0,
+        pointerType: 'mouse',
+        clientX: 640,
+        clientY: 770,
+        bubbles: true,
+    });
+    handle.dispatchEvent({
+        type: 'pointermove',
+        pointerId: 1,
+        pointerType: 'mouse',
+        clientX: 1240,
+        clientY: 32,
+        bubbles: true,
+    });
+    handle.dispatchEvent({
+        type: 'pointerup',
+        pointerId: 1,
+        pointerType: 'mouse',
+        clientX: 1240,
+        clientY: 32,
+        bubbles: true,
+    });
+
+    const afterSnapSettings = stateChanges.at(-1).settings;
+    assert.equal(afterSnapSettings.dockSitePositions['https://musicbrainz.org'], 'top-right');
+    assert.equal(afterSnapSettings.dockDefaultPosition, 'top-right');
+
+    // New uncustomized origin inherits dockDefaultPosition ('top-right')
+    ui.update({ url: 'https://example.org/test' });
+    assert.equal(toolbarHost.dataset.snapZone, 'top-right');
+
+    // 2. Manager Orientation buttons update both dockSiteOrientations[origin] and dockOrientation
+    ui.openManager();
+    const overlayRoot = ui.getOverlayShadowRoot();
+    const autoBtn = overlayRoot.querySelector('[data-dock-orientation="auto"]');
+    const horizBtn = overlayRoot.querySelector('[data-dock-orientation="horizontal"]');
+    const vertBtn = overlayRoot.querySelector('[data-dock-orientation="vertical"]');
+    assert.ok(autoBtn && horizBtn && vertBtn, 'Expected Auto | Horiz | Vert orientation buttons');
+    assert.equal(autoBtn.getAttribute('aria-pressed'), 'true');
+
+    vertBtn.click();
+    const afterVertSettings = stateChanges.at(-1).settings;
+    assert.equal(afterVertSettings.dockSiteOrientations['https://example.org'], 'vertical');
+    assert.equal(afterVertSettings.dockOrientation, 'vertical');
+    assert.equal(dockContainer.dataset.orientation, 'vertical');
+    assert.equal(vertBtn.getAttribute('aria-pressed'), 'true');
+
+    // Switch back to Auto: landscape (1280x800) -> horizontal, portrait (412x924) -> vertical on resize
+    autoBtn.click();
+    assert.equal(stateChanges.at(-1).settings.dockSiteOrientations['https://example.org'], 'auto');
+    assert.equal(stateChanges.at(-1).settings.dockOrientation, 'auto');
+    assert.equal(dockContainer.dataset.orientation, 'horizontal');
+
+    win.innerWidth = 412;
+    win.innerHeight = 924;
+    win.dispatchEvent({ type: 'resize' });
+    assert.equal(dockContainer.dataset.orientation, 'vertical');
+    assert.equal(dockContainer.classList.contains('bt-dock-vertical'), true);
+
+    // Rotating back to landscape via orientationchange updates back to horizontal
+    win.innerWidth = 924;
+    win.innerHeight = 412;
+    win.dispatchEvent({ type: 'orientationchange' });
+    assert.equal(dockContainer.dataset.orientation, 'horizontal');
+    assert.equal(dockContainer.classList.contains('bt-dock-horizontal'), true);
+
+    // At *-center, effective orientation stays horizontal even on portrait 412x924 with Vert selected
+    vertBtn.click();
+    win.innerWidth = 412;
+    win.innerHeight = 924;
+    ui.update({
+        settings: {
+            ...stateChanges.at(-1).settings,
+            dockSitePositions: { 'https://example.org': 'bottom-center' },
+        },
+    });
+    assert.equal(dockContainer.dataset.orientation, 'horizontal');
+    assert.equal(dockContainer.classList.contains('bt-dock-center'), true);
+
+    ui.destroy();
+    assert.equal(win._listeners.get('resize')?.size || 0, 0);
+    assert.equal(win._listeners.get('orientationchange')?.size || 0, 0);
+});
+
+test('Pixel-budget More » overflow menu runs overflowed scripts, expands folders inline, places More » last in vertical, and opens sideways dropdowns', () => {
+    const { doc, win } = createDomEnvironment('https://musicbrainz.org/release/123');
+    win.innerWidth = 412;
+    win.innerHeight = 924;
+
+    const ranScripts = [];
+    const manyLocalScripts = {};
+    const layout = [];
+    for (let i = 1; i <= 7; i += 1) {
+        const sid = `local:s${i}`;
+        manyLocalScripts[sid] = {
+            id: sid,
+            source: 'local',
+            name: `Action Script Number ${i}`,
+            match: ['*://*.musicbrainz.org/*'],
+            code: 'void 0;',
+        };
+        layout.push({ type: 'script', scriptId: sid });
+    }
+    manyLocalScripts['local:folder_child_a'] = {
+        id: 'local:folder_child_a',
+        source: 'local',
+        name: 'Folder Child Alpha',
+        match: ['*://*.musicbrainz.org/*'],
+        code: 'void 0;',
+    };
+    manyLocalScripts['local:folder_child_b'] = {
+        id: 'local:folder_child_b',
+        source: 'local',
+        name: 'Folder Child Beta',
+        match: ['*://*.musicbrainz.org/*'],
+        code: 'void 0;',
+    };
+    layout.push({
+        type: 'folder',
+        id: 'folder:tools',
+        name: 'Tools',
+        items: [
+            { type: 'script', scriptId: 'local:folder_child_a' },
+            { type: 'script', scriptId: 'local:folder_child_b' },
+        ],
+    });
+
+    const ui = UI.createToolbarUI({
+        doc,
+        win,
+        initialState: createSampleState({
+            url: 'https://musicbrainz.org/release/123',
+            localScripts: manyLocalScripts,
+            layout,
+            settings: {
+                hotkey: 'Alt+B',
+                dockSiteExpanded: { 'https://musicbrainz.org': true },
+                dockSitePositions: { 'https://musicbrainz.org': 'bottom-center' },
+            },
+        }),
+        callbacks: {
+            onRunScript(scriptId) {
+                ranScripts.push(scriptId);
+            },
+        },
+    });
+
+    const toolbarRoot = ui.getToolbarShadowRoot();
+    const dockContainer = toolbarRoot.getElementById('bt-toolbar-container');
+
+    // 1. Horizontal overflow at 412px bottom-center produces More » button
+    const itemsBar = dockContainer.querySelector('.bt-dock-items-bar');
+    assert.ok(itemsBar);
+    const moreBtn = itemsBar.querySelector('[data-action="open-overflow"]');
+    assert.ok(moreBtn, 'Expected More » overflow button when items exceed 412px width');
+    assert.equal(moreBtn.textContent, 'More »');
+    assert.match(moreBtn.title, /^\d+ more items$/);
+    // ⌘ remains first in .bt-dock-items-bar
+    assert.equal(itemsBar.querySelectorAll('button')[0].dataset.action, 'open-palette');
+
+    // Clicking More » opens .bt-dropdown with overflowed scripts & folder toggle
+    moreBtn.click();
+    const overflowMenu = toolbarRoot.querySelector('.bt-dropdown');
+    assert.ok(overflowMenu, 'Expected .bt-dropdown when More » is clicked');
+    assert.equal(toolbarRoot.querySelectorAll('.bt-dropdown').length, 1);
+
+    // Click overflowed 📁 Tools folder to expand its items inline inside the SAME More » dropdown
+    const overflowFolderBtn = overflowMenu.querySelector('[data-overflow-folder-id="folder:tools"]');
+    assert.ok(overflowFolderBtn, 'Expected overflowed Tools folder toggle inside More » menu');
+    assert.equal(overflowFolderBtn.getAttribute('aria-expanded'), 'false');
+    assert.equal(overflowMenu.querySelector('[data-script-id="local:folder_child_a"]'), null);
+
+    overflowFolderBtn.click();
+    const expandedMenu = toolbarRoot.querySelector('.bt-dropdown');
+    assert.equal(toolbarRoot.querySelectorAll('.bt-dropdown').length, 1, 'Folder must expand inline in same dropdown');
+    assert.equal(
+        expandedMenu.querySelector('[data-overflow-folder-id="folder:tools"]').getAttribute('aria-expanded'),
+        'true'
+    );
+    const inlineChildA = expandedMenu.querySelector('[data-script-id="local:folder_child_a"]');
+    assert.ok(inlineChildA, 'Expected Folder Child Alpha revealed inline inside More »');
+
+    // Toggle folder back closed, then re-open and click inline child to execute
+    expandedMenu.querySelector('[data-overflow-folder-id="folder:tools"]').click();
+    assert.equal(toolbarRoot.querySelector('[data-script-id="local:folder_child_a"]'), null);
+    toolbarRoot.querySelector('[data-overflow-folder-id="folder:tools"]').click();
+    toolbarRoot.querySelector('[data-script-id="local:folder_child_a"]').click();
+    assert.deepEqual(ranScripts, ['local:folder_child_a']);
+    assert.equal(toolbarRoot.querySelector('.bt-dropdown'), null);
+
+    // Re-open More » and click an overflowed top-level script
+    toolbarRoot.querySelector('[data-action="open-overflow"]').click();
+    const reopenedOverflowMenu = toolbarRoot.querySelector('.bt-dropdown');
+    assert.ok(reopenedOverflowMenu);
+    const overflowScriptBtn = reopenedOverflowMenu.querySelector('[data-script-id="local:s7"]');
+    assert.ok(overflowScriptBtn);
+    overflowScriptBtn.click();
+    assert.deepEqual(ranScripts, ['local:folder_child_a', 'local:s7']);
+
+    // 2. Vertical mode overflow on constrained height (260px) puts More » LAST in vertical list
+    win.innerHeight = 260;
+    ui.update({
+        settings: {
+            hotkey: 'Alt+B',
+            dockOrientation: 'vertical',
+            dockSiteExpanded: { 'https://musicbrainz.org': true },
+            dockSitePositions: { 'https://musicbrainz.org': 'bottom-right' },
+        },
+    });
+    const vertList = dockContainer.querySelector('.bt-dock-vertical-list');
+    assert.ok(vertList);
+    const vertButtons = vertList.querySelectorAll('button');
+    assert.equal(
+        vertButtons[vertButtons.length - 1].dataset.action,
+        'open-overflow',
+        'More » must be placed last at bottom of vertical script list'
+    );
+
+    // 3. Vertical sideways folder dropdowns open beside the vertical column
+    win.innerHeight = 924;
+    ui.update({
+        settings: {
+            hotkey: 'Alt+B',
+            dockOrientation: 'vertical',
+            dockSiteExpanded: { 'https://musicbrainz.org': true },
+            dockSitePositions: { 'https://musicbrainz.org': 'bottom-right' },
+        },
+    });
+    toolbarRoot.querySelector('[data-folder-id="folder:tools"]').click();
+    let sideMenu = toolbarRoot.querySelector('.bt-dropdown');
+    assert.ok(sideMenu);
+    assert.equal(sideMenu.classList.contains('bt-dropdown-vertical'), true);
+    assert.equal(sideMenu.classList.contains('bt-dropdown-side-left'), true);
+    assert.equal(sideMenu.classList.contains('bt-dropdown-side-bottom'), true);
+
+    // Clamp vertical sideways dropdowns within 8px of top/bottom/left/right viewport edges
+    let mockSideRect = { left: 250, right: 440, width: 190, top: 820, bottom: 960, height: 140 };
+    const origCreateDiv = doc.createElement.bind(doc);
+    doc.createElement = (tag) => {
+        const el = origCreateDiv(tag);
+        if (String(tag).toLowerCase() === 'div') {
+            const origRect = el.getBoundingClientRect.bind(el);
+            el.getBoundingClientRect = () =>
+                el.classList.contains('bt-dropdown-vertical') ? mockSideRect : origRect();
+        }
+        return el;
+    };
+
+    ui.update({
+        settings: {
+            hotkey: 'Alt+B',
+            dockOrientation: 'vertical',
+            dockSiteExpanded: { 'https://musicbrainz.org': true },
+            dockSitePositions: { 'https://musicbrainz.org': 'top-left' },
+        },
+    });
+    sideMenu = toolbarRoot.querySelector('.bt-dropdown');
+    assert.ok(sideMenu);
+    assert.equal(sideMenu.classList.contains('bt-dropdown-vertical'), true);
+    assert.equal(sideMenu.classList.contains('bt-dropdown-side-right'), true);
+    assert.equal(sideMenu.classList.contains('bt-dropdown-side-top'), true);
+    assert.equal(sideMenu.style.marginLeft, '-36px');
+    assert.equal(sideMenu.style.marginTop, '-44px');
+
+    mockSideRect = { left: -12, right: 178, width: 190, top: -6, bottom: 134, height: 140 };
+    ui.update({
+        settings: {
+            hotkey: 'Alt+B',
+            dockOrientation: 'vertical',
+            dockSiteExpanded: { 'https://musicbrainz.org': true },
+            dockSitePositions: { 'https://musicbrainz.org': 'bottom-right' },
+        },
+    });
+    sideMenu = toolbarRoot.querySelector('.bt-dropdown');
+    assert.equal(sideMenu.classList.contains('bt-dropdown-side-left'), true);
+    assert.equal(sideMenu.classList.contains('bt-dropdown-side-bottom'), true);
+    assert.equal(sideMenu.style.marginRight, '-20px');
+    assert.equal(sideMenu.style.marginBottom, '-14px');
 
     ui.destroy();
 });

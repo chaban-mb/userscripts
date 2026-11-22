@@ -645,15 +645,23 @@ test('Real Headless Chrome E2E Verification for Site Bookmarklet Toolbar', async
                 hasCollapsedClass: dockContainer?.classList.contains('bt-toolbar-dock-collapsed') || false,
                 ariaExpanded: handleBtn?.getAttribute('aria-expanded') || null,
                 dockRect: toolbarHost?.getBoundingClientRect().toJSON() || null,
+                handleRect: handleBtn?.getBoundingClientRect().toJSON() || null,
+                hasAnchorPill: Boolean(dockContainer?.querySelector('.bt-dock-anchor-pill')),
+                hasItemsBar: Boolean(dockContainer?.querySelector('.bt-dock-items-bar')),
                 actionBtns: getActionBtns(),
             };
 
             // Expand on click
             handleBtn.click();
-            await new Promise((r) => setTimeout(r, 25));
+            await new Promise((r) => setTimeout(r, 240));
+            const expandedHandleBtn = toolbarHost.shadowRoot.querySelector('.bt-dock-handle');
             const clickExpandedState = {
                 hasCollapsedClass: dockContainer?.classList.contains('bt-toolbar-dock-collapsed') || false,
-                ariaExpanded: toolbarHost.shadowRoot.querySelector('.bt-dock-handle')?.getAttribute('aria-expanded') || null,
+                ariaExpanded: expandedHandleBtn?.getAttribute('aria-expanded') || null,
+                handleRect: expandedHandleBtn?.getBoundingClientRect().toJSON() || null,
+                hasAnchorPill: Boolean(dockContainer?.querySelector('.bt-dock-anchor-pill')),
+                hasItemsBar: Boolean(dockContainer?.querySelector('.bt-dock-items-bar')),
+                itemsBarRect: dockContainer?.querySelector('.bt-dock-items-bar')?.getBoundingClientRect().toJSON() || null,
                 actionBtns: getActionBtns(),
             };
 
@@ -699,6 +707,8 @@ test('Real Headless Chrome E2E Verification for Site Bookmarklet Toolbar', async
         assert.equal(afterPinMetrics.collapsedState.isBodyChild, true, 'Generic dock must mount on document.body');
         assert.equal(afterPinMetrics.collapsedState.hasCollapsedClass, true, 'Dock must start collapsed');
         assert.equal(afterPinMetrics.collapsedState.ariaExpanded, 'false');
+        assert.equal(afterPinMetrics.collapsedState.hasAnchorPill, true, 'bottom-center must render .bt-dock-anchor-pill');
+        assert.equal(afterPinMetrics.collapsedState.hasItemsBar, false);
         assert.deepEqual(afterPinMetrics.collapsedState.actionBtns, []);
 
         // Verify collapsed dock sits at bottom-center
@@ -715,17 +725,80 @@ test('Real Headless Chrome E2E Verification for Site Bookmarklet Toolbar', async
             `Dock should sit near bottom edge (bottom=${afterPinMetrics.collapsedState.dockRect.bottom}, viewport=${afterPinMetrics.viewportHeight})`
         );
 
-        // Verify click-to-expand and hover-to-expand
+        // Verify click-to-expand and hover-to-expand (two-tier center: [⌘, ...scripts] in .bt-dock-items-bar)
         assert.equal(afterPinMetrics.clickExpandedState.hasCollapsedClass, false);
         assert.equal(afterPinMetrics.clickExpandedState.ariaExpanded, 'true');
+        assert.equal(afterPinMetrics.clickExpandedState.hasAnchorPill, true);
+        assert.equal(afterPinMetrics.clickExpandedState.hasItemsBar, true);
         assert.equal(afterPinMetrics.clickExpandedState.actionBtns.length, 2);
-        assert.equal(afterPinMetrics.clickExpandedState.actionBtns[0].scriptId, 'pack:chaban-bookmarklets/approve_all_edits');
-        assert.equal(afterPinMetrics.clickExpandedState.actionBtns[0].text, 'Approve All');
-        assert.equal(afterPinMetrics.clickExpandedState.actionBtns[1].action, 'open-palette');
+        assert.equal(afterPinMetrics.clickExpandedState.actionBtns[0].action, 'open-palette');
+        assert.equal(afterPinMetrics.clickExpandedState.actionBtns[1].scriptId, 'pack:chaban-bookmarklets/approve_all_edits');
+        assert.equal(afterPinMetrics.clickExpandedState.actionBtns[1].text, 'Approve All');
+        assert.equal(
+            Math.abs(afterPinMetrics.clickExpandedState.handleRect.left - afterPinMetrics.collapsedState.handleRect.left) < 0.01,
+            true,
+            `Handle left must shift 0px at bottom-center (${afterPinMetrics.collapsedState.handleRect.left} -> ${afterPinMetrics.clickExpandedState.handleRect.left})`
+        );
+        assert.equal(
+            Math.abs(afterPinMetrics.clickExpandedState.handleRect.top - afterPinMetrics.collapsedState.handleRect.top) < 0.01,
+            true,
+            `Handle top must shift 0px at bottom-center (${afterPinMetrics.collapsedState.handleRect.top} -> ${afterPinMetrics.clickExpandedState.handleRect.top})`
+        );
 
         assert.equal(afterPinMetrics.hoverExpandedState.hasCollapsedClass, false);
         assert.equal(afterPinMetrics.hoverExpandedState.ariaExpanded, 'true');
         assert.equal(afterPinMetrics.hoverExpandedState.actionBtns.length, 2);
+
+        // Verify real pointer hover bridge across the 6px gap at bottom-center in hover mode
+        const hoverBridgeStart = await evaluate(`(async () => {
+            const sr = document.getElementById('userjs-bt-overlay-host').shadowRoot;
+            sr.querySelector('[data-dock-expand-mode="hover"]').click();
+            sr.getElementById('manager-close').click();
+            await new Promise((r) => setTimeout(r, 30));
+            const th = document.getElementById('userjs-bt-toolbar-host');
+            const handleRect = th.shadowRoot.querySelector('.bt-dock-handle').getBoundingClientRect().toJSON();
+            const pillRect = th.shadowRoot.querySelector('.bt-dock-anchor-pill').getBoundingClientRect().toJSON();
+            return {
+                x: handleRect.left + handleRect.width / 2,
+                y: handleRect.top + handleRect.height / 2,
+                gapY: pillRect.top - 3,
+                barY: pillRect.top - 16,
+            };
+        })()`);
+
+        await cdp.send('Input.dispatchMouseEvent', {
+            type: 'mouseMoved',
+            x: hoverBridgeStart.x,
+            y: hoverBridgeStart.y,
+        });
+        await new Promise((r) => setTimeout(r, 30));
+        await cdp.send('Input.dispatchMouseEvent', {
+            type: 'mouseMoved',
+            x: hoverBridgeStart.x,
+            y: hoverBridgeStart.gapY,
+        });
+        await new Promise((r) => setTimeout(r, 30));
+        await cdp.send('Input.dispatchMouseEvent', {
+            type: 'mouseMoved',
+            x: hoverBridgeStart.x,
+            y: hoverBridgeStart.barY,
+        });
+        await new Promise((r) => setTimeout(r, 30));
+
+        const hoverBridgeResult = await evaluate(`(async () => {
+            const th = document.getElementById('userjs-bt-toolbar-host');
+            const bar = th.shadowRoot.querySelector('.bt-dock-items-bar');
+            const expanded = th.shadowRoot.querySelector('.bt-dock-handle')?.getAttribute('aria-expanded') === 'true';
+            // Restore 'both' mode and reopen Manager for Scenario 3 (dock stays pinned expanded from Scenario 2)
+            window.__invokeGmMenu('Open Bookmarklet Manager');
+            const sr = document.getElementById('userjs-bt-overlay-host').shadowRoot;
+            sr.querySelector('[data-dock-expand-mode="both"]').click();
+            await new Promise((r) => setTimeout(r, 20));
+            return { expanded, hasBar: Boolean(bar) };
+        })()`);
+        assert.equal(hoverBridgeResult.expanded, true, 'Hover bridge must keep dock open across 6px gap');
+        assert.equal(hoverBridgeResult.hasBar, true);
+        await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 10, y: 10 });
 
         // Verify MusicBrainz header bounding boxes are completely untouched
         assert.equal(afterPinMetrics.searchRect.width, beforePinMetrics.searchRect.width);
@@ -1153,6 +1226,7 @@ test('Pixel 10 (412x924, hasTouch: true) Mobile Chrome E2E Verification for Site
                 viewportHeight: window.innerHeight,
                 ariaExpanded: handleBtn.getAttribute('aria-expanded'),
                 rect,
+                handleRect,
                 handleCenter: {
                     x: handleRect.left + handleRect.width / 2,
                     y: handleRect.top + handleRect.height / 2,
@@ -1170,20 +1244,23 @@ test('Pixel 10 (412x924, hasTouch: true) Mobile Chrome E2E Verification for Site
         );
         assert.ok(initialDock.rect.bottom >= 880 && initialDock.rect.bottom <= 924);
 
-        // 1. Tap .bt-dock-handle to expand dock
+        // 1. Tap .bt-dock-handle to expand dock at bottom-center with 0px handle delta
         await touchTap(cdp, initialDock.handleCenter.x, initialDock.handleCenter.y);
-        await evaluate('new Promise((r) => setTimeout(r, 40))');
+        await evaluate('new Promise((r) => setTimeout(r, 240))');
 
         const expandedDock = await evaluate(`(() => {
             const toolbarHost = document.getElementById('userjs-bt-toolbar-host');
             const handleBtn = toolbarHost?.shadowRoot?.querySelector('.bt-dock-handle');
             const handleRect = handleBtn.getBoundingClientRect().toJSON();
+            const barRect = toolbarHost?.shadowRoot?.querySelector('.bt-dock-items-bar')?.getBoundingClientRect().toJSON() || null;
             const btns = [...toolbarHost.shadowRoot.querySelectorAll('button')]
                 .filter((b) => !b.classList.contains('bt-dock-handle'))
                 .map((b) => b.textContent.trim());
             return {
                 ariaExpanded: handleBtn.getAttribute('aria-expanded'),
                 rect: toolbarHost.getBoundingClientRect().toJSON(),
+                handleRect,
+                barRect,
                 handleCenter: {
                     x: handleRect.left + handleRect.width / 2,
                     y: handleRect.top + handleRect.height / 2,
@@ -1194,6 +1271,17 @@ test('Pixel 10 (412x924, hasTouch: true) Mobile Chrome E2E Verification for Site
 
         assert.equal(expandedDock.ariaExpanded, 'true', 'Tap on .bt-dock-handle must expand dock');
         assert.ok(expandedDock.rect.left >= 0 && expandedDock.rect.right <= 412, 'Expanded dock must fit within [0, 412]');
+        assert.ok(expandedDock.barRect && expandedDock.barRect.left >= 0 && expandedDock.barRect.right <= 412, 'Expanded items bar must fit within [0, 412]');
+        assert.equal(
+            Math.abs(expandedDock.handleRect.left - initialDock.handleRect.left) < 0.01,
+            true,
+            `Pixel 10 bottom-center handle left must shift 0px (${initialDock.handleRect.left} -> ${expandedDock.handleRect.left})`
+        );
+        assert.equal(
+            Math.abs(expandedDock.handleRect.top - initialDock.handleRect.top) < 0.01,
+            true,
+            `Pixel 10 bottom-center handle top must shift 0px (${initialDock.handleRect.top} -> ${expandedDock.handleRect.top})`
+        );
         assert.ok(expandedDock.btns.includes('Approve All'));
 
         // 2. Pointer-drag .bt-dock-handle to top-right and verify snap + persistence across reload
@@ -1215,6 +1303,51 @@ test('Pixel 10 (412x924, hasTouch: true) Mobile Chrome E2E Verification for Site
             return toolbarHost.getBoundingClientRect().toJSON();
         })()`);
         assert.ok(persistedRect.top < 60 && persistedRect.right > 300, 'top-right dock snap must persist across reload');
+
+        // 2b. Verify bottom-right 0px handle delta across collapsed/expanded (vertical & horizontal)
+        const brDeltaCheck = await evaluate(`(async () => {
+            const th = document.getElementById('userjs-bt-toolbar-host');
+            const handleBtn = th.shadowRoot.querySelector('.bt-dock-handle');
+            const hc = handleBtn.getBoundingClientRect().toJSON();
+            // Drag handle to bottom-right (380, 890) via pointer events or test Manager Orientation + collapse/expand
+            window.__invokeGmMenu('Open Bookmarklet Manager');
+            await new Promise((r) => setTimeout(r, 25));
+            const sr = document.getElementById('userjs-bt-overlay-host').shadowRoot;
+            sr.querySelector('[data-dock-orientation="horizontal"]').click();
+            sr.getElementById('manager-close').click();
+            await new Promise((r) => setTimeout(r, 25));
+
+            // Move dock to bottom-right by dragging handle from current position
+            const startRect = th.shadowRoot.querySelector('.bt-dock-handle').getBoundingClientRect();
+            const sx = startRect.left + startRect.width / 2;
+            const sy = startRect.top + startRect.height / 2;
+            const hEl = th.shadowRoot.querySelector('.bt-dock-handle');
+            hEl.dispatchEvent(new PointerEvent('pointerdown', { pointerId: 9, button: 0, pointerType: 'touch', clientX: sx, clientY: sy, bubbles: true }));
+            hEl.dispatchEvent(new PointerEvent('pointermove', { pointerId: 9, pointerType: 'touch', clientX: 380, clientY: 890, bubbles: true }));
+            hEl.dispatchEvent(new PointerEvent('pointerup', { pointerId: 9, pointerType: 'touch', clientX: 380, clientY: 890, bubbles: true }));
+            await new Promise((r) => setTimeout(r, 25));
+
+            // Now at bottom-right expanded (from earlier tap) -> measure expanded horizontal, collapse, measure collapsed, expand vertical, measure
+            const brExpHoriz = th.shadowRoot.querySelector('.bt-dock-handle').getBoundingClientRect().toJSON();
+            th.shadowRoot.querySelector('.bt-dock-handle').click();
+            await new Promise((r) => setTimeout(r, 25));
+            const brCollapsed = th.shadowRoot.querySelector('.bt-dock-handle').getBoundingClientRect().toJSON();
+
+            window.__invokeGmMenu('Open Bookmarklet Manager');
+            sr.querySelector('[data-dock-orientation="auto"]').click();
+            sr.getElementById('manager-close').click();
+            await new Promise((r) => setTimeout(r, 25));
+            th.shadowRoot.querySelector('.bt-dock-handle').click();
+            await new Promise((r) => setTimeout(r, 240));
+            const brExpVert = th.shadowRoot.querySelector('.bt-dock-handle').getBoundingClientRect().toJSON();
+            const isVertical = th.shadowRoot.getElementById('bt-toolbar-container').classList.contains('bt-dock-vertical');
+            return { brCollapsed, brExpHoriz, brExpVert, isVertical };
+        })()`);
+        assert.equal(brDeltaCheck.isVertical, true, '412x924 corner in Auto orientation must resolve to vertical');
+        assert.ok(Math.abs(brDeltaCheck.brExpHoriz.left - brDeltaCheck.brCollapsed.left) < 0.01);
+        assert.ok(Math.abs(brDeltaCheck.brExpHoriz.top - brDeltaCheck.brCollapsed.top) < 0.01);
+        assert.ok(Math.abs(brDeltaCheck.brExpVert.left - brDeltaCheck.brCollapsed.left) < 0.01);
+        assert.ok(Math.abs(brDeltaCheck.brExpVert.top - brDeltaCheck.brCollapsed.top) < 0.01);
 
         // 3. Command Palette & Manager modal fit within 412px with zero horizontal overflow
         const paletteLayout = await evaluate(`(async () => {
@@ -1290,7 +1423,19 @@ test('Pixel 10 (412x924, hasTouch: true) Mobile Chrome E2E Verification for Site
             const storedIds = (window.__gmStore['UserJS.BookmarkletToolbar.Layout'] || []).map(
                 (n) => n.scriptId
             );
-            return { stripIds, storedIds };
+            const pill = sr.querySelector('#toolbar-strip [data-toolbar-script="pack:chaban-bookmarklets/multi_tool"]');
+            const pillRect = (pill.querySelector('span') || pill).getBoundingClientRect().toJSON();
+            const stickyRect = sr.querySelector('.bt-sticky-section').getBoundingClientRect().toJSON();
+            const libRect = sr.querySelector('.bt-library-section').getBoundingClientRect().toJSON();
+            return {
+                stripIds,
+                storedIds,
+                pillCenter: { x: pillRect.left + pillRect.width / 2, y: pillRect.top + pillRect.height / 2 },
+                libTarget: {
+                    x: libRect.left + libRect.width / 2,
+                    y: Math.min(libRect.bottom - 20, Math.max(stickyRect.bottom + 36, libRect.top + 80)),
+                },
+            };
         })()`);
 
         assert.ok(
@@ -1298,6 +1443,132 @@ test('Pixel 10 (412x924, hasTouch: true) Mobile Chrome E2E Verification for Site
             'Touch pointer-drag from .bt-grip onto #toolbar-strip must place multi_tool'
         );
         assert.ok(afterTouchDrop.storedIds.includes('pack:chaban-bookmarklets/multi_tool'));
+
+        // 4b. Touch pointer-drag Toolbar pill back to .bt-library-section unpins it
+        await touchDrag(
+            cdp,
+            afterTouchDrop.pillCenter.x,
+            afterTouchDrop.pillCenter.y,
+            afterTouchDrop.libTarget.x,
+            afterTouchDrop.libTarget.y,
+            10
+        );
+        await evaluate('new Promise((r) => setTimeout(r, 40))');
+
+        const afterDropBackUnpin = await evaluate(`(() => {
+            const sr = document.getElementById('userjs-bt-overlay-host')?.shadowRoot;
+            const stripIds = [...sr.querySelectorAll('#toolbar-strip [data-toolbar-script]')].map(
+                (el) => el.dataset.toolbarScript
+            );
+            const storedIds = (window.__gmStore['UserJS.BookmarkletToolbar.Layout'] || []).map(
+                (n) => n.scriptId
+            );
+            return { stripIds, storedIds };
+        })()`);
+        assert.equal(afterDropBackUnpin.stripIds.includes('pack:chaban-bookmarklets/multi_tool'), false);
+        assert.equal(afterDropBackUnpin.storedIds.includes('pack:chaban-bookmarklets/multi_tool'), false);
+
+        // 4c. Pin many scripts + folder on 412px mobile -> More » overflow menu appears & works
+        const mobileOverflowCheck = await evaluate(`(async () => {
+            const sr = document.getElementById('userjs-bt-overlay-host').shadowRoot;
+            sr.getElementById('mgr-only-site').checked = true;
+            sr.getElementById('mgr-only-site').dispatchEvent(new Event('change', { bubbles: true }));
+            await new Promise((r) => setTimeout(r, 20));
+
+            // Pin 8 matching scripts (leaving add_to_merge_queue for folder inline test)
+            const cards = [...sr.querySelectorAll('#library-grid [data-library-card]')];
+            let pinnedCount = 0;
+            for (const card of cards) {
+                const sid = card.dataset.libraryCard;
+                if (
+                    sid !== 'pack:chaban-bookmarklets/approve_all_edits' &&
+                    sid !== 'pack:chaban-bookmarklets/add_to_merge_queue'
+                ) {
+                    card.querySelector('.bt-star-btn').click();
+                    pinnedCount += 1;
+                    if (pinnedCount >= 8) {
+                        break;
+                    }
+                }
+            }
+            // Add a folder and move add_to_merge_queue (safe no-alert script) into it
+            sr.querySelector('[data-action="add-folder"]').click();
+            await new Promise((r) => setTimeout(r, 15));
+            const folderInput = sr.querySelector('#toolbar-strip .bt-inline-edit-input');
+            folderInput.value = 'MB Tools';
+            folderInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, composed: true }));
+            await new Promise((r) => setTimeout(r, 20));
+
+            const folderPill = sr.querySelector('#toolbar-strip [data-folder-pill]');
+            const safeFolderCard = sr.querySelector('[data-library-card="pack:chaban-bookmarklets/add_to_merge_queue"]');
+            const makeDrag = (type) => new DragEvent(type, { bubbles: true, cancelable: true, composed: true, dataTransfer: new DataTransfer() });
+            safeFolderCard.dispatchEvent(makeDrag('dragstart'));
+            folderPill.dispatchEvent(makeDrag('dragover'));
+            folderPill.dispatchEvent(makeDrag('drop'));
+            safeFolderCard.dispatchEvent(makeDrag('dragend'));
+            await new Promise((r) => setTimeout(r, 20));
+
+            // Snap to bottom-center via Horiz + drag handle so 412px width triggers More » overflow
+            sr.querySelector('[data-dock-orientation="horizontal"]').click();
+            sr.getElementById('manager-close').click();
+            await new Promise((r) => setTimeout(r, 25));
+
+            const th = document.getElementById('userjs-bt-toolbar-host');
+            const hEl = th.shadowRoot.querySelector('.bt-dock-handle');
+            const hRect = hEl.getBoundingClientRect();
+            const hx = hRect.left + hRect.width / 2;
+            const hy = hRect.top + hRect.height / 2;
+            hEl.dispatchEvent(new PointerEvent('pointerdown', { pointerId: 15, button: 0, pointerType: 'touch', clientX: hx, clientY: hy, bubbles: true }));
+            hEl.dispatchEvent(new PointerEvent('pointermove', { pointerId: 15, pointerType: 'touch', clientX: 206, clientY: 890, bubbles: true }));
+            hEl.dispatchEvent(new PointerEvent('pointerup', { pointerId: 15, pointerType: 'touch', clientX: 206, clientY: 890, bubbles: true }));
+            await new Promise((r) => setTimeout(r, 40));
+
+            const bar = th.shadowRoot.querySelector('.bt-dock-items-bar');
+            const barRect = bar.getBoundingClientRect().toJSON();
+            const moreBtn = bar.querySelector('[data-action="open-overflow"]');
+            const moreText = moreBtn ? moreBtn.textContent.trim() : null;
+            moreBtn?.click();
+            await new Promise((r) => setTimeout(r, 20));
+
+            const overflowDropdown = th.shadowRoot.querySelector('.bt-dropdown');
+            const dropdownRect = overflowDropdown ? overflowDropdown.getBoundingClientRect().toJSON() : null;
+            const folderToggle = overflowDropdown?.querySelector('[data-overflow-folder-id]');
+            folderToggle?.click();
+            await new Promise((r) => setTimeout(r, 20));
+            const inlineSubitems = th.shadowRoot.querySelectorAll('.bt-dropdown .bt-overflow-subitem');
+            const inlineSubitemCount = inlineSubitems.length;
+            const clickedSubitemId = inlineSubitems[0]?.dataset?.scriptId || null;
+            inlineSubitems[0]?.click();
+            await new Promise((r) => setTimeout(r, 20));
+            const dropdownClosedAfterRun = th.shadowRoot.querySelector('.bt-dropdown') === null;
+            const ranRecorded = Boolean(
+                clickedSubitemId &&
+                    window.__gmStore?.['UserJS.BookmarkletToolbar.Recents']?.[clickedSubitemId]?.count >= 1
+            );
+
+            // Reopen Manager for step 5
+            window.__invokeGmMenu('Open Bookmarklet Manager');
+            await new Promise((r) => setTimeout(r, 20));
+
+            return {
+                barRect,
+                moreText,
+                hasDropdown: Boolean(overflowDropdown),
+                dropdownRect,
+                hasFolderToggle: Boolean(folderToggle),
+                inlineSubitemCount,
+                dropdownClosedAfterRun,
+                ranRecorded,
+            };
+        })()`);
+        assert.equal(mobileOverflowCheck.moreText, 'More »', '412px mobile dock with 8+ items must render More » overflow');
+        assert.ok(mobileOverflowCheck.barRect.left >= 0 && mobileOverflowCheck.barRect.right <= 412);
+        assert.equal(mobileOverflowCheck.hasDropdown, true);
+        assert.ok(mobileOverflowCheck.dropdownRect.left >= 8 && mobileOverflowCheck.dropdownRect.right <= 404, 'More » dropdown must clamp within 8px of 412px viewport');
+        assert.equal(mobileOverflowCheck.hasFolderToggle, true);
+        assert.ok(mobileOverflowCheck.inlineSubitemCount >= 1, 'Overflowed folder must expand items inline inside More » dropdown');
+        assert.equal(mobileOverflowCheck.dropdownClosedAfterRun, true, 'Running an inline item in More » must close the overflow dropdown');
+        assert.equal(mobileOverflowCheck.ranRecorded, true, 'Running an inline item in More » must execute and record Recents');
 
         // 5. Toggle "Hide dock on this site" -> dock unmounts while Command Palette remains openable
         const afterHideDock = await evaluate(`(async () => {
