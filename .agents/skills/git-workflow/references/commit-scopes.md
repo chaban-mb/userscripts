@@ -53,6 +53,7 @@ This table maps userscripts and codebase components to their canonical commit sc
 | `Volumo MusicBrainz Importer.user.js` | `volumo-importer` |
 | `YouTube Music Spotify Search.user.js` | `youtube-music-spotify-search` |
 | `YouTube MusicBrainz Importer.user.js` | `youtube-importer` |
+| `ListenBrainz Private Navidrome.user.js` | `lb-private-navidrome` |
 | `lib/MusicBrainzAPI.js` | `lib` |
 | `tools/workflow.py` | `workflow` |
 | `tools/build_dist.py` | `dist` |
