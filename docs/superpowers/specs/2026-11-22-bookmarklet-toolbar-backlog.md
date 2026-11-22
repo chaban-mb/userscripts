@@ -2,6 +2,7 @@
 
 Created: 2026-11-22  
 Related specs:
+
 - [2026-11-21-manager-ux-polish-design.md](2026-11-21-manager-ux-polish-design.md) (also tracks deferred `#4`: decluttering Manager header behind a `⚙` Settings sub-modal)
 - [2026-11-21-dock-expansion-overflow-design.md](2026-11-21-dock-expansion-overflow-design.md)
 
@@ -33,6 +34,11 @@ Related specs:
   - **Symptom:** When a single pack is installed (`packCount === 1`), the Command Palette badge only says `Pack` instead of identifying which pack/origin it comes from.
   - **Confirmed cause:** `lib/BookmarkletToolbarUI.js:4772-4777` collapses `badgeText` to `'Pack'` whenever `packCount <= 1`.
   - **Fix:** Show `packMeta?.name || s.packId` (or `Pack: <name>`) clearly on palette script badges (and evaluate whether Library card badges should stay consistent).
+
+- [ ] **6. Skip iframe / sub-frame injection** *(Jira Dashboard gadgets, etc.)*
+  - **Symptom:** On sites with embedded same-origin/matched iframes (e.g., `https://tickets.metabrainz.org/secure/Dashboard.jspa` gadgets), the dock is injected inside each iframe as well as the top-level page.
+  - **Confirmed cause:** `src/Site Bookmarklet Toolbar.user.js` lacks `// @noframes` in its userscript header and lacks a `win.top && win.self !== win.top` guard.
+  - **Fix:** Add `// @noframes` to `src/Site Bookmarklet Toolbar.user.js` (plus an early `win.self !== win.top` runtime guard).
 
 ---
 
