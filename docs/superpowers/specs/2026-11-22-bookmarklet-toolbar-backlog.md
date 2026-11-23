@@ -87,11 +87,19 @@ Related specs:
   - **Design questions to settle:**
     - Global setting (`settings.keepFolderOpenAfterRun`, e.g. in Settings) vs per-folder pin/toggle inside the dropdown header (or both), and whether auto-close (`false`) remains the default.
 
+- [ ] **15. Configurable hover-to-open for toolbar folders** *(and `More »`)*
+  - **Goal:** Allow opening toolbar folder dropdowns (and optionally `More »`) on hover instead of requiring a click.
+  - **Design notes:** Add a short hover-intent delay (~120ms) before opening/switching folders so moving across neighboring buttons doesn't flicker menus, and close cleanly on leave (respecting the dock hover grace delay in #16).
+
+- [ ] **16. Hover-expand collapse grace delay & expanded hit buffer** *(Hover usability)*
+  - **Symptom:** In `Hover` / unpinned `Hover + Click` mode, keeping the cursor strictly inside the thin pill area is finicky — slipping slightly outside the edge immediately collapses the dock.
+  - **Recommended UX solution:** Combine a **350–450ms `mouseleave` collapse grace timeout** (cancelled if `mouseenter` re-enters the dock or an open dropdown) with a modest **invisible `10–14px` hover buffer** around the **expanded** dock only (never when collapsed, so it doesn't block underlying page links).
+
 ---
 
 ## Batch 3: Expanded Command Palette Actions & Settings UX (Needs Design)
 
-- [ ] **15. Expose Manager actions & multi-state settings in Command Palette** *(Item #6)*
+- [ ] **17. Expose Manager actions & multi-state settings in Command Palette** *(Item #6)*
   - **Goal:** Trigger `Import`, `Export`, `New Local Script`, `Hotkey`, `Dock expand` (`Hover + Click` / `Click` / `Hover`), `Orientation` (`Auto` / `Horizontal` / `Vertical`), and `Dock position` directly from the Command Palette.
   - **Design questions to settle:**
     - **Sub-modal vs direct modal:** Should `"Settings"` open a dedicated Settings sub-modal (connecting with deferred `#4` `⚙` Settings button in [2026-11-21-manager-ux-polish-design.md](2026-11-21-manager-ux-polish-design.md)) vs opening Import/Export/Editor modals directly?
