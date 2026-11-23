@@ -40,26 +40,41 @@ Related specs:
   - **Confirmed cause:** `src/Site Bookmarklet Toolbar.user.js` lacks `// @noframes` in its userscript header and lacks a `win.top && win.self !== win.top` guard.
   - **Fix:** Add `// @noframes` to `src/Site Bookmarklet Toolbar.user.js` (plus an early `win.self !== win.top` runtime guard).
 
+- [ ] **7. Fix horizontal `*-center` dock overflow/bleeding on mobile** *(Firefox Mobile `top-center`)*
+  - **Symptom:** Scripts in `.bt-dock-items-bar` overflow and bleed right out of the dark pill capsule and past the viewport edge instead of triggering `More »`.
+  - **Confirmed cause:** `.bt-dock-items-bar` (`lib/BookmarkletToolbarUI.js:447-464`) uses `position: absolute; left: 50%; translate: -50% 0; width: max-content;` inside the `~36px` `position: relative` `.bt-dock-center` wrapper, which causes CSS shrink-to-fit / containing-block width clamping around `~50vw` and mismatches `partitionDockOverflow` budget (especially on non-viewport-meta sites like MusicBrainz on Firefox Mobile).
+  - **Fix:** Anchor `.bt-dock-items-bar` against a full-viewport-width container (e.g. `position: fixed` or `inset-inline: 0; margin-inline: auto; width: fit-content; max-width: calc(100vw - 24px)`) and measure `partitionDockOverflow` against the true layout/visual viewport width (`min` of `100vw` and measured container budget).
+
+- [ ] **8. Fix sub-modals (`Add Local Script`, `Export`, `Import`) clipped offscreen at bottom** *(Firefox Mobile)*
+  - **Symptom:** Sub-modals open near the lower half of the screen with `Code` / `Save` cut off below the bottom browser toolbar.
+  - **Confirmed cause:** `.bt-backdrop` / `.bt-backdrop-sub` (`lib/BookmarkletToolbarUI.js:1088-1124`) uses `align-items: center`, which on tall non-viewport-meta pages in Firefox Mobile centers the sub-modal vertically inside the taller layout viewport rather than keeping it at the top like `#manager-backdrop` (`align-items: flex-start; padding-top: 16px`), and `.bt-form-body` lacks `overflow-y: auto`.
+  - **Fix:** Top-align sub-modal backdrops (`align-items: flex-start; padding-top: 16px; overflow-y: auto`) and allow `.bt-form-body` to scroll (`overflow-y: auto; min-height: 0`) inside `.bt-modal`.
+
 ---
 
-## Batch 2: Manager Visibility & Default Dock Policy (Medium Scope)
+## Batch 2: Manager Visibility, Portrait Layout & Highlighting (Medium Scope)
 
-- [ ] **6. Configurable default dock visibility (Shown vs Hidden by default)** *(Item #2)*
+- [ ] **9. Configurable default dock visibility (Shown vs Hidden by default)** *(Item #2)*
   - **Goal:** Beyond hiding the dock per site (`dockSiteHidden`), let users choose globally whether the dock is **shown (collapsed `[⚡]`)** or **hidden** by default on sites that have matching placed scripts, with per-origin overrides.
   - **Design questions to settle:**
     - Schema migration: replace or complement `dockSiteHidden` with `dockDefaultVisible: boolean` (`true` vs `false`) + per-origin override map (`dockSiteVisibility: { [origin]: 'shown' | 'hidden' }` or keep `dockSiteHidden` / `dockSiteShown`).
     - Mobile discoverability when default is hidden (GM menu command `Toggle Dock on This Site` + Command Palette).
 
-- [ ] **7. Highlight matching scripts / dim non-matching scripts in Manager** *(Item #4)*
+- [ ] **10. Highlight matching scripts / dim non-matching scripts in Manager** *(Item #4)*
   - **Goal:** Keep the full global tree (`Toolbar Layout`, `Folder Drawer`, and `Library`) visible while visually highlighting scripts matching the active site and fading non-matching scripts, instead of relying only on hiding via `"Matching current site"`.
   - **Design questions to settle:**
     - Whether `"Matching current site"` becomes a 2-state or 3-state control (`All` | `Highlight matching` | `Only matching`), or defaults to always highlighting matching + dimming non-matching in both `Toolbar Layout` pills and `Library` cards.
+
+- [ ] **11. Portrait Manager vertical space: compact header & non-crowding sticky/folder drawer** *(Firefox Mobile portrait)*
+  - **Symptom:** In portrait mode, the multi-row Manager header (`+ New Local Script`, `Export`, `Import`, `Shortcut`, `Dock expand`, `Orientation`, `Hide dock`) plus `.bt-sticky-section` (especially with an open `Edit (9)` `.bt-folder-drawer`) consumes ~85% of the height and squishes the Library down to 1 card.
+  - **Design questions to settle:**
+    - Disable `position: sticky` on `.bt-sticky-section` below a height/portrait threshold (so the whole `.bt-manager-body` scrolls naturally while keeping `.bt-folder-drawer` capped/scrollable) vs moving secondary settings behind `⚙` Settings sub-modal (connecting with Batch 3 / deferred `#4`).
 
 ---
 
 ## Batch 3: Expanded Command Palette Actions & Settings UX (Needs Design)
 
-- [ ] **8. Expose Manager actions & multi-state settings in Command Palette** *(Item #6)*
+- [ ] **12. Expose Manager actions & multi-state settings in Command Palette** *(Item #6)*
   - **Goal:** Trigger `Import`, `Export`, `New Local Script`, `Hotkey`, `Dock expand` (`Hover + Click` / `Click` / `Hover`), `Orientation` (`Auto` / `Horizontal` / `Vertical`), and `Dock position` directly from the Command Palette.
   - **Design questions to settle:**
     - **Sub-modal vs direct modal:** Should `"Settings"` open a dedicated Settings sub-modal (connecting with deferred `#4` `⚙` Settings button in [2026-11-21-manager-ux-polish-design.md](2026-11-21-manager-ux-polish-design.md)) vs opening Import/Export/Editor modals directly?
