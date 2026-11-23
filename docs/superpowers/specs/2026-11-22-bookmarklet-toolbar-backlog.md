@@ -81,11 +81,17 @@ Related specs:
   - **Design questions to settle:**
     - Disable `position: sticky` on `.bt-sticky-section` below a height/portrait threshold (so the whole `.bt-manager-body` scrolls naturally while keeping `.bt-folder-drawer` capped/scrollable) vs moving secondary settings behind `⚙` Settings sub-modal (connecting with Batch 3 / deferred `#4`).
 
+- [ ] **14. Configurable keep-folder-open after running a script** *(multi-step script chaining)*
+  - **Goal:** Optionally keep an open toolbar folder `.bt-dropdown` (and `More »` menu) open after clicking/running a script inside it so users can chain sequential scripts without reopening the folder each time.
+  - **Confirmed cause:** `triggerRunScript(scriptId)` (`lib/BookmarkletToolbarUI.js:2820`) unconditionally calls `closeToolbarDropdown()`.
+  - **Design questions to settle:**
+    - Global setting (`settings.keepFolderOpenAfterRun`, e.g. in Settings) vs per-folder pin/toggle inside the dropdown header (or both), and whether auto-close (`false`) remains the default.
+
 ---
 
 ## Batch 3: Expanded Command Palette Actions & Settings UX (Needs Design)
 
-- [ ] **14. Expose Manager actions & multi-state settings in Command Palette** *(Item #6)*
+- [ ] **15. Expose Manager actions & multi-state settings in Command Palette** *(Item #6)*
   - **Goal:** Trigger `Import`, `Export`, `New Local Script`, `Hotkey`, `Dock expand` (`Hover + Click` / `Click` / `Hover`), `Orientation` (`Auto` / `Horizontal` / `Vertical`), and `Dock position` directly from the Command Palette.
   - **Design questions to settle:**
     - **Sub-modal vs direct modal:** Should `"Settings"` open a dedicated Settings sub-modal (connecting with deferred `#4` `⚙` Settings button in [2026-11-21-manager-ux-polish-design.md](2026-11-21-manager-ux-polish-design.md)) vs opening Import/Export/Editor modals directly?
