@@ -50,6 +50,11 @@ Related specs:
   - **Confirmed cause:** `.bt-backdrop` / `.bt-backdrop-sub` (`lib/BookmarkletToolbarUI.js:1088-1124`) uses `align-items: center`, which on tall non-viewport-meta pages in Firefox Mobile centers the sub-modal vertically inside the taller layout viewport rather than keeping it at the top like `#manager-backdrop` (`align-items: flex-start; padding-top: 16px`), and `.bt-form-body` lacks `overflow-y: auto`.
   - **Fix:** Top-align sub-modal backdrops (`align-items: flex-start; padding-top: 16px; overflow-y: auto`) and allow `.bt-form-body` to scroll (`overflow-y: auto; min-height: 0`) inside `.bt-modal`.
 
+- [ ] **9. Fix mobile touch double-toggle when tapping dock handle (`[⚡]`)** *(Firefox Mobile)*
+  - **Symptom:** Tapping `[⚡]` expands the dock reliably, but tapping `[⚡]` again to close takes multiple tries (only closing when tapped in quick succession).
+  - **Confirmed cause:** `attachDockHandleDrag` (`lib/BookmarkletToolbarUI.js:2640-2769`) calls `toggleDockPinnedExpanded()` inside `onPointerUp` (rebuilding `handleBtn` at the exact same `0px`-shifted coordinates) while resetting `suppressNextHandleClick` via `setTimeout(..., 0)`. On Firefox Mobile, the synthesized compatibility `click` fires after `setTimeout(0)` expires, hits the recreated `handleBtn`, and toggles the dock right back open.
+  - **Fix:** Let `click` be the sole toggle path for taps (`!wasDragging`) instead of calling `toggleDockPinnedExpanded()` in `onPointerUp`, and only set `suppressNextHandleClick` (with a `~400ms` window) when `wasDragging === true`.
+
 ---
 
 ## Batch 2: Manager Visibility, Portrait Layout & Highlighting (Medium Scope)
