@@ -55,6 +55,11 @@ Related specs:
   - **Confirmed cause:** `attachDockHandleDrag` (`lib/BookmarkletToolbarUI.js:2640-2769`) calls `toggleDockPinnedExpanded()` inside `onPointerUp` (rebuilding `handleBtn` at the exact same `0px`-shifted coordinates) while resetting `suppressNextHandleClick` via `setTimeout(..., 0)`. On Firefox Mobile, the synthesized compatibility `click` fires after `setTimeout(0)` expires, hits the recreated `handleBtn`, and toggles the dock right back open.
   - **Fix:** Let `click` be the sole toggle path for taps (`!wasDragging`) instead of calling `toggleDockPinnedExpanded()` in `onPointerUp`, and only set `suppressNextHandleClick` (with a `~400ms` window) when `wasDragging === true`.
 
+- [ ] **10. Fix CSP `style-src 'self'` violations on strict MusicBrainz account pages** *(e.g. `/account/edit`, `/account/preferences`)*
+  - **Symptom:** Dock and overlays render completely unstyled under strict `style-src 'self'` CSP, logging `Applying inline style violates ... 'style-src 'self' ...'`.
+  - **Confirmed cause:** `lib/BookmarkletToolbarAdapters.js:20, 60` (`applyInlineStyles` calling `el.style.cssText = ...`) and `lib/BookmarkletToolbarUI.js:2837, 3514` (injecting `<style>` elements into `toolbarShadow` / `overlayShadow`) both trigger `'unsafe-inline'` CSP violations, alongside any `style.cssText` assignments.
+  - **Fix:** Adopt Shadow DOM constructable stylesheets (`new CSSStyleSheet()` + `replaceSync(css)` + `shadowRoot.adoptedStyleSheets = [sheet]`, with `<style>` fallback only if `CSSStyleSheet`/`adoptedStyleSheets` is unavailable), replace `el.style.cssText` in `Adapters` and `UI` with attribute/class selectors (`:host([data-snap="..."])`) or CSSOM property updates verified under a strict `style-src 'self'` Headless Chrome E2E scenario.
+
 ---
 
 ## Batch 2: Manager Visibility, Portrait Layout & Highlighting (Medium Scope)
