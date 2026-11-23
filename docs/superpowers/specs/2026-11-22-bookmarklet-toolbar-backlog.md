@@ -59,23 +59,27 @@ Related specs:
   - **Symptom:** Dock and overlays render completely unstyled under strict `style-src 'self'` CSP, logging `Applying inline style violates ... 'style-src 'self' ...'`.
   - **Confirmed cause:** `lib/BookmarkletToolbarAdapters.js:20, 60` (`applyInlineStyles` calling `el.style.cssText = ...`) and `lib/BookmarkletToolbarUI.js:2837, 3514` (injecting `<style>` elements into `toolbarShadow` / `overlayShadow`) both trigger `'unsafe-inline'` CSP violations, alongside any `style.cssText` assignments.
   - **Fix:** Adopt Shadow DOM constructable stylesheets (`new CSSStyleSheet()` + `replaceSync(css)` + `shadowRoot.adoptedStyleSheets = [sheet]`, with `<style>` fallback only if `CSSStyleSheet`/`adoptedStyleSheets` is unavailable), replace `el.style.cssText` in `Adapters` and `UI` with attribute/class selectors (`:host([data-snap="..."])`) or CSSOM property updates verified under a strict `style-src 'self'` Headless Chrome E2E scenario.
+  - **GM API Tradeoffs Note:**
+    - `GM.addStyle` only injects `<style>` into the host document `<head>` (cannot style inside Shadow DOM internals), does not fix `el.style.cssText` violations, and can still hit page `style-src` CSP in Chromium.
+    - `GM.addElement(shadowRoot, 'style', ...)` can bypass CSP from extension context in Violentmonkey/Tampermonkey, but requires adding `@grant GM.addElement`, varies across GM4 managers/mocks, and still does not replace inline `style.cssText`.
+    - `CSSStyleSheet` + `adoptedStyleSheets` + `:host([data-snap="..."])` is standard in Chrome 73+ and Firefox 101+, requires zero extra `@grant`, and works directly inside Shadow DOM (`GM.addElement` remains an optional fallback only if a manager/browser edge case blocks an inline `<style>` or `<script>`).
 
 ---
 
 ## Batch 2: Manager Visibility, Portrait Layout & Highlighting (Medium Scope)
 
-- [ ] **9. Configurable default dock visibility (Shown vs Hidden by default)** *(Item #2)*
+- [ ] **11. Configurable default dock visibility (Shown vs Hidden by default)** *(Item #2)*
   - **Goal:** Beyond hiding the dock per site (`dockSiteHidden`), let users choose globally whether the dock is **shown (collapsed `[⚡]`)** or **hidden** by default on sites that have matching placed scripts, with per-origin overrides.
   - **Design questions to settle:**
     - Schema migration: replace or complement `dockSiteHidden` with `dockDefaultVisible: boolean` (`true` vs `false`) + per-origin override map (`dockSiteVisibility: { [origin]: 'shown' | 'hidden' }` or keep `dockSiteHidden` / `dockSiteShown`).
     - Mobile discoverability when default is hidden (GM menu command `Toggle Dock on This Site` + Command Palette).
 
-- [ ] **10. Highlight matching scripts / dim non-matching scripts in Manager** *(Item #4)*
+- [ ] **12. Highlight matching scripts / dim non-matching scripts in Manager** *(Item #4)*
   - **Goal:** Keep the full global tree (`Toolbar Layout`, `Folder Drawer`, and `Library`) visible while visually highlighting scripts matching the active site and fading non-matching scripts, instead of relying only on hiding via `"Matching current site"`.
   - **Design questions to settle:**
     - Whether `"Matching current site"` becomes a 2-state or 3-state control (`All` | `Highlight matching` | `Only matching`), or defaults to always highlighting matching + dimming non-matching in both `Toolbar Layout` pills and `Library` cards.
 
-- [ ] **11. Portrait Manager vertical space: compact header & non-crowding sticky/folder drawer** *(Firefox Mobile portrait)*
+- [ ] **13. Portrait Manager vertical space: compact header & non-crowding sticky/folder drawer** *(Firefox Mobile portrait)*
   - **Symptom:** In portrait mode, the multi-row Manager header (`+ New Local Script`, `Export`, `Import`, `Shortcut`, `Dock expand`, `Orientation`, `Hide dock`) plus `.bt-sticky-section` (especially with an open `Edit (9)` `.bt-folder-drawer`) consumes ~85% of the height and squishes the Library down to 1 card.
   - **Design questions to settle:**
     - Disable `position: sticky` on `.bt-sticky-section` below a height/portrait threshold (so the whole `.bt-manager-body` scrolls naturally while keeping `.bt-folder-drawer` capped/scrollable) vs moving secondary settings behind `⚙` Settings sub-modal (connecting with Batch 3 / deferred `#4`).
@@ -84,7 +88,7 @@ Related specs:
 
 ## Batch 3: Expanded Command Palette Actions & Settings UX (Needs Design)
 
-- [ ] **12. Expose Manager actions & multi-state settings in Command Palette** *(Item #6)*
+- [ ] **14. Expose Manager actions & multi-state settings in Command Palette** *(Item #6)*
   - **Goal:** Trigger `Import`, `Export`, `New Local Script`, `Hotkey`, `Dock expand` (`Hover + Click` / `Click` / `Hover`), `Orientation` (`Auto` / `Horizontal` / `Vertical`), and `Dock position` directly from the Command Palette.
   - **Design questions to settle:**
     - **Sub-modal vs direct modal:** Should `"Settings"` open a dedicated Settings sub-modal (connecting with deferred `#4` `⚙` Settings button in [2026-11-21-manager-ux-polish-design.md](2026-11-21-manager-ux-polish-design.md)) vs opening Import/Export/Editor modals directly?
