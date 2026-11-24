@@ -231,6 +231,85 @@ function createTestServer() {
             return;
         }
 
+        if (url.pathname === '/csp-style-strict') {
+            res.writeHead(200, {
+                'Content-Type': 'text/html; charset=utf-8',
+                'Content-Security-Policy': "style-src 'self'",
+            });
+            res.end(`<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>Strict Style CSP Page</title></head>
+<body>
+    <main id="page"><h1>Strict Style CSP Frame</h1></main>
+</body>
+</html>`);
+            return;
+        }
+
+        if (url.pathname === '/csp-script-blob') {
+            res.writeHead(200, {
+                'Content-Type': 'text/html; charset=utf-8',
+                'Content-Security-Policy': "script-src 'self' 'unsafe-eval' blob:",
+            });
+            res.end(`<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>Blob Script CSP Page</title></head>
+<body>
+    <main id="page"><h1>Blob Script CSP Frame</h1></main>
+</body>
+</html>`);
+            return;
+        }
+
+        if (url.pathname === '/csp-script-strict') {
+            res.writeHead(200, {
+                'Content-Type': 'text/html; charset=utf-8',
+                'Content-Security-Policy': "script-src 'self'",
+            });
+            res.end(`<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>Strict Script CSP Page</title></head>
+<body>
+    <main id="page"><h1>Strict Script CSP Frame</h1></main>
+</body>
+</html>`);
+            return;
+        }
+
+        if (url.pathname === '/iframe-host') {
+            res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+            res.end(`<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>Iframe Host Page</title></head>
+<body>
+    <main id="page">
+        <h1>Top Frame</h1>
+        <iframe id="same-origin-frame" src="/mb-release" style="width: 600px; height: 300px;"></iframe>
+    </main>
+</body>
+</html>`);
+            return;
+        }
+
+        if (url.pathname === '/mobile-no-viewport') {
+            res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+            res.end(`<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Mobile Release Without Viewport Meta - MusicBrainz</title>
+</head>
+<body>
+    <header><strong>MusicBrainz Non-Viewport Page</strong></header>
+    <main id="page">
+        <h1>Release Editor</h1>
+        <p style="width: 980px;">Wide legacy layout content</p>
+    </main>
+</body>
+</html>`);
+            return;
+        }
+
         res.writeHead(404, { 'Content-Type': 'text/plain' });
         res.end('Not found');
     });
@@ -576,6 +655,7 @@ test('Real Headless Chrome E2E Verification for Site Bookmarklet Toolbar', async
         assert.deepEqual(scenario1.menuCaptions, [
             'Open Command Palette',
             'Open Bookmarklet Manager',
+            'Open Settings',
             'Toggle Dock on This Site',
         ]);
 
@@ -752,7 +832,9 @@ test('Real Headless Chrome E2E Verification for Site Bookmarklet Toolbar', async
         // Verify real pointer hover bridge across the 6px gap at bottom-center in hover mode
         const hoverBridgeStart = await evaluate(`(async () => {
             const sr = document.getElementById('userjs-bt-overlay-host').shadowRoot;
+            sr.getElementById('btn-manager-settings').click();
             sr.querySelector('[data-dock-expand-mode="hover"]').click();
+            sr.getElementById('settings-close').click();
             sr.getElementById('manager-close').click();
             await new Promise((r) => setTimeout(r, 30));
             const th = document.getElementById('userjs-bt-toolbar-host');
@@ -792,7 +874,9 @@ test('Real Headless Chrome E2E Verification for Site Bookmarklet Toolbar', async
             // Restore 'both' mode and reopen Manager for Scenario 3 (dock stays pinned expanded from Scenario 2)
             window.__invokeGmMenu('Open Bookmarklet Manager');
             const sr = document.getElementById('userjs-bt-overlay-host').shadowRoot;
+            sr.getElementById('btn-manager-settings').click();
             sr.querySelector('[data-dock-expand-mode="both"]').click();
+            sr.getElementById('settings-close').click();
             await new Promise((r) => setTimeout(r, 20));
             return { expanded, hasBar: Boolean(bar) };
         })()`);
@@ -988,7 +1072,9 @@ test('Real Headless Chrome E2E Verification for Site Bookmarklet Toolbar', async
         // Scenario 4b: Folder dropdown 6px hover bridge in 'hover' mode stays open across gap
         const folderBridgeCoords = await evaluate(`(async () => {
             const sr = document.getElementById('userjs-bt-overlay-host').shadowRoot;
+            sr.getElementById('btn-manager-settings').click();
             sr.querySelector('[data-dock-expand-mode="hover"]').click();
+            sr.getElementById('settings-close').click();
             sr.getElementById('manager-close').click();
             await new Promise((r) => setTimeout(r, 30));
             const th = document.getElementById('userjs-bt-toolbar-host');
@@ -1026,7 +1112,9 @@ test('Real Headless Chrome E2E Verification for Site Bookmarklet Toolbar', async
             const expanded = th.shadowRoot.querySelector('.bt-dock-handle')?.getAttribute('aria-expanded') === 'true';
             window.__invokeGmMenu('Open Bookmarklet Manager');
             const sr = document.getElementById('userjs-bt-overlay-host').shadowRoot;
+            sr.getElementById('btn-manager-settings').click();
             sr.querySelector('[data-dock-expand-mode="both"]').click();
+            sr.getElementById('settings-close').click();
             await new Promise((r) => setTimeout(r, 20));
             return { hasDropdown, expanded };
         })()`);
@@ -1040,6 +1128,7 @@ test('Real Headless Chrome E2E Verification for Site Bookmarklet Toolbar', async
         // =====================================================================
         const exportedJsonStr = await evaluate(`(() => {
             const sr = document.getElementById('userjs-bt-overlay-host').shadowRoot;
+            sr.getElementById('btn-manager-settings').click();
             sr.getElementById('btn-export-open').click();
             const val = sr.getElementById('export-preview').value;
             sr.getElementById('export-close').click();
@@ -1302,6 +1391,165 @@ test('Real Headless Chrome E2E Verification for Site Bookmarklet Toolbar', async
             after: '#tracklist',
             calls: ['nextTab'],
         });
+
+        // =====================================================================
+        // Scenario 8: Unmocked Strict Style CSP (`style-src 'self'`), Blob Script
+        // CSP (`script-src 'self' 'unsafe-eval' blob:`), Strict Script CSP
+        // (`script-src 'self'`, NO GM.addElement mock), and Top-Frame Only
+        // (`/iframe-host` same-origin iframe).
+        // =====================================================================
+        const cspMonitor = await cdp.send('Page.addScriptToEvaluateOnNewDocument', {
+            source: `(() => {
+                window.__btCspViolations = [];
+                document.addEventListener('securitypolicyviolation', (e) => {
+                    window.__btCspViolations.push({
+                        effectiveDirective: e.effectiveDirective || '',
+                        violatedDirective: e.violatedDirective || '',
+                        blockedURI: e.blockedURI || '',
+                    });
+                });
+            })();`,
+        });
+
+        try {
+            await navigateAndInject(`http://musicbrainz.org:${port}/csp-style-strict`);
+
+            const styleCspCheck = await evaluate(`(async () => {
+                window.__invokeGmMenu('Open Settings');
+                await new Promise((r) => setTimeout(r, 40));
+                const th = document.getElementById('userjs-bt-toolbar-host');
+                const oh = document.getElementById('userjs-bt-overlay-host');
+                const container = th?.shadowRoot?.getElementById('bt-toolbar-container');
+                const settingsModal = oh?.shadowRoot?.querySelector('#settings-backdrop .bt-modal');
+                const styleViolations = (window.__btCspViolations || []).filter((v) =>
+                    String(v.effectiveDirective || v.violatedDirective).includes('style-src')
+                );
+                const result = {
+                    styleViolationCount: styleViolations.length,
+                    toolbarInlineStyleTags: th?.shadowRoot?.querySelectorAll('style').length ?? -1,
+                    overlayInlineStyleTags: oh?.shadowRoot?.querySelectorAll('style').length ?? -1,
+                    toolbarAdoptedCount: th?.shadowRoot?.adoptedStyleSheets?.length || 0,
+                    overlayAdoptedCount: oh?.shadowRoot?.adoptedStyleSheets?.length || 0,
+                    containerDisplay: container ? getComputedStyle(container).display : null,
+                    modalBg: settingsModal ? getComputedStyle(settingsModal).backgroundColor : null,
+                };
+                oh?.shadowRoot?.getElementById('settings-close')?.click();
+                return result;
+            })()`);
+
+            assert.equal(styleCspCheck.styleViolationCount, 0, 'style-src strict page must trigger 0 style-src CSP violations');
+            assert.equal(styleCspCheck.toolbarInlineStyleTags, 0);
+            assert.equal(styleCspCheck.overlayInlineStyleTags, 0);
+            assert.ok(styleCspCheck.toolbarAdoptedCount > 0);
+            assert.ok(styleCspCheck.overlayAdoptedCount > 0);
+            assert.equal(styleCspCheck.containerDisplay, 'inline-flex');
+            assert.notEqual(styleCspCheck.modalBg, 'rgba(0, 0, 0, 0)');
+        } finally {
+            await cdp.send('Page.removeScriptToEvaluateOnNewDocument', {
+                identifier: cspMonitor.identifier,
+            });
+        }
+
+        // Blob CSP: inline script blocked -> blob: URL fallback executes without GM.addElement
+        await navigateAndInject(`http://musicbrainz.org:${port}/csp-script-blob`);
+        const blobCspCheck = await evaluate(`(async () => {
+            window.MB = {
+                _releaseEditor: {
+                    _tab: '#information',
+                    _tabCalls: [],
+                    activeTabID() {
+                        return this._tab;
+                    },
+                    nextTab() {
+                        this._tab = '#tracklist';
+                        this._tabCalls.push('nextTab');
+                        return this._tab;
+                    },
+                },
+            };
+            const th = document.getElementById('userjs-bt-toolbar-host');
+            const probeBtn = th?.shadowRoot?.querySelector('[data-script-id="local:mb_release_editor_probe"]');
+            probeBtn?.click();
+            await new Promise((r) => setTimeout(r, 120));
+            const toast = document.getElementById('userjs-bt-overlay-host')?.shadowRoot?.getElementById('toast');
+            return {
+                hasGmAddElement: typeof window.GM?.addElement === 'function',
+                probeResult: window.__mbProbeResult || null,
+                toastVisible: Boolean(toast && !toast.classList.contains('hidden')),
+            };
+        })()`);
+
+        assert.equal(blobCspCheck.hasGmAddElement, false, 'E2E harness must not mock GM.addElement');
+        assert.deepEqual(blobCspCheck.probeResult, {
+            before: '#information',
+            after: '#tracklist',
+            calls: ['nextTab'],
+        });
+        assert.equal(blobCspCheck.toastVisible, false);
+
+        // Strict Script CSP (`script-src 'self'`, no blob:, no mocked GM.addElement): surfaces real CSP error toast
+        await navigateAndInject(`http://musicbrainz.org:${port}/csp-script-strict`);
+        const strictScriptCspCheck = await evaluate(`(async () => {
+            const th = document.getElementById('userjs-bt-toolbar-host');
+            const probeBtn = th?.shadowRoot?.querySelector('[data-script-id="local:mb_release_editor_probe"]');
+            probeBtn?.click();
+            await new Promise((r) => setTimeout(r, 140));
+            const toast = document.getElementById('userjs-bt-overlay-host')?.shadowRoot?.getElementById('toast');
+            return {
+                hasGmAddElement: typeof window.GM?.addElement === 'function',
+                probeResult: window.__mbProbeResult || null,
+                toastVisible: Boolean(toast && !toast.classList.contains('hidden')),
+                toastText: toast?.textContent?.trim() || '',
+            };
+        })()`);
+
+        assert.equal(strictScriptCspCheck.hasGmAddElement, false, 'Strict CSP test must NOT mock GM.addElement');
+        assert.equal(strictScriptCspCheck.probeResult, null);
+        assert.equal(strictScriptCspCheck.toastVisible, true);
+        assert.match(
+            strictScriptCspCheck.toastText,
+            /Bookmarklet error: Blocked by page Content Security Policy/i
+        );
+
+        // Same-origin iframe guard: top frame mounts 1 dock, iframe mounts 0
+        await navigateAndInject(`http://musicbrainz.org:${port}/iframe-host`);
+        const iframeResult = await evaluate(`(async () => {
+            const iframe = document.getElementById('same-origin-frame');
+            if (!iframe || !iframe.contentWindow || !iframe.contentDocument) {
+                throw new Error('Missing same-origin iframe or contentWindow');
+            }
+            const iw = iframe.contentWindow;
+            const idoc = iframe.contentDocument;
+            iw.__gmMenuCommands = [];
+            iw.GM = {
+                info: { script: { name: 'Site Bookmarklet Toolbar', version: '1.0.0' } },
+                async getValue(k, fallback) {
+                    return Object.prototype.hasOwnProperty.call(window.__gmStore, k)
+                        ? structuredClone(window.__gmStore[k])
+                        : fallback;
+                },
+                async setValue() {},
+                async deleteValue() {},
+                registerMenuCommand(caption, onClick) {
+                    iw.__gmMenuCommands.push({ caption, onClick });
+                },
+            };
+            iw.eval(${JSON.stringify(inlinedUserscript)});
+            await new Promise((r) => setTimeout(r, 60));
+            return {
+                topDockCount: document.querySelectorAll('#userjs-bt-toolbar-host').length,
+                isSubframe: iw.self !== iw.top,
+                iframeMenuCount: iw.__gmMenuCommands.length,
+                iframeHasToolbarHost: idoc.getElementById('userjs-bt-toolbar-host') !== null,
+                iframeHasOverlayHost: idoc.getElementById('userjs-bt-overlay-host') !== null,
+            };
+        })()`);
+        assert.match(inlinedUserscript, /\/\/\s*@noframes\b/);
+        assert.equal(iframeResult.topDockCount, 1);
+        assert.equal(iframeResult.isSubframe, true);
+        assert.equal(iframeResult.iframeMenuCount, 0);
+        assert.equal(iframeResult.iframeHasToolbarHost, false);
+        assert.equal(iframeResult.iframeHasOverlayHost, false);
     } finally {
         await cdp.close();
         await new Promise((resolve) => server.close(resolve));
@@ -1433,12 +1681,12 @@ test('Pixel 10 (412x924, hasTouch: true) Mobile Chrome E2E Verification for Site
             const th = document.getElementById('userjs-bt-toolbar-host');
             const handleBtn = th.shadowRoot.querySelector('.bt-dock-handle');
             const hc = handleBtn.getBoundingClientRect().toJSON();
-            // Drag handle to bottom-right (380, 890) via pointer events or test Manager Orientation + collapse/expand
-            window.__invokeGmMenu('Open Bookmarklet Manager');
+            // Drag handle to bottom-right (380, 890) via pointer events or test Settings Orientation + collapse/expand
+            window.__invokeGmMenu('Open Settings');
             await new Promise((r) => setTimeout(r, 25));
             const sr = document.getElementById('userjs-bt-overlay-host').shadowRoot;
             sr.querySelector('[data-dock-orientation="horizontal"]').click();
-            sr.getElementById('manager-close').click();
+            sr.getElementById('settings-close').click();
             await new Promise((r) => setTimeout(r, 25));
 
             // Move dock to bottom-right by dragging handle from current position
@@ -1449,24 +1697,30 @@ test('Pixel 10 (412x924, hasTouch: true) Mobile Chrome E2E Verification for Site
             hEl.dispatchEvent(new PointerEvent('pointerdown', { pointerId: 9, button: 0, pointerType: 'touch', clientX: sx, clientY: sy, bubbles: true }));
             hEl.dispatchEvent(new PointerEvent('pointermove', { pointerId: 9, pointerType: 'touch', clientX: 380, clientY: 890, bubbles: true }));
             hEl.dispatchEvent(new PointerEvent('pointerup', { pointerId: 9, pointerType: 'touch', clientX: 380, clientY: 890, bubbles: true }));
-            await new Promise((r) => setTimeout(r, 25));
+            await new Promise((r) => setTimeout(r, 420));
 
             // Now at bottom-right expanded (from earlier tap) -> measure expanded horizontal, collapse, measure collapsed, expand vertical, measure
             const brExpHoriz = th.shadowRoot.querySelector('.bt-dock-handle').getBoundingClientRect().toJSON();
             th.shadowRoot.querySelector('.bt-dock-handle').click();
             await new Promise((r) => setTimeout(r, 25));
-            const brCollapsed = th.shadowRoot.querySelector('.bt-dock-handle').getBoundingClientRect().toJSON();
+            const brCollapsedBtn = th.shadowRoot.querySelector('.bt-dock-handle');
+            const brCollapsedExpanded = brCollapsedBtn.getAttribute('aria-expanded');
+            const brCollapsed = brCollapsedBtn.getBoundingClientRect().toJSON();
 
-            window.__invokeGmMenu('Open Bookmarklet Manager');
+            window.__invokeGmMenu('Open Settings');
             sr.querySelector('[data-dock-orientation="auto"]').click();
-            sr.getElementById('manager-close').click();
+            sr.getElementById('settings-close').click();
             await new Promise((r) => setTimeout(r, 25));
             th.shadowRoot.querySelector('.bt-dock-handle').click();
             await new Promise((r) => setTimeout(r, 240));
-            const brExpVert = th.shadowRoot.querySelector('.bt-dock-handle').getBoundingClientRect().toJSON();
+            const brExpVertBtn = th.shadowRoot.querySelector('.bt-dock-handle');
+            const brExpVertExpanded = brExpVertBtn.getAttribute('aria-expanded');
+            const brExpVert = brExpVertBtn.getBoundingClientRect().toJSON();
             const isVertical = th.shadowRoot.getElementById('bt-toolbar-container').classList.contains('bt-dock-vertical');
-            return { brCollapsed, brExpHoriz, brExpVert, isVertical };
+            return { brCollapsed, brCollapsedExpanded, brExpHoriz, brExpVert, brExpVertExpanded, isVertical };
         })()`);
+        assert.equal(brDeltaCheck.brCollapsedExpanded, 'false', 'Clicking expanded handle after drag grace must collapse dock');
+        assert.equal(brDeltaCheck.brExpVertExpanded, 'true', 'Clicking collapsed handle must expand dock in vertical orientation');
         assert.equal(brDeltaCheck.isVertical, true, '412x924 corner in Auto orientation must resolve to vertical');
         assert.ok(Math.abs(brDeltaCheck.brExpHoriz.left - brDeltaCheck.brCollapsed.left) < 0.01);
         assert.ok(Math.abs(brDeltaCheck.brExpHoriz.top - brDeltaCheck.brCollapsed.top) < 0.01);
@@ -1501,10 +1755,17 @@ test('Pixel 10 (412x924, hasTouch: true) Mobile Chrome E2E Verification for Site
             const scrollW = modal.scrollWidth;
             const clientW = modal.clientWidth;
             const docOverflow = document.documentElement.scrollWidth > document.documentElement.clientWidth;
+            const stickySection = sr.querySelector('.bt-sticky-section');
+            const stickyPosition = stickySection ? getComputedStyle(stickySection).position : null;
+
+            // Filter search so both #toolbar-strip and multi_tool card fit together in portrait view (non-sticky)
+            const mgrSearch = sr.getElementById('mgr-search');
+            mgrSearch.value = 'Multi';
+            mgrSearch.dispatchEvent(new Event('input', { bubbles: true }));
+            await new Promise((r) => setTimeout(r, 20));
 
             const multiCard = sr.querySelector('[data-library-card="pack:chaban-bookmarklets/multi_tool"]');
             const grip = multiCard.querySelector('.bt-grip');
-            grip.scrollIntoView({ block: 'center' });
             const gripRect = grip.getBoundingClientRect().toJSON();
             const stripRect = sr.getElementById('toolbar-strip').getBoundingClientRect().toJSON();
 
@@ -1513,6 +1774,7 @@ test('Pixel 10 (412x924, hasTouch: true) Mobile Chrome E2E Verification for Site
                 scrollW,
                 clientW,
                 docOverflow,
+                stickyPosition,
                 gripCenter: {
                     x: gripRect.left + gripRect.width / 2,
                     y: gripRect.top + gripRect.height / 2,
@@ -1527,6 +1789,7 @@ test('Pixel 10 (412x924, hasTouch: true) Mobile Chrome E2E Verification for Site
         assert.ok(managerLayout.rect.left >= 0 && managerLayout.rect.right <= 412, 'Manager modal must fit within 412px');
         assert.ok(managerLayout.scrollW <= managerLayout.clientW + 1, 'Manager modal must not overflow horizontally');
         assert.equal(managerLayout.docOverflow, false);
+        assert.equal(managerLayout.stickyPosition, 'static', 'Portrait Manager must disable sticky section (#14)');
 
         // 4. Touch pointer-drag on Library card .bt-grip drops onto #toolbar-strip
         await touchDrag(
@@ -1595,6 +1858,9 @@ test('Pixel 10 (412x924, hasTouch: true) Mobile Chrome E2E Verification for Site
         // 4c. Pin many scripts + folder on 412px mobile -> More » overflow menu appears & works
         const mobileOverflowCheck = await evaluate(`(async () => {
             const sr = document.getElementById('userjs-bt-overlay-host').shadowRoot;
+            const mgrSearch = sr.getElementById('mgr-search');
+            mgrSearch.value = '';
+            mgrSearch.dispatchEvent(new Event('input', { bubbles: true }));
             sr.getElementById('mgr-only-site').checked = true;
             sr.getElementById('mgr-only-site').dispatchEvent(new Event('change', { bubbles: true }));
             await new Promise((r) => setTimeout(r, 20));
@@ -1633,7 +1899,9 @@ test('Pixel 10 (412x924, hasTouch: true) Mobile Chrome E2E Verification for Site
             await new Promise((r) => setTimeout(r, 20));
 
             // Snap to bottom-center via Horiz + drag handle so 412px width triggers More » overflow
+            sr.getElementById('btn-manager-settings').click();
             sr.querySelector('[data-dock-orientation="horizontal"]').click();
+            sr.getElementById('settings-close').click();
             sr.getElementById('manager-close').click();
             await new Promise((r) => setTimeout(r, 25));
 
@@ -1697,10 +1965,12 @@ test('Pixel 10 (412x924, hasTouch: true) Mobile Chrome E2E Verification for Site
         // 5. Toggle "Hide dock on this site" -> dock unmounts while Command Palette remains openable
         const afterHideDock = await evaluate(`(async () => {
             const sr = document.getElementById('userjs-bt-overlay-host')?.shadowRoot;
+            sr.getElementById('btn-manager-settings').click();
             sr.getElementById('btn-toggle-dock-site').click();
             await new Promise((r) => setTimeout(r, 30));
 
             const toolbarHostAfterHide = document.getElementById('userjs-bt-toolbar-host');
+            sr.getElementById('settings-close').click();
             sr.getElementById('manager-close').click();
             await new Promise((r) => setTimeout(r, 20));
 
@@ -1721,6 +1991,123 @@ test('Pixel 10 (412x924, hasTouch: true) Mobile Chrome E2E Verification for Site
         assert.equal(afterHideDock.hasToolbarHostAfterHide, false, 'Hiding dock on current site must unmount toolbar host');
         assert.equal(afterHideDock.paletteOpen, true, 'Command Palette must remain openable when dock is hidden');
         assert.equal(afterHideDock.hasShowDockAction, true);
+
+        // 6. Non-viewport-meta mobile page (/mobile-no-viewport, 412x924 hasTouch: true):
+        // top-center More » fits within 412px, sub-modals top-aligned + scrollable,
+        // single taps toggle [⚡] reliably, and portrait Manager scrolls cleanly.
+        await evaluate(`(async () => {
+            const sr = document.getElementById('userjs-bt-overlay-host')?.shadowRoot;
+            sr?.getElementById('palette-backdrop')?.click();
+            window.__invokeGmMenu('Toggle Dock on This Site');
+            await new Promise((r) => setTimeout(r, 30));
+        })()`);
+
+        await navigateAndInject(`http://musicbrainz.org:${port}/mobile-no-viewport`);
+
+        // Single-tap touch toggle (#9): normalize collapsed state, then 1 touch tap expands and 1 touch tap collapses
+        const touchToggleCheck = await evaluate(`(async () => {
+            const getHandle = () => document.getElementById('userjs-bt-toolbar-host')?.shadowRoot?.querySelector('.bt-dock-handle');
+            if (getHandle()?.getAttribute('aria-expanded') === 'true') {
+                getHandle().click();
+                await new Promise((r) => setTimeout(r, 40));
+            }
+            const collapsedInitial = getHandle()?.getAttribute('aria-expanded');
+
+            const simulateTouchTap = async () => {
+                const h = getHandle();
+                const r = h.getBoundingClientRect();
+                const x = r.left + r.width / 2;
+                const y = r.top + r.height / 2;
+                h.dispatchEvent(new PointerEvent('pointerdown', { pointerId: 31, button: 0, pointerType: 'touch', clientX: x, clientY: y, bubbles: true }));
+                h.dispatchEvent(new PointerEvent('pointerup', { pointerId: 31, pointerType: 'touch', clientX: x, clientY: y, bubbles: true }));
+                await new Promise((r) => setTimeout(r, 30));
+                h.click();
+            };
+
+            await simulateTouchTap();
+            await new Promise((r) => setTimeout(r, 240));
+            const expandedAfterFirstTap = getHandle()?.getAttribute('aria-expanded');
+
+            await simulateTouchTap();
+            await new Promise((r) => setTimeout(r, 80));
+            const collapsedAfterSecondTap = getHandle()?.getAttribute('aria-expanded');
+
+            return { collapsedInitial, expandedAfterFirstTap, collapsedAfterSecondTap };
+        })()`);
+
+        assert.equal(touchToggleCheck.collapsedInitial, 'false');
+        assert.equal(touchToggleCheck.expandedAfterFirstTap, 'true', 'Single touch tap on [⚡] must expand dock');
+        assert.equal(touchToggleCheck.collapsedAfterSecondTap, 'false', 'Single touch tap on expanded [⚡] must collapse dock without double-toggle');
+
+        // Re-expand and drag fresh handle to top-center; verify More » bar fits cleanly without horizontal overflow
+        const topCenterNoVp = await evaluate(`(async () => {
+            const th = document.getElementById('userjs-bt-toolbar-host');
+            const sr = th.shadowRoot;
+            sr.querySelector('.bt-dock-handle').click();
+            await new Promise((r) => setTimeout(r, 240));
+
+            const hEl = sr.querySelector('.bt-dock-handle');
+            const r0 = hEl.getBoundingClientRect();
+            const sx = r0.left + r0.width / 2;
+            const sy = r0.top + r0.height / 2;
+            const effVw = Math.min(window.innerWidth || 9999, document.documentElement.clientWidth || 9999, window.visualViewport?.width || 9999);
+            const targetX = effVw / 2;
+            hEl.dispatchEvent(new PointerEvent('pointerdown', { pointerId: 21, button: 0, pointerType: 'touch', clientX: sx, clientY: sy, bubbles: true }));
+            hEl.dispatchEvent(new PointerEvent('pointermove', { pointerId: 21, pointerType: 'touch', clientX: targetX, clientY: 20, bubbles: true }));
+            hEl.dispatchEvent(new PointerEvent('pointerup', { pointerId: 21, pointerType: 'touch', clientX: targetX, clientY: 20, bubbles: true }));
+            await new Promise((r) => setTimeout(r, 40));
+
+            const bar = sr.querySelector('.bt-dock-items-bar');
+            const barRect = bar?.getBoundingClientRect().toJSON() || null;
+            const barScrollW = bar ? bar.scrollWidth : 0;
+            const barClientW = bar ? bar.clientWidth : 0;
+            const moreBtn = bar?.querySelector('[data-action="open-overflow"]');
+
+            // Check Manager + sub-modal top-aligned & scrollable
+            window.__invokeGmMenu('Open Bookmarklet Manager');
+            await new Promise((r) => setTimeout(r, 30));
+            const osr = document.getElementById('userjs-bt-overlay-host')?.shadowRoot;
+            const managerBody = osr.querySelector('.bt-manager-body');
+            const libraryRect = osr.querySelector('.bt-library-section')?.getBoundingClientRect().toJSON() || null;
+
+            osr.getElementById('btn-new-local').click();
+            await new Promise((r) => setTimeout(r, 25));
+            const editorBackdrop = osr.getElementById('editor-backdrop');
+            const editorModal = editorBackdrop?.querySelector('.bt-modal');
+            const formBody = editorBackdrop?.querySelector('.bt-form-body');
+            const editorBackdropAlign = editorBackdrop ? getComputedStyle(editorBackdrop).alignItems : null;
+            const editorRect = editorModal ? editorModal.getBoundingClientRect().toJSON() : null;
+            const formOverflowY = formBody ? getComputedStyle(formBody).overflowY : null;
+            osr.getElementById('editor-close').click();
+            osr.getElementById('manager-close').click();
+
+            return {
+                effVw,
+                innerWidth: window.innerWidth,
+                clientWidth: document.documentElement.clientWidth,
+                vvWidth: window.visualViewport?.width || null,
+                barRect,
+                barScrollW,
+                barClientW,
+                hasMore: Boolean(moreBtn),
+                managerBodyOverflowY: managerBody ? getComputedStyle(managerBody).overflowY : null,
+                libraryHeight: libraryRect ? libraryRect.height : 0,
+                editorBackdropAlign,
+                editorRect,
+                formOverflowY,
+            };
+        })()`);
+
+        assert.equal(topCenterNoVp.hasMore, true, 'top-center non-viewport-meta dock must show More »');
+        assert.ok(topCenterNoVp.barRect && topCenterNoVp.barRect.left >= 0 && topCenterNoVp.barRect.right <= topCenterNoVp.effVw + 1, `top-center bar right (${topCenterNoVp.barRect?.right}) must fit within effVw=${topCenterNoVp.effVw}`);
+        assert.ok(topCenterNoVp.barScrollW <= topCenterNoVp.barClientW + 1, 'top-center items bar must not overflow horizontally');
+        assert.ok(
+            ['flex-start', 'start', 'flow-start'].includes(topCenterNoVp.editorBackdropAlign),
+            `Sub-modals must top-align on mobile (got alignItems=${topCenterNoVp.editorBackdropAlign})`
+        );
+        assert.ok(topCenterNoVp.editorRect && topCenterNoVp.editorRect.top >= 8 && topCenterNoVp.editorRect.top <= 40);
+        assert.equal(topCenterNoVp.formOverflowY, 'auto', 'Sub-modal .bt-form-body must be scrollable');
+        assert.ok(topCenterNoVp.libraryHeight > 80, 'Portrait Manager Library must not be squished');
     } finally {
         await cdp.close();
         await new Promise((resolve) => server.close(resolve));
