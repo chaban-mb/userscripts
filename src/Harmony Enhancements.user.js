@@ -155,6 +155,16 @@
             runAt: 'load',
             paths: [/^\/release(?!\/actions)/],
         },
+        autoReloadWhenMusicBrainzBusy: {
+            key: 'enhancements.ui.autoReloadWhenMusicBrainzBusy',
+            label: 'Reload automatically when MusicBrainz is busy',
+            description: 'Reloads the page immediately when Harmony reports "The MusicBrainz web server is currently busy" or failed to fetch a MusicBrainz resource, until the lookup goes through.',
+            defaultValue: true,
+            section: 'Convenience Features',
+            type: 'checkbox',
+            runAt: 'load',
+            paths: [/^\/release/],
+        },
         addOneClickExternalIdLinking: {
             key: 'enhancements.ui.oneClickExternalIdLinking',
             label: 'Add one-click external ID linking on the release actions page',
@@ -1928,6 +1938,13 @@
                     showTooltip(message, 'error', e);
                 }
             });
+        },
+
+        autoReloadWhenMusicBrainzBusy: () => {
+            const isMusicBrainzTemporarilyUnavailable = Array.from(document.querySelectorAll('.message.error'))
+                .some(message => message.textContent.includes('The MusicBrainz web server is currently busy') ||
+                    /Failed to fetch resource at https:\/\/(beta\.)?musicbrainz\.(org|eu)\//.test(message.textContent));
+            if (isMusicBrainzTemporarilyUnavailable) location.reload();
         },
 
         addCopyIsrcsButton: () => {

@@ -26,6 +26,7 @@ A comprehensive userscript for **[Harmony](http://harmony.pulsewidth.org.uk/)** 
 #### UI & Workflow
 
 - **Clipboard Re-Lookup:** Adds a **"Re-Lookup from Clipboard"** button to the lookup form for quickly starting a new lookup or extending an existing one using a supported source URL found in your clipboard.
+- **Auto-Reload When MusicBrainz Is Busy:** Reloads the page immediately when Harmony reports that the MusicBrainz web server is busy or a MusicBrainz request failed, until the lookup goes through.
 - **Copy ISRCs:** Adds a **"Copy ISRCs"** button to each tracklist caption that copies all track ISRCs (one per line) to the clipboard, e.g. for matching recordings by ISRC.
 - **One-Click External ID Linking:** Adds buttons to the release actions page that submit all of Harmony's **"Link external IDs"** edits (artists, labels, recordings) in the background, collectively or per entity type. Requires being logged in to MusicBrainz.
 - **Provider Re-Lookup Buttons:** Adds a small **⟳** button next to each secondary provider URL in the "Providers" section, allowing you to quickly redo the lookup using that provider as the primary source.
