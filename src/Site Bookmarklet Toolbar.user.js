@@ -18,6 +18,8 @@
 // @grant       GM.setValue
 // @grant       GM.deleteValue
 // @grant       GM.registerMenuCommand
+// @grant       GM.addElement
+// @noframes
 // @run-at      document-end
 // @updateURL   https://github.com/chaban-mb/userscripts/raw/main/src/Site%20Bookmarklet%20Toolbar.user.js
 // @downloadURL https://github.com/chaban-mb/userscripts/raw/main/src/Site%20Bookmarklet%20Toolbar.user.js
@@ -58,6 +60,13 @@
         const doc =
             (win && win.document) || (typeof document !== 'undefined' ? document : null);
         if (!win || !doc) {
+            return;
+        }
+        try {
+            if (win.top && win.self !== win.top) {
+                return;
+            }
+        } catch {
             return;
         }
 
@@ -214,6 +223,11 @@
             await safeSetValue(Core.STORAGE_KEYS.recents, state.recents);
         }
 
+        const gmAddElement =
+            typeof GM !== 'undefined' && typeof GM.addElement === 'function'
+                ? GM.addElement.bind(GM)
+                : null;
+
         let uiInstance = null;
 
         function getScriptsMap() {
@@ -225,6 +239,7 @@
                 uiInstance = UI.createToolbarUI({
                     doc,
                     win,
+                    gmAddElement,
                     initialState: {
                         url: state.url,
                         packs: state.packs,
@@ -270,6 +285,7 @@
                             Adapters.executeScriptInPage(script.code, {
                                 doc,
                                 win,
+                                gmAddElement,
                                 onError(errMsg) {
                                     log.warn(
                                         `Execution error for "${script.name || scriptId}":`,
@@ -307,20 +323,24 @@
                     ui.update({ url: state.url });
                     ui.openManager();
                 });
+                GM.registerMenuCommand('Open Settings', () => {
+                    state.url = getCurrentUrl();
+                    const ui = getUI();
+                    ui.update({ url: state.url });
+                    if (typeof ui.openSettings === 'function') {
+                        ui.openSettings();
+                    }
+                });
                 GM.registerMenuCommand('Toggle Dock on This Site', () => {
                     state.url = getCurrentUrl();
                     const origin = Core.getSiteOrigin(state.url);
                     if (!origin) {
                         return;
                     }
-                    const nextHidden = !state.settings?.dockSiteHidden?.[origin];
-                    const nextSettings = Core.normalizeSettings({
-                        ...state.settings,
-                        dockSiteHidden: {
-                            ...(state.settings?.dockSiteHidden || {}),
-                            [origin]: nextHidden,
-                        },
-                    });
+                    const nextSettings = Core.toggleDockSiteVisibility(
+                        state.settings,
+                        origin
+                    );
                     void saveSettings(nextSettings);
                     if (
                         Core.shouldMountToolbar(

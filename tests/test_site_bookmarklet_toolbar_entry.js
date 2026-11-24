@@ -593,8 +593,12 @@ test('tools/build_dist.py inline_userscript inlines all 4 libs inside outer IIFE
 
     // Zero console.log in entrypoint source
     assert.equal(/\bconsole\.log\s*\(/.test(rawEntry), false, 'Entrypoint must not use console.log');
+    assert.match(rawEntry, /^[ \t]*\/\/[ \t]*@noframes\b/m, 'Expected @noframes in metadata');
+    assert.match(rawEntry, /^[ \t]*\/\/[ \t]*@grant[ \t]+GM\.addElement\b/m, 'Expected @grant GM.addElement in metadata');
 
     const inlinedCode = buildInlinedUserscript();
+    assert.match(inlinedCode, /^[ \t]*\/\/[ \t]*@noframes\b/m, 'Expected @noframes in inlined metadata');
+    assert.match(inlinedCode, /^[ \t]*\/\/[ \t]*@grant[ \t]+GM\.addElement\b/m, 'Expected @grant GM.addElement in inlined metadata');
 
     // 1. No relative @require lines remain
     assert.equal(
@@ -697,11 +701,12 @@ test('Running on unmatched URL (https://example.com/) syncs bundled pack (25 scr
     assert.equal(doc.querySelector('#userjs-bt-overlay-host'), null);
     assert.equal(doc.body.children.length, 0);
 
-    // 4. GM.registerMenuCommand registered all three menu items
+    // 4. GM.registerMenuCommand registered all four menu items
     const captions = menuCommands.map((m) => m.caption);
     assert.deepEqual(captions, [
         'Open Command Palette',
         'Open Bookmarklet Manager',
+        'Open Settings',
         'Toggle Dock on This Site',
     ]);
 
@@ -817,10 +822,13 @@ test('Entrypoint mounts toolbar on matched URL, handles global hotkeys safely, p
         dockExpandMode: 'both',
         dockDefaultPosition: 'bottom-center',
         dockOrientation: 'auto',
+        dockDefaultVisible: true,
         dockSitePositions: {},
         dockSiteOrientations: {},
         dockSiteExpanded: {},
-        dockSiteHidden: {},
+        dockSiteVisibility: {},
+        folderHoverOpen: false,
+        keepFolderOpenAfterRun: false,
     });
     assert.equal(
         overlayHost.shadowRoot.getElementById('palette-backdrop').classList.contains('hidden'),
@@ -888,7 +896,7 @@ test('Entrypoint mounts toolbar on matched URL, handles global hotkeys safely, p
     assert.ok(doc.querySelector('#userjs-bt-toolbar-host'));
 });
 
-test('Toggle Dock on This Site menu command flips dockSiteHidden[origin], persists settings, and unmounts/remounts dock', async () => {
+test('Toggle Dock on This Site menu command flips dockSiteVisibility[origin] symmetrically for Shown and Hidden defaults', async () => {
     const inlinedCode = buildInlinedUserscript();
     const { doc, win, MockMutationObserver } = createDomEnvironment(
         'https://musicbrainz.org/release/123',
@@ -924,7 +932,7 @@ test('Toggle Dock on This Site menu command flips dockSiteHidden[origin], persis
     new vm.Script(inlinedCode).runInContext(context);
     await flushAsync();
 
-    // Initially mounted on doc.body
+    // Initially mounted on doc.body (dockDefaultVisible defaults to true)
     assert.ok(doc.querySelector('#userjs-bt-toolbar-host'));
     assert.equal(doc.querySelector('#userjs-bt-toolbar-host').parentNode, doc.body);
 
@@ -937,9 +945,9 @@ test('Toggle Dock on This Site menu command flips dockSiteHidden[origin], persis
 
     assert.equal(doc.querySelector('#userjs-bt-toolbar-host'), null);
     const savedAfterHide = store.get('UserJS.BookmarkletToolbar.Settings');
-    assert.equal(savedAfterHide.dockSiteHidden['https://musicbrainz.org'], true);
+    assert.equal(savedAfterHide.dockSiteVisibility['https://musicbrainz.org'], 'hidden');
 
-    // Second toggle shows dock again for https://musicbrainz.org
+    // Second toggle clears override back to global default (true) and remounts dock
     toggleCmd.onClick();
     await flushAsync();
 
@@ -947,5 +955,164 @@ test('Toggle Dock on This Site menu command flips dockSiteHidden[origin], persis
     assert.ok(remountedHost, 'Expected dock to remount after second toggle');
     assert.equal(remountedHost.parentNode, doc.body);
     const savedAfterShow = store.get('UserJS.BookmarkletToolbar.Settings');
-    assert.equal(savedAfterShow.dockSiteHidden['https://musicbrainz.org'], false);
+    assert.equal('https://musicbrainz.org' in savedAfterShow.dockSiteVisibility, false);
+
+    // Works symmetrically when global default is Hidden (dockDefaultVisible: false)
+    const { doc: doc2, win: win2, MockMutationObserver: Obs2 } = createDomEnvironment(
+        'https://musicbrainz.org/release/123',
+        { includeMbHeader: true }
+    );
+    const { GM: GM2, store: store2, menuCommands: cmds2 } = createMockGM({
+        'UserJS.BookmarkletToolbar.Layout': [
+            { type: 'script', scriptId: 'pack:chaban-bookmarklets/approve_all_edits' },
+        ],
+        'UserJS.BookmarkletToolbar.Settings': {
+            dockDefaultVisible: false,
+        },
+    });
+    new vm.Script(inlinedCode).runInContext(
+        vm.createContext({
+            window: win2,
+            document: doc2,
+            location: win2.location,
+            history: win2.history,
+            MutationObserver: Obs2,
+            GM: GM2,
+            URL,
+            Blob,
+            console: { debug() {}, info() {}, warn() {}, error() {} },
+            setTimeout,
+            clearTimeout,
+            structuredClone,
+        })
+    );
+    await flushAsync();
+    assert.equal(doc2.querySelector('#userjs-bt-toolbar-host'), null);
+
+    const toggleCmd2 = cmds2.find((m) => m.caption === 'Toggle Dock on This Site');
+    toggleCmd2.onClick();
+    await flushAsync();
+    assert.ok(doc2.querySelector('#userjs-bt-toolbar-host'), 'Expected dock to mount when toggled visible under hidden default');
+    assert.equal(store2.get('UserJS.BookmarkletToolbar.Settings').dockSiteVisibility['https://musicbrainz.org'], 'shown');
+});
+
+test('Entrypoint exits early inside iframes (win.self !== win.top or cross-origin error) and forwards GM.addElement', async () => {
+    const inlinedCode = buildInlinedUserscript();
+
+    // 1. Subframe (win.self !== win.top)
+    {
+        const { doc, win, MockMutationObserver } = createDomEnvironment('https://musicbrainz.org/release/123');
+        win.self = win;
+        win.top = { name: 'parent-frame' };
+        const { GM, menuCommands } = createMockGM({
+            'UserJS.BookmarkletToolbar.Layout': [
+                { type: 'script', scriptId: 'pack:chaban-bookmarklets/approve_all_edits' },
+            ],
+        });
+        new vm.Script(inlinedCode).runInContext(
+            vm.createContext({
+                window: win,
+                document: doc,
+                location: win.location,
+                history: win.history,
+                MutationObserver: MockMutationObserver,
+                GM,
+                URL,
+                Blob,
+                console: { debug() {}, info() {}, warn() {}, error() {} },
+                setTimeout,
+                clearTimeout,
+                structuredClone,
+            })
+        );
+        await flushAsync();
+        assert.equal(menuCommands.length, 0);
+        assert.equal(doc.querySelector('#userjs-bt-toolbar-host'), null);
+    }
+
+    // 2. Cross-origin win.top getter throws
+    {
+        const { doc, win, MockMutationObserver } = createDomEnvironment('https://musicbrainz.org/release/123');
+        win.self = win;
+        Object.defineProperty(win, 'top', {
+            get() {
+                throw new Error('Blocked a frame with origin from accessing a cross-origin frame.');
+            },
+        });
+        const { GM, menuCommands } = createMockGM({
+            'UserJS.BookmarkletToolbar.Layout': [
+                { type: 'script', scriptId: 'pack:chaban-bookmarklets/approve_all_edits' },
+            ],
+        });
+        new vm.Script(inlinedCode).runInContext(
+            vm.createContext({
+                window: win,
+                document: doc,
+                location: win.location,
+                history: win.history,
+                MutationObserver: MockMutationObserver,
+                GM,
+                URL,
+                Blob,
+                console: { debug() {}, info() {}, warn() {}, error() {} },
+                setTimeout,
+                clearTimeout,
+                structuredClone,
+            })
+        );
+        await flushAsync();
+        assert.equal(menuCommands.length, 0);
+        assert.equal(doc.querySelector('#userjs-bt-toolbar-host'), null);
+    }
+
+    // 3. GM.addElement is forwarded to executeScriptInPage when strict CSP blocks inline + blob
+    {
+        const { doc, win, MockMutationObserver } = createDomEnvironment('https://musicbrainz.org/release/123');
+        const gmAdded = [];
+        const { GM } = createMockGM({
+            'UserJS.BookmarkletToolbar.Layout': [
+                { type: 'script', scriptId: 'pack:chaban-bookmarklets/approve_all_edits' },
+            ],
+        });
+        GM.addElement = (parent, tag, attrs) => {
+            gmAdded.push({ parent, tag, attrs });
+        };
+
+        new vm.Script(inlinedCode).runInContext(
+            vm.createContext({
+                window: win,
+                document: doc,
+                location: win.location,
+                history: win.history,
+                MutationObserver: MockMutationObserver,
+                GM,
+                URL,
+                Blob,
+                console: { debug() {}, info() {}, warn() {}, error() {} },
+                setTimeout,
+                clearTimeout,
+                structuredClone,
+            })
+        );
+        await flushAsync();
+
+        const dockHost = doc.querySelector('#userjs-bt-toolbar-host');
+        assert.ok(dockHost);
+        dockHost.shadowRoot.querySelector('.bt-dock-handle').click();
+        await flushAsync();
+
+        doc.head._onAppendChild = () => {
+            doc.dispatchEvent({
+                type: 'securitypolicyviolation',
+                blockedURI: 'inline',
+                violatedDirective: 'script-src-elem',
+                effectiveDirective: 'script-src-elem',
+            });
+        };
+        dockHost.shadowRoot.querySelector('[data-script-id="pack:chaban-bookmarklets/approve_all_edits"]').click();
+        await flushAsync();
+
+        assert.equal(gmAdded.length, 1);
+        assert.equal(gmAdded[0].tag, 'script');
+    }
 });
