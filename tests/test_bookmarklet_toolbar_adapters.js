@@ -456,3 +456,236 @@ test('executeScriptInPage catches Trusted Types TypeError on scriptEl.textConten
     assert.equal(doc._listeners.get('securitypolicyviolation')?.size || 0, 0);
     assert.equal(win._listeners.get('error')?.size || 0, 0);
 });
+
+function createScriptCapableDoc(origDoc) {
+    return {
+        ...origDoc,
+        createElement(tag) {
+            const el = origDoc.createElement(tag);
+            const elListeners = new Map();
+            el.attributes = {};
+            el.setAttribute = (k, v) => {
+                el.attributes[k] = v;
+            };
+            el.addEventListener = (type, fn) => {
+                if (!elListeners.has(type)) elListeners.set(type, new Set());
+                elListeners.get(type).add(fn);
+            };
+            el.removeEventListener = (type, fn) => {
+                if (elListeners.has(type)) elListeners.get(type).delete(fn);
+            };
+            el.dispatchEvent = (ev) => {
+                const set = elListeners.get(ev.type);
+                if (set) {
+                    for (const fn of [...set]) fn(ev);
+                }
+            };
+            return el;
+        },
+    };
+}
+
+test('executeScriptInPage 3-tier fallback: inline -> blob URL -> GM.addElement last resort', async () => {
+    // 1. Tier 1 inline succeeds -> does NOT call URL.createObjectURL or gmAddElement
+    {
+        const doc = createScriptCapableDoc(createMockMBDocument({ includeHeader: false }));
+        const win = createMockWindow();
+        let blobCalled = false;
+        let gmCalled = false;
+        win.Blob = class MockBlob { constructor(parts) { this.parts = parts; } };
+        win.URL = {
+            createObjectURL() { blobCalled = true; return 'blob:https://example.com/1'; },
+            revokeObjectURL() {},
+        };
+        const res = Adapters.executeScriptInPage('javascript:void 0', {
+            doc,
+            win,
+            gmAddElement: () => { gmCalled = true; },
+        });
+        assert.deepEqual(res, { ok: true });
+        assert.equal(blobCalled, false);
+        assert.equal(gmCalled, false);
+    }
+
+    // 2. Tier 1 blocked by inline CSP -> falls back to Tier 2 blob URL (with Trusted Types createScriptURL), revokes on load, does NOT call gmAddElement
+    {
+        const doc = createScriptCapableDoc(createMockMBDocument({ includeHeader: false }));
+        const win = createMockWindow();
+        const revoked = [];
+        let createdBlobText = '';
+        let createdPolicy = null;
+        let gmCalled = false;
+        const errors = [];
+
+        win.trustedTypes = {
+            createPolicy(name, rules) {
+                createdPolicy = { name, rules };
+                return {
+                    createScript: (s) => `tt-script:${s}`,
+                    createScriptURL: (u) => `tt-url:${u}`,
+                };
+            },
+        };
+        win.Blob = class MockBlob {
+            constructor(parts) { createdBlobText = parts.join(''); }
+        };
+        win.URL = {
+            createObjectURL() { return 'blob:https://open.spotify.com/abc'; },
+            revokeObjectURL(u) { revoked.push(u); },
+        };
+
+        const appended = [];
+        doc.head._onAppendChild = (el) => {
+            appended.push(el);
+            if (!el.src) {
+                doc.dispatchEvent({
+                    type: 'securitypolicyviolation',
+                    blockedURI: 'inline',
+                    violatedDirective: 'script-src-elem',
+                    effectiveDirective: 'script-src-elem',
+                });
+            } else {
+                setTimeout(() => el.dispatchEvent({ type: 'load' }), 5);
+            }
+        };
+
+        Adapters.executeScriptInPage('javascript:window.__ok=1', {
+            doc,
+            win,
+            gmAddElement: () => { gmCalled = true; },
+            onError: (msg) => errors.push(msg),
+        });
+
+        await new Promise((r) => setTimeout(r, 25));
+        assert.equal(appended.length, 2);
+        assert.equal(createdBlobText, 'window.__ok=1');
+        assert.equal(typeof createdPolicy?.rules?.createScriptURL, 'function');
+        assert.equal(appended[1].src, 'tt-url:blob:https://open.spotify.com/abc');
+        assert.deepEqual(revoked, ['blob:https://open.spotify.com/abc']);
+        assert.equal(gmCalled, false);
+        assert.equal(errors.length, 0);
+        assert.equal(doc._listeners.get('securitypolicyviolation')?.size || 0, 0);
+    }
+
+    // 3. Tier 1 AND Tier 2 blob blocked -> falls back to Tier 3 gmAddElement last resort
+    {
+        const doc = createScriptCapableDoc(createMockMBDocument({ includeHeader: false }));
+        const win = createMockWindow();
+        const revoked = [];
+        const gmCalls = [];
+        const errors = [];
+
+        win.Blob = class MockBlob { constructor(parts) { this.parts = parts; } };
+        win.URL = {
+            createObjectURL() { return 'blob:https://github.com/blocked'; },
+            revokeObjectURL(u) { revoked.push(u); },
+        };
+
+        doc.head._onAppendChild = (el) => {
+            if (!el.src) {
+                setTimeout(() => {
+                    doc.dispatchEvent({
+                        type: 'securitypolicyviolation',
+                        blockedURI: 'inline',
+                        violatedDirective: 'script-src',
+                        effectiveDirective: 'script-src',
+                    });
+                }, 5);
+            } else {
+                setTimeout(() => {
+                    doc.dispatchEvent({
+                        type: 'securitypolicyviolation',
+                        blockedURI: 'blob',
+                        violatedDirective: 'script-src',
+                        effectiveDirective: 'script-src',
+                    });
+                    el.dispatchEvent({ type: 'error' });
+                }, 5);
+            }
+        };
+
+        Adapters.executeScriptInPage('javascript:window.__gm=1', {
+            doc,
+            win,
+            gmAddElement: (parent, tag, attrs) => {
+                gmCalls.push({ parent, tag, attrs });
+            },
+            onError: (msg) => errors.push(msg),
+        });
+
+        await new Promise((r) => setTimeout(r, 35));
+        assert.deepEqual(revoked, ['blob:https://github.com/blocked']);
+        assert.equal(gmCalls.length, 1);
+        assert.equal(gmCalls[0].tag, 'script');
+        assert.equal(gmCalls[0].attrs.textContent, 'window.__gm=1');
+        assert.equal(errors.length, 0);
+    }
+
+    // 4. Tier 1 AND Tier 2 blocked WITHOUT gmAddElement -> surfaces CSP error via onError once
+    {
+        const doc = createScriptCapableDoc(createMockMBDocument({ includeHeader: false }));
+        const win = createMockWindow();
+        const errors = [];
+        win.Blob = class MockBlob { constructor(parts) { this.parts = parts; } };
+        win.URL = {
+            createObjectURL() { return 'blob:https://strict.test/1'; },
+            revokeObjectURL() {},
+        };
+        doc.head._onAppendChild = (el) => {
+            if (!el.src) {
+                doc.dispatchEvent({
+                    type: 'securitypolicyviolation',
+                    blockedURI: 'inline',
+                    violatedDirective: 'script-src',
+                    effectiveDirective: 'script-src',
+                });
+            } else {
+                setTimeout(() => el.dispatchEvent({ type: 'error' }), 5);
+            }
+        };
+
+        Adapters.executeScriptInPage('javascript:void 0', {
+            doc,
+            win,
+            onError: (msg) => errors.push(msg),
+        });
+
+        await new Promise((r) => setTimeout(r, 25));
+        assert.equal(errors.length, 1);
+        assert.match(errors[0], /Content Security Policy|script-src|CSP/i);
+    }
+
+    // 5. Runtime JS error during Tier 1 must NOT retry Tier 2 blob or Tier 3 gmAddElement (Review Focus #1)
+    {
+        const doc = createScriptCapableDoc(createMockMBDocument({ includeHeader: false }));
+        const win = createMockWindow();
+        let blobCalled = false;
+        let gmCalled = false;
+        const errors = [];
+        win.Blob = class MockBlob { constructor(parts) { this.parts = parts; } };
+        win.URL = {
+            createObjectURL() { blobCalled = true; return 'blob:https://example.com/no'; },
+            revokeObjectURL() {},
+        };
+        doc.head._onAppendChild = () => {
+            win.dispatchEvent({
+                type: 'error',
+                message: 'Uncaught Error: runtime boom',
+            });
+        };
+
+        const res = Adapters.executeScriptInPage('javascript:throw new Error("runtime boom")', {
+            doc,
+            win,
+            gmAddElement: () => { gmCalled = true; },
+            onError: (msg) => errors.push(msg),
+        });
+
+        await new Promise((r) => setTimeout(r, 20));
+        assert.equal(res.ok, false);
+        assert.equal(errors.length, 1);
+        assert.match(errors[0], /runtime boom/);
+        assert.equal(blobCalled, false);
+        assert.equal(gmCalled, false);
+    }
+});
