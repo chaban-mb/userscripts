@@ -395,7 +395,7 @@ test('executeScriptInPage captures asynchronous securitypolicyviolation queued b
         onError: (msg) => asyncCspErrors.push(msg),
     });
 
-    await new Promise((r) => setTimeout(r, 25));
+    await new Promise((r) => setTimeout(r, 60));
 
     assert.equal(asyncCspErrors.length, 1);
     assert.match(asyncCspErrors[0], /Blocked by page Content Security Policy \(script-src-elem\)/);

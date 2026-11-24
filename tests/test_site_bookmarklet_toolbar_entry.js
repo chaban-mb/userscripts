@@ -803,10 +803,10 @@ test('Entrypoint mounts toolbar on matched URL, handles global hotkeys safely, p
         false
     );
 
-    // Open Manager from Palette and test recording hotkey + persistence
+    // Open Settings from Palette and test recording hotkey + persistence
     overlayHost.shadowRoot.getElementById('palette-open-settings').click();
     assert.equal(
-        overlayHost.shadowRoot.getElementById('manager-backdrop').classList.contains('hidden'),
+        overlayHost.shadowRoot.getElementById('settings-backdrop').classList.contains('hidden'),
         false
     );
 
@@ -842,8 +842,8 @@ test('Entrypoint mounts toolbar on matched URL, handles global hotkeys safely, p
         true
     );
 
-    // Close Manager
-    overlayHost.shadowRoot.getElementById('manager-close').click();
+    // Close Settings
+    overlayHost.shadowRoot.getElementById('settings-close').click();
 
     // Dispatching Shift+B inside an editable <input> (no non-Shift modifier) MUST be skipped
     pageInput.dispatchEvent({

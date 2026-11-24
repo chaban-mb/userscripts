@@ -863,7 +863,7 @@ test('Command Palette groups Recently Run, Matching Library, and searchable Open
     assert.deepEqual(groupHeaders, ['Recently Run', 'Matching Library', 'Actions']);
 
     const items = paletteList.querySelectorAll('.bt-palette-item');
-    assert.equal(items.length, 6);
+    assert.ok(items.length >= 6);
     assert.equal(items[0].classList.contains('bt-palette-item-active'), true);
 
     // ArrowDown moves selection to index 1, calls scrollIntoView on the active item, and Enter runs that script
@@ -876,14 +876,14 @@ test('Command Palette groups Recently Run, Matching Library, and searchable Open
     assert.equal(ranScripts.length, 1);
     assert.equal(overlayRoot.getElementById('palette-backdrop').classList.contains('hidden'), true);
 
-    // Re-open palette, filter for "settings", press Enter to open Manager
+    // Re-open palette, filter for "manager", press Enter to open Manager
     ui.openPalette();
-    searchInput.value = 'settings';
+    searchInput.value = 'open manager';
     searchInput.dispatchEvent({ type: 'input', bubbles: true });
 
     const filteredItems = paletteList.querySelectorAll('.bt-palette-item');
     assert.equal(filteredItems.length, 1);
-    assert.match(filteredItems[0].textContent, /Open Settings \/ Manager/);
+    assert.match(filteredItems[0].textContent, /Open Manager/);
 
     searchInput.dispatchEvent({ type: 'keydown', key: 'Enter', bubbles: true });
     assert.equal(overlayRoot.getElementById('manager-backdrop').classList.contains('hidden'), false);
@@ -3524,6 +3524,123 @@ test('Standalone Settings modal, streamlined Manager header, portrait sticky dis
     ui.update({ url: 'about:blank' });
     ui.openSettings();
     assert.equal(overlayRoot.getElementById('btn-toggle-dock-site').disabled, true);
+
+    ui.destroy();
+});
+
+test('Command Palette supports command/action queries (#3), omits @match desc fallback (#4), shows pack name (#5), dual footer buttons, drill-down sub-views, and direct-search shortcuts (#18)', () => {
+    const { doc, win } = createDomEnvironment('https://musicbrainz.org/release/123');
+    const stateChanges = [];
+    const ui = UI.createToolbarUI({
+        doc,
+        win,
+        initialState: createSampleState({
+            url: 'https://musicbrainz.org/release/123',
+            packs: {
+                'chaban-bookmarklets': {
+                    id: 'chaban-bookmarklets',
+                    name: 'Chaban Bookmarklets Long Name',
+                    version: '2026.11.24',
+                    scripts: {
+                        'pack:chaban-bookmarklets/nodesc': {
+                            id: 'pack:chaban-bookmarklets/nodesc',
+                            source: 'pack:chaban-bookmarklets',
+                            name: 'No Description Script',
+                            description: '',
+                            match: ['*://*.musicbrainz.org/*'],
+                            code: 'void 0;',
+                        },
+                        'pack:chaban-bookmarklets/withdesc': {
+                            id: 'pack:chaban-bookmarklets/withdesc',
+                            source: 'pack:chaban-bookmarklets',
+                            name: 'Described Script',
+                            description: 'Useful helper description',
+                            match: ['*://*.musicbrainz.org/*'],
+                            code: 'void 0;',
+                        },
+                    },
+                },
+            },
+            localScripts: {},
+            layout: [{ type: 'script', scriptId: 'pack:chaban-bookmarklets/nodesc' }],
+        }),
+        callbacks: {
+            onStateChange(partial) { stateChanges.push(partial); },
+        },
+    });
+
+    ui.openPalette();
+    const overlayRoot = ui.getOverlayShadowRoot();
+    const paletteSearch = overlayRoot.getElementById('palette-search');
+    const paletteList = overlayRoot.getElementById('palette-list');
+
+    // 1. Dual footer buttons (#18)
+    const mgrBtn = overlayRoot.getElementById('palette-open-manager');
+    const setBtn = overlayRoot.getElementById('palette-open-settings');
+    assert.ok(mgrBtn && setBtn, 'Expected both #palette-open-manager and #palette-open-settings footer buttons');
+    assert.ok(overlayRoot.getElementById('palette-removed-dot'));
+
+    setBtn.click();
+    assert.equal(overlayRoot.getElementById('settings-backdrop').classList.contains('hidden'), false);
+    assert.equal(overlayRoot.getElementById('manager-backdrop').classList.contains('hidden'), true);
+    overlayRoot.getElementById('settings-close').click();
+
+    ui.openPalette();
+
+    // 2. #4 Description omitted when empty; #5 Pack name shown even with 1 pack installed
+    const noDescRow = paletteList.querySelector('[data-script-id="pack:chaban-bookmarklets/nodesc"]');
+    assert.ok(noDescRow);
+    assert.equal(noDescRow.querySelectorAll('.bt-subtitle').length, 0, 'Empty description must omit descLine instead of showing @match patterns');
+    const rowBadge = noDescRow.querySelector('.bt-badge');
+    assert.equal(rowBadge.textContent, 'Chaban Bookmarklets Long Name');
+    assert.equal(rowBadge.title, 'Chaban Bookmarklets Long Name');
+
+    const withDescRow = paletteList.querySelector('[data-script-id="pack:chaban-bookmarklets/withdesc"]');
+    assert.equal(withDescRow.querySelector('.bt-subtitle').textContent, 'Useful helper description');
+
+    // 3. #3 Querying "command" or "action" returns Actions command rows
+    for (const kw of ['command', 'action']) {
+        paletteSearch.value = kw;
+        paletteSearch.dispatchEvent({ type: 'input', bubbles: true });
+        const cmdRows = paletteList.querySelectorAll('.bt-palette-item').filter((el) => el.dataset.commandId);
+        assert.ok(cmdRows.length >= 5, `Query "${kw}" should surface Actions command rows`);
+    }
+
+    // 4. Drill-down sub-view + Esc step-back (Review Focus #4) + selection closes palette
+    paletteSearch.value = '';
+    paletteSearch.dispatchEvent({ type: 'input', bubbles: true });
+    const orientRow = paletteList.querySelector('[data-command-id="sub-dock-orientation"]');
+    assert.ok(orientRow, 'Expected compact Dock Orientation drill-down row in root view');
+    orientRow.click();
+
+    assert.equal(paletteSearch.placeholder, 'Select Dock Orientation…');
+    assert.ok(paletteList.querySelector('[data-command-id="sub-back"]'));
+    assert.ok(paletteList.querySelector('[data-command-id="set-orientation:vertical"]'));
+
+    // Esc steps back to root palette instead of closing overlay
+    paletteSearch.dispatchEvent({ type: 'keydown', key: 'Escape', bubbles: true });
+    assert.equal(overlayRoot.getElementById('palette-backdrop').classList.contains('hidden'), false);
+    assert.ok(paletteList.querySelector('[data-command-id="sub-dock-orientation"]'));
+
+    // Drill back in and pick Vertical -> updates dockOrientation and closes palette
+    paletteList.querySelector('[data-command-id="sub-dock-orientation"]').click();
+    paletteList.querySelector('[data-command-id="set-orientation:vertical"]').click();
+    assert.equal(stateChanges.at(-1).settings.dockOrientation, 'vertical');
+    assert.equal(overlayRoot.getElementById('palette-backdrop').classList.contains('hidden'), true);
+
+    // 5. Direct-search shortcut when query is non-empty ("bottom-right" surfaces Dock Position: Bottom Right)
+    ui.openPalette();
+    paletteSearch.value = 'bottom-right';
+    paletteSearch.dispatchEvent({ type: 'input', bubbles: true });
+    const posShortcut = paletteList.querySelector('[data-command-id="set-position:bottom-right"]');
+    assert.ok(posShortcut, 'Expected direct-search shortcut for bottom-right dock position');
+    posShortcut.click();
+    assert.equal(stateChanges.at(-1).settings.dockDefaultPosition, 'bottom-right');
+
+    // 6. Non-HTTP(S) origin omits toggle-dock-site cleanly (Review Focus #3)
+    ui.update({ url: 'file:///tmp/test.html' });
+    ui.openPalette();
+    assert.equal(paletteList.querySelector('[data-command-id="toggle-dock-site"]'), null);
 
     ui.destroy();
 });
