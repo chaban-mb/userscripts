@@ -61,37 +61,45 @@ Related specs:
   - **Fix:** Adopt Shadow DOM constructable stylesheets (`new CSSStyleSheet()` + `replaceSync(css)` + `shadowRoot.adoptedStyleSheets = [sheet]`, with `<style>` fallback only where `CSSStyleSheet`/`adoptedStyleSheets` is unavailable), move `hostEl` positioning into `:host([data-snap="..."])` rules (avoiding `setAttribute('style')`/`cssText`), and verify under a strict `style-src 'self'` Headless Chrome E2E scenario.
   - **GM API Tradeoffs Note:** See [docs/research/csp-shadow-dom-gm-styles.md](../research/csp-shadow-dom-gm-styles.md) — `GM.addStyle` cannot target `ShadowRoot` internals; `GM.addElement(shadowRoot, 'style', ...)` bypasses CSP in Violentmonkey/Tampermonkey at the cost of adding `@grant GM.addElement`; `adoptedStyleSheets` works natively in Chrome 73+/Firefox 101+/Safari 16.4+ with zero extra `@grant`.
 
+- [ ] **11. Fix bookmarklet `script-src` CSP execution block on strict sites** *(e.g. Spotify `script-src 'self' 'unsafe-eval' blob:`)*
+  - **Symptom:** Running `"Open current page in Harmony"` (or any script) fails with `Executing inline script violates the following Content Security Policy directive 'script-src ...'` when `'unsafe-inline'` is absent.
+  - **Confirmed cause:** `executeScriptInPage` (`lib/BookmarkletToolbarAdapters.js:216-241`) only attempts inline `<script>` injection (`scriptEl.textContent = scriptPayload; mountContainer.appendChild(scriptEl)`).
+  - **Fix options to evaluate/combine:**
+    - **Blob URL `<script src="blob:...">` fallback** (`URL.createObjectURL(new Blob([code], { type: 'text/javascript' }))`, with Trusted Types `createScriptURL` if `trustedTypes` is enforced, revoked on load/error): works on sites allowing `blob:` (like Spotify) with zero extra `@grant`.
+    - **`GM.addElement('script', { textContent })`** (when granted/available in Violentmonkey/Tampermonkey): bypasses strict `script-src` even when `blob:` is disallowed (e.g., GitHub), at the cost of `@grant GM.addElement` (could also pair with `adoptedStyleSheets` / CSP fallback from #10).
+    - **Fallback chain:** Inline `<script>` (or `GM.addElement` if granted) → `blob:` URL `<script>` if inline is blocked by CSP → report clear CSP error if both are blocked.
+
 ---
 
 ## Batch 2: Manager Visibility, Portrait Layout & Highlighting (Medium Scope)
 
-- [ ] **11. Configurable default dock visibility (Shown vs Hidden by default)** *(Item #2)*
+- [ ] **12. Configurable default dock visibility (Shown vs Hidden by default)** *(Item #2)*
   - **Goal:** Beyond hiding the dock per site (`dockSiteHidden`), let users choose globally whether the dock is **shown (collapsed `[⚡]`)** or **hidden** by default on sites that have matching placed scripts, with per-origin overrides.
   - **Design questions to settle:**
     - Schema migration: replace or complement `dockSiteHidden` with `dockDefaultVisible: boolean` (`true` vs `false`) + per-origin override map (`dockSiteVisibility: { [origin]: 'shown' | 'hidden' }` or keep `dockSiteHidden` / `dockSiteShown`).
     - Mobile discoverability when default is hidden (GM menu command `Toggle Dock on This Site` + Command Palette).
 
-- [ ] **12. Highlight matching scripts / dim non-matching scripts in Manager** *(Item #4)*
+- [ ] **13. Highlight matching scripts / dim non-matching scripts in Manager** *(Item #4)*
   - **Goal:** Keep the full global tree (`Toolbar Layout`, `Folder Drawer`, and `Library`) visible while visually highlighting scripts matching the active site and fading non-matching scripts, instead of relying only on hiding via `"Matching current site"`.
   - **Design questions to settle:**
     - Whether `"Matching current site"` becomes a 2-state or 3-state control (`All` | `Highlight matching` | `Only matching`), or defaults to always highlighting matching + dimming non-matching in both `Toolbar Layout` pills and `Library` cards.
 
-- [ ] **13. Portrait Manager vertical space: compact header & non-crowding sticky/folder drawer** *(Firefox Mobile portrait)*
+- [ ] **14. Portrait Manager vertical space: compact header & non-crowding sticky/folder drawer** *(Firefox Mobile portrait)*
   - **Symptom:** In portrait mode, the multi-row Manager header (`+ New Local Script`, `Export`, `Import`, `Shortcut`, `Dock expand`, `Orientation`, `Hide dock`) plus `.bt-sticky-section` (especially with an open `Edit (9)` `.bt-folder-drawer`) consumes ~85% of the height and squishes the Library down to 1 card.
   - **Design questions to settle:**
     - Disable `position: sticky` on `.bt-sticky-section` below a height/portrait threshold (so the whole `.bt-manager-body` scrolls naturally while keeping `.bt-folder-drawer` capped/scrollable) vs moving secondary settings behind `⚙` Settings sub-modal (connecting with Batch 3 / deferred `#4`).
 
-- [ ] **14. Configurable keep-folder-open after running a script** *(multi-step script chaining)*
+- [ ] **15. Configurable keep-folder-open after running a script** *(multi-step script chaining)*
   - **Goal:** Optionally keep an open toolbar folder `.bt-dropdown` (and `More »` menu) open after clicking/running a script inside it so users can chain sequential scripts without reopening the folder each time.
   - **Confirmed cause:** `triggerRunScript(scriptId)` (`lib/BookmarkletToolbarUI.js:2820`) unconditionally calls `closeToolbarDropdown()`.
   - **Design questions to settle:**
     - Global setting (`settings.keepFolderOpenAfterRun`, e.g. in Settings) vs per-folder pin/toggle inside the dropdown header (or both), and whether auto-close (`false`) remains the default.
 
-- [ ] **15. Configurable hover-to-open for toolbar folders** *(and `More »`)*
+- [ ] **16. Configurable hover-to-open for toolbar folders** *(and `More »`)*
   - **Goal:** Allow opening toolbar folder dropdowns (and optionally `More »`) on hover instead of requiring a click.
-  - **Design notes:** Add a short hover-intent delay (~120ms) before opening/switching folders so moving across neighboring buttons doesn't flicker menus, and close cleanly on leave (respecting the dock hover grace delay in #16).
+  - **Design notes:** Add a short hover-intent delay (~120ms) before opening/switching folders so moving across neighboring buttons doesn't flicker menus, and close cleanly on leave (respecting the dock hover grace delay in #17).
 
-- [ ] **16. Hover-expand collapse grace delay & expanded hit buffer** *(Hover usability)*
+- [ ] **17. Hover-expand collapse grace delay & expanded hit buffer** *(Hover usability)*
   - **Symptom:** In `Hover` / unpinned `Hover + Click` mode, keeping the cursor strictly inside the thin pill area is finicky — slipping slightly outside the edge immediately collapses the dock.
   - **Recommended UX solution:** Combine a **350–450ms `mouseleave` collapse grace timeout** (cancelled if `mouseenter` re-enters the dock or an open dropdown) with a modest **invisible `10–14px` hover buffer** around the **expanded** dock only (never when collapsed, so it doesn't block underlying page links).
 
@@ -99,7 +107,7 @@ Related specs:
 
 ## Batch 3: Expanded Command Palette Actions & Settings UX (Needs Design)
 
-- [ ] **17. Expose Manager actions & multi-state settings in Command Palette** *(Item #6)*
+- [ ] **18. Expose Manager actions & multi-state settings in Command Palette** *(Item #6)*
   - **Goal:** Trigger `Import`, `Export`, `New Local Script`, `Hotkey`, `Dock expand` (`Hover + Click` / `Click` / `Hover`), `Orientation` (`Auto` / `Horizontal` / `Vertical`), and `Dock position` directly from the Command Palette.
   - **Design questions to settle:**
     - **Sub-modal vs direct modal:** Should `"Settings"` open a dedicated Settings sub-modal (connecting with deferred `#4` `⚙` Settings button in [2026-11-21-manager-ux-polish-design.md](2026-11-21-manager-ux-polish-design.md)) vs opening Import/Export/Editor modals directly?
