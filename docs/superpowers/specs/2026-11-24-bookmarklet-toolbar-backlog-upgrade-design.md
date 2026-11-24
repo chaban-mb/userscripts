@@ -86,7 +86,7 @@ Real-world usage across desktop Chrome, Firefox Mobile (including non-viewport-m
 - **Menu commands (#12, #18):** Register:
   1. `'Open Command Palette'` → `ui.openPalette()`
   2. `'Open Bookmarklet Manager'` → `ui.openManager()`
-  3. `'Open Bookmarklet Settings'` → `ui.openSettings()` *(Author call: matches independent Manager/Settings UX)*
+  3. `'Open Settings'` → `ui.openSettings()` *(Author call: matches independent Manager/Settings UX)*
   4. `'Toggle Dock on This Site'` → calls `Core.toggleDockSiteVisibility(state.settings, origin)`, saves settings, and mounts/updates UI so toggling works symmetrically whether global default is `Shown` or `Hidden`.
 
 #### 4.2 Core Schema & Helpers (`lib/BookmarkletToolbarCore.js`) — #12, #13, #15, #16
@@ -104,8 +104,8 @@ Real-world usage across desktop Chrome, Firefox Mobile (including non-viewport-m
   - `shouldMountToolbar(layout, scriptsMap, url, settings)`: returns `false` if `!isDockVisibleOnOrigin(settings, url)`, otherwise `getVisibleLayoutForUrl(layout, scriptsMap, url).length > 0`.
 - **Matching helper for Manager dimming (#13):**
   - `doesLayoutNodeMatchUrl(node, scriptsMap, url)`:
-    - `node.type === 'script'`: `Boolean(scriptsMap[node.scriptId] && matchesUrl(scriptsMap[node.scriptId].match, url))`.
-    - `node.type === 'folder'`: `Array.isArray(node.items) && node.items.some((item) => Boolean(scriptsMap[item.scriptId] && matchesUrl(scriptsMap[item.scriptId].match, url)))` (so empty folders and folders where every contained script fails to match return `false`).
+    - `node.type === 'script'`: `Boolean(scriptsMap[node.scriptId] && scriptMatchesUrl(scriptsMap[node.scriptId], url))`.
+    - `node.type === 'folder'`: `Array.isArray(node.items) && node.items.some((item) => Boolean(scriptsMap[item.scriptId] && scriptMatchesUrl(scriptsMap[item.scriptId], url)))` (so empty folders and folders where every contained script fails to match return `false`).
 
 #### 4.3 Strict CSP Bookmarklet Execution (`lib/BookmarkletToolbarAdapters.js`) — #11
 
@@ -197,10 +197,10 @@ Real-world usage across desktop Chrome, Firefox Mobile (including non-viewport-m
   - In `renderManagerView()`:
     - On each `Toolbar Layout` script pill: if `!Core.doesLayoutNodeMatchUrl(node, scriptsMap, state.url)`, add `.bt-pill-dimmed` (reduced opacity e.g. `0.45`, restored to `1` on `:hover`/`:focus-within` so dragging/relabeling stays clear).
     - On each `Toolbar Layout` folder pill: if `!Core.doesLayoutNodeMatchUrl(node, scriptsMap, state.url)` (i.e. empty or all contained scripts don't match `state.url`), add `.bt-pill-dimmed`.
-    - On each `Folder Drawer` chip: if `!Core.matchesUrl(script.match, state.url)`, add `.bt-pill-dimmed`.
+    - On each `Folder Drawer` chip: if `!Core.scriptMatchesUrl(script, state.url)`, add `.bt-pill-dimmed`.
     - Library keeps its existing `"Matching current site"` checkbox behavior unchanged.
 - **Pack badge consistency (#5):**
-  - Mirror the Command Palette pack-name badge on Library cards too *(Author call)*: show `packMeta?.name || s.packId` (or `Pack: <name>`) instead of collapsing to generic `'Pack'` when `packCount === 1`.
+  - Mirror the Command Palette pack-name badge on Library cards too *(Author call)*: show `packMeta?.name || s.packId` (or `Pack: <name>`) instead of collapsing to generic `'Pack'` when `packCount === 1`. Constrain `.bt-badge` with `max-width`, `overflow: hidden; text-overflow: ellipsis; white-space: nowrap;`, and set a `title` attribute with the full pack name so longer pack names never break row or card layouts.
 
 #### 4.8 Command Palette Improvements & Drill-Down Settings (#3, #4, #5, #18)
 
@@ -209,7 +209,7 @@ Real-world usage across desktop Chrome, Firefox Mobile (including non-viewport-m
   - `⚙ Settings` → `openSettings()`
 - **Search matching (#3):** Include `'command action'` and group/badge text in command query matching so typing `"command"` or `"action"` surfaces `Actions` rows.
 - **Description line (#4):** For script rows, render `descLine` **only** when `s.description` is non-empty; remove the `|| s.match.join(', ')` fallback.
-- **Pack name badge (#5):** For pack scripts, show `packMeta?.name || s.packId` (e.g., `MusicBrainz Pack` or `Pack: <name>`) even when only 1 pack is installed.
+- **Pack name badge (#5):** For pack scripts, show `packMeta?.name || s.packId` (e.g., `MusicBrainz Pack` or `Pack: <name>`) even when only 1 pack is installed, using the same `.bt-badge` truncation (`max-width`, `text-overflow: ellipsis`) and `title` full-name tooltip.
 - **Expanded Command Palette actions & drill-down sub-views (#18):**
   - **Root Actions (shown when query is empty or matches):**
     - `Open Manager` (`open-manager`)
@@ -241,7 +241,7 @@ Real-world usage across desktop Chrome, Firefox Mobile (including non-viewport-m
    - `tests/test_bookmarklet_toolbar_core.js`: `dockDefaultVisible`, `dockSiteVisibility`, `dockSiteHidden` migration, `isDockVisibleOnOrigin`, `toggleDockSiteVisibility`, `shouldMountToolbar`, `folderHoverOpen`, `keepFolderOpenAfterRun`, `doesLayoutNodeMatchUrl`.
    - `tests/test_bookmarklet_toolbar_adapters.js`: Tier 1 inline success, Tier 1 CSP block → Tier 2 `blob:` success (and `createScriptURL` + `revokeObjectURL`), Tier 2 CSP block → Tier 3 `gmAddElement` last-resort, Tier 2 CSP block without `gmAddElement` → `onError` surfaced, runtime JS error does NOT retry Tier 2/3.
    - `tests/test_bookmarklet_toolbar_ui.js`: `adoptedStyleSheets` & `:host([data-snap-zone])`, input keystroke isolation, Command Palette (`"command"`/`"action"`, no `@match` description fallback, pack name badge, footer buttons, drill-down sub-views, direct-search shortcuts), standalone `⚙ Settings` modal, Manager header/dimming, touch single-tap open & close without double-toggle, `keepFolderOpenAfterRun`, `folderHoverOpen` + `More »`, hover collapse grace timer.
-   - `tests/test_site_bookmarklet_toolbar_entry.js`: `@noframes` header + runtime `win.self !== win.top` guard, `@grant GM.addElement` forwarding, updated `GM.registerMenuCommand` entries (`Open Bookmarklet Settings`, symmetric `Toggle Dock on This Site`).
+   - `tests/test_site_bookmarklet_toolbar_entry.js`: `@noframes` header + runtime `win.self !== win.top` guard, `@grant GM.addElement` forwarding, updated `GM.registerMenuCommand` entries (`Open Settings`, symmetric `Toggle Dock on This Site`).
 2. **Unmocked Headless Chrome E2E (`tests/test_bookmarklet_toolbar_chrome_e2e.mjs`):**
    - `/csp-style-strict` (`style-src 'self'`): asserts `adoptedStyleSheets` styles dock & overlays with **zero** `style-src` CSP console violations.
    - `/csp-script-blob` (`script-src 'self' 'unsafe-eval' blob:` — Spotify-like): asserts bookmarklet executes via `blob:` fallback **without** `GM.addElement`.
@@ -255,9 +255,9 @@ Real-world usage across desktop Chrome, Firefox Mobile (including non-viewport-m
 ## 5. Author Calls (Made for Builder Clarity)
 
 - **Export / Import placement:** Moved into the standalone `⚙ Settings` modal (also directly runnable from Command Palette) to keep the Manager header compact on portrait mobile (`+ New Local Script`, `⚙ Settings`, `×`).
-- **Violentmonkey menu:** Added `'Open Bookmarklet Settings'` alongside `'Open Command Palette'`, `'Open Bookmarklet Manager'`, and `'Toggle Dock on This Site'`.
+- **Violentmonkey menu:** Added `'Open Settings'` alongside `'Open Command Palette'`, `'Open Bookmarklet Manager'`, and `'Toggle Dock on This Site'`.
 - **Per-site visibility toggle normalization:** Toggling a site back to match `dockDefaultVisible` deletes its entry in `dockSiteVisibility` so it resumes inheriting future changes to the global default.
-- **Pack badge consistency:** Library cards mirror the Command Palette's pack-name badge even when only 1 pack is installed.
+- **Pack badge consistency:** Library cards mirror the Command Palette's pack-name badge even when only 1 pack is installed, with `.bt-badge` truncation (`max-width`, `text-overflow: ellipsis`, `white-space: nowrap`) and a `title` tooltip so long pack names never break layouts.
 - **Drill-down selection behavior:** Picking a choice inside a Command Palette sub-view applies it immediately, shows a toast, and closes the Command Palette (matching other one-shot commands), while `Esc` / `← Back` returns to the root palette.
 
 ## 6. Left to Implementation / Builder
