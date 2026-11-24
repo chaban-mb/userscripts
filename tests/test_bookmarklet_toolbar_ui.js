@@ -1357,7 +1357,7 @@ test('Dock defaults to bottom-center and collapsed with Bookmark Bolt SVG until 
     ui.destroy();
 });
 
-test('Clicking .bt-dock-handle toggles dockSiteExpanded[origin] and Manager controls switch between both, click, and hover modes', () => {
+test('Clicking .bt-dock-handle toggles dockSiteExpanded[origin] and Manager controls switch between both, click, and hover modes', async () => {
     const { doc, win } = createDomEnvironment('https://musicbrainz.org/release/123');
     const stateChanges = [];
     const ui = UI.createToolbarUI({
@@ -1376,12 +1376,13 @@ test('Clicking .bt-dock-handle toggles dockSiteExpanded[origin] and Manager cont
     const toolbarRoot = ui.getToolbarShadowRoot();
     const dockContainer = toolbarRoot.getElementById('bt-toolbar-container');
 
-    // 1. Default 'both' mode: hover expands temporarily without state change, leave collapses
+    // 1. Default 'both' mode: hover expands temporarily without state change, leave collapses after grace delay
     dockContainer.dispatchEvent({ type: 'mouseenter', bubbles: false });
     assert.ok(toolbarRoot.querySelector('[data-script-id="pack:chaban-bookmarklets/approve_all"]'));
     assert.equal(stateChanges.length, 0);
 
     dockContainer.dispatchEvent({ type: 'mouseleave', bubbles: false });
+    await new Promise((r) => setTimeout(r, 430));
     assert.equal(toolbarRoot.querySelectorAll('[data-script-id]').length, 0);
 
     // Clicking handle toggles pinned expanded state and persists via onStateChange
@@ -1420,6 +1421,7 @@ test('Clicking .bt-dock-handle toggles dockSiteExpanded[origin] and Manager cont
     toolbarRoot.querySelector('.bt-dock-handle').click();
     assert.equal(stateChanges.length, beforeHoverClicks);
     dockContainer.dispatchEvent({ type: 'mouseleave', bubbles: false });
+    await new Promise((r) => setTimeout(r, 430));
     assert.equal(toolbarRoot.querySelectorAll('[data-script-id]').length, 0);
 
     ui.destroy();
@@ -3192,6 +3194,196 @@ test('Mobile fixes: visualViewport center overflow budget, dock pill polish, sub
     await new Promise((r) => setTimeout(r, 15));
     (toolbarRoot.querySelector('.bt-dock-handle') || h3).click();
     assert.ok(toolbarRoot.querySelector('[data-action="open-overflow"]'), 'Post-drag compatibility click must be suppressed');
+
+    ui.destroy();
+});
+
+test('Input keystroke isolation stops printable keys from bubbling to host while keeping Shadow DOM Escape & hotkeys (#1)', () => {
+    const { doc, win } = createDomEnvironment('https://musicbrainz.org/release/123');
+    const hostKeyEvents = [];
+    for (const type of ['keydown', 'keyup', 'keypress']) {
+        doc.addEventListener(type, (ev) => hostKeyEvents.push({ type, key: ev.key }));
+    }
+
+    const ui = UI.createToolbarUI({
+        doc,
+        win,
+        initialState: createSampleState({ url: 'https://musicbrainz.org/release/123' }),
+        callbacks: {},
+    });
+
+    ui.openPalette();
+    const overlayRoot = ui.getOverlayShadowRoot();
+    const paletteSearch = overlayRoot.getElementById('palette-search');
+    for (const type of ['keydown', 'keyup', 'keypress']) {
+        paletteSearch.dispatchEvent({ type, key: 'j', bubbles: true });
+    }
+    assert.equal(hostKeyEvents.length, 0, 'Expected Palette input keys not to leak to host doc');
+
+    // Escape still closes Palette
+    paletteSearch.dispatchEvent({ type: 'keydown', key: 'Escape', bubbles: true });
+    assert.equal(overlayRoot.getElementById('palette-backdrop').classList.contains('hidden'), true);
+
+    ui.openManager();
+    const mgrSearch = overlayRoot.getElementById('mgr-search');
+    for (const type of ['keydown', 'keyup', 'keypress']) {
+        mgrSearch.dispatchEvent({ type, key: '/', bubbles: true });
+    }
+    overlayRoot.getElementById('btn-new-local').click();
+    const edCode = overlayRoot.getElementById('ed-code');
+    for (const type of ['keydown', 'keyup', 'keypress']) {
+        edCode.dispatchEvent({ type, key: ' ', bubbles: true });
+    }
+    assert.equal(hostKeyEvents.length, 0, 'Expected Manager & Editor input keys not to leak to host doc');
+
+    // Escape inside editor still closes Editor sub-modal
+    edCode.dispatchEvent({ type: 'keydown', key: 'Escape', bubbles: true });
+    assert.equal(overlayRoot.getElementById('editor-backdrop').classList.contains('hidden'), true);
+
+    ui.destroy();
+});
+
+test('keepFolderOpenAfterRun keeps folder and More » dropdowns open after running a script (#15)', () => {
+    const { doc, win } = createDomEnvironment('https://musicbrainz.org/release/123');
+    win.innerWidth = 340; // Force More » overflow alongside folder
+    win.innerHeight = 800;
+
+    const layout = [
+        { type: 'folder', id: 'folder:edit', name: 'Edit', items: [{ scriptId: 'pack:chaban-bookmarklets/approve_all' }] },
+        { type: 'script', scriptId: 'local:extra1' },
+        { type: 'script', scriptId: 'local:extra2' },
+        { type: 'script', scriptId: 'local:extra3' },
+    ];
+    const baseState = createSampleState({
+        url: 'https://musicbrainz.org/release/123',
+        layout,
+        localScripts: {
+            'local:extra1': { id: 'local:extra1', source: 'local', name: 'Extra 1', match: ['*://*.musicbrainz.org/*'], code: 'void 0;' },
+            'local:extra2': { id: 'local:extra2', source: 'local', name: 'Extra 2', match: ['*://*.musicbrainz.org/*'], code: 'void 0;' },
+            'local:extra3': { id: 'local:extra3', source: 'local', name: 'Extra 3', match: ['*://*.musicbrainz.org/*'], code: 'void 0;' },
+        },
+        settings: {
+            hotkey: 'Alt+B',
+            dockDefaultPosition: 'top-left',
+            dockOrientation: 'horizontal',
+            dockSiteExpanded: { 'https://musicbrainz.org': true },
+            keepFolderOpenAfterRun: true,
+        },
+    });
+
+    const ran = [];
+    const ui = UI.createToolbarUI({
+        doc,
+        win,
+        initialState: baseState,
+        callbacks: { onRunScript: (id) => ran.push(id) },
+    });
+
+    const toolbarRoot = ui.getToolbarShadowRoot();
+    toolbarRoot.querySelector('[data-folder-id="folder:edit"]').click();
+    assert.ok(toolbarRoot.querySelector('.bt-dropdown'));
+    toolbarRoot.querySelector('.bt-dropdown').querySelector('[data-script-id="pack:chaban-bookmarklets/approve_all"]').click();
+    assert.equal(ran.length, 1);
+    assert.ok(toolbarRoot.querySelector('.bt-dropdown'), 'Folder dropdown stays open when keepFolderOpenAfterRun is true');
+
+    // Also applies to More » overflow menu
+    toolbarRoot.querySelector('[data-action="open-overflow"]').click();
+    const overflowBtn = toolbarRoot.querySelector('.bt-dropdown').querySelector('[data-script-id]');
+    assert.ok(overflowBtn);
+    overflowBtn.click();
+    assert.equal(ran.length, 2);
+    assert.ok(toolbarRoot.querySelector('.bt-dropdown'), 'More » dropdown stays open when keepFolderOpenAfterRun is true');
+
+    // Turning setting off restores auto-close on script run
+    ui.update({ settings: { keepFolderOpenAfterRun: false } });
+    toolbarRoot.querySelector('.bt-dropdown').querySelector('[data-script-id]').click();
+    assert.equal(toolbarRoot.querySelector('.bt-dropdown'), null);
+
+    ui.destroy();
+});
+
+test('folderHoverOpen opens folders & More » after hover intent and hover grace delay prevents premature collapse (#16, #17)', async () => {
+    const fs = require('node:fs');
+    const path = require('node:path');
+    const uiSource = fs.readFileSync(
+        path.join(__dirname, '..', 'lib', 'BookmarkletToolbarUI.js'),
+        'utf8'
+    );
+    assert.match(uiSource, /\.bt-toolbar-dock:not\(\.bt-toolbar-dock-collapsed\)::before/);
+    assert.doesNotMatch(uiSource, /\.bt-toolbar-dock-collapsed::before/);
+
+    const { doc, win } = createDomEnvironment('https://musicbrainz.org/release/123');
+    win.innerWidth = 340;
+    win.innerHeight = 800;
+
+    const layout = [
+        { type: 'folder', id: 'folder:edit', name: 'Edit', items: [{ scriptId: 'pack:chaban-bookmarklets/approve_all' }] },
+        { type: 'script', scriptId: 'local:extra1' },
+        { type: 'script', scriptId: 'local:extra2' },
+        { type: 'script', scriptId: 'local:extra3' },
+    ];
+    const ui = UI.createToolbarUI({
+        doc,
+        win,
+        initialState: createSampleState({
+            url: 'https://musicbrainz.org/release/123',
+            layout,
+            localScripts: {
+                'local:extra1': { id: 'local:extra1', source: 'local', name: 'Extra 1', match: ['*://*.musicbrainz.org/*'], code: 'void 0;' },
+                'local:extra2': { id: 'local:extra2', source: 'local', name: 'Extra 2', match: ['*://*.musicbrainz.org/*'], code: 'void 0;' },
+                'local:extra3': { id: 'local:extra3', source: 'local', name: 'Extra 3', match: ['*://*.musicbrainz.org/*'], code: 'void 0;' },
+            },
+            settings: {
+                hotkey: 'Alt+B',
+                dockDefaultPosition: 'top-left',
+                dockOrientation: 'horizontal',
+                dockExpandMode: 'hover',
+                folderHoverOpen: true,
+            },
+        }),
+        callbacks: {},
+    });
+
+    const toolbarRoot = ui.getToolbarShadowRoot();
+    const dockContainer = toolbarRoot.getElementById('bt-toolbar-container');
+
+    // Expand dock on hover, then verify 400ms grace delay cancels collapse on quick re-entry
+    dockContainer.dispatchEvent({ type: 'mouseenter', bubbles: false });
+    assert.ok(toolbarRoot.querySelector('[data-folder-id="folder:edit"]'));
+    dockContainer.dispatchEvent({ type: 'mouseleave', bubbles: false });
+    await new Promise((r) => setTimeout(r, 100));
+    assert.ok(toolbarRoot.querySelector('[data-folder-id="folder:edit"]'), 'Dock must stay expanded during 400ms grace period');
+    dockContainer.dispatchEvent({ type: 'mouseenter', bubbles: false });
+    await new Promise((r) => setTimeout(r, 350));
+    assert.ok(toolbarRoot.querySelector('[data-folder-id="folder:edit"]'), 'Re-entering must cancel collapse timer');
+
+    // Folder hover intent (~120ms): leaving early cancels, holding >= 120ms opens dropdown
+    const folderBtn = toolbarRoot.querySelector('[data-folder-id="folder:edit"]');
+    folderBtn.dispatchEvent({ type: 'mouseenter', bubbles: false });
+    assert.equal(toolbarRoot.querySelector('.bt-dropdown'), null);
+    folderBtn.dispatchEvent({ type: 'mouseleave', bubbles: false });
+    await new Promise((r) => setTimeout(r, 150));
+    assert.equal(toolbarRoot.querySelector('.bt-dropdown'), null, 'Early mouseleave cancels folder hover intent');
+
+    folderBtn.dispatchEvent({ type: 'mouseenter', bubbles: false });
+    await new Promise((r) => setTimeout(r, 160));
+    assert.ok(toolbarRoot.querySelector('.bt-dropdown'), 'Holding hover opens folder dropdown');
+
+    // Click toggle still closes folder even when folderHoverOpen is true
+    toolbarRoot.querySelector('[data-folder-id="folder:edit"]').click();
+    assert.equal(toolbarRoot.querySelector('.bt-dropdown'), null);
+
+    // More » also supports hover-open
+    const moreBtn = toolbarRoot.querySelector('[data-action="open-overflow"]');
+    moreBtn.dispatchEvent({ type: 'mouseenter', bubbles: false });
+    await new Promise((r) => setTimeout(r, 160));
+    assert.ok(toolbarRoot.querySelector('.bt-dropdown'), 'Hovering More » opens overflow dropdown');
+
+    // Leaving past 400ms collapses dock when no dropdown stays active
+    toolbarRoot.querySelector('[data-action="open-overflow"]').click();
+    dockContainer.dispatchEvent({ type: 'mouseleave', bubbles: false });
+    await new Promise((r) => setTimeout(r, 450));
+    assert.equal(toolbarRoot.querySelectorAll('[data-folder-id]').length, 0);
 
     ui.destroy();
 });
