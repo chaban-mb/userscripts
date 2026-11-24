@@ -242,14 +242,17 @@ def do_check(json_format=False, concise=False, main_branch=None, check_all=False
     bump_needed_count = 0
     missing_metadata_count = 0
     script_data = []
+    scopes_map = parse_commit_scopes()
+    release_index = 0
 
     for rel_path_str in userscripts:
         full_path = repo_root / rel_path_str
+        slug = get_slug(rel_path_str, scopes_map)
 
         if not full_path.exists():
             if not json_format:
                 print(f"[-] [DELETED] {rel_path_str}")
-            script_data.append({"rel_path": rel_path_str, "status": "DELETED", "needs_bump": False})
+            script_data.append({"index": None, "rel_path": rel_path_str, "slug": slug, "status": "DELETED", "needs_bump": False})
             continue
 
         try:
@@ -259,6 +262,7 @@ def do_check(json_format=False, concise=False, main_branch=None, check_all=False
                 print(f"[!] [READ ERROR] {rel_path_str}: {e}")
             continue
 
+        release_index += 1
         curr_ver, curr_name = extract_version_and_name(current_content)
         homepage_url, support_url = extract_metadata_urls(current_content)
         display_name = curr_name or full_path.name
@@ -293,7 +297,9 @@ def do_check(json_format=False, concise=False, main_branch=None, check_all=False
             if needs_bump:
                 bump_needed_count += 1
             script_data.append({
+                "index": release_index,
                 "rel_path": rel_path_str,
+                "slug": slug,
                 "name": display_name,
                 "curr_version": curr_ver,
                 "main_version": None,
@@ -326,7 +332,9 @@ def do_check(json_format=False, concise=False, main_branch=None, check_all=False
                 status = "BUMPED"
 
             script_data.append({
+                "index": release_index,
                 "rel_path": rel_path_str,
+                "slug": slug,
                 "name": display_name,
                 "curr_version": curr_ver,
                 "main_version": main_ver,
@@ -517,6 +525,97 @@ def get_committed_non_script_files(main_branch="main", userscripts=None):
                 continue
         non_script_files.append(path)
     return sorted(set(non_script_files))
+
+
+def resolve_selected_scripts(raw_value, items, slug_map=None):
+    """Resolve comma-separated script selectors (1-based index, rel_path, basename, or slug).
+
+    Returns (selected_indices, error_message).
+    """
+    if slug_map is None:
+        slug_map = parse_commit_scopes()
+
+    raw_str = str(raw_value or '').strip()
+    lower_raw = raw_str.lower()
+
+    if lower_raw in ('all', 'a') or (raw_str == '' and len(items) == 1):
+        return list(range(len(items))), None
+    if lower_raw in ('none', 'n'):
+        return [], None
+
+    tokens = [t.strip() for t in raw_str.split(',') if t.strip()]
+    if not tokens:
+        return None, "Script selection cannot be empty."
+
+    by_rel_path = {}
+    by_basename = {}
+    by_slug = {}
+
+    for idx, item in enumerate(items):
+        if isinstance(item, dict):
+            rel_path = item['rel_path']
+            slug = item.get('slug') or get_slug(rel_path, slug_map)
+        else:
+            rel_path = str(item)
+            slug = get_slug(rel_path, slug_map)
+
+        norm_path = rel_path.replace('\\', '/').lstrip('./').lower()
+        base_name = Path(norm_path).name.lower()
+        norm_slug = str(slug).strip().lower()
+
+        by_rel_path[norm_path] = idx
+        by_basename.setdefault(base_name, []).append(idx)
+        by_slug.setdefault(norm_slug, []).append(idx)
+
+    selected = []
+    seen = set()
+
+    for raw_token in tokens:
+        token = raw_token.strip().strip('"').strip("'").strip()
+        if not token:
+            continue
+
+        if token.isdigit():
+            idx = int(token) - 1
+            if not (0 <= idx < len(items)):
+                return None, f"Script index '{token}' is out of range (valid: 1-{len(items)})."
+            matched_idx = idx
+        else:
+            norm_token = token.replace('\\', '/').lstrip('./').lower()
+            if norm_token in by_rel_path:
+                matched_idx = by_rel_path[norm_token]
+            elif norm_token in by_slug:
+                matches = by_slug[norm_token]
+                if len(matches) > 1:
+                    return None, f"Ambiguous script slug '{token}' matches multiple scripts."
+                matched_idx = matches[0]
+            elif norm_token in by_basename:
+                matches = by_basename[norm_token]
+                if len(matches) > 1:
+                    return None, f"Ambiguous script filename '{token}' matches multiple scripts; pass the full relative path."
+                matched_idx = matches[0]
+            else:
+                return None, f"Unknown script selector '{token}'."
+
+        if matched_idx not in seen:
+            seen.add(matched_idx)
+            selected.append(matched_idx)
+
+    if not selected:
+        return None, "No scripts selected."
+    return selected, None
+
+
+def format_available_scripts_hint(items, slug_map=None):
+    """Format available script choices for actionable CLI error output."""
+    if slug_map is None:
+        slug_map = parse_commit_scopes()
+    lines = ["Valid script selectors (number, relative path, or slug):"]
+    for idx, item in enumerate(items, 1):
+        rel_path = item['rel_path'] if isinstance(item, dict) else str(item)
+        slug = (item.get('slug') if isinstance(item, dict) else None) or get_slug(rel_path, slug_map)
+        lines.append(f"  {idx}) {rel_path}  [slug: {slug}]")
+    return "\n".join(lines)
 
 
 def resolve_selected_infra_paths(committed_infra_files, files_filter=None, non_interactive=False):
@@ -757,35 +856,27 @@ def do_release(non_interactive=False, json_output=False, bump_strategy="auto", s
                 print(f"  {idx}) {status_str} {info['name']} {ver_str}")
 
             print(f"\n{COLOR_CYAN}{COLOR_BOLD}Select scripts to release:{COLOR_RESET}")
-            print("  Enter numbers separated by commas (e.g. 1,3)")
+            print("  Enter numbers, paths, or slugs separated by commas (e.g. 1,3 or mb-release-day-week)")
             print("  Enter 'all' to release all scripts")
             print("  Enter 'q' to quit")
 
-            choice = prompt_user(f"{COLOR_BOLD}Choice:{COLOR_RESET} ", default=scripts_filter, non_interactive=non_interactive, auto_choice=scripts_filter).lower()
-            if choice in ['q', 'quit', 'exit']:
+            choice = prompt_user(f"{COLOR_BOLD}Choice:{COLOR_RESET} ", default=scripts_filter, non_interactive=non_interactive, auto_choice=scripts_filter).strip()
+            if choice.lower() in ['q', 'quit', 'exit']:
                 print(f"{COLOR_RED}Aborting.{COLOR_RESET}\n")
                 return 0
 
-            selected_indices = []
-            if choice in ['all', 'a'] or (choice == '' and len(unreleased_info) == 1):
-                selected_indices = list(range(len(unreleased_info)))
-            else:
-                try:
-                    selected_indices = [int(i.strip()) - 1 for i in choice.split(',') if i.strip()]
-                except ValueError:
-                    print(f"{COLOR_RED}Invalid input. Aborting.{COLOR_RESET}\n")
-                    return 0
+            selected_indices, sel_error = resolve_selected_scripts(choice, unreleased_info, slug_map=mapping)
+            if sel_error:
+                print(f"{COLOR_RED}Error: {sel_error}{COLOR_RESET}")
+                print(format_available_scripts_hint(unreleased_info, slug_map=mapping))
+                print()
+                return 1
 
-            selected_scripts = []
-            for idx in selected_indices:
-                if 0 <= idx < len(unreleased_info):
-                    selected_scripts.append(unreleased_info[idx])
-                else:
-                    print(f"{COLOR_YELLOW}Invalid index {idx + 1}. Skipping.{COLOR_RESET}")
+            selected_scripts = [unreleased_info[idx] for idx in selected_indices]
 
             if not selected_scripts:
                 print(f"{COLOR_YELLOW}No scripts selected.{COLOR_RESET}\n")
-                return 0
+                return 1
 
     valid_scripts = []
     for script in selected_scripts:
@@ -1218,11 +1309,24 @@ def do_bump(bump_type="patch", scripts_filter="all", json_output=False):
         print(f"\n{COLOR_CYAN}No modified or unreleased scripts found in src/ or lib/.{COLOR_RESET}\n")
         return 0
 
+    existing_userscripts = [rel_path_str for rel_path_str in userscripts if (repo_root / rel_path_str).exists()]
+    if not existing_userscripts:
+        print(f"\n{COLOR_CYAN}No existing modified or unreleased scripts found in src/ or lib/.{COLOR_RESET}\n")
+        return 0
+
+    scopes_map = parse_commit_scopes()
+    selected_indices, sel_error = resolve_selected_scripts(scripts_filter, existing_userscripts, slug_map=scopes_map)
+    if sel_error:
+        print(f"{COLOR_RED}Error: {sel_error}{COLOR_RESET}")
+        print(format_available_scripts_hint(existing_userscripts, slug_map=scopes_map))
+        print()
+        return 1
+
+    target_scripts = [existing_userscripts[idx] for idx in selected_indices]
+
     bumped_results = []
-    for rel_path_str in userscripts:
+    for rel_path_str in target_scripts:
         full_path = repo_root / rel_path_str
-        if not full_path.exists():
-            continue
 
         try:
             current_content = full_path.read_text(encoding='utf-8')
@@ -1554,7 +1658,7 @@ Examples:
     release_parser.add_argument("--dry-run", "-n", action="store_true", help="Simulate release workflow without creating commits or modifying files")
     release_parser.add_argument("--json", action="store_true", help="Output JSON results")
     release_parser.add_argument("--bump-type", choices=["patch", "minor", "major", "none", "auto"], default="auto", help="Bump strategy in automated mode (default: auto)")
-    release_parser.add_argument("--scripts", default="all", help="Comma-separated script numbers/paths, 'all', or 'none' (default: all)")
+    release_parser.add_argument("--scripts", default="all", help="Comma-separated script numbers, paths, or slugs, 'all', or 'none' (default: all)")
     release_parser.add_argument("--files", "-f", default=None, help="Comma-separated committed non-script file paths or 'all' to release")
     release_parser.add_argument("--commit-type", "-t", default=None, help="Custom commit type override for new commits (e.g. fix, feat, refactor)")
     release_parser.add_argument("--commit-msg", "-m", default=None, help="Custom commit description override for new commits")
@@ -1562,7 +1666,7 @@ Examples:
     # Subcommand: bump
     bump_cmd_parser = subparsers.add_parser("bump", help="Batch bump version tags for modified/unreleased userscripts and dependent libs")
     bump_cmd_parser.add_argument("--bump-type", choices=["patch", "minor", "major"], default="patch", help="Bump strategy (default: patch)")
-    bump_cmd_parser.add_argument("--scripts", default="all", help="Comma-separated script paths or 'all' (default: all)")
+    bump_cmd_parser.add_argument("--scripts", default="all", help="Comma-separated script numbers, paths, or slugs, 'all', or 'none' (default: all)")
     bump_cmd_parser.add_argument("--json", action="store_true", help="Output JSON results")
 
     # Subcommand: build
@@ -1591,7 +1695,7 @@ Examples:
         elif args.command == "cleanup":
             do_cleanup(args.branch, args.main_branch, non_interactive=getattr(args, "non_interactive", False))
         elif args.command == "bump":
-            do_bump(bump_type=args.bump_type, scripts_filter=args.scripts, json_output=getattr(args, 'json', False))
+            sys.exit(do_bump(bump_type=args.bump_type, scripts_filter=args.scripts, json_output=getattr(args, 'json', False)))
         elif args.command == "init" or args.command == "new":
             sys.exit(do_init(args.name, description=args.description, create_branch=args.branch))
         elif args.command == "publish-info" or args.command == "announce":

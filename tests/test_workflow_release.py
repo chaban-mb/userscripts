@@ -1,3 +1,4 @@
+import json
 import shutil
 import subprocess
 import sys
@@ -635,6 +636,192 @@ class WorkflowReleaseTests(unittest.TestCase):
             self.assertTrue(main_wt.exists())
             self.assertEqual(self._run(["git", "show", "origin/main:LICENSE"], cwd=repo).stdout.strip(), "Copyright (c) 2025 chaban")
             self.assertEqual((main_wt / "LICENSE").read_text(encoding="utf-8").strip(), "Copyright (c) 2025 chaban")
+
+    def test_release_scripts_by_relative_path_and_backslash_normalization(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="wf_rel_") as tmp_dir:
+            _, repo = self._setup_repo(Path(tmp_dir))
+
+            (repo / "src" / "script-a.user.js").write_text(
+                USERJS_TEMPLATE.format(name="Script A", body="v2"), encoding="utf-8"
+            )
+            (repo / "src" / "script-b.user.js").write_text(
+                USERJS_TEMPLATE.format(name="Script B", body="v2"), encoding="utf-8"
+            )
+            self._run(["git", "add", "src/script-a.user.js", "src/script-b.user.js"], cwd=repo)
+            self._run(["git", "commit", "-m", "fix: update both scripts"], cwd=repo)
+
+            # Release script-b using Windows backslash relative path
+            res = self._run(
+                [
+                    sys.executable,
+                    str(repo / "tools" / "workflow.py"),
+                    "release",
+                    "--non-interactive",
+                    "--scripts",
+                    r"src\script-b.user.js",
+                    "--bump-type",
+                    "patch",
+                    "--push",
+                ],
+                cwd=repo,
+                check=False,
+            )
+            self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
+            main_a = self._run(["git", "show", "origin/main:src/script-a.user.js"], cwd=repo).stdout
+            main_b = self._run(["git", "show", "origin/main:src/script-b.user.js"], cwd=repo).stdout
+            self.assertIn("'v1'", main_a)
+            self.assertIn("'v2'", main_b)
+            self.assertIn("@version      1.0.1", main_b)
+
+    def test_release_scripts_by_slug(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="wf_rel_") as tmp_dir:
+            _, repo = self._setup_repo(Path(tmp_dir))
+
+            scopes_file = repo / ".agents" / "skills" / "git-workflow" / "references" / "commit-scopes.md"
+            scopes_file.parent.mkdir(parents=True, exist_ok=True)
+            scopes_file.write_text(
+                "| `script-a.user.js` | `custom-slug-a` |\n| `script-b.user.js` | `custom-slug-b` |\n",
+                encoding="utf-8",
+            )
+            (repo / "src" / "script-a.user.js").write_text(
+                USERJS_TEMPLATE.format(name="Script A", body="v2"), encoding="utf-8"
+            )
+            (repo / "src" / "script-b.user.js").write_text(
+                USERJS_TEMPLATE.format(name="Script B", body="v2"), encoding="utf-8"
+            )
+            self._run(["git", "add", "src/script-a.user.js", "src/script-b.user.js"], cwd=repo)
+            self._run(["git", "commit", "-m", "fix: update both scripts"], cwd=repo)
+
+            res = self._run(
+                [
+                    sys.executable,
+                    str(repo / "tools" / "workflow.py"),
+                    "release",
+                    "--non-interactive",
+                    "--scripts",
+                    "custom-slug-b",
+                    "--bump-type",
+                    "patch",
+                    "--push",
+                ],
+                cwd=repo,
+                check=False,
+            )
+            self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
+            main_a = self._run(["git", "show", "origin/main:src/script-a.user.js"], cwd=repo).stdout
+            main_b = self._run(["git", "show", "origin/main:src/script-b.user.js"], cwd=repo).stdout
+            self.assertIn("'v1'", main_a)
+            self.assertIn("'v2'", main_b)
+
+    def test_release_scripts_invalid_input_returns_nonzero(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="wf_rel_") as tmp_dir:
+            _, repo = self._setup_repo(Path(tmp_dir))
+
+            (repo / "src" / "script-a.user.js").write_text(
+                USERJS_TEMPLATE.format(name="Script A", body="v2"), encoding="utf-8"
+            )
+            self._run(["git", "add", "src/script-a.user.js"], cwd=repo)
+            self._run(["git", "commit", "-m", "fix(script-a): update a"], cwd=repo)
+            main_before = self._run(["git", "rev-parse", "origin/main"], cwd=repo).stdout.strip()
+            dev_before = self._run(["git", "rev-parse", "dev"], cwd=repo).stdout.strip()
+
+            for bad_arg in ("src/nonexistent.user.js", "99"):
+                res = self._run(
+                    [
+                        sys.executable,
+                        str(repo / "tools" / "workflow.py"),
+                        "release",
+                        "--non-interactive",
+                        "--scripts",
+                        bad_arg,
+                        "--bump-type",
+                        "patch",
+                        "--push",
+                    ],
+                    cwd=repo,
+                    check=False,
+                )
+                self.assertNotEqual(res.returncode, 0, f"Expected non-zero for --scripts {bad_arg}: {res.stdout}")
+                self.assertEqual(self._run(["git", "rev-parse", "origin/main"], cwd=repo).stdout.strip(), main_before)
+                self.assertEqual(self._run(["git", "rev-parse", "dev"], cwd=repo).stdout.strip(), dev_before)
+
+    def test_bump_scripts_filters_target_only(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="wf_rel_") as tmp_dir:
+            _, repo = self._setup_repo(Path(tmp_dir))
+
+            (repo / "src" / "script-a.user.js").write_text(
+                USERJS_TEMPLATE.format(name="Script A", body="v2"), encoding="utf-8"
+            )
+            (repo / "src" / "script-b.user.js").write_text(
+                USERJS_TEMPLATE.format(name="Script B", body="v2"), encoding="utf-8"
+            )
+            self._run(["git", "add", "src/script-a.user.js", "src/script-b.user.js"], cwd=repo)
+            self._run(["git", "commit", "-m", "fix: update both"], cwd=repo)
+
+            res = self._run(
+                [
+                    sys.executable,
+                    str(repo / "tools" / "workflow.py"),
+                    "bump",
+                    "--bump-type",
+                    "patch",
+                    "--scripts",
+                    "src/script-a.user.js",
+                ],
+                cwd=repo,
+                check=False,
+            )
+            self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
+            a_text = (repo / "src" / "script-a.user.js").read_text(encoding="utf-8")
+            b_text = (repo / "src" / "script-b.user.js").read_text(encoding="utf-8")
+            self.assertIn("@version      1.0.1", a_text)
+            self.assertIn("@version      1.0.0", b_text)
+
+            res_bad = self._run(
+                [
+                    sys.executable,
+                    str(repo / "tools" / "workflow.py"),
+                    "bump",
+                    "--bump-type",
+                    "patch",
+                    "--scripts",
+                    "src/missing.user.js",
+                ],
+                cwd=repo,
+                check=False,
+            )
+            self.assertNotEqual(res_bad.returncode, 0, res_bad.stdout + res_bad.stderr)
+
+    def test_check_json_includes_index_and_slug(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="wf_rel_") as tmp_dir:
+            _, repo = self._setup_repo(Path(tmp_dir))
+
+            scopes_file = repo / ".agents" / "skills" / "git-workflow" / "references" / "commit-scopes.md"
+            scopes_file.parent.mkdir(parents=True, exist_ok=True)
+            scopes_file.write_text(
+                "| `script-a.user.js` | `custom-slug-a` |\n| `script-b.user.js` | `custom-slug-b` |\n",
+                encoding="utf-8",
+            )
+            (repo / "src" / "script-a.user.js").write_text(
+                USERJS_TEMPLATE.format(name="Script A", body="v2"), encoding="utf-8"
+            )
+            (repo / "src" / "script-b.user.js").write_text(
+                USERJS_TEMPLATE.format(name="Script B", body="v2"), encoding="utf-8"
+            )
+            self._run(["git", "add", "src/script-a.user.js", "src/script-b.user.js"], cwd=repo)
+            self._run(["git", "commit", "-m", "fix: update both"], cwd=repo)
+
+            res = self._run(
+                [sys.executable, str(repo / "tools" / "workflow.py"), "check", "--json"],
+                cwd=repo,
+                check=False,
+            )
+            data = json.loads(res.stdout)
+            self.assertEqual(len(data["scripts"]), 2)
+            self.assertEqual(data["scripts"][0]["index"], 1)
+            self.assertEqual(data["scripts"][0]["slug"], "custom-slug-a")
+            self.assertEqual(data["scripts"][1]["index"], 2)
+            self.assertEqual(data["scripts"][1]["slug"], "custom-slug-b")
 
 
 if __name__ == "__main__":
