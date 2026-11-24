@@ -3373,7 +3373,21 @@ test('folderHoverOpen opens folders & More » after hover intent and hover grace
     await new Promise((r) => setTimeout(r, 160));
     assert.ok(toolbarRoot.querySelector('.bt-dropdown'), 'Holding hover opens folder dropdown');
 
-    // Click toggle still closes folder even when folderHoverOpen is true
+    // Leaving folder wrapper onto a sibling button inside dockContainer closes dropdown after 250ms
+    // WITHOUT collapsing the hover-expanded dock after 400ms (Important #3)
+    const openFolderWrap = toolbarRoot.querySelector('[data-folder-id="folder:edit"]').parentNode;
+    openFolderWrap.dispatchEvent({ type: 'mouseleave', bubbles: false });
+    await new Promise((r) => setTimeout(r, 290));
+    assert.equal(toolbarRoot.querySelector('.bt-dropdown'), null, 'Leaving folder wrapper closes dropdown after grace period');
+    await new Promise((r) => setTimeout(r, 450));
+    assert.ok(
+        toolbarRoot.querySelector('[data-folder-id="folder:edit"]'),
+        'Dock must stay open while pointer remains inside toolbarContainer'
+    );
+
+    // Click toggle still opens & closes folder even when folderHoverOpen is true
+    toolbarRoot.querySelector('[data-folder-id="folder:edit"]').click();
+    assert.ok(toolbarRoot.querySelector('.bt-dropdown'));
     toolbarRoot.querySelector('[data-folder-id="folder:edit"]').click();
     assert.equal(toolbarRoot.querySelector('.bt-dropdown'), null);
 
@@ -3636,6 +3650,14 @@ test('Command Palette supports command/action queries (#3), omits @match desc fa
     assert.ok(posShortcut, 'Expected direct-search shortcut for bottom-right dock position');
     posShortcut.click();
     assert.equal(stateChanges.at(-1).settings.dockDefaultPosition, 'bottom-right');
+    assert.equal(overlayRoot.getElementById('palette-backdrop').classList.contains('hidden'), true, 'Selecting set-position:* must close Command Palette (#palette-backdrop)');
+
+    // Drill-down set-position:* also closes Command Palette
+    ui.openPalette();
+    paletteList.querySelector('[data-command-id="sub-dock-position"]').click();
+    paletteList.querySelector('[data-command-id="set-position:top-right"]').click();
+    assert.equal(stateChanges.at(-1).settings.dockDefaultPosition, 'top-right');
+    assert.equal(overlayRoot.getElementById('palette-backdrop').classList.contains('hidden'), true);
 
     // 6. Non-HTTP(S) origin omits toggle-dock-site cleanly (Review Focus #3)
     ui.update({ url: 'file:///tmp/test.html' });

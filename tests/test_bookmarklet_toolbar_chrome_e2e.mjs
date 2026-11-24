@@ -871,6 +871,9 @@ test('Real Headless Chrome E2E Verification for Site Bookmarklet Toolbar', async
             const th = document.getElementById('userjs-bt-toolbar-host');
             const bar = th.shadowRoot.querySelector('.bt-dock-items-bar');
             const expanded = th.shadowRoot.querySelector('.bt-dock-handle')?.getAttribute('aria-expanded') === 'true';
+            const barRect = bar ? bar.getBoundingClientRect().toJSON() : null;
+            const pillRect = th.shadowRoot.querySelector('.bt-dock-anchor-pill')?.getBoundingClientRect().toJSON() || null;
+            const gapPx = barRect && pillRect ? pillRect.top - barRect.bottom : null;
             // Restore 'both' mode and reopen Manager for Scenario 3 (dock stays pinned expanded from Scenario 2)
             window.__invokeGmMenu('Open Bookmarklet Manager');
             const sr = document.getElementById('userjs-bt-overlay-host').shadowRoot;
@@ -878,10 +881,11 @@ test('Real Headless Chrome E2E Verification for Site Bookmarklet Toolbar', async
             sr.querySelector('[data-dock-expand-mode="both"]').click();
             sr.getElementById('settings-close').click();
             await new Promise((r) => setTimeout(r, 20));
-            return { expanded, hasBar: Boolean(bar) };
+            return { expanded, hasBar: Boolean(bar), gapPx };
         })()`);
         assert.equal(hoverBridgeResult.expanded, true, 'Hover bridge must keep dock open across 6px gap');
         assert.equal(hoverBridgeResult.hasBar, true);
+        assert.ok(hoverBridgeResult.gapPx !== null && hoverBridgeResult.gapPx >= 4 && hoverBridgeResult.gapPx <= 8, `Center items-bar gap must stay ~6px (got ${hoverBridgeResult.gapPx}px)`);
         await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 10, y: 10 });
 
         // Verify MusicBrainz header bounding boxes are completely untouched
