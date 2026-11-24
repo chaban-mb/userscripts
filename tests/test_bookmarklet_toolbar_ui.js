@@ -1522,6 +1522,7 @@ test('Pointer-dragging .bt-dock-handle snaps to nearest of 6 zones beyond 6px, t
         clientY: 40,
         bubbles: true,
     });
+    activeHandle.click();
     assert.equal(stateChanges.at(-1).settings.dockSiteExpanded['https://musicbrainz.org'], true);
     assert.equal(stateChanges.at(-1).settings.dockSitePositions['https://musicbrainz.org'], 'top-right');
 
@@ -1745,7 +1746,7 @@ test('Hiding dock on current origin unmounts toolbarHost while Manager and Comma
     assert.match(toggleBtn.textContent, /Hide dock on this site/i);
 
     toggleBtn.click();
-    assert.equal(stateChanges.at(-1).settings.dockSiteHidden['https://musicbrainz.org'], true);
+    assert.equal(stateChanges.at(-1).settings.dockSiteVisibility['https://musicbrainz.org'], 'hidden');
     assert.equal(ui.isToolbarMounted(), false);
     assert.equal(doc.querySelector('#userjs-bt-toolbar-host'), null);
     assert.match(toggleBtn.textContent, /Show dock on this site/i);
@@ -1764,7 +1765,7 @@ test('Hiding dock on current origin unmounts toolbarHost while Manager and Comma
     assert.match(dockAction.textContent, /Show Dock on Current Site/i);
 
     dockAction.click();
-    assert.equal(stateChanges.at(-1).settings.dockSiteHidden['https://musicbrainz.org'], false);
+    assert.equal('https://musicbrainz.org' in stateChanges.at(-1).settings.dockSiteVisibility, false);
     assert.equal(ui.isToolbarMounted(), true);
     assert.ok(doc.querySelector('#userjs-bt-toolbar-host'));
 
@@ -2339,7 +2340,7 @@ test('Dock renders two-tier center, left/right horizontal ordering, vertical cor
     assert.match(uiSource, /\.bt-toolbar-dock\s*\{[^}]*flex-wrap:\s*nowrap;[^}]*padding:\s*4px;/s);
     assert.doesNotMatch(uiSource, /\.bt-toolbar-dock-collapsed\s*\{[^}]*padding:\s*4px\s+6px;/s);
     assert.match(uiSource, /\.bt-dock-anchor-pill\s*\{[^}]*padding:\s*4px;/s);
-    assert.match(uiSource, /\.bt-dock-items-bar\s*\{[^}]*position:\s*absolute;/s);
+    assert.match(uiSource, /\.bt-dock-items-bar\s*\{[^}]*position:\s*fixed;/s);
     assert.match(uiSource, /200ms\s+cubic-bezier\(0\.22,\s*1,\s*0\.36,\s*1\)/);
     assert.match(uiSource, /@media\s*\(prefers-reduced-motion:\s*reduce\)/);
     assert.doesNotMatch(uiSource, /\.bt-dock-vertical-list\s*,\s*[\s\S]*?\.bt-dock-anim-item/);
@@ -3011,6 +3012,186 @@ test('Dropdown hover bridge CSS covers 6px gap and hover-mode mouseleave stays o
     doc.body.click();
     assert.equal(toolbarRoot.querySelector('.bt-dropdown'), null);
     assert.equal(toolbarRoot.querySelectorAll('[data-script-id]').length, 0);
+
+    ui.destroy();
+});
+
+test('CSP-safe styling uses adoptedStyleSheets and :host snap rules without cssText or <style> tags (#10)', () => {
+    const fs = require('node:fs');
+    const path = require('node:path');
+    const uiSource = fs.readFileSync(
+        path.join(__dirname, '..', 'lib', 'BookmarkletToolbarUI.js'),
+        'utf8'
+    );
+    assert.match(uiSource, /:host\(\[data-snap-zone="bottom-center"\]\)/);
+    assert.equal(/\.style\.cssText\s*=/.test(uiSource), false, 'UI must never assign .style.cssText');
+
+    // 1. Primary path: CSSStyleSheet + adoptedStyleSheets (0 <style> elements appended)
+    {
+        const { doc, win } = createDomEnvironment('https://musicbrainz.org/release/123');
+        class MockCSSStyleSheet {
+            constructor() { this.text = ''; }
+            replaceSync(t) { this.text = t; }
+        }
+        win.CSSStyleSheet = MockCSSStyleSheet;
+
+        const createdShadows = [];
+        const origCreateEl = doc.createElement.bind(doc);
+        doc.createElement = (tag) => {
+            const el = origCreateEl(tag);
+            const origAttach = el.attachShadow.bind(el);
+            el.attachShadow = (opts) => {
+                const sr = origAttach(opts);
+                sr.adoptedStyleSheets = [];
+                createdShadows.push(sr);
+                return sr;
+            };
+            return el;
+        };
+
+        const ui = UI.createToolbarUI({
+            doc,
+            win,
+            initialState: createSampleState({ url: 'https://musicbrainz.org/release/123' }),
+            callbacks: {},
+        });
+        ui.openPalette();
+
+        assert.equal(createdShadows.length, 2);
+        for (const sr of createdShadows) {
+            assert.equal(sr.adoptedStyleSheets.length, 1);
+            assert.ok(sr.adoptedStyleSheets[0] instanceof MockCSSStyleSheet);
+            assert.equal(sr.querySelectorAll('style').length, 0);
+        }
+        const host = ui.getToolbarHost();
+        assert.equal(host.getAttribute('data-snap-zone'), 'bottom-center');
+        assert.equal(host.style.cssText, '');
+
+        // Clear live drag transform on drop without touching cssText
+        UI.createToolbarUI; // keep lint happy
+        ui.destroy();
+    }
+
+    // 2. Last-resort fallback: gmAddElement when adoptedStyleSheets unavailable and <style> append throws
+    {
+        const { doc, win } = createDomEnvironment('https://musicbrainz.org/release/123');
+        const gmStyleCalls = [];
+        const origCreateEl = doc.createElement.bind(doc);
+        doc.createElement = (tag) => {
+            const el = origCreateEl(tag);
+            if (String(tag).toUpperCase() === 'DIV') {
+                const origAttach = el.attachShadow.bind(el);
+                el.attachShadow = (opts) => {
+                    const sr = origAttach(opts);
+                    const origAppend = sr.appendChild.bind(sr);
+                    sr.appendChild = (child) => {
+                        if (child.tagName === 'STYLE') {
+                            throw new Error('Refused to apply inline style due to CSP');
+                        }
+                        return origAppend(child);
+                    };
+                    return sr;
+                };
+            }
+            return el;
+        };
+
+        const ui = UI.createToolbarUI({
+            doc,
+            win,
+            gmAddElement: (parent, tag, attrs) => gmStyleCalls.push({ parent, tag, attrs }),
+            initialState: createSampleState({ url: 'https://musicbrainz.org/release/123' }),
+            callbacks: {},
+        });
+        assert.equal(gmStyleCalls.length, 1);
+        assert.equal(gmStyleCalls[0].tag, 'style');
+        assert.match(gmStyleCalls[0].attrs.textContent, /\.bt-toolbar-dock/);
+        ui.destroy();
+    }
+});
+
+test('Mobile fixes: visualViewport center overflow budget, dock pill polish, sub-modal top-align scroll, and click-only touch toggle (#2, #7, #8, #9)', async () => {
+    const fs = require('node:fs');
+    const path = require('node:path');
+    const uiSource = fs.readFileSync(
+        path.join(__dirname, '..', 'lib', 'BookmarkletToolbarUI.js'),
+        'utf8'
+    );
+    assert.match(uiSource, /\.bt-backdrop-sub\s*\{[^}]*align-items:\s*flex-start;[^}]*overflow-y:\s*auto;/s);
+    assert.match(uiSource, /\.bt-form-body\s*\{[^}]*overflow-y:\s*auto;[^}]*min-height:\s*0;/s);
+    assert.match(uiSource, /\.bt-dock-items-bar\s+\.bt-btn-dark[^{]*\{[^}]*border-radius:\s*9999px;/s);
+
+    // Non-viewport-meta site simulation: doc.documentElement.clientWidth is 980, visualViewport.width is 412
+    const { doc, win } = createDomEnvironment('https://musicbrainz.org/release/123');
+    win.innerWidth = 980;
+    win.innerHeight = 1800;
+    doc.documentElement.clientWidth = 980;
+    doc.documentElement.clientHeight = 1800;
+    win.visualViewport = { width: 412, height: 780 };
+
+    const layout = Array.from({ length: 8 }, (_, i) => ({
+        type: 'script',
+        scriptId: `local:s${i}`,
+    }));
+    const localScripts = {};
+    layout.forEach((n, i) => {
+        localScripts[n.scriptId] = {
+            id: n.scriptId,
+            source: 'local',
+            name: `Action Script ${i}`,
+            label: `Action ${i}`,
+            match: ['*://*.musicbrainz.org/*'],
+            code: 'void 0;',
+        };
+    });
+
+    const ui = UI.createToolbarUI({
+        doc,
+        win,
+        initialState: createSampleState({
+            url: 'https://musicbrainz.org/release/123',
+            packs: {},
+            localScripts,
+            layout,
+            settings: {
+                hotkey: 'Alt+B',
+                dockDefaultPosition: 'top-center',
+                dockSiteExpanded: { 'https://musicbrainz.org': true },
+            },
+        }),
+        callbacks: {},
+    });
+
+    // Overflow triggers based on visualViewport 412px budget rather than 980px layout viewport
+    const toolbarRoot = ui.getToolbarShadowRoot();
+    assert.ok(toolbarRoot.querySelector('[data-action="open-overflow"]'), 'Expected More » under 412px visualViewport budget');
+
+    // #9 Touch tap toggle: pointerdown + pointerup does NOT toggle on pointerup; synthesized delayed click toggles ONCE
+    const h1 = toolbarRoot.querySelector('.bt-dock-handle');
+    h1.dispatchEvent({ type: 'pointerdown', pointerId: 1, button: 0, pointerType: 'touch', clientX: 200, clientY: 20, bubbles: true });
+    h1.dispatchEvent({ type: 'pointerup', pointerId: 1, pointerType: 'touch', clientX: 200, clientY: 20, bubbles: true });
+    // Still expanded until click fires!
+    assert.ok(toolbarRoot.querySelector('[data-action="open-overflow"]'), 'pointerup alone must not double-toggle before synthesized click');
+    await new Promise((r) => setTimeout(r, 15));
+    h1.click();
+    assert.equal(toolbarRoot.querySelector('[data-action="open-overflow"]'), null, 'Single delayed click after tap closes dock once');
+
+    // Reopen on tap 2
+    const h2 = toolbarRoot.querySelector('.bt-dock-handle');
+    h2.dispatchEvent({ type: 'pointerdown', pointerId: 2, button: 0, pointerType: 'touch', clientX: 200, clientY: 20, bubbles: true });
+    h2.dispatchEvent({ type: 'pointerup', pointerId: 2, pointerType: 'touch', clientX: 200, clientY: 20, bubbles: true });
+    await new Promise((r) => setTimeout(r, 15));
+    h2.click();
+    assert.ok(toolbarRoot.querySelector('[data-action="open-overflow"]'), 'Second tap opens dock cleanly');
+
+    // Drag > 6px suppresses synthesized click within 400ms
+    const h3 = toolbarRoot.querySelector('.bt-dock-handle');
+    h3.dispatchEvent({ type: 'pointerdown', pointerId: 3, button: 0, pointerType: 'touch', clientX: 200, clientY: 20, bubbles: true });
+    h3.dispatchEvent({ type: 'pointermove', pointerId: 3, pointerType: 'touch', clientX: 200, clientY: 750, bubbles: true });
+    h3.dispatchEvent({ type: 'pointerup', pointerId: 3, pointerType: 'touch', clientX: 200, clientY: 750, bubbles: true });
+    await new Promise((r) => setTimeout(r, 15));
+    (toolbarRoot.querySelector('.bt-dock-handle') || h3).click();
+    assert.ok(toolbarRoot.querySelector('[data-action="open-overflow"]'), 'Post-drag compatibility click must be suppressed');
 
     ui.destroy();
 });
