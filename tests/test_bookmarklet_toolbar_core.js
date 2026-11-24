@@ -638,10 +638,13 @@ test('DOCK_SNAP_ZONES, DOCK_EXPAND_MODES, getSiteOrigin, normalizeSettings, and 
         dockExpandMode: 'both',
         dockDefaultPosition: 'bottom-center',
         dockOrientation: 'auto',
+        dockDefaultVisible: true,
         dockSitePositions: {},
         dockSiteOrientations: {},
         dockSiteExpanded: {},
-        dockSiteHidden: {},
+        dockSiteVisibility: {},
+        folderHoverOpen: false,
+        keepFolderOpenAfterRun: false,
     });
 
     assert.deepEqual(
@@ -650,6 +653,7 @@ test('DOCK_SNAP_ZONES, DOCK_EXPAND_MODES, getSiteOrigin, normalizeSettings, and 
             dockExpandMode: 'invalid',
             dockDefaultPosition: 'invalid-zone',
             dockOrientation: 'diagonal',
+            dockDefaultVisible: false,
             dockSitePositions: {
                 'https://a.test': 'top-left',
                 'https://b.test': 'bad-zone',
@@ -660,17 +664,23 @@ test('DOCK_SNAP_ZONES, DOCK_EXPAND_MODES, getSiteOrigin, normalizeSettings, and 
                 'not-a-url': 'vertical',
             },
             dockSiteExpanded: { 'https://a.test': true },
-            dockSiteHidden: { 'https://c.test': true },
+            dockSiteHidden: { 'https://c.test': true, 'https://d.test': false, 'https://e.test': true },
+            dockSiteVisibility: { 'https://e.test': 'shown', 'https://bad.test': 'maybe' },
+            folderHoverOpen: true,
+            keepFolderOpenAfterRun: 'yes',
         }),
         {
             hotkey: 'Ctrl+K',
             dockExpandMode: 'both',
             dockDefaultPosition: 'bottom-center',
             dockOrientation: 'auto',
+            dockDefaultVisible: false,
             dockSitePositions: { 'https://a.test': 'top-left' },
             dockSiteOrientations: { 'https://musicbrainz.org': 'horizontal' },
             dockSiteExpanded: { 'https://a.test': true },
-            dockSiteHidden: { 'https://c.test': true },
+            dockSiteVisibility: { 'https://e.test': 'shown', 'https://c.test': 'hidden' },
+            folderHoverOpen: true,
+            keepFolderOpenAfterRun: false,
         }
     );
 
@@ -688,10 +698,13 @@ test('DOCK_SNAP_ZONES, DOCK_EXPAND_MODES, getSiteOrigin, normalizeSettings, and 
             dockExpandMode: 'both',
             dockDefaultPosition: 'top-right',
             dockOrientation: 'vertical',
+            dockDefaultVisible: true,
             dockSitePositions: {},
             dockSiteOrientations: { 'https://musicbrainz.org': 'horizontal' },
             dockSiteExpanded: {},
-            dockSiteHidden: {},
+            dockSiteVisibility: {},
+            folderHoverOpen: false,
+            keepFolderOpenAfterRun: false,
         }
     );
 
@@ -705,10 +718,43 @@ test('DOCK_SNAP_ZONES, DOCK_EXPAND_MODES, getSiteOrigin, normalizeSettings, and 
                 match: ['*://*.musicbrainz.org/*'],
                 code: 'void 0;',
             },
+            'local:yt': {
+                id: 'local:yt',
+                source: 'local',
+                name: 'YT Helper',
+                match: ['*://*.youtube.com/*'],
+                code: 'void 0;',
+            },
         }
     );
-    const layout = [{ type: 'script', scriptId: 'local:mb' }];
+    const layout = [
+        { type: 'script', scriptId: 'local:mb' },
+        { type: 'script', scriptId: 'local:yt' },
+        {
+            type: 'folder',
+            id: 'f:mix',
+            name: 'Mix',
+            items: [{ scriptId: 'local:yt' }, { scriptId: 'local:mb' }],
+        },
+        {
+            type: 'folder',
+            id: 'f:yt',
+            name: 'YT Only',
+            items: [{ scriptId: 'local:yt' }],
+        },
+        {
+            type: 'folder',
+            id: 'f:empty',
+            name: 'Empty',
+            items: [],
+        },
+    ];
 
+    // isDockVisibleOnOrigin + shouldMountToolbar across global default and per-origin overrides
+    assert.equal(
+        Core.isDockVisibleOnOrigin({ dockSiteHidden: { 'https://musicbrainz.org': true } }, 'https://musicbrainz.org/release/123'),
+        false
+    );
     assert.equal(
         Core.shouldMountToolbar(layout, scriptsMap, 'https://musicbrainz.org/release/123', {
             dockSiteHidden: { 'https://musicbrainz.org': true },
@@ -721,4 +767,50 @@ test('DOCK_SNAP_ZONES, DOCK_EXPAND_MODES, getSiteOrigin, normalizeSettings, and 
         }),
         true
     );
+    assert.equal(
+        Core.shouldMountToolbar(layout, scriptsMap, 'https://musicbrainz.org/release/123', {
+            dockDefaultVisible: false,
+            dockSiteVisibility: {},
+        }),
+        false
+    );
+    assert.equal(
+        Core.shouldMountToolbar(layout, scriptsMap, 'https://musicbrainz.org/release/123', {
+            dockDefaultVisible: false,
+            dockSiteVisibility: { 'https://musicbrainz.org': 'shown' },
+        }),
+        true
+    );
+
+    // toggleDockSiteVisibility normalization & non-HTTP(S) safety (Review Focus #2, #3)
+    const toggledHidden = Core.toggleDockSiteVisibility(
+        { dockDefaultVisible: true, dockSiteHidden: { 'https://a.test': true } },
+        'https://musicbrainz.org/release/1'
+    );
+    assert.equal(toggledHidden.dockSiteVisibility['https://a.test'], 'hidden');
+    assert.equal(toggledHidden.dockSiteVisibility['https://musicbrainz.org'], 'hidden');
+
+    const toggledBackToDefault = Core.toggleDockSiteVisibility(
+        toggledHidden,
+        'https://musicbrainz.org'
+    );
+    assert.equal('https://musicbrainz.org' in toggledBackToDefault.dockSiteVisibility, false);
+    const afterGlobalFlip = Core.normalizeSettings({
+        ...toggledBackToDefault,
+        dockDefaultVisible: false,
+    });
+    assert.equal(Core.isDockVisibleOnOrigin(afterGlobalFlip, 'https://musicbrainz.org/release/1'), false);
+
+    const fileToggle = Core.toggleDockSiteVisibility(afterGlobalFlip, 'file:///tmp/test.html');
+    assert.deepEqual(fileToggle, afterGlobalFlip);
+    assert.equal(Core.isDockVisibleOnOrigin(afterGlobalFlip, 'about:blank'), false);
+
+    // doesLayoutNodeMatchUrl
+    const mbUrl = 'https://musicbrainz.org/release/123';
+    assert.equal(Core.doesLayoutNodeMatchUrl(layout[0], scriptsMap, mbUrl), true);
+    assert.equal(Core.doesLayoutNodeMatchUrl(layout[1], scriptsMap, mbUrl), false);
+    assert.equal(Core.doesLayoutNodeMatchUrl({ type: 'script', scriptId: 'local:missing' }, scriptsMap, mbUrl), false);
+    assert.equal(Core.doesLayoutNodeMatchUrl(layout[2], scriptsMap, mbUrl), true);
+    assert.equal(Core.doesLayoutNodeMatchUrl(layout[3], scriptsMap, mbUrl), false);
+    assert.equal(Core.doesLayoutNodeMatchUrl(layout[4], scriptsMap, mbUrl), false);
 });
