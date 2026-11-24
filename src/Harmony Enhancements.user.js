@@ -15,6 +15,10 @@
 // @grant       GM.setValue
 // @grant       GM.deleteValue
 // @grant       GM.addStyle
+// @grant       GM.xmlHttpRequest
+// @connect     musicbrainz.org
+// @connect     beta.musicbrainz.org
+// @connect     musicbrainz.eu
 // @updateURL   https://github.com/chaban-mb/userscripts/raw/main/src/Harmony%20Enhancements.user.js
 // @downloadURL https://github.com/chaban-mb/userscripts/raw/main/src/Harmony%20Enhancements.user.js
 // ==/UserScript==
@@ -140,6 +144,26 @@
             type: 'checkbox',
             runAt: 'load',
             paths: [/^\/release(?!\/actions)/],
+        },
+        addCopyIsrcsButton: {
+            key: 'enhancements.ui.copyIsrcs',
+            label: `Add 'Copy ISRCs' button to tracklists`,
+            description: 'Adds a button to each tracklist caption that copies all track ISRCs (one per line) to the clipboard.',
+            defaultValue: true,
+            section: 'Convenience Features',
+            type: 'checkbox',
+            runAt: 'load',
+            paths: [/^\/release(?!\/actions)/],
+        },
+        addOneClickExternalIdLinking: {
+            key: 'enhancements.ui.oneClickExternalIdLinking',
+            label: 'Add one-click external ID linking on the release actions page',
+            description: 'Adds buttons that submit all "Link external IDs" edits (artists, labels, recordings) in the background, collectively or per entity type. Requires being logged in to MusicBrainz.',
+            defaultValue: true,
+            section: 'Convenience Features',
+            type: 'checkbox',
+            runAt: 'load',
+            paths: [/^\/release\/actions/],
         },
 
         // Release Data
@@ -1619,6 +1643,121 @@
         return labels.find(l => l.textContent.trim().toLowerCase() === cleanName) || null;
     }
 
+    // --- ONE-CLICK EXTERNAL ID LINKING ---
+    const EXTERNAL_ID_ENTITY_TYPES = ['artist', 'label', 'recording'];
+    const EXTERNAL_ID_MAX_CONCURRENT_SUBMISSIONS = 4;
+    const EXTERNAL_ID_EDIT_NOTE_SUFFIX = `Submitted in one click with ${SCRIPT_NAME}: ${GM.info.script.homepageURL || GM.info.script.homepage || 'https://github.com/chaban-mb/userscripts'}`;
+
+    /**
+     * Wraps GM.xmlHttpRequest in a Promise and retries on HTTP 503 (MusicBrainz rate limiting).
+     * Runs with the user's MusicBrainz session cookies, which is what allows submitting edits.
+     */
+    async function requestMusicBrainzPageUntilAvailable(details) {
+        for (;;) {
+            const response = await new Promise((resolve, reject) => {
+                GM.xmlHttpRequest({
+                    ...details,
+                    timeout: 30000,
+                    onload: resolve,
+                    onerror: () => reject(new Error(`MusicBrainz request failed: ${details.url}`)),
+                    ontimeout: () => reject(new Error(`MusicBrainz request timed out: ${details.url}`)),
+                });
+            });
+            if (response.status !== 503) return response;
+            const retryAfterSeconds = Number(String(response.responseHeaders || '').match(/^retry-after:\s*(\d+)/im)?.[1]);
+            await new Promise(resolve => setTimeout(resolve, Math.max(5000, (retryAfterSeconds || 0) * 1000)));
+        }
+    }
+
+    /** @returns {{anchor: HTMLAnchorElement, url: URL, type: string}[]} Harmony's "Link external IDs" edit links, retargeted to the selected MB server. */
+    function getExternalIdLinkingItems() {
+        const domain = getMBServerDomain();
+        return Array.from(document.querySelectorAll('.action a[href]'))
+            .filter(anchor => anchor.textContent.trim() === 'Link external IDs')
+            .map(anchor => {
+                const url = new URL(anchor.href);
+                const type = url.pathname.match(/^\/(artist|label|recording)\/[0-9a-f-]{36}\/edit$/i)?.[1]?.toLowerCase();
+                if (!MB_DOMAINS.includes(url.hostname) || !type) return null;
+                url.hostname = domain;
+                const editNoteKey = `edit-${type}.edit_note`;
+                const currentNote = url.searchParams.get(editNoteKey) || '';
+                url.searchParams.set(editNoteKey, currentNote ? `${currentNote}\n\n${EXTERNAL_ID_EDIT_NOTE_SUFFIX}` : EXTERNAL_ID_EDIT_NOTE_SUFFIX);
+                return { anchor, url, type };
+            })
+            .filter(Boolean);
+    }
+
+    /** @returns {string[]} "<link_type_id>|<url>" keys of the seeded URL relationships found in the given params. */
+    function getSeededExternalLinkKeys(params, type) {
+        const prefix = `edit-${type}.url.`;
+        const linksByIndex = new Map();
+        for (const [key, value] of params.entries()) {
+            const match = key.startsWith(prefix) && key.slice(prefix.length).match(/^(\d+)\.(text|link_type_id)$/);
+            if (!match) continue;
+            const link = linksByIndex.get(match[1]) || {};
+            link[match[2]] = value.trim().replace(/\/+$/, '');
+            linksByIndex.set(match[1], link);
+        }
+        return Array.from(linksByIndex.values())
+            .filter(link => link.text && link.link_type_id)
+            .map(link => `${link.link_type_id}|${link.text}`);
+    }
+
+    /**
+     * Loads the MusicBrainz edit form, merges Harmony's seeded URL relationships into it and submits it.
+     * A background request does not run MusicBrainz's React submit handler, which normally turns the
+     * seeded `edit-<type>.url.*` params into form fields, so they are copied into the POST body directly.
+     * @returns {Promise<'submitted'|'already linked'>}
+     */
+    async function submitExternalIdLinkingEdit({ url, type }) {
+        const throwIfLoginRequired = (response) => {
+            if (response.status === 401 || response.status === 403 || new URL(response.finalUrl || url).pathname.startsWith('/login')) {
+                const loginError = new Error(`Not logged in to ${url.hostname}.`);
+                loginError.isFatal = true;
+                throw loginError;
+            }
+        };
+        const getPageErrors = (doc) => Array.from(doc.querySelectorAll('.error, .errors, .field-error, .message.error'))
+            .map(el => el.textContent.replace(/\s+/g, ' ').trim()).filter(Boolean).slice(0, 3).join(' | ');
+
+        const getResponse = await requestMusicBrainzPageUntilAvailable({ method: 'GET', url: url.href });
+        throwIfLoginRequired(getResponse);
+        if (getResponse.status !== 200) throw new Error(`Loading the ${type} edit page failed (HTTP ${getResponse.status}).`);
+
+        const getDoc = new DOMParser().parseFromString(getResponse.responseText, 'text/html');
+        const form = Array.from(getDoc.querySelectorAll('form[method="post" i]'))
+            .find(f => Array.from(f.elements).some(el => el.name?.startsWith(`edit-${type}.`)));
+        if (!form) throw new Error(getPageErrors(getDoc) || `Could not find the MusicBrainz ${type} edit form.`);
+
+        const body = new URLSearchParams();
+        for (const [key, value] of new FormData(form).entries()) {
+            if (typeof value === 'string') body.append(key, value);
+        }
+
+        const seededLinkKeys = getSeededExternalLinkKeys(url.searchParams, type);
+        if (!seededLinkKeys.length) throw new Error(`Harmony did not provide any ${type} external links.`);
+        const existingLinkKeys = new Set(getSeededExternalLinkKeys(body, type));
+        if (seededLinkKeys.every(key => existingLinkKeys.has(key))) return 'already linked';
+
+        for (const [key, value] of url.searchParams.entries()) {
+            if (key.startsWith(`edit-${type}.url.`) || key === `edit-${type}.edit_note`) body.set(key, value);
+        }
+
+        const postResponse = await requestMusicBrainzPageUntilAvailable({
+            method: 'POST',
+            url: new URL(form.getAttribute('action') || url.href, getResponse.finalUrl || url.href).href,
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' },
+            data: body.toString(),
+        });
+        throwIfLoginRequired(postResponse);
+        const stillOnEditPage = /\/edit$/.test(new URL(postResponse.finalUrl || url).pathname);
+        if (postResponse.status !== 200 || stillOnEditPage) {
+            const postDoc = new DOMParser().parseFromString(postResponse.responseText || '', 'text/html');
+            throw new Error(getPageErrors(postDoc) || `MusicBrainz did not accept the ${type} edit (HTTP ${postResponse.status}).`);
+        }
+        return 'submitted';
+    }
+
     const enhancements = {
         _copyHandler: async (event, text, name) => {
             try {
@@ -1789,6 +1928,109 @@
                     showTooltip(message, 'error', e);
                 }
             });
+        },
+
+        addCopyIsrcsButton: () => {
+            document.querySelectorAll('table.tracklist > caption').forEach(caption => {
+                if (caption.querySelector('.he-copy-isrcs-button')) return;
+                const button = document.createElement('button');
+                button.type = 'button';
+                button.className = 'he-copy-isrcs-button';
+                button.textContent = 'Copy ISRCs';
+                button.title = 'Copy all ISRCs of this tracklist to clipboard';
+                button.addEventListener('click', (event) => {
+                    const isrcs = Array.from(caption.parentElement.querySelectorAll('code.isrc'), code => code.textContent.trim());
+                    if (!isrcs.length) {
+                        showTooltip('No ISRCs in this tracklist!', 'error', event);
+                        return;
+                    }
+                    enhancements._copyHandler(event, isrcs.join('\n'), `${isrcs.length} ISRCs`);
+                });
+                caption.appendChild(button);
+            });
+        },
+
+        addOneClickExternalIdLinking: () => {
+            if (document.getElementById('he-external-id-linking')) return;
+            const allItems = getExternalIdLinkingItems();
+            const firstAction = allItems[0]?.anchor.closest('.action');
+            if (!firstAction) return;
+
+            const container = document.createElement('div');
+            container.id = 'he-external-id-linking';
+            container.className = 'action';
+            const buttonRow = document.createElement('p');
+            const status = document.createElement('p');
+            status.className = 'he-external-id-linking-status';
+            const body = document.createElement('div');
+            body.append(buttonRow, status);
+            const icon = firstAction.querySelector(':scope > svg.icon');
+            if (icon) container.appendChild(icon.cloneNode(true));
+            container.appendChild(body);
+            firstAction.before(container);
+
+            const submittedAnchors = new WeakSet();
+            const buttons = [];
+
+            const submitItems = async (items) => {
+                buttons.forEach(b => { b.disabled = true; });
+                const pendingItems = items.filter(item => !submittedAnchors.has(item.anchor));
+                const total = pendingItems.length;
+                let processedCount = 0;
+                let failedCount = 0;
+                let fatalErrorMessage = '';
+                const updateStatus = () => {
+                    status.textContent = `${processedCount}/${total} processed, ${failedCount} failed…`;
+                };
+                updateStatus();
+
+                const worker = async () => {
+                    while (!fatalErrorMessage && pendingItems.length) {
+                        const item = pendingItems.shift();
+                        const resultBadge = item.anchor.parentElement.querySelector('.he-external-id-result') || document.createElement('span');
+                        resultBadge.className = 'he-external-id-result';
+                        item.anchor.after(resultBadge);
+                        try {
+                            const result = await submitExternalIdLinkingEdit(item);
+                            submittedAnchors.add(item.anchor);
+                            resultBadge.textContent = ` ✓ ${result}`;
+                            resultBadge.title = '';
+                        } catch (e) {
+                            failedCount++;
+                            if (e.isFatal) fatalErrorMessage = e.message;
+                            resultBadge.textContent = ' ✗ failed';
+                            resultBadge.title = e.message;
+                            error(`External ID linking failed for ${item.url.pathname}:`, e);
+                        }
+                        processedCount++;
+                        updateStatus();
+                    }
+                };
+                await Promise.all(Array.from({ length: Math.min(EXTERNAL_ID_MAX_CONCURRENT_SUBMISSIONS, total) }, worker));
+
+                status.textContent = fatalErrorMessage
+                    ? `Stopped after ${processedCount}/${total}: ${fatalErrorMessage}`
+                    : `Done: ${total - failedCount}/${total} succeeded${failedCount ? `, ${failedCount} failed (hover ✗ for details, click again to retry)` : ''}.`;
+                buttons.forEach(b => { b.disabled = false; });
+            };
+
+            const scopes = [
+                { label: 'Link all external IDs', items: allItems },
+                ...EXTERNAL_ID_ENTITY_TYPES.map(type => ({
+                    label: `Link ${type} IDs`,
+                    items: allItems.filter(item => item.type === type),
+                })),
+            ].filter(scope => scope.items.length);
+
+            for (const scope of scopes) {
+                const button = document.createElement('button');
+                button.type = 'button';
+                button.textContent = `${scope.label} (${scope.items.length})`;
+                button.addEventListener('click', () => submitItems(scope.items));
+                buttons.push(button);
+                buttonRow.appendChild(button);
+            }
+            status.textContent = 'Submits the edits below in the background using your MusicBrainz login.';
         },
 
         addProviderRelookupButtons: () => {
@@ -3669,6 +3911,17 @@
             }
             .row.has-he-badges {
                 align-items: flex-start;
+            }
+            .he-copy-isrcs-button {
+                margin-left: 0.5em;
+                vertical-align: middle;
+            }
+            #he-external-id-linking button {
+                margin: 0 0.5em 0.25em 0;
+            }
+            .he-external-id-linking-status {
+                font-size: 0.9em;
+                opacity: 0.8;
             }
         `;
         GM.addStyle(css);

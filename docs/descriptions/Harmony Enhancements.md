@@ -26,6 +26,8 @@ A comprehensive userscript for **[Harmony](http://harmony.pulsewidth.org.uk/)** 
 #### UI & Workflow
 
 - **Clipboard Re-Lookup:** Adds a **"Re-Lookup from Clipboard"** button to the lookup form for quickly starting a new lookup or extending an existing one using a supported source URL found in your clipboard.
+- **Copy ISRCs:** Adds a **"Copy ISRCs"** button to each tracklist caption that copies all track ISRCs (one per line) to the clipboard, e.g. for matching recordings by ISRC.
+- **One-Click External ID Linking:** Adds buttons to the release actions page that submit all of Harmony's **"Link external IDs"** edits (artists, labels, recordings) in the background, collectively or per entity type. Requires being logged in to MusicBrainz.
 - **Provider Re-Lookup Buttons:** Adds a small **⟳** button next to each secondary provider URL in the "Providers" section, allowing you to quickly redo the lookup using that provider as the primary source.
 - **Compact "Not Found" Messages:** Replaces verbose red error banners for providers that do not have the release with compact tags directly under provider checkboxes.
 - **External Search Links:** Adds quick search links for yet unsupported providers (Qobuz, YouTube Music, Beatsource, etc.).
