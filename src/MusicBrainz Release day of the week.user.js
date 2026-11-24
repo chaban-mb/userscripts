@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        MusicBrainz: Release day of the week
 // @namespace   https://musicbrainz.org/user/chaban
-// @version     1.2.3
+// @version     1.2.4
 // @description Display the day of the week for release events.
 // @tag         ai-created
 // @author      Jugdish, SultS, chaban
@@ -71,14 +71,15 @@
         .mb-day-of-week.standard { color: green; }
         .mb-day-of-week.non-standard { color: #F60; }
         .mb-day-of-week.unknown { color: grey; }
-        span.release-date, span.diff-only-a, span.diff-only-b { white-space: nowrap !important; }
+        span.release-date, .mb-day-of-week-wrap { white-space: nowrap; }
     `;
     document.head.appendChild(style);
 
     /**
      * @typedef {Object} WriteTask
      * @property {Text} textNode - The text node containing the parsed date.
-     * @property {number} splitIndex - The string index where the text node should be split.
+     * @property {number} matchIndex - The string index where the parsed date starts.
+     * @property {number} dateLength - The length of the parsed date string.
      * @property {string} statusClass - The CSS class indicating if the release day is standard.
      * @property {string} dayName - The localized name of the day of the week.
      * @property {string} tooltipText - Additional information about the expected release day.
@@ -223,7 +224,8 @@
                     // Queue the DOM update to avoid layout thrashing
                     tasks.push({
                         textNode,
-                        splitIndex: match.index + dateStr.length,
+                        matchIndex: match.index,
+                        dateLength: dateStr.length,
                         statusClass,
                         dayName,
                         tooltipText
@@ -252,8 +254,16 @@
                 daySpan.style.cursor = 'help';
             }
 
-            const splitNode = task.textNode.splitText(task.splitIndex);
-            task.textNode.parentNode.insertBefore(daySpan, splitNode);
+            const dateNode = task.matchIndex > 0 ? task.textNode.splitText(task.matchIndex) : task.textNode;
+            if (dateNode.nodeValue.length > task.dateLength) {
+                dateNode.splitText(task.dateLength);
+            }
+
+            const wrapSpan = document.createElement('span');
+            wrapSpan.className = 'mb-day-of-week-wrap';
+            dateNode.parentNode.insertBefore(wrapSpan, dateNode);
+            wrapSpan.appendChild(dateNode);
+            wrapSpan.appendChild(daySpan);
         });
     }
 
@@ -295,7 +305,7 @@
             for (const node of mutation.addedNodes) {
                 if (node.nodeType === Node.ELEMENT_NODE) {
                     // Don't let our own injected spans trigger another update loop
-                    if (node.classList && node.classList.contains('mb-day-of-week')) continue;
+                    if (node.classList && (node.classList.contains('mb-day-of-week') || node.classList.contains('mb-day-of-week-wrap'))) continue;
 
                     collectedNodes.add(node);
                     needsProcessing = true;
