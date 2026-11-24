@@ -726,6 +726,13 @@ test('Running on unmatched URL (https://example.com/) syncs bundled pack (25 scr
         overlayHost.shadowRoot.getElementById('manager-backdrop').classList.contains('hidden'),
         false
     );
+
+    // 7. Invoking 'Open Settings' opens standalone #settings-backdrop
+    menuCommands[2].onClick();
+    assert.equal(
+        overlayHost.shadowRoot.getElementById('settings-backdrop').classList.contains('hidden'),
+        false
+    );
 });
 
 test('Entrypoint mounts toolbar on matched URL, handles global hotkeys safely, persists state mutations, and updates on SPA URL navigation', async () => {

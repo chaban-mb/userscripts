@@ -997,7 +997,8 @@ test('Manager supports Editor modal prefill/validation, In-UI Delete Confirmatio
     overlayRoot.getElementById('import-apply').click();
     assert.equal(overlayRoot.getElementById('import-backdrop').classList.contains('hidden'), true);
 
-    // 6. Hotkey Recorder
+    // 6. Hotkey Recorder (inside Settings modal)
+    overlayRoot.getElementById('btn-manager-settings').click();
     const hkBtn = overlayRoot.getElementById('btn-hotkey-record');
     assert.equal(ui.isRecordingHotkey(), false);
     hkBtn.click();
@@ -1743,8 +1744,9 @@ test('Hiding dock on current origin unmounts toolbarHost while Manager and Comma
 
     ui.openManager();
     const overlayRoot = ui.getOverlayShadowRoot();
+    overlayRoot.getElementById('btn-manager-settings').click();
     const toggleBtn = overlayRoot.getElementById('btn-toggle-dock-site');
-    assert.ok(toggleBtn, 'Expected #btn-toggle-dock-site in Manager header');
+    assert.ok(toggleBtn, 'Expected #btn-toggle-dock-site in Settings modal');
     assert.match(toggleBtn.textContent, /Hide dock on this site/i);
 
     toggleBtn.click();
@@ -1806,7 +1808,9 @@ test('Responsive CSS rules cover 412px modals, palette items, popovers, wrapping
     const mgrSearch = overlayRoot.getElementById('mgr-search');
     assert.equal(mgrSearch.classList.contains('bt-mgr-search'), true);
     const header = overlayRoot.querySelector('.bt-modal-header');
-    assert.ok(header.querySelectorAll('.bt-row-wrap').length >= 2);
+    assert.ok(header.querySelectorAll('.bt-row-wrap').length >= 1);
+    ui.openSettings();
+    assert.ok(overlayRoot.getElementById('settings-backdrop').querySelectorAll('.bt-row-wrap').length >= 2);
     ui.destroy();
 });
 
@@ -1991,8 +1995,8 @@ test('Non-HTTP(S) URLs (about:blank / file://) handle Manager and Command Palett
 
     assert.equal(ui.isToolbarMounted(), false);
 
-    // Manager disables per-site hide button cleanly when origin is unavailable
-    ui.openManager();
+    // Settings disables per-site hide button cleanly when origin is unavailable
+    ui.openSettings();
     const overlayRoot = ui.getOverlayShadowRoot();
     const toggleBtn = overlayRoot.getElementById('btn-toggle-dock-site');
     assert.equal(toggleBtn.disabled, true);
@@ -2565,8 +2569,8 @@ test('Hybrid scope updates global defaults with per-site overrides, Auto rotates
     ui.update({ url: 'https://example.org/test' });
     assert.equal(toolbarHost.dataset.snapZone, 'top-right');
 
-    // 2. Manager Orientation buttons update both dockSiteOrientations[origin] and dockOrientation
-    ui.openManager();
+    // 2. Settings Orientation buttons update both dockSiteOrientations[origin] and dockOrientation
+    ui.openSettings();
     const overlayRoot = ui.getOverlayShadowRoot();
     const autoBtn = overlayRoot.querySelector('[data-dock-orientation="auto"]');
     const horizBtn = overlayRoot.querySelector('[data-dock-orientation="horizontal"]');
@@ -3384,6 +3388,142 @@ test('folderHoverOpen opens folders & More » after hover intent and hover grace
     dockContainer.dispatchEvent({ type: 'mouseleave', bubbles: false });
     await new Promise((r) => setTimeout(r, 450));
     assert.equal(toolbarRoot.querySelectorAll('[data-folder-id]').length, 0);
+
+    ui.destroy();
+});
+
+test('Standalone Settings modal, streamlined Manager header, portrait sticky disable, dimming (#13), and truncated pack badges (#5, #12, #14, #18)', () => {
+    const fs = require('node:fs');
+    const path = require('node:path');
+    const uiSource = fs.readFileSync(
+        path.join(__dirname, '..', 'lib', 'BookmarkletToolbarUI.js'),
+        'utf8'
+    );
+    assert.match(uiSource, /@media\s*\(max-width:\s*600px\),\s*\(max-height:\s*760px\)\s*\{[^}]*\.bt-sticky-section\s*\{[^}]*position:\s*static;/s);
+    assert.match(uiSource, /\.bt-badge\s*\{[^}]*max-width:[^;]+;[^}]*overflow:\s*hidden;[^}]*text-overflow:\s*ellipsis;[^}]*white-space:\s*nowrap;/s);
+    assert.match(uiSource, /\.bt-pill-dimmed\s*\{/);
+
+    const { doc, win } = createDomEnvironment('https://musicbrainz.org/release/123');
+    const stateChanges = [];
+    const ui = UI.createToolbarUI({
+        doc,
+        win,
+        initialState: createSampleState({
+            url: 'https://musicbrainz.org/release/123',
+            packs: {
+                'chaban-bookmarklets': {
+                    id: 'chaban-bookmarklets',
+                    name: 'Chaban Extraordinarily Long Pack Name',
+                    version: '2026.11.24',
+                    scripts: {
+                        'pack:chaban-bookmarklets/mb_match': {
+                            id: 'pack:chaban-bookmarklets/mb_match',
+                            source: 'pack:chaban-bookmarklets',
+                            name: 'MB Match',
+                            match: ['*://*.musicbrainz.org/*'],
+                            code: 'void 0;',
+                        },
+                        'pack:chaban-bookmarklets/yt_nomatch': {
+                            id: 'pack:chaban-bookmarklets/yt_nomatch',
+                            source: 'pack:chaban-bookmarklets',
+                            name: 'YT Only',
+                            match: ['*://*.youtube.com/*'],
+                            code: 'void 0;',
+                        },
+                    },
+                },
+            },
+            localScripts: {
+                'local:all': {
+                    id: 'local:all',
+                    source: 'local',
+                    name: 'All Sites',
+                    match: ['*://*/*'],
+                    code: 'void 0;',
+                },
+            },
+            layout: [
+                { type: 'script', scriptId: 'pack:chaban-bookmarklets/mb_match' },
+                { type: 'script', scriptId: 'pack:chaban-bookmarklets/yt_nomatch' },
+                { type: 'folder', id: 'f:mixed', name: 'Mixed', items: [{ scriptId: 'pack:chaban-bookmarklets/mb_match' }, { scriptId: 'pack:chaban-bookmarklets/yt_nomatch' }] },
+                { type: 'folder', id: 'f:yt', name: 'YT Folder', items: [{ scriptId: 'pack:chaban-bookmarklets/yt_nomatch' }] },
+                { type: 'folder', id: 'f:empty', name: 'Empty Folder', items: [] },
+            ],
+            selectedFolderId: null,
+        }),
+        callbacks: {
+            onStateChange(partial) { stateChanges.push(partial); },
+        },
+    });
+
+    // 1. ui.openSettings() opens #settings-backdrop independently without opening #manager-backdrop (Review Focus #4)
+    ui.openSettings();
+    const overlayRoot = ui.getOverlayShadowRoot();
+    const settingsBackdrop = overlayRoot.getElementById('settings-backdrop');
+    const managerBackdrop = overlayRoot.getElementById('manager-backdrop');
+    assert.ok(settingsBackdrop);
+    assert.equal(settingsBackdrop.classList.contains('hidden'), false);
+    assert.equal(managerBackdrop.classList.contains('hidden'), true);
+
+    // Controls inside Settings work: default visibility, folderHoverOpen, keepFolderOpenAfterRun
+    const defaultHiddenBtn = overlayRoot.querySelector('[data-dock-default-visible="false"]');
+    assert.ok(defaultHiddenBtn);
+    defaultHiddenBtn.click();
+    assert.equal(stateChanges.at(-1).settings.dockDefaultVisible, false);
+
+    const chkFolderHover = overlayRoot.getElementById('chk-folder-hover-open');
+    const chkKeepOpen = overlayRoot.getElementById('chk-keep-folder-open');
+    assert.ok(chkFolderHover && chkKeepOpen);
+    chkFolderHover.checked = true;
+    chkFolderHover.dispatchEvent({ type: 'change', bubbles: true });
+    assert.equal(stateChanges.at(-1).settings.folderHoverOpen, true);
+    chkKeepOpen.checked = true;
+    chkKeepOpen.dispatchEvent({ type: 'change', bubbles: true });
+    assert.equal(stateChanges.at(-1).settings.keepFolderOpenAfterRun, true);
+
+    // Escape closes standalone Settings cleanly with no Manager behind it
+    overlayRoot.dispatchEvent({ type: 'keydown', key: 'Escape', bubbles: true });
+    assert.equal(settingsBackdrop.classList.contains('hidden'), true);
+    assert.equal(managerBackdrop.classList.contains('hidden'), true);
+
+    // 2. Manager header is streamlined (+ New Local Script, ⚙ Settings, ×; no inline Export/Import/Shortcut)
+    ui.openManager();
+    assert.ok(overlayRoot.getElementById('btn-manager-settings'));
+    assert.equal(settingsBackdrop.contains(overlayRoot.getElementById('btn-export-open')), true);
+    assert.equal(settingsBackdrop.contains(overlayRoot.getElementById('btn-import-open')), true);
+    assert.equal(settingsBackdrop.contains(overlayRoot.getElementById('btn-hotkey-record')), true);
+
+    // Clicking #btn-manager-settings opens Settings over Manager; Escape closes only Settings
+    overlayRoot.getElementById('btn-manager-settings').click();
+    assert.equal(settingsBackdrop.classList.contains('hidden'), false);
+    assert.equal(managerBackdrop.classList.contains('hidden'), false);
+    overlayRoot.dispatchEvent({ type: 'keydown', key: 'Escape', bubbles: true });
+    assert.equal(settingsBackdrop.classList.contains('hidden'), true);
+    assert.equal(managerBackdrop.classList.contains('hidden'), false);
+
+    // 3. Manager dimming (#13): non-matching scripts, all-non-matching folders, empty folders, and non-matching drawer chips get bt-pill-dimmed; Library cards do not
+    assert.equal(overlayRoot.querySelector('[data-toolbar-script="pack:chaban-bookmarklets/mb_match"]').classList.contains('bt-pill-dimmed'), false);
+    assert.equal(overlayRoot.querySelector('[data-toolbar-script="pack:chaban-bookmarklets/yt_nomatch"]').classList.contains('bt-pill-dimmed'), true);
+    assert.equal(overlayRoot.querySelector('[data-folder-pill="f:mixed"]').classList.contains('bt-pill-dimmed'), false);
+    assert.equal(overlayRoot.querySelector('[data-folder-pill="f:yt"]').classList.contains('bt-pill-dimmed'), true);
+    assert.equal(overlayRoot.querySelector('[data-folder-pill="f:empty"]').classList.contains('bt-pill-dimmed'), true);
+
+    // Open Mixed folder drawer -> matching chip NOT dimmed, non-matching chip dimmed
+    overlayRoot.querySelector('[data-folder-pill="f:mixed"]').click();
+    assert.equal(overlayRoot.querySelector('[data-folder-item="pack:chaban-bookmarklets/mb_match"]').classList.contains('bt-pill-dimmed'), false);
+    assert.equal(overlayRoot.querySelector('[data-folder-item="pack:chaban-bookmarklets/yt_nomatch"]').classList.contains('bt-pill-dimmed'), true);
+
+    // Library cards NOT dimmed and show full pack name + title tooltip even with 1 pack installed (#5)
+    const libCardYt = overlayRoot.querySelector('[data-library-card="pack:chaban-bookmarklets/yt_nomatch"]');
+    assert.equal(libCardYt.classList.contains('bt-pill-dimmed'), false);
+    const libBadge = libCardYt.querySelector('.bt-badge');
+    assert.equal(libBadge.textContent, 'Chaban Extraordinarily Long Pack Name');
+    assert.equal(libBadge.title, 'Chaban Extraordinarily Long Pack Name');
+
+    // Non-HTTP(S) disables per-site dock button cleanly in Settings (Review Focus #3)
+    ui.update({ url: 'about:blank' });
+    ui.openSettings();
+    assert.equal(overlayRoot.getElementById('btn-toggle-dock-site').disabled, true);
 
     ui.destroy();
 });
